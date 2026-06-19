@@ -30,7 +30,15 @@ const handler = NextAuth({
           const json = await response.json();
           if (json.success && json.data) {
             token.accessToken = json.data.token;
-            token.strummUser = json.data.user;
+            // Trim user object to avoid NextAuth cookie blooming over Vercel's 14KB limit
+            token.strummUser = {
+              id: json.data.user.id,
+              username: json.data.user.username,
+              email: json.data.user.email,
+              displayName: json.data.user.displayName,
+              avatar: json.data.user.avatar,
+              role: json.data.user.role
+            };
           }
         } catch (e) {
           console.error("Strumm Auth: Failed to sync Google OAuth with FastAPI server", e);
