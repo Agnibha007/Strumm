@@ -126,11 +126,11 @@ export default function PodcastHomePage() {
                     className="p-4 bg-surface/40 hover:bg-surface border border-border/40 hover:border-border/85 rounded-xl flex items-center gap-4 transition group cursor-pointer"
                   >
                     <img src={show.image} alt={show.title} className="w-16 h-16 rounded-lg object-cover shadow border border-border/40 flex-shrink-0" />
-                    <div className="min-w-0 text-left">
-                      <div className="font-editorial text-base text-text font-bold leading-tight group-hover:text-primary transition truncate">
+                    <div className="min-w-0 flex-1 text-left overflow-hidden">
+                      <div className="font-editorial text-base text-text font-bold leading-tight group-hover:text-primary transition truncate break-words">
                         {show.title}
                       </div>
-                      <div className="text-[10px] text-muted truncate mt-1">
+                      <div className="text-[10px] text-muted truncate mt-1 break-words">
                         By {show.author}
                       </div>
                     </div>
@@ -180,11 +180,13 @@ export default function PodcastHomePage() {
                         <Radio className="w-4 h-4 text-primary" />
                       </div>
                     </div>
-                    <div className="font-editorial text-sm text-text font-bold mt-3.5 truncate">
-                      {show.title}
-                    </div>
-                    <div className="text-[10px] text-muted truncate mt-1">
-                      By {show.author}
+                    <div className="min-w-0 w-full overflow-hidden">
+                      <div className="font-editorial text-sm text-text font-bold mt-3.5 truncate break-words w-full">
+                        {show.title}
+                      </div>
+                      <div className="text-[10px] text-muted truncate mt-1 break-words w-full">
+                        By {show.author}
+                      </div>
                     </div>
                   </a>
                 ))}

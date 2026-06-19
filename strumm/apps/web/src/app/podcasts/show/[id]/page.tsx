@@ -142,10 +142,10 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
             <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
               Podcast Series
             </span>
-            <h1 className="text-4xl md:text-5xl font-editorial font-bold text-text tracking-tight leading-tight">
+            <h1 className="text-4xl md:text-5xl font-editorial font-bold text-text tracking-tight leading-tight break-words w-full">
               {show.title}
             </h1>
-            <p className="text-sm text-muted max-w-2xl leading-relaxed">
+            <p className="text-sm text-muted max-w-2xl leading-relaxed break-words whitespace-pre-wrap line-clamp-4 md:line-clamp-none">
               {show.description}
             </p>
           </div>
@@ -201,10 +201,10 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
                 className="bg-surface/30 border border-border/40 hover:border-border/80 rounded-xl p-5 text-left flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition group"
               >
                 <div className="space-y-2 flex-grow min-w-0">
-                  <h4 className="font-editorial text-lg text-text font-bold truncate group-hover:text-primary transition leading-snug">
+                  <h4 className="font-editorial text-lg text-text font-bold truncate break-words w-full group-hover:text-primary transition leading-snug">
                     {episode.title}
                   </h4>
-                  <p className="text-xs text-muted max-w-3xl line-clamp-2 leading-relaxed">
+                  <p className="text-xs text-muted max-w-3xl line-clamp-2 break-words w-full leading-relaxed">
                     {episode.description.replace(/<[^>]*>/g, "")}
                   </p>
                   <div className="flex items-center gap-3 text-[10px] text-muted font-bold uppercase tracking-wider">
