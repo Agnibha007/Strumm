@@ -3,11 +3,10 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import SmartFlow from "web/components/SmartFlow";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 
-import { Search, Play } from "lucide-react";
+import { Search, Play, Heart, Sparkles, Loader2, ListMusic } from "lucide-react";
 import { Song } from "@strumm/types";
 
 export default function HomePage() {
@@ -18,6 +17,10 @@ export default function HomePage() {
   const [searchResults, setSearchResults] = useState<Song[]>([]);
   const [trending, setTrending] = useState<string[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  const [recommendations, setRecommendations] = useState<Song[]>([]);
+  const [likedSongs, setLikedSongs] = useState<Song[]>([]);
+  const [homeLoading, setHomeLoading] = useState(true);
 
   // Perform search queries on typing
   useEffect(() => {
@@ -45,8 +48,41 @@ export default function HomePage() {
     return () => clearTimeout(delayDebounce);
   }, [searchQuery]);
 
+  useEffect(() => {
+    if (!token) return;
+
+    const loadHomeData = async () => {
+      setHomeLoading(true);
+      try {
+        // Fetch AI recommendations
+        const discoverResp = await fetch(apiUrl("/discover"), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const discoverJson = await discoverResp.json();
+        if (discoverJson.success && discoverJson.data) {
+          setRecommendations(discoverJson.data.songs || []);
+        }
+
+        // Fetch Liked Songs
+        const likedResp = await fetch(apiUrl("/liked?limit=10"), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const likedJson = await likedResp.json();
+        if (likedJson.success && likedJson.data) {
+          setLikedSongs(likedJson.data.map((item: any) => item.song) || []);
+        }
+      } catch (e) {
+        console.warn("Failed to load home data.");
+      } finally {
+        setHomeLoading(false);
+      }
+    };
+
+    loadHomeData();
+  }, [token]);
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 max-w-7xl mx-auto pb-10">
       {/* Editorial Header */}
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
@@ -96,9 +132,101 @@ export default function HomePage() {
         )}
       </div>
 
-      <div className="max-w-xl">
-        <SmartFlow />
-      </div>
+      {homeLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 text-muted gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <p className="text-xs uppercase tracking-widest">Curating your space...</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* AI Discovery Mix */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-border/20 pb-2">
+              <h3 className="font-editorial text-2xl text-text font-bold flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                Discovery Mix
+              </h3>
+              <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">AI Curated</span>
+            </div>
+            
+            {recommendations.length === 0 ? (
+              <div className="text-center py-10 bg-surface/30 border border-border/40 rounded-xl">
+                <p className="text-xs text-muted">No recommendations available yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {recommendations.map((song, idx) => (
+                  <button
+                    key={`rec-${song.videoId}-${idx}`}
+                    onClick={() => playSong(song, recommendations)}
+                    className="p-3 bg-surface/40 border border-border/40 hover:bg-surface hover:border-border/80 rounded-xl transition flex items-center gap-3 text-left w-full cursor-pointer group"
+                  >
+                    <div className="w-12 h-12 rounded overflow-hidden flex-shrink-0 relative">
+                      <SongArtwork song={song} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Play className="w-4 h-4 text-white fill-current" />
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-grow">
+                      <div className="font-editorial text-sm font-bold text-text truncate group-hover:text-primary transition">
+                        {song.title}
+                      </div>
+                      <div className="text-[10px] text-muted truncate mt-0.5">
+                        {song.artist}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Liked Songs */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-border/20 pb-2">
+              <h3 className="font-editorial text-2xl text-text font-bold flex items-center gap-2">
+                <Heart className="w-5 h-5 text-red-500 fill-current" />
+                Your Liked Songs
+              </h3>
+              <a href="/library" className="text-[10px] text-muted uppercase tracking-wider font-semibold hover:text-text transition">View All</a>
+            </div>
+            
+            {likedSongs.length === 0 ? (
+              <div className="text-center py-10 bg-surface/30 border border-border/40 rounded-xl">
+                <p className="text-xs text-muted">You haven't liked any songs yet.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {likedSongs.map((song, idx) => (
+                  <button
+                    key={`liked-${song.videoId}-${idx}`}
+                    onClick={() => playSong(song, likedSongs)}
+                    className="p-2.5 bg-transparent hover:bg-surface/60 rounded-lg transition flex items-center gap-3 text-left w-full cursor-pointer group"
+                  >
+                    <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0 relative">
+                      <SongArtwork song={song} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Play className="w-4 h-4 text-white fill-current" />
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-grow flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="font-editorial text-sm font-bold text-text truncate group-hover:text-primary transition">
+                          {song.title}
+                        </div>
+                        <div className="text-[10px] text-muted truncate mt-0.5">
+                          {song.artist}
+                        </div>
+                      </div>
+                      <ListMusic className="w-4 h-4 text-muted opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
