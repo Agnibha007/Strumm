@@ -8,7 +8,7 @@ import { apiUrl, cleanText } from "web/lib/api";
 import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 
 export default function LyricsKaraoke() {
-  const { currentSong, currentTime, isPlaying } = usePlayerStore();
+  const { currentSong, currentTime, isPlaying, playerRef, setCurrentTime } = usePlayerStore();
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -114,7 +114,7 @@ export default function LyricsKaraoke() {
       {/* Main scrolling content */}
       <div 
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto py-8 scrollbar-none my-4 space-y-4 px-2 ${
+        className={`relative flex-1 overflow-y-auto py-8 scrollbar-none my-4 space-y-4 px-2 ${
           karaokeMode ? "text-center text-xl md:text-3xl max-w-4xl mx-auto w-full space-y-6" : "text-left text-sm"
         }`}
       >
@@ -130,6 +130,10 @@ export default function LyricsKaraoke() {
               <div
                 key={idx}
                 ref={isActive ? activeLineRef : null}
+                onClick={() => {
+                  if (playerRef) playerRef.seekTo(line.time);
+                  setCurrentTime(line.time);
+                }}
                 className={`transition-all duration-300 py-1.5 px-3 md:px-5 rounded-2xl cursor-pointer leading-relaxed ${
                   isActive 
                     ? `text-text font-editorial font-bold bg-primary/15 box-glow border border-primary/20 ${
