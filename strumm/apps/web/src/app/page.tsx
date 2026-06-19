@@ -193,7 +193,7 @@ export default function HomePage() {
             
             {likedSongs.length === 0 ? (
               <div className="text-center py-10 bg-surface/30 border border-border/40 rounded-xl">
-                <p className="text-xs text-muted">You haven't liked any songs yet.</p>
+                <p className="text-xs text-muted">You haven&apos;t liked any songs yet.</p>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
