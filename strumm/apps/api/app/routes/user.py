@@ -121,6 +121,24 @@ async def get_liked_songs(
         logger.error(f"Error listing liked songs: {str(e)}")
         return {"success": False, "error": str(e)}
 
+@router.get("/liked/{video_id}")
+async def check_if_liked(
+    video_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        database = db.get_db()
+        existing = await database[db.LIKED_SONGS].find_one({
+            "userId": current_user["id"],
+            "song.videoId": video_id
+        })
+        return {
+            "success": True,
+            "data": {"liked": bool(existing)}
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @router.post("/liked")
 async def toggle_like_song(
     song: SongSchema,

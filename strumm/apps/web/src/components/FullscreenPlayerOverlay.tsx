@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
+import { useAuthStore } from "web/store/useAuthStore";
 import {
   Play, 
   Pause, 
@@ -16,7 +17,8 @@ import {
   Loader2,
   Share2,
   Check,
-  Download
+  Download,
+  Heart
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -50,6 +52,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     setRepeatMode,
     setPlaybackRate,
   } = usePlayerStore();
+  const { token } = useAuthStore();
 
   const { isAnimated } = useThemeStore();
   const router = useRouter();
@@ -58,6 +61,39 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+
+  useEffect(() => {
+    if (!currentSong?.videoId || !token) return;
+    fetch(apiUrl(`/liked/${currentSong.videoId}`), {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(json => {
+        if (json.success) setIsLiked(json.data.liked);
+      })
+      .catch(() => {});
+  }, [currentSong?.videoId, token]);
+
+  const handleLikeToggle = async () => {
+    if (!currentSong || !token) return;
+    try {
+      const response = await fetch(apiUrl("/liked"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(currentSong)
+      });
+      const json = await response.json();
+      if (json.success) {
+        setIsLiked(json.data.liked);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -273,16 +309,18 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             <Mic2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{showLyrics ? "Hide Lyrics" : "Show Lyrics"}</span>
           </button>
+          
           <button
-            onClick={() => {
-              onClose();
-              router.push("/lyrics");
-            }}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-border/30 bg-surface-elevated/40 text-xs font-bold text-muted hover:text-primary hover:border-primary/50 cursor-pointer transition-all"
-            title="Open Theatre Mode"
+            onClick={handleLikeToggle}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+              isLiked
+                ? "bg-primary/20 border-primary text-primary shadow-md box-glow"
+                : "border-border/30 bg-surface-elevated/40 text-muted hover:text-primary hover:border-primary/50"
+            }`}
+            title={isLiked ? "Unlike" : "Like"}
           >
-            <Mic2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Theatre</span>
+            <Heart className={`w-3.5 h-3.5 ${isLiked ? "fill-current" : ""}`} />
+            <span className="hidden sm:inline">{isLiked ? "Liked" : "Like"}</span>
           </button>
         </div>
       </div>
