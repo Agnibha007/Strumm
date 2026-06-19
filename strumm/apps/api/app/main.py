@@ -10,6 +10,7 @@ from app.services.security import require_admin
 import logging
 
 # Setup Logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("strumm-api")
 

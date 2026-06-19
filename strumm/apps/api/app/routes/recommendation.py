@@ -169,7 +169,7 @@ async def get_flow(
         logger.error(f"Error resolving Flow curation: {str(e)}")
         return {"success": False, "error": str(e)}
 
-@router.get("/discover")
+@router.get("/explore-mix")
 async def get_discover(
     current_user: dict = Depends(get_current_user)
 ):

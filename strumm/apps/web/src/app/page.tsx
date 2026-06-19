@@ -55,7 +55,7 @@ export default function HomePage() {
       setHomeLoading(true);
       try {
         // Fetch AI recommendations
-        const discoverResp = await fetch(apiUrl("/discover"), {
+        const discoverResp = await fetch(apiUrl("/explore-mix"), {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const discoverJson = await discoverResp.json();
