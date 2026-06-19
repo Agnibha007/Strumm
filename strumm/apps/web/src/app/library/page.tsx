@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Clock, Heart, Play, User as UserIcon } from "lucide-react";
+import { Clock, Heart, Play, User as UserIcon, Trash2 } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
@@ -12,6 +12,7 @@ export default function LibraryPage() {
   const { user, token } = useAuthStore();
   const { playSong } = usePlayerStore();
   const [likedSongs, setLikedSongs] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,11 +27,23 @@ export default function LibraryPage() {
         }
       } catch (e) {
         console.warn("Offline fallback. Unable to load liked songs.");
-      } finally {
-        setLoading(false);
       }
     };
-    fetchLikes();
+    const fetchHistory = async () => {
+      try {
+        const response = await fetch(apiUrl("/history?limit=20"), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const json = await response.json();
+        if (json.success && json.data) {
+          setHistory(json.data);
+        }
+      } catch (e) {
+        console.warn("Offline fallback. Unable to load history.");
+      }
+    };
+    
+    Promise.all([fetchLikes(), fetchHistory()]).finally(() => setLoading(false));
   }, [token]);
 
   const formatListeningTime = (seconds: number) => {
@@ -44,6 +57,22 @@ export default function LibraryPage() {
     // Extract standard song shapes from liked models
     const songList = likedSongs.map((l) => l.song);
     playSong(song, songList);
+  };
+
+  const handleDeleteHistory = async () => {
+    if (!confirm("Are you sure you want to permanently delete your listening history?")) return;
+    try {
+      const response = await fetch(apiUrl("/history"), {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success) {
+        setHistory([]);
+      }
+    } catch (e) {
+      console.error("Failed to delete history");
+    }
   };
 
   if (!user) return null;
@@ -158,6 +187,64 @@ export default function LibraryPage() {
           )}
         </div>
 
+        {/* Listening History */}
+        <div className="lg:col-span-8 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-border/20 pb-2">
+            <h3 className="font-editorial text-xl text-text">
+              Listening History
+            </h3>
+            {history.length > 0 && (
+              <button 
+                onClick={handleDeleteHistory}
+                className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-400 transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear History
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="space-y-2 py-2">
+              {Array.from({ length: 4 }).map((_, idx) => (
+                <div key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-border/20 bg-background/20">
+                  <div className="w-9 h-9 rounded bg-border/50 animate-pulse" />
+                  <div className="space-y-2">
+                    <div className="h-3 w-44 rounded bg-border/50 animate-pulse" />
+                    <div className="h-2.5 w-28 rounded bg-border/40 animate-pulse" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-xs text-muted italic py-6">Your listening history is empty.</p>
+          ) : (
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 scrollbar-none">
+              {history.map((item, idx) => {
+                const s = item.song;
+                return (
+                  <button
+                    key={`${s.videoId}-${idx}`}
+                    onClick={() => playSong(s)}
+                    className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-elevated text-left w-full cursor-pointer transition border border-transparent hover:border-border/40"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <SongArtwork song={s} className="w-9 h-9 rounded shadow flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-text truncate leading-tight">{s.title}</div>
+                        <div className="text-xs text-muted truncate mt-0.5">{s.artist}</div>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-muted flex-shrink-0">
+                      {new Date(item.playedAt).toLocaleDateString()}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        
         {/* Right: Top Artists widgets */}
         <div className="lg:col-span-4 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
           <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">

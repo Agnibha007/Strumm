@@ -200,6 +200,19 @@ async def get_playback_history(
         logger.error(f"Error loading listening history: {str(e)}")
         return {"success": False, "error": str(e)}
 
+@router.delete("/history")
+async def clear_playback_history(current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": current_user["id"]})
+        return {
+            "success": True,
+            "data": {"message": "Listening history permanently deleted."}
+        }
+    except Exception as e:
+        logger.error(f"Error deleting listening history: {str(e)}")
+        return {"success": False, "error": str(e)}
+
 class PlayEventRequest(BaseModel):
     song: SongSchema
     listenDuration: int # seconds listened in this interval (e.g., 30s sync)

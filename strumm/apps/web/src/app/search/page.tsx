@@ -116,6 +116,10 @@ export default function SearchPage() {
           if (json.data.trending) {
             setTrending(json.data.trending);
           }
+          // Save to smart search history
+          if (query.trim().length >= 2) {
+            saveRecentSearch(query.trim());
+          }
         }
       } catch (err) {
         console.warn("Search request failed.");
@@ -128,13 +132,19 @@ export default function SearchPage() {
   }, [query]);
 
   // 4. Save recent searches
+  const saveRecentSearch = (term: string) => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("strumm-recent-searches");
+      const current = cached ? JSON.parse(cached) : [];
+      const updated = [term, ...current.filter((t: string) => t !== term)].slice(0, 10);
+      localStorage.setItem("strumm-recent-searches", JSON.stringify(updated));
+      setRecentSearches(updated);
+    }
+  };
+
   const handleSelectSearchTerm = (term: string) => {
     setQuery(term);
-    const updated = [term, ...recentSearches.filter((t) => t !== term)].slice(0, 5);
-    setRecentSearches(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("strumm-recent-searches", JSON.stringify(updated));
-    }
+    saveRecentSearch(term);
   };
 
   const clearRecentSearch = (term: string, e: React.MouseEvent) => {
