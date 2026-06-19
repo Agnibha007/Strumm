@@ -178,11 +178,11 @@ export default function EditorialPlayer() {
               <div className="absolute inset-4 rounded-full bg-background border border-border/40" /> {/* Vinyl hole effect */}
             </motion.div>
             
-            <div className="min-w-0">
-              <h4 className="font-editorial text-text text-base leading-tight truncate font-bold">
+            <div className="min-w-0 flex-1 overflow-hidden pr-2">
+              <h4 className="font-editorial text-text text-base leading-tight truncate font-bold w-full">
                 {currentSong.title}
               </h4>
-              <p className="text-xs text-muted leading-tight truncate mt-0.5">{currentSong.artist}</p>
+              <p className="text-xs text-muted leading-tight truncate mt-0.5 w-full">{currentSong.artist}</p>
             </div>
           </div>
 

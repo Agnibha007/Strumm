@@ -355,11 +355,11 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           </div>
 
           {/* Song title and artist */}
-          <div className="w-full">
-            <h2 className="font-editorial text-2xl md:text-4xl lg:text-5xl font-bold text-text leading-tight tracking-tight mb-2 max-h-[80px] overflow-hidden line-clamp-2">
+          <div className="w-full min-w-0 overflow-hidden px-2">
+            <h2 className="font-editorial text-2xl md:text-4xl lg:text-5xl font-bold text-text leading-tight tracking-tight mb-2 w-full truncate">
               {currentSong.title}
             </h2>
-            <p className="text-sm md:text-base text-muted font-medium truncate">
+            <p className="text-sm md:text-base text-muted font-medium w-full truncate">
               {currentSong.artist}
             </p>
           </div>
