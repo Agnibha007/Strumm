@@ -212,7 +212,12 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
   // 2. Fetch Lyrics on song load
   useEffect(() => {
-    if (!currentSong?.videoId) return;
+    if (!currentSong?.videoId || currentSong.videoId.startsWith("podcast-")) {
+      setLyricsLoading(false);
+      setLyrics(null);
+      setPlainLyrics(null);
+      return;
+    }
 
     const fetchLyrics = async () => {
       setLyricsLoading(true);
@@ -269,6 +274,9 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
   if (!currentSong) return null;
 
+  const isPodcast = currentSong.videoId.startsWith("podcast-");
+  const effectiveShowLyrics = showLyrics && !isPodcast;
+
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-6 md:p-12 text-text overflow-hidden select-none">
       {/* Dynamic ambient background glowing blobs */}
@@ -293,22 +301,24 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              const nextVal = !showLyrics;
-              setShowLyrics(nextVal);
-              localStorage.setItem("strumm-show-lyrics", String(nextVal));
-            }}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
-              showLyrics
-                ? "bg-primary border-primary text-text shadow-md box-glow"
-                : "bg-surface-elevated/40 border-border/30 text-muted hover:text-text hover:border-primary/50"
-            }`}
-            title={showLyrics ? "Hide Lyrics" : "Show Lyrics"}
-          >
-            <Mic2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{showLyrics ? "Hide Lyrics" : "Show Lyrics"}</span>
-          </button>
+          {!isPodcast && (
+            <button
+              onClick={() => {
+                const nextVal = !showLyrics;
+                setShowLyrics(nextVal);
+                localStorage.setItem("strumm-show-lyrics", String(nextVal));
+              }}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+                effectiveShowLyrics
+                  ? "bg-primary border-primary text-text shadow-md box-glow"
+                  : "bg-surface-elevated/40 border-border/30 text-muted hover:text-text hover:border-primary/50"
+              }`}
+              title={effectiveShowLyrics ? "Hide Lyrics" : "Show Lyrics"}
+            >
+              <Mic2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{effectiveShowLyrics ? "Hide Lyrics" : "Show Lyrics"}</span>
+            </button>
+          )}
           
           <button
             onClick={handleLikeToggle}
@@ -327,14 +337,14 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
       {/* Main Grid/Flex View */}
       <div className={`w-full flex-1 mt-6 md:mt-10 min-h-0 z-10 mx-auto max-w-7xl transition-all duration-500 ${
-        showLyrics 
+        effectiveShowLyrics 
           ? "grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16" 
           : "flex flex-col items-center justify-center max-w-xl"
       }`}>
         
         {/* Left Side: Song Details & Controls */}
         <div className={`flex flex-col justify-center items-center gap-6 h-full w-full transition-all duration-500 ${
-          showLyrics 
+          effectiveShowLyrics 
             ? "lg:items-start text-center lg:text-left" 
             : "items-center text-center"
         }`}>
@@ -343,7 +353,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           <div className="relative group flex-shrink-0">
             <div
               className={`overflow-hidden border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 rounded-2xl md:rounded-3xl ${
-                showLyrics 
+                effectiveShowLyrics 
                   ? "w-52 h-52 md:w-72 md:h-72" 
                   : "w-64 h-64 md:w-80 md:h-80"
               }`}
@@ -366,7 +376,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
           {/* Playback speed selector */}
           <div className={`flex flex-col items-center gap-1.5 w-full transition-all ${
-            showLyrics ? "lg:items-start" : "items-center"
+            effectiveShowLyrics ? "lg:items-start" : "items-center"
           }`}>
             <span className="text-[10px] tracking-wider uppercase font-semibold text-muted/60">Speed Control</span>
             <div className="flex items-center gap-1 bg-surface-elevated/40 border border-border/30 p-1 rounded-full w-fit backdrop-blur-md">
@@ -415,7 +425,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
           {/* Player controls */}
           <div className={`flex items-center justify-center gap-5 md:gap-7 w-full mt-1 transition-all ${
-            showLyrics ? "lg:justify-start" : "justify-center"
+            effectiveShowLyrics ? "lg:justify-start" : "justify-center"
           }`}>
             <button
               onClick={() => setShuffle(!isShuffle)}
@@ -495,7 +505,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
           {/* Volume control */}
           <div className={`flex items-center gap-3 w-full max-w-[200px] mt-1 justify-center transition-all ${
-            showLyrics ? "lg:justify-start" : "justify-center"
+            effectiveShowLyrics ? "lg:justify-start" : "justify-center"
           }`}>
             <Volume2 className="w-4 h-4 text-muted" />
             <input
@@ -515,7 +525,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
         </div>
 
         {/* Right Side: Lyrics Section */}
-        {showLyrics && (
+        {effectiveShowLyrics && (
           <div className="flex flex-col h-full bg-surface-elevated/20 border border-border/30 rounded-3xl p-5 md:p-7 min-h-[250px] max-h-[350px] lg:max-h-full overflow-hidden backdrop-blur-md w-full transition-all">
             <div className="flex justify-between items-center border-b border-border/20 pb-3 mb-3 flex-shrink-0">
               <div className="flex items-center gap-2">

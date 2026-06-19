@@ -22,6 +22,13 @@ export default function LyricsPage() {
   useEffect(() => {
     if (!currentSong?.videoId) return;
 
+    if (currentSong.videoId.startsWith("podcast-")) {
+      setLoading(false);
+      setLyrics(null);
+      setPlainLyrics("Lyrics not available for podcasts.");
+      return;
+    }
+
     const fetchLyrics = async () => {
       setLoading(true);
       setLyrics(null);

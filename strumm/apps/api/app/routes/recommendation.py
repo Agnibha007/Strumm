@@ -138,6 +138,7 @@ async def get_flow(
                 {"$unwind": "$songs"},
                 {"$sample": {"size": 6}},
                 {"$project": {
+                    "_id": 0,
                     "videoId": "$songs.videoId",
                     "title": "$songs.title",
                     "artist": "$songs.artist",
@@ -192,6 +193,7 @@ async def get_discover(
                 {"$unwind": "$songs"},
                 {"$sample": {"size": 6}},
                 {"$project": {
+                    "_id": 0,
                     "videoId": "$songs.videoId",
                     "title": "$songs.title",
                     "artist": "$songs.artist",
