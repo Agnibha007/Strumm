@@ -12,7 +12,6 @@ export default function LyricsKaraoke() {
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [karaokeMode, setKaraokeMode] = useState(false);
   const activeLineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -63,9 +62,14 @@ export default function LyricsKaraoke() {
       const elementTop = element.offsetTop;
       const elementHeight = element.clientHeight;
       
+      // If the jump is large (seeking), maybe instant scroll is better, but smooth usually works
+      // Let's use instant if difference is large, else smooth
+      const currentScroll = container.scrollTop;
+      const targetScroll = elementTop - containerHeight / 2 + elementHeight / 2;
+      
       container.scrollTo({
-        top: elementTop - containerHeight / 2 + elementHeight / 2,
-        behavior: "smooth",
+        top: targetScroll,
+        behavior: Math.abs(currentScroll - targetScroll) > 300 ? "auto" : "smooth",
       });
     }
   }, [activeIndex]);
@@ -81,11 +85,7 @@ export default function LyricsKaraoke() {
   }
 
   return (
-    <div className={`transition-all duration-500 rounded-xl border border-border/60 ${
-      karaokeMode 
-        ? "fixed inset-0 z-50 bg-[#060606] border-none flex flex-col justify-between p-8 md:p-16"
-        : "bg-surface p-6 h-[450px] flex flex-col justify-between"
-    }`}>
+    <div className="transition-all duration-500 rounded-xl border border-border/60 bg-surface p-6 h-[450px] flex flex-col justify-between">
       {/* Header */}
       <div className="flex justify-between items-center border-b border-border/20 pb-4">
         <div>
@@ -97,26 +97,12 @@ export default function LyricsKaraoke() {
           </h2>
           <p className="text-xs text-muted leading-none mt-1">by {currentSong.artist}</p>
         </div>
-        
-        <button
-          onClick={() => setKaraokeMode(!karaokeMode)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold cursor-pointer transition ${
-            karaokeMode
-              ? "bg-primary border-primary text-white"
-              : "bg-surface-elevated border-border text-text hover:border-primary/50"
-          }`}
-        >
-          <Mic2 className="w-3.5 h-3.5" />
-          {karaokeMode ? "Exit Theatre" : "Theatre Mode"}
-        </button>
       </div>
 
       {/* Main scrolling content */}
       <div 
         ref={scrollContainerRef}
-        className={`relative flex-1 overflow-y-auto py-8 scrollbar-none my-4 space-y-4 px-2 ${
-          karaokeMode ? "text-center text-xl md:text-3xl max-w-4xl mx-auto w-full space-y-6" : "text-left text-sm"
-        }`}
+        className="relative flex-1 overflow-y-auto py-8 scrollbar-none my-4 space-y-4 px-2 text-left text-sm"
       >
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 py-12 text-muted">
@@ -136,12 +122,8 @@ export default function LyricsKaraoke() {
                 }}
                 className={`transition-all duration-300 py-1.5 px-3 md:px-5 rounded-2xl cursor-pointer leading-relaxed ${
                   isActive 
-                    ? `text-text font-editorial font-bold bg-primary/15 box-glow border border-primary/20 ${
-                        karaokeMode ? "text-3xl md:text-5xl text-primary text-glow py-3 md:py-5 scale-105" : "text-base text-primary"
-                      }` 
-                    : `text-muted/40 hover:text-muted border border-transparent ${
-                        karaokeMode ? "font-editorial text-2xl md:text-3xl py-2" : ""
-                      }`
+                    ? "text-text font-editorial font-bold bg-primary/15 box-glow border border-primary/20 text-base text-primary" 
+                    : "text-muted/40 hover:text-muted border border-transparent"
                 }`}
               >
                 {line.text}
@@ -154,13 +136,6 @@ export default function LyricsKaraoke() {
           </div>
         )}
       </div>
-
-      {/* Close instructions for Theatre Mode */}
-      {karaokeMode && (
-        <div className="text-center text-[10px] text-muted tracking-widest uppercase">
-          Press Exit Theatre or swipe to return to main dashboard
-        </div>
-      )}
     </div>
   );
 }
