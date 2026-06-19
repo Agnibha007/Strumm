@@ -68,48 +68,62 @@ async def get_curated_mix_from_groq(mood: str, user_likes: List[dict], user_hist
 async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
     resolved = []
     database = db.get_db()
+    from app.routes.search import search_yt_music_songs
+    import asyncio
     
-    for s in suggestions:
+    async def resolve_single(s: dict):
         title = s.get("title", "")
         artist = s.get("artist", "")
         if not title:
-            continue
+            return None
             
-        # Check if we have this song in our DB
         db_match = await database[db.PLAYLISTS].find_one(
             {"songs.title": escaped_regex(title)},
             {"songs.$": 1}
         )
         if db_match and "songs" in db_match:
             song = db_match["songs"][0]
-            resolved.append({
+            return {
                 "videoId": song["videoId"],
                 "title": song["title"],
                 "artist": song["artist"],
                 "thumbnail": song["thumbnail"],
                 "duration": song["duration"]
-            })
-        else:
-            # Create a mock videoId since it's played client-side on YouTube search terms
-            # In client UI, we can fallback to search resolver if needed.
-            # We generate a deterministic videoId string hash for mock
-            str_hash = f"{title}-{artist}".lower()
-            mock_id = "dQw4w9WgXcQ" # fallback Rickroll
-            if "lofi" in str_hash:
-                mock_id = "jfKfPfyJRdk"
-            elif "classical" in str_hash:
-                mock_id = "jgpJVIgAmDY"
-            elif "focus" in str_hash:
-                mock_id = "5qap5aO4i9A"
-                
-            resolved.append({
-                "videoId": mock_id,
-                "title": title,
-                "artist": artist,
-                "thumbnail": f"https://img.youtube.com/vi/{mock_id}/hqdefault.jpg",
-                "duration": 210
-            })
-    return resolved
+            }
+        
+        # If not in DB, search YTMusic
+        search_results = await search_yt_music_songs(f"{title} {artist}")
+        if search_results:
+            best_match = search_results[0]
+            return {
+                "videoId": best_match["videoId"],
+                "title": best_match["title"],
+                "artist": best_match["artist"],
+                "thumbnail": best_match["thumbnail"],
+                "duration": best_match["duration"]
+            }
+            
+        # Absolute fallback if YTMusic yields nothing
+        str_hash = f"{title}-{artist}".lower()
+        mock_id = "dQw4w9WgXcQ"
+        if "lofi" in str_hash:
+            mock_id = "jfKfPfyJRdk"
+        elif "classical" in str_hash:
+            mock_id = "jgpJVIgAmDY"
+        elif "focus" in str_hash:
+            mock_id = "5qap5aO4i9A"
+            
+        return {
+            "videoId": mock_id,
+            "title": title,
+            "artist": artist,
+            "thumbnail": f"https://img.youtube.com/vi/{mock_id}/hqdefault.jpg",
+            "duration": 210
+        }
+
+    tasks = [resolve_single(s) for s in suggestions]
+    results = await asyncio.gather(*tasks)
+    return [r for r in results if r is not None]
 
 @router.get("/flow")
 async def get_flow(
