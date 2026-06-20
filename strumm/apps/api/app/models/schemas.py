@@ -54,7 +54,16 @@ class SongSchema(BaseModel):
             val = int(round(float(value)))
         except (ValueError, TypeError):
             val = 0
-        return sanitize_positive_int(val, minimum=0, maximum=86400)
+            
+        if val > 86400:
+            val = val // 1000
+            
+        if val < 0:
+            val = 0
+        elif val > 86400:
+            val = 86400
+            
+        return val
 
 # --- User & Settings ---
 class UserSettingsSchema(BaseModel):
