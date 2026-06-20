@@ -22,12 +22,23 @@ def safe_download_filename(value: str) -> str:
     ).strip()
     return cleaned[:160] or "strumm-track"
 
+def get_free_proxies() -> list[str]:
+    try:
+        import httpx
+        url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all"
+        resp = httpx.get(url, timeout=5.0)
+        if resp.status_code == 200:
+            return [p.strip() for p in resp.text.split("\n") if p.strip()]
+    except Exception as e:
+        logger.warning(f"Failed to fetch proxy list: {str(e)}")
+    return []
+
 def extract_youtube_mp3(video_id: str, title_hint: str) -> tuple[str, str]:
     tmp_dir = tempfile.mkdtemp(prefix="strumm-download-")
     outtmpl = str(FilePath(tmp_dir) / "%(title).180B.%(ext)s")
     source_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    options = {
+    base_options = {
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
         "noplaylist": True,
@@ -40,18 +51,41 @@ def extract_youtube_mp3(video_id: str, title_hint: str) -> tuple[str, str]:
         }],
     }
 
+    last_error = None
+    # 1. Try direct connection
     try:
-        with YoutubeDL(options) as ydl:
+        with YoutubeDL(base_options) as ydl:
             info = ydl.extract_info(source_url, download=True)
         mp3_files = list(FilePath(tmp_dir).glob("*.mp3"))
-        if not mp3_files:
-            raise RuntimeError("MP3 export did not produce a file.")
+        if mp3_files:
+            filename = safe_download_filename(info.get("title") or title_hint)
+            return str(mp3_files[0]), f"{filename}.mp3"
+    except Exception as e:
+        last_error = e
+        logger.info(f"Direct download failed for {video_id}, attempting proxy rotation. Error: {str(e)[:150]}")
 
-        filename = safe_download_filename(info.get("title") or title_hint)
-        return str(mp3_files[0]), f"{filename}.mp3"
-    except Exception:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
+    # 2. Try proxy rotation fallback
+    proxies = get_free_proxies()
+    import random
+    random.shuffle(proxies)
+    
+    for proxy in proxies[:10]:
+        proxy_url = f"http://{proxy}"
+        options = base_options.copy()
+        options["proxy"] = proxy_url
+        try:
+            with YoutubeDL(options) as ydl:
+                info = ydl.extract_info(source_url, download=True)
+            mp3_files = list(FilePath(tmp_dir).glob("*.mp3"))
+            if mp3_files:
+                filename = safe_download_filename(info.get("title") or title_hint)
+                return str(mp3_files[0]), f"{filename}.mp3"
+        except Exception as e:
+            last_error = e
+            logger.info(f"Proxy download failed with {proxy_url}: {str(e)[:100]}")
+
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    raise RuntimeError(f"All download attempts failed. Last error: {str(last_error)}")
 
 def cleanup_download(path: str):
     shutil.rmtree(str(FilePath(path).parent), ignore_errors=True)
@@ -129,26 +163,6 @@ async def download_track_mp3(
     try:
         video_id = sanitize_youtube_id(id)
         filename_hint = safe_download_filename(title)
-
-        # Try Cobalt API first to bypass YouTube bot detection/IP bans on Render
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    "https://api.cobalt.tools/api/json",
-                    headers={"Accept": "application/json", "Content-Type": "application/json"},
-                    json={
-                        "url": f"https://www.youtube.com/watch?v={video_id}",
-                        "downloadMode": "audio",
-                        "audioFormat": "mp3"
-                    }
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("status") != "error" and data.get("url"):
-                        from fastapi.responses import RedirectResponse
-                        return RedirectResponse(data["url"])
-        except Exception as cobalt_err:
-            logger.warning(f"Cobalt download failed, falling back to local extractor: {str(cobalt_err)}")
 
         mp3_path, filename = await asyncio.to_thread(extract_youtube_mp3, video_id, filename_hint)
         return FileResponse(

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { signIn } from "next-auth/react";
-import { Mail, ShieldAlert, ArrowRight, Chrome, Send, Lock, User, AtSign } from "lucide-react";
+import { Mail, ShieldAlert, ArrowRight, Chrome, Send, Lock, User, AtSign, Eye, EyeOff } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText, cleanUsername } from "web/lib/api";
 import BrandLogo from "web/components/BrandLogo";
@@ -15,7 +15,9 @@ export default function AuthSystem() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,9 +25,12 @@ export default function AuthSystem() {
   
   const { login } = useAuthStore();
 
-  const handleSendLoginOtp = async (e: React.FormEvent) => {
+  const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password.trim()) {
+      setError("Please enter both email and password.");
+      return;
+    }
     
     setLoading(true);
     setError(null);
@@ -33,20 +38,17 @@ export default function AuthSystem() {
     
     try {
       const cleanedEmail = cleanText(email, 254).toLowerCase();
-      const response = await fetch(apiUrl("/auth/email"), {
+      const response = await fetch(apiUrl("/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanedEmail }),
+        body: JSON.stringify({ email: cleanedEmail, password }),
       });
       
       const json = await response.json();
-      if (json.success) {
-        setMode("otp");
-        if (json.data.dev_otp) {
-          setDevOtpHint(json.data.dev_otp);
-        }
+      if (json.success && json.data) {
+        login(json.data.token, json.data.user);
       } else {
-        setError(json.error || "Failed to generate authorization code.");
+        setError(json.error || "Invalid email or password.");
       }
     } catch (err) {
       setError("Cannot connect to Strumm Auth API. Please verify the backend is running.");
@@ -57,8 +59,13 @@ export default function AuthSystem() {
 
   const handleSendSignupOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !username.trim() || !displayName.trim()) {
+    if (!email.trim() || !username.trim() || !displayName.trim() || !password.trim()) {
       setError("All fields are required for sign-up.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long.");
       return;
     }
     
@@ -76,7 +83,8 @@ export default function AuthSystem() {
         body: JSON.stringify({
           email: cleanedEmail,
           username: cleanedUsername,
-          displayName: cleanedDisplayName
+          displayName: cleanedDisplayName,
+          password: password
         }),
       });
       
@@ -135,8 +143,8 @@ export default function AuthSystem() {
   };
 
   return (
-    <div className="bg-surface border border-border/60 rounded-xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-[3px] bg-primary box-glow" />
+    <div className="bg-surface/90 backdrop-blur-xl border border-border/40 rounded-2xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-primary to-accent box-glow" />
       
       <div className="flex flex-col items-center text-center mb-6">
         <BrandLogo size="md" priority />
@@ -160,7 +168,7 @@ export default function AuthSystem() {
               <p className="text-[11px] text-muted mt-1 leading-snug">Sign in to access your personal music universe.</p>
             </div>
 
-            <form onSubmit={handleSendLoginOtp} className="space-y-4">
+            <form onSubmit={handlePasswordLogin} className="space-y-4">
               <div>
                 <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
                   Email Address
@@ -178,6 +186,30 @@ export default function AuthSystem() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full bg-background border border-border rounded-lg pl-10 pr-10 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 text-muted hover:text-text transition focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
               {error && (
                 <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">
                   <ShieldAlert className="w-4 h-4 flex-shrink-0" />
@@ -190,7 +222,7 @@ export default function AuthSystem() {
                 disabled={loading}
                 className="w-full py-2.5 bg-text text-background hover:bg-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
               >
-                {loading ? "Aligning..." : "Send Login Code"}
+                {loading ? "Aligning..." : "Log In"}
                 <ArrowRight className="w-4 h-4 text-background" />
               </button>
 
@@ -219,6 +251,7 @@ export default function AuthSystem() {
                   onClick={() => {
                     setMode("signup");
                     setError(null);
+                    setPassword("");
                   }}
                   className="text-primary hover:underline font-semibold cursor-pointer"
                 >
@@ -295,6 +328,30 @@ export default function AuthSystem() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-3 w-4 h-4 text-muted" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full bg-background border border-border rounded-lg pl-10 pr-10 py-2 text-sm text-text focus:outline-none focus:border-primary/50 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2 text-muted hover:text-text transition focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
               {error && (
                 <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-2.5 rounded-lg">
                   <ShieldAlert className="w-4 h-4 flex-shrink-0" />
@@ -307,7 +364,7 @@ export default function AuthSystem() {
                 disabled={loading}
                 className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
               >
-                {loading ? "Configuring..." : "Register Musical Passport"}
+                {loading ? "Configuring..." : "Register & Send OTP"}
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
@@ -319,6 +376,7 @@ export default function AuthSystem() {
                   onClick={() => {
                     setMode("login");
                     setError(null);
+                    setPassword("");
                   }}
                   className="text-primary hover:underline font-semibold cursor-pointer"
                 >
@@ -341,7 +399,7 @@ export default function AuthSystem() {
             <div className="text-center mb-4">
               <h3 className="font-editorial text-xl text-text leading-tight font-bold">Input Passcode</h3>
               <p className="text-[11px] text-muted mt-1 leading-snug">
-                Enter the 6-digit code dispatch to <strong className="text-text">{email}</strong>.
+                Enter the 6-digit code sent to <strong className="text-text">{email}</strong>.
               </p>
             </div>
 

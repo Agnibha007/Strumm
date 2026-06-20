@@ -9,9 +9,15 @@ import SongArtwork from "web/components/SongArtwork";
 import { Search, Play, Heart, Sparkles, Loader2, ListMusic } from "lucide-react";
 import { Song } from "@strumm/types";
 
+import LoginPage from "./login/page";
+
 export default function HomePage() {
   const { token } = useAuthStore();
   const { playSong } = usePlayerStore();
+
+  if (!token) {
+    return <LoginPage />;
+  }
   
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Song[]>([]);

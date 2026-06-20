@@ -7,8 +7,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 from bson import ObjectId
 from app.database import mongodb as db
-from app.services.auth_utils import hash_otp, create_access_token
-from app.services.email_service import send_otp_email
+from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password
+from app.services.email_service import send_otp_email, send_resend_otp_email
 from app.services.security import sanitize_text, sanitize_username
 import httpx
 import logging
@@ -19,10 +19,15 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class EmailLoginRequest(BaseModel):
     email: EmailStr
 
+class EmailPasswordLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
 class EmailSignupRequest(BaseModel):
     email: EmailStr
     username: str
     displayName: str
+    password: str
 
 class OTPVerifyRequest(BaseModel):
     email: EmailStr
@@ -153,7 +158,8 @@ async def send_signup_otp(request: EmailSignupRequest):
         hashed = hash_otp(otp_code)
         expiry = datetime.utcnow() + timedelta(minutes=10) # 10 mins validity
         
-        # Upsert OTP document with metadata (storing username & displayName until OTP verifies)
+        hashed_pass = hash_password(request.password)
+        # Upsert OTP document with metadata (storing username, displayName & password until OTP verifies)
         await database["otps"].update_one(
             {"email": email},
             {
@@ -164,7 +170,8 @@ async def send_signup_otp(request: EmailSignupRequest):
                     "expiry": expiry,
                     "metadata": {
                         "username": username,
-                        "displayName": display_name
+                        "displayName": display_name,
+                        "password": hashed_pass
                     }
                 }
             },
@@ -173,8 +180,8 @@ async def send_signup_otp(request: EmailSignupRequest):
         
         logger.info(f"Generated Signup OTP for {email}")
 
-        # Send actual SMTP email if credentials are set
-        email_sent = await send_otp_email(email, otp_code)
+        # Send actual Resend/SMTP email
+        email_sent = await send_resend_otp_email(email, otp_code)
 
         return {
             "success": True,
@@ -240,6 +247,7 @@ async def verify_otp(request: OTPVerifyRequest):
                 "email": email,
                 "username": metadata["username"],
                 "displayName": metadata["displayName"],
+                "password": metadata["password"],
                 "avatar": None,
                 "providers": ["email"],
                 "theme": "Obsidian",
@@ -375,3 +383,49 @@ async def google_login(request: GoogleLoginRequest):
             "success": False,
             "error": f"OAuth error: {str(e)}"
         }
+
+@router.post("/login")
+async def email_password_login(request: EmailPasswordLoginRequest):
+    try:
+        email = request.email.lower()
+        password = request.password
+        
+        database = db.get_db()
+        user = await database[db.USERS].find_one({"email": email})
+        if not user:
+            return {"success": False, "error": "Invalid email or password."}
+            
+        hashed_password = user.get("password")
+        if not hashed_password:
+            return {"success": False, "error": "This account does not use password login. Try logging in with another method."}
+            
+        if not verify_password(password, hashed_password):
+            return {"success": False, "error": "Invalid email or password."}
+            
+        user_id = str(user["_id"])
+        
+        # Generate JWT session
+        token_payload = {
+            "sub": user_id,
+            "email": email,
+            "username": user.get("username"),
+        }
+        token = create_access_token(token_payload)
+        
+        # Serialize user fields
+        user["id"] = user_id
+        if "_id" in user:
+            del user["_id"]
+        if "createdAt" in user:
+            user["createdAt"] = user["createdAt"].isoformat()
+            
+        return {
+            "success": True,
+            "data": {
+                "token": token,
+                "user": user
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error logging in: {str(e)}")
+        return {"success": False, "error": f"Authentication error: {str(e)}"}

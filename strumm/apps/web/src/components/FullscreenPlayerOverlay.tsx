@@ -251,37 +251,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
         URL.revokeObjectURL(blobUrl);
         succeeded = true;
       } catch (backendErr) {
-        // Fallback directly to Cobalt API from frontend if youtube track
-        if (!directAudioUrl && currentSong.videoId) {
-          const cobaltResp = await fetch("https://api.cobalt.tools/api/json", {
-            method: "POST",
-            headers: {
-              "Accept": "application/json",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              url: `https://www.youtube.com/watch?v=${currentSong.videoId}`,
-              downloadMode: "audio",
-              audioFormat: "mp3"
-            })
-          });
-          if (cobaltResp.ok) {
-            const cobaltData = await cobaltResp.json();
-            if (cobaltData.url) {
-              const link = document.createElement("a");
-              link.href = cobaltData.url;
-              link.download = filename;
-              document.body.appendChild(link);
-              link.click();
-              link.remove();
-              succeeded = true;
-            }
-          }
-        }
-        
-        if (!succeeded) {
-          throw new Error("Download failed. Track might be unavailable.");
-        }
+        throw new Error("Download failed. Track might be unavailable.");
       }
       
       setDownloadState("success");

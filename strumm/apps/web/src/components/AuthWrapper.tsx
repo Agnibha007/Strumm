@@ -37,7 +37,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!loading) {
       const isAuthenticated = !!(user && token);
-      if (!isAuthenticated && pathname !== "/login") {
+      if (!isAuthenticated && pathname !== "/login" && pathname !== "/") {
         const currentSearch = window.location.search;
         router.replace(`/login?redirect=${encodeURIComponent(pathname + currentSearch)}`);
       } else if (isAuthenticated && pathname === "/login") {
@@ -60,7 +60,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   const isAuthenticated = !!(user && token);
 
   if (!isAuthenticated) {
-    if (pathname === "/login") {
+    if (pathname === "/login" || pathname === "/") {
       return <>{children}</>;
     }
     
