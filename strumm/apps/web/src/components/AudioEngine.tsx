@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { apiUrl } from "web/lib/api";
 
 declare global {
   interface Window {
@@ -21,6 +22,7 @@ export default function AudioEngine() {
     setDuration,
     setPlayerRef,
     podcastMode,
+    audioQuality,
   } = usePlayerStore();
 
   const playerInstanceRef = useRef<any>(null);
@@ -178,8 +180,15 @@ export default function AudioEngine() {
       }
       stopProgressTimer();
 
-      const audioUrl = currentSong.metadata.audioUrl;
+      const selectedAudioUrl =
+        currentSong.metadata.audioVariants?.[audioQuality] ||
+        currentSong.metadata.audioVariants?.high ||
+        currentSong.metadata.audioUrl;
+      const audioUrl = currentSong.videoId.startsWith("podcast-")
+        ? apiUrl(`/podcast-audio?url=${encodeURIComponent(selectedAudioUrl || "")}&quality=${encodeURIComponent(audioQuality)}`)
+        : selectedAudioUrl || "";
       const isSrcChanged = htmlAudioRef.current.src !== audioUrl;
+      htmlAudioRef.current.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
       if (isSrcChanged) {
         htmlAudioRef.current.src = audioUrl;
         htmlAudioRef.current.load();
@@ -210,7 +219,7 @@ export default function AudioEngine() {
         },
         setPlaybackRate: (rate: number) => {
           if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
-        }
+        },
       });
     } else {
       // B. YouTube song
@@ -262,10 +271,13 @@ export default function AudioEngine() {
           setPlaybackRate: (rate: number) => {
             if (typeof yt.setPlaybackRate === "function") yt.setPlaybackRate(rate);
           },
+          setPlaybackQuality: (quality: string) => {
+            if (typeof yt.setPlaybackQuality === "function") yt.setPlaybackQuality(quality);
+          },
         });
       }
     }
-  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode]);
+  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality]);
 
   // 4. Watch for play/pause toggle from UI
   useEffect(() => {
@@ -318,6 +330,24 @@ export default function AudioEngine() {
     }
   }, [volume, podcastMode, currentSong?.metadata?.videoAvailable]);
 
+  useEffect(() => {
+    const qualityMap = {
+      "data-saver": "small",
+      balanced: "medium",
+      high: "hd720",
+    } as const;
+
+    if (playerInstanceRef.current && typeof playerInstanceRef.current.setPlaybackQuality === "function") {
+      try {
+        playerInstanceRef.current.setPlaybackQuality(qualityMap[audioQuality]);
+      } catch (e) {}
+    }
+
+    if (htmlAudioRef.current) {
+      htmlAudioRef.current.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
+    }
+  }, [audioQuality]);
+
   const initPlayer = () => {
     if (!window.YT || !window.YT.Player) return;
 
@@ -346,7 +376,18 @@ export default function AudioEngine() {
               seekTo: (sec: number) => ytPlayer.seekTo(sec, true),
               setVolume: (vol: number) => ytPlayer.setVolume(vol),
               setPlaybackRate: (rate: number) => ytPlayer.setPlaybackRate(rate),
+              setPlaybackQuality: (quality: string) => {
+                if (typeof ytPlayer.setPlaybackQuality === "function") ytPlayer.setPlaybackQuality(quality);
+              },
             });
+            if (typeof ytPlayer.setPlaybackQuality === "function") {
+              const qualityMap = {
+                "data-saver": "small",
+                balanced: "medium",
+                high: "hd720",
+              } as const;
+              ytPlayer.setPlaybackQuality(qualityMap[audioQuality]);
+            }
             ytPlayer.setVolume(Math.round(volume * 100));
             if (currentSong?.videoId) {
               if (isPlaying) {

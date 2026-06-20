@@ -85,7 +85,7 @@ async def run_yuzone_migration(json_dir: str) -> dict:
         migrated_users = []
         for u in users_data:
             user_id = parse_bson_id(u.get("_id"))
-            email = u.get("email", f"user_{user_id}@strumm.music")
+            email = u.get("email", f"user_{user_id}@strumm.pixelneststudios.tech")
             name = u.get("name", "Strummer")
             theme = convert_theme(u.get("theme"))
             
@@ -99,7 +99,7 @@ async def run_yuzone_migration(json_dir: str) -> dict:
                 "theme": theme,
                 "createdAt": parse_bson_date(u.get("createdAt")),
                 "settings": {
-                    "audioQuality": "high",
+                    "audioQuality": "balanced",
                     "animations": True,
                     "privacy": "public",
                     "theme": theme

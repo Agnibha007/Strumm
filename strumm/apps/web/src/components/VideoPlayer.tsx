@@ -21,6 +21,7 @@ export default function VideoPlayer({ onVideoError }: VideoPlayerProps) {
     setPlayerRef,
     handleTrackEnded,
     setPodcastMode,
+    audioQuality,
   } = usePlayerStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -46,6 +47,7 @@ export default function VideoPlayer({ onVideoError }: VideoPlayerProps) {
 
     video.volume = volume;
     video.playbackRate = playbackRate;
+    video.preload = audioQuality === "data-saver" ? "metadata" : "auto";
 
     if (isPlaying) {
       video.play().catch((err) => {
@@ -54,7 +56,7 @@ export default function VideoPlayer({ onVideoError }: VideoPlayerProps) {
     } else {
       video.pause();
     }
-  }, [videoUrl]);
+  }, [videoUrl, audioQuality, isPlaying, playbackRate, volume]);
 
   // Sync isPlaying with HTML5 video element
   useEffect(() => {
@@ -178,6 +180,7 @@ export default function VideoPlayer({ onVideoError }: VideoPlayerProps) {
         ref={videoRef}
         src={videoUrl || undefined}
         className="w-full h-full object-contain"
+        preload={audioQuality === "data-saver" ? "metadata" : "auto"}
         playsInline
         controls
         onPlay={handlePlay}

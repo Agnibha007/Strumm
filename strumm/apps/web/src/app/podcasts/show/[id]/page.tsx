@@ -23,21 +23,25 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
   const [following, setFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [followError, setFollowError] = useState<string | null>(null);
 
   const loadShowDetails = async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}`));
-      const json = await response.json();
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(json?.error || "Failed to load show details.");
+      }
       if (json.success && json.data) {
         setShow(json.data.show);
         setEpisodes(json.data.episodes || []);
       } else {
-        setError(json.error || "Failed to load show details.");
+        setError(json?.error || "Failed to load show details.");
       }
-    } catch (e) {
-      setError("Unable to connect to backend server.");
+    } catch (e: any) {
+      setError(e?.message || "Unable to connect to backend server.");
     } finally {
       setLoading(false);
     }
@@ -50,18 +54,23 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
   }, [id]);
 
   const handleFollowShow = async () => {
+    setFollowError(null);
     try {
       const response = await fetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}/follow`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
-      const json = await response.json();
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(json?.error || "Failed to update follow status.");
+      }
       if (json.success) {
         setFollowing(json.data.following);
-        alert(json.data.message);
+      } else {
+        setFollowError(json?.error || "Failed to update follow status.");
       }
-    } catch (e) {
-      alert("Failed to toggle follow status.");
+    } catch (e: any) {
+      setFollowError(e?.message || "Failed to toggle follow status.");
     }
   };
 
@@ -76,6 +85,7 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
       metadata: {
         album: show?.title || "Podcasts",
         audioUrl: episode.audioUrl,
+        audioVariants: episode.audioVariants,
         videoAvailable: episode.videoAvailable,
         videoUrl: episode.videoUrl,
         mediaType: episode.mediaType,
@@ -186,6 +196,12 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
           )}
         </button>
       </div>
+
+      {followError && (
+        <div className="text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg leading-relaxed">
+          {followError}
+        </div>
+      )}
 
       {/* Episode list */}
       <div className="space-y-4">

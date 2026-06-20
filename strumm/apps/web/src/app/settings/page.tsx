@@ -2,12 +2,35 @@
 
 import { useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
+import { usePlayerStore } from "web/store/usePlayerStore";
 import ThemeSwitcher from "web/components/ThemeSwitcher";
-import { User, Image, Save, AlertCircle, CheckCircle2, Upload } from "lucide-react";
+import { User, Image, Save, AlertCircle, CheckCircle2, Upload, Gauge, Wifi, WifiLow, Zap } from "lucide-react";
 import { apiUrl, cleanText } from "web/lib/api";
+
+const QUALITY_OPTIONS = [
+  {
+    id: "data-saver",
+    label: "Data Saver",
+    detail: "Lower video quality and lighter media preload.",
+    icon: WifiLow,
+  },
+  {
+    id: "balanced",
+    label: "Balanced",
+    detail: "Default quality for everyday listening.",
+    icon: Gauge,
+  },
+  {
+    id: "high",
+    label: "High",
+    detail: "Prefer higher YouTube video quality when available.",
+    icon: Zap,
+  },
+] as const;
 
 export default function SettingsPage() {
   const { user, token, setUser } = useAuthStore();
+  const { audioQuality, setAudioQuality } = usePlayerStore();
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [avatar, setAvatar] = useState(user?.avatar || "");
   const [loading, setLoading] = useState(false);
@@ -180,8 +203,46 @@ export default function SettingsPage() {
         </div>
 
         {/* Right: Theme Switcher component */}
-        <div className="lg:col-span-6 bg-surface/30 border border-border/40 p-6 rounded-xl">
-          <ThemeSwitcher />
+        <div className="lg:col-span-6 space-y-6">
+          <div className="bg-surface/30 border border-border/40 p-6 rounded-xl space-y-5">
+            <div>
+              <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
+                <Wifi className="w-4 h-4 text-primary" />
+                Audio Quality
+              </h3>
+            </div>
+
+            <div className="grid gap-3">
+              {QUALITY_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const selected = audioQuality === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setAudioQuality(option.id)}
+                    className={`w-full text-left border rounded-lg p-4 transition cursor-pointer flex items-start gap-3 ${
+                      selected
+                        ? "border-primary bg-primary/10 text-text"
+                        : "border-border/60 bg-background/40 hover:border-border text-muted hover:text-text"
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${selected ? "text-primary" : "text-muted"}`} />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">{option.label}</span>
+                      <span className="block text-[11px] leading-relaxed mt-1 text-muted">
+                        {option.detail}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-surface/30 border border-border/40 p-6 rounded-xl">
+            <ThemeSwitcher />
+          </div>
         </div>
       </div>
     </div>

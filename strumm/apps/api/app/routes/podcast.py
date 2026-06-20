@@ -94,22 +94,35 @@ async def import_podcast_rss(
             video_url = ""
             video_available = False
             media_type = "audio"
+            audio_variants = {}
             
             if "enclosures" in entry:
                 for enc in entry.enclosures:
                     enc_type = enc.get("type", "")
+                    enc_url = enc.get("href", "")
                     if enc_type.startswith("audio/"):
-                        audio_url = enc.get("href", "")
-                        break
+                        if not audio_url:
+                            audio_url = enc_url
+                        if enc_url:
+                            bitrate = str(enc.get("bitrate") or enc.get("bit_rate") or "")
+                            variant_key = "high"
+                            if bitrate.isdigit():
+                                parsed_bitrate = int(bitrate)
+                                if parsed_bitrate <= 80:
+                                    variant_key = "data-saver"
+                                elif parsed_bitrate <= 160:
+                                    variant_key = "balanced"
+                            audio_variants[variant_key] = enc_url
                     elif enc_type.startswith("video/"):
-                        video_url = enc.get("href", "")
+                        video_url = enc_url
                         video_available = True
                         media_type = "video"
-                        audio_url = video_url # fallback for audio players
-                        break
+                        if not audio_url:
+                            audio_url = video_url # fallback for audio players
                         
             if not audio_url:
                 continue
+            audio_variants.setdefault("high", audio_url)
                 
             # Parse duration
             itunes_dur = entry.get("itunes_duration", "")
@@ -133,6 +146,7 @@ async def import_podcast_rss(
                 "showId": show_id,
                 "title": sanitize_text(entry.get("title", "Untitled Episode"), max_length=240),
                 "audioUrl": audio_url,
+                "audioVariants": audio_variants,
                 "duration": duration,
                 "description": sanitize_text(entry.get("description", entry.get("summary", "")), max_length=5000),
                 "publishedAt": datetime.utcnow(), # fallback
@@ -237,6 +251,7 @@ async def get_show_details(id: str = Path(...)):
             ep["videoAvailable"] = ep.get("videoAvailable", False)
             ep["videoUrl"] = ep.get("videoUrl", None)
             ep["mediaType"] = ep.get("mediaType", "audio")
+            ep["audioVariants"] = ep.get("audioVariants", {"high": ep.get("audioUrl", "")})
             episodes.append(ep)
             
         return {
@@ -314,6 +329,7 @@ async def get_episode_details(id: str = Path(...)):
             ep["videoAvailable"] = ep.get("videoAvailable", False)
             ep["videoUrl"] = ep.get("videoUrl", None)
             ep["mediaType"] = ep.get("mediaType", "audio")
+            ep["audioVariants"] = ep.get("audioVariants", {"high": ep.get("audioUrl", "")})
             
             show = await database[db.PODCAST_SHOWS].find_one({"_id": parse_object_id(ep["showId"])})
             if show:

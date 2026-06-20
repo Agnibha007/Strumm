@@ -14,6 +14,7 @@ export default function PodcastHomePage() {
   const [shows, setShows] = useState<PodcastShow[]>([]);
   const [followedShows, setFollowedShows] = useState<PodcastShow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [podcastQuery, setPodcastQuery] = useState("");
   
   // RSS Import states
@@ -24,6 +25,7 @@ export default function PodcastHomePage() {
 
   const loadPodcasts = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // 1. Fetch available shows
       const cleanedQuery = cleanText(podcastQuery, 120);
@@ -31,22 +33,33 @@ export default function PodcastHomePage() {
         ? `/podcasts/shows?query=${encodeURIComponent(cleanedQuery)}`
         : "/podcasts/shows";
       const showsResp = await fetch(apiUrl(showsPath));
+      if (!showsResp.ok) {
+        throw new Error("Podcast catalog request failed.");
+      }
       const showsJson = await showsResp.json();
       if (showsJson.success && showsJson.data) {
         setShows(showsJson.data);
+      } else {
+        setShows([]);
       }
 
       // 2. Fetch followed shows
-      const libraryResp = await fetch(apiUrl("/library"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const libJson = await libraryResp.json();
-      if (libJson.success && libJson.data && showsJson.data) {
-        // Filter from shows list or mock followed shows for demo.
-        setFollowedShows(showsJson.data.slice(0, 2));
+      if (token) {
+        const libraryResp = await fetch(apiUrl("/library"), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const libJson = await libraryResp.json().catch(() => null);
+        if (libraryResp.ok && libJson?.success && showsJson.data) {
+          // Backend does not expose followed podcast IDs yet; keep this empty instead of showing fake follows.
+          setFollowedShows([]);
+        }
+      } else {
+        setFollowedShows([]);
       }
-    } catch (e) {
-      console.warn("Unable to fetch podcasts list.");
+    } catch (e: any) {
+      setShows([]);
+      setFollowedShows([]);
+      setLoadError(e?.message || "Unable to fetch podcasts list.");
     } finally {
       setLoading(false);
     }
@@ -76,16 +89,19 @@ export default function PodcastHomePage() {
         },
         body: JSON.stringify({ rss_url: cleanText(rssUrl, 1000) })
       });
-      const json = await response.json();
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(json?.error || "RSS import request failed.");
+      }
       if (json.success && json.data) {
         setImportSuccess(json.message || "Podcast RSS imported successfully.");
         setRssUrl("");
         loadPodcasts(); // reload directory
       } else {
-        setImportError(json.error || "Failed to parse RSS feed.");
+        setImportError(json?.error || "Failed to parse RSS feed.");
       }
-    } catch (err) {
-      setImportError("Unable to connect to backend server.");
+    } catch (err: any) {
+      setImportError(err?.message || "Unable to connect to backend server.");
     } finally {
       setImporting(false);
     }
@@ -162,6 +178,10 @@ export default function PodcastHomePage() {
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
                 <span>{podcastQuery.trim() ? "Searching podcast catalog..." : "Reading podcast catalog..."}</span>
               </div>
+            ) : loadError ? (
+              <p className="text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg leading-relaxed">
+                {loadError}
+              </p>
             ) : shows.length === 0 ? (
               <p className="text-xs text-muted italic py-6">
                 {podcastQuery.trim() ? "No podcasts matched that search." : "Ecosystem catalog is empty. Paste an RSS feed to start streaming."}

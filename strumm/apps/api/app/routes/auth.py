@@ -253,7 +253,7 @@ async def verify_otp(request: OTPVerifyRequest):
                 "theme": "Obsidian",
                 "createdAt": datetime.utcnow(),
                 "settings": {
-                    "audioQuality": "high",
+                    "audioQuality": "balanced",
                     "animations": True,
                     "privacy": "public",
                     "theme": "Obsidian"
@@ -328,7 +328,7 @@ async def google_login(request: GoogleLoginRequest):
                 "theme": "Obsidian",
                 "createdAt": datetime.utcnow(),
                 "settings": {
-                    "audioQuality": "high",
+                    "audioQuality": "balanced",
                     "animations": True,
                     "privacy": "public",
                     "theme": "Obsidian"

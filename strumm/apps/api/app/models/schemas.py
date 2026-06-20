@@ -13,6 +13,7 @@ class SongMetadata(BaseModel):
     lyricsUrl: Optional[str] = None
     syncedLyrics: Optional[str] = None
     audioUrl: Optional[str] = None
+    audioVariants: Optional[Dict[str, str]] = None
 
 class SongSchema(BaseModel):
     model_config = {"extra": "allow"}
@@ -51,7 +52,7 @@ class SongSchema(BaseModel):
 
 # --- User & Settings ---
 class UserSettingsSchema(BaseModel):
-    audioQuality: str = "medium"
+    audioQuality: str = "balanced"
     animations: bool = True
     privacy: str = "public"
     theme: str = "Obsidian"
@@ -60,7 +61,8 @@ class UserSettingsSchema(BaseModel):
     @field_validator("audioQuality")
     @classmethod
     def validate_audio_quality(cls, value: str) -> str:
-        return sanitize_enum(value, {"low", "medium", "high"}, "medium")
+        normalized = {"low": "data-saver", "medium": "balanced"}.get(value, value)
+        return sanitize_enum(normalized, {"data-saver", "balanced", "high"}, "balanced")
 
     @field_validator("privacy")
     @classmethod
@@ -193,6 +195,7 @@ class PodcastEpisodeSchema(BaseModel):
     showId: str
     title: str
     audioUrl: str
+    audioVariants: Dict[str, str] = {}
     duration: int
     description: str
     publishedAt: Optional[datetime] = None

@@ -1,7 +1,7 @@
 export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora';
 
 export interface UserSettings {
-  audioQuality: 'low' | 'medium' | 'high';
+  audioQuality: 'data-saver' | 'balanced' | 'high';
   animations: boolean;
   privacy: 'public' | 'private';
   theme: ThemeType;
@@ -36,6 +36,7 @@ export interface SongMetadata {
   lyricsUrl?: string;
   syncedLyrics?: string;
   audioUrl?: string;
+  audioVariants?: Partial<Record<'data-saver' | 'balanced' | 'high', string>>;
   videoAvailable?: boolean;
   videoUrl?: string | null;
   mediaType?: "audio" | "video";
@@ -108,6 +109,7 @@ export interface PodcastEpisode {
   showId: string;
   title: string;
   audioUrl: string;
+  audioVariants?: Partial<Record<'data-saver' | 'balanced' | 'high', string>>;
   duration: number; // in seconds
   description: string;
   publishedAt?: string;
@@ -115,4 +117,3 @@ export interface PodcastEpisode {
   videoUrl?: string | null;
   mediaType?: "audio" | "video";
 }
-

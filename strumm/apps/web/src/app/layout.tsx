@@ -24,7 +24,17 @@ export const metadata: Metadata = {
     template: "%s | Strumm",
   },
   description: "Strumm is a premium, handcrafted music ecosystem. Where your music lives, custom playlists, dynamic theme engine, and smart listening stats.",
-  metadataBase: new URL("https://strumm.music"),
+  metadataBase: new URL("https://strumm.pixelneststudios.tech"),
+  applicationName: "Strumm",
+  manifest: "/manifest.webmanifest",
+  alternates: {
+    canonical: "/",
+  },
+  keywords: ["Strumm", "music player", "podcasts", "playlists", "lyrics", "music streaming"],
+  authors: [{ name: "Strumm" }],
+  creator: "Strumm",
+  publisher: "Strumm",
+  category: "music",
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -35,7 +45,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Strumm - Where your music lives.",
     description: "Experience music in a premium, editorial design. High-fidelity audio, listening history, custom themes, and smart music flow.",
-    url: "https://strumm.music",
+    url: "https://strumm.pixelneststudios.tech",
     siteName: "Strumm",
     images: [
       {
@@ -57,6 +67,21 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Strumm",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
   },
 };
 

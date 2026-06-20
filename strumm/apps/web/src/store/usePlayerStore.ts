@@ -16,6 +16,7 @@ interface PlayerState {
   reducedAnimation: boolean;
   playbackRate: number;
   podcastMode: "audio" | "video";
+  audioQuality: "data-saver" | "balanced" | "high";
   
   // Actions
   setCurrentSong: (song: Song | null) => void;
@@ -28,6 +29,7 @@ interface PlayerState {
   prev: () => void;
   setVolume: (volume: number) => void;
   setPlaybackRate: (rate: number) => void;
+  setAudioQuality: (quality: "data-saver" | "balanced" | "high") => void;
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
   setShuffle: (shuffle: boolean) => void;
@@ -44,6 +46,7 @@ interface PlayerState {
     seekTo: (seconds: number) => void;
     setVolume: (volume: number) => void;
     setPlaybackRate: (rate: number) => void;
+    setPlaybackQuality?: (quality: string) => void;
   } | null;
   setPlayerRef: (ref: any) => void;
   updateMediaSession: (song: Song) => void;
@@ -64,6 +67,7 @@ export const usePlayerStore = create<PlayerState>()(
       reducedAnimation: false,
       playbackRate: 1.0,
       podcastMode: "audio",
+      audioQuality: "balanced",
       playerRef: null,
 
       setCurrentSong: (song) => {
@@ -189,6 +193,19 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
 
+      setAudioQuality: (audioQuality) => {
+        set({ audioQuality });
+        const qualityMap = {
+          "data-saver": "small",
+          balanced: "medium",
+          high: "hd720",
+        } as const;
+        const { playerRef } = get();
+        if (playerRef && typeof playerRef.setPlaybackQuality === "function") {
+          playerRef.setPlaybackQuality(qualityMap[audioQuality]);
+        }
+      },
+
       setCurrentTime: (currentTime) => set({ currentTime }),
       
       setDuration: (duration) => set({ duration }),
@@ -262,6 +279,7 @@ export const usePlayerStore = create<PlayerState>()(
           isShuffle: state.isShuffle ?? false,
           repeatMode: state.repeatMode ?? "none",
           playbackRate: state.playbackRate ?? 1,
+          audioQuality: state.audioQuality ?? get().audioQuality,
         });
         if (state.currentSong) {
           get().updateMediaSession(state.currentSong);
@@ -277,6 +295,14 @@ export const usePlayerStore = create<PlayerState>()(
           }
           if (typeof playerRef.setPlaybackRate === "function") {
             playerRef.setPlaybackRate(get().playbackRate);
+          }
+          if (typeof playerRef.setPlaybackQuality === "function") {
+            const qualityMap = {
+              "data-saver": "small",
+              balanced: "medium",
+              high: "hd720",
+            } as const;
+            playerRef.setPlaybackQuality(qualityMap[get().audioQuality]);
           }
         }
       },
@@ -335,6 +361,7 @@ export const usePlayerStore = create<PlayerState>()(
         reducedAnimation: state.reducedAnimation,
         playbackRate: state.playbackRate,
         podcastMode: state.podcastMode,
+        audioQuality: state.audioQuality,
       }),
     }
   )

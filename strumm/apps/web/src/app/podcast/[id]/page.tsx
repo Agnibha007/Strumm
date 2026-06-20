@@ -22,9 +22,12 @@ export default function PodcastPage({ params }: PodcastPageProps) {
     const loadPodcastEpisode = async () => {
       try {
         const response = await fetch(apiUrl(`/podcasts/episode/${id}`));
-        const json = await response.json();
+        const json = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(json?.error || "Podcast episode request failed.");
+        }
         
-        if (json.success && json.data) {
+        if (json?.success && json.data) {
           const episode = json.data.episode as PodcastEpisode;
           const show = json.data.show as PodcastShow;
           
@@ -37,6 +40,7 @@ export default function PodcastPage({ params }: PodcastPageProps) {
             metadata: {
               album: show?.title || "Podcasts",
               audioUrl: episode.audioUrl,
+              audioVariants: episode.audioVariants,
               videoAvailable: episode.videoAvailable,
               videoUrl: episode.videoUrl,
               mediaType: episode.mediaType,
@@ -49,10 +53,10 @@ export default function PodcastPage({ params }: PodcastPageProps) {
           playSong(songRepresentation, [songRepresentation]);
           router.push("/");
         } else {
-          setError(json.error || "Podcast episode not found.");
+          setError(json?.error || "Podcast episode not found.");
         }
-      } catch (err) {
-        setError("Failed to resolve podcast episode.");
+      } catch (err: any) {
+        setError(err?.message || "Failed to resolve podcast episode.");
       } finally {
         setLoading(false);
       }

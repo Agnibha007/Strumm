@@ -103,6 +103,9 @@ def map_episode(episode: Dict[str, Any], show_id: str) -> Optional[Dict[str, Any
         "showId": show_id,
         "title": sanitize_text(episode.get("title") or "Untitled Episode", max_length=240),
         "audioUrl": sanitize_text(audio_url, max_length=1200),
+        "audioVariants": {
+            "high": sanitize_text(audio_url, max_length=1200),
+        },
         "duration": sanitize_positive_int(episode.get("duration") or 1800, minimum=0, maximum=86400),
         "description": sanitize_multiline_text(
             episode.get("description") or episode.get("summary") or "",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { useAuthStore } from "web/store/useAuthStore";
@@ -31,6 +31,7 @@ export default function EditorialPlayer() {
     setShuffle,
     setRepeatMode,
     currentIndex,
+    podcastMode,
   } = usePlayerStore();
   const { token, fetchProfile } = useAuthStore();
 
@@ -41,6 +42,19 @@ export default function EditorialPlayer() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFullscreenMenu, setShowFullscreenMenu] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const lastAutoOpenedVideoId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const shouldOpenPodcastVideo =
+      currentSong?.videoId?.startsWith("podcast-") &&
+      currentSong.metadata?.videoAvailable &&
+      podcastMode === "video";
+
+    if (shouldOpenPodcastVideo && currentSong && lastAutoOpenedVideoId.current !== currentSong.videoId) {
+      lastAutoOpenedVideoId.current = currentSong.videoId;
+      setShowFullscreenMenu(true);
+    }
+  }, [currentSong?.videoId, currentSong?.metadata?.videoAvailable, podcastMode]);
 
   useEffect(() => {
     if (!currentSong?.videoId || !token) return;

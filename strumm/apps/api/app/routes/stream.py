@@ -1,5 +1,6 @@
 import asyncio
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path as FilePath
 
@@ -8,7 +9,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from yt_dlp import YoutubeDL
 from app.database import mongodb as db
-from app.services.security import assert_public_http_url, sanitize_youtube_id
+from app.services.security import assert_public_http_url, sanitize_enum, sanitize_youtube_id
 import logging
 import httpx
 
@@ -90,6 +91,69 @@ def extract_youtube_mp3(video_id: str, title_hint: str) -> tuple[str, str]:
 def cleanup_download(path: str):
     shutil.rmtree(str(FilePath(path).parent), ignore_errors=True)
 
+QUALITY_BITRATES = {
+    "data-saver": "64k",
+    "balanced": "128k",
+}
+
+async def drain_stream(stream):
+    if not stream:
+        return
+    while True:
+        chunk = await stream.read(1024)
+        if not chunk:
+            break
+
+async def stream_original_audio(safe_url: str):
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "Strumm/1.0"},
+        follow_redirects=True,
+        timeout=30.0,
+    ) as client:
+        async with client.stream("GET", safe_url) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes(1024 * 64):
+                yield chunk
+
+async def stream_transcoded_audio(safe_url: str, bitrate: str):
+    if not shutil.which("ffmpeg"):
+        raise HTTPException(status_code=503, detail="Audio transcoding is not available on this server.")
+
+    process = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-headers",
+        "User-Agent: Strumm/1.0\r\n",
+        "-i",
+        safe_url,
+        "-vn",
+        "-codec:a",
+        "libmp3lame",
+        "-b:a",
+        bitrate,
+        "-f",
+        "mp3",
+        "pipe:1",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stderr_task = asyncio.create_task(drain_stream(process.stderr))
+
+    try:
+        assert process.stdout is not None
+        while True:
+            chunk = await process.stdout.read(1024 * 64)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        await stderr_task
+
 @router.get("/resolve/{id}")
 async def resolve_track(
     id: str = Path(..., description="The YouTube videoId to resolve")
@@ -154,6 +218,33 @@ async def resolve_track(
             "success": False,
             "error": f"Failed to resolve track metadata: {str(e)}"
         }
+
+@router.get("/podcast-audio")
+async def stream_podcast_audio(
+    url: str = Query(..., max_length=1500),
+    quality: str = Query("balanced", max_length=20),
+):
+    try:
+        safe_url = assert_public_http_url(url)
+        cleaned_quality = sanitize_enum(quality, {"data-saver", "balanced", "high"}, "balanced")
+
+        if cleaned_quality == "high":
+            return StreamingResponse(
+                stream_original_audio(safe_url),
+                media_type="audio/mpeg",
+                headers={"Cache-Control": "private, max-age=300"},
+            )
+
+        return StreamingResponse(
+            stream_transcoded_audio(safe_url, QUALITY_BITRATES[cleaned_quality]),
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "no-store"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Podcast audio stream failed: {str(e)}")
+        raise HTTPException(status_code=502, detail="Unable to stream podcast audio.")
 
 @router.get("/download/{id}")
 async def download_track_mp3(
