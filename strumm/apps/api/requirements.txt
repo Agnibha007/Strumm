@@ -11,5 +11,3 @@ cryptography>=42.0.0
 email-validator>=2.0.0
 ytmusicapi>=1.7.0
 yt-dlp>=2025.1.15
-spotdl>=4.2.4
-
