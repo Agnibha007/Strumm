@@ -45,10 +45,16 @@ class SongSchema(BaseModel):
     def clean_thumbnail(cls, value: str) -> str:
         return sanitize_text(value, max_length=500)
 
-    @field_validator("duration")
+    @field_validator("duration", mode="before")
     @classmethod
-    def validate_duration(cls, value: int) -> int:
-        return sanitize_positive_int(value, minimum=0, maximum=86400)
+    def validate_duration(cls, value: Any) -> int:
+        if value is None:
+            return 0
+        try:
+            val = int(round(float(value)))
+        except (ValueError, TypeError):
+            val = 0
+        return sanitize_positive_int(val, minimum=0, maximum=86400)
 
 # --- User & Settings ---
 class UserSettingsSchema(BaseModel):

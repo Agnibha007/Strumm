@@ -121,7 +121,7 @@ export default function AudioEngine() {
 
     if (!window.YT) {
       const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
+      tag.src = "https://www.youtube-nocookie.com/iframe_api";
       document.head.appendChild(tag);
 
       window.onYouTubeIframeAPIReady = () => {
@@ -352,6 +352,7 @@ export default function AudioEngine() {
     if (!window.YT || !window.YT.Player) return;
 
     playerInstanceRef.current = new window.YT.Player("strumm-player-iframe", {
+      host: "https://www.youtube-nocookie.com",
       height: "250",
       width: "250",
       videoId: currentSong?.metadata?.audioUrl ? "" : (currentSong?.videoId || ""),
