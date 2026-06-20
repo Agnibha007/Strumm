@@ -96,6 +96,18 @@ export default function AudioEngine() {
     }
   }, [currentSong]);
 
+  // Dynamically update document title based on active track and playback state
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (currentSong) {
+        const prefix = isPlaying ? "▶ " : "";
+        document.title = `${prefix}${currentSong.title} - ${currentSong.artist} | Strumm`;
+      } else {
+        document.title = "Strumm - Where your music lives.";
+      }
+    }
+  }, [currentSong, isPlaying]);
+
   // 2. Load YouTube API
   useEffect(() => {
     // Manually create the player target element outside of React Virtual DOM
