@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import ThemeSwitcher from "web/components/ThemeSwitcher";
-import { User, Image, Save, AlertCircle, CheckCircle2 } from "lucide-react";
+import { User, Image, Save, AlertCircle, CheckCircle2, Upload } from "lucide-react";
 import { apiUrl, cleanText } from "web/lib/api";
 
 export default function SettingsPage() {
@@ -13,6 +13,25 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 1.5 * 1024 * 1024) {
+      setError("File size must be less than 1.5MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        setAvatar(reader.result);
+        setError(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +48,7 @@ export default function SettingsPage() {
         },
         body: JSON.stringify({
           displayName: cleanText(displayName, 120),
-          avatar: cleanText(avatar, 500)
+          avatar: avatar.startsWith("data:image/") ? avatar : cleanText(avatar, 1500)
         })
       });
 
@@ -90,18 +109,48 @@ export default function SettingsPage() {
 
             <div>
               <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
-                Avatar Photo Link
+                Profile Picture (Link or Upload)
               </label>
-              <div className="relative">
-                <Image className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
-                <input
-                  type="url"
-                  value={avatar}
-                  onChange={(e) => setAvatar(e.target.value)}
-                  placeholder="https://example.com/avatar.jpg"
-                  className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition text-xs font-mono"
-                />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-grow">
+                  <Image className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
+                  <input
+                    type="text"
+                    value={avatar.startsWith("data:image/") ? "[Uploaded Base64 Image]" : avatar}
+                    onChange={(e) => {
+                      if (!e.target.value.startsWith("[Uploaded")) {
+                        setAvatar(e.target.value);
+                      }
+                    }}
+                    placeholder="https://example.com/avatar.jpg"
+                    className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition text-xs font-mono"
+                  />
+                </div>
+                <div className="relative flex-shrink-0">
+                  <label className="py-2.5 px-4 bg-surface-elevated hover:bg-surface border border-border/80 text-text text-xs rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none">
+                    <Upload className="w-3.5 h-3.5 text-primary" />
+                    Upload Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
+              {avatar.startsWith("data:image/") && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img src={avatar} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-primary shadow" />
+                  <button
+                    type="button"
+                    onClick={() => setAvatar("")}
+                    className="text-[10px] text-primary hover:underline font-semibold"
+                  >
+                    Remove uploaded image
+                  </button>
+                </div>
+              )}
             </div>
 
             {error && (

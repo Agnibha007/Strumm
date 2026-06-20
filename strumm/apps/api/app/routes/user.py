@@ -37,7 +37,9 @@ async def update_profile(
                 return {"success": False, "error": "Display name cannot be empty."}
             update_data["displayName"] = cleaned_display_name
         if avatar is not None:
-            update_data["avatar"] = sanitize_text(avatar, max_length=500)
+            is_data_uri = avatar.startswith("data:image/")
+            max_len = 2_500_000 if is_data_uri else 1500
+            update_data["avatar"] = sanitize_text(avatar, max_length=max_len)
         if theme is not None:
             update_data["theme"] = sanitize_text(theme, max_length=80)
             
