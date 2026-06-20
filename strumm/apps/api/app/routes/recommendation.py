@@ -42,7 +42,7 @@ async def get_curated_mix_from_groq(mood: str, user_likes: List[dict], user_hist
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama-3-8b-8192",
+                    "model": "llama-3.1-8b-instant",
                     "messages": [
                         {"role": "user", "content": prompt}
                     ],
@@ -302,7 +302,7 @@ async def explore_chat(
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama-3-8b-8192",
+                    "model": "llama-3.1-8b-instant",
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
