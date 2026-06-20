@@ -113,21 +113,35 @@ export default function AudioEngine() {
 
   // 2. Load YouTube API
   useEffect(() => {
+    console.log("AudioEngine: Mounting & Loading YouTube Iframe API...");
     // Manually create the player target element outside of React Virtual DOM
     // to prevent React unmount "removeChild" mismatch errors.
     const playerDiv = document.createElement("div");
     playerDiv.id = "strumm-player-iframe";
     containerRef.current?.appendChild(playerDiv);
 
-    if (!window.YT) {
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube-nocookie.com/iframe_api";
-      document.head.appendChild(tag);
-
+    if (!window.YT || !window.YT.Player) {
+      console.log("AudioEngine: window.YT or window.YT.Player not found, setting up script...");
       window.onYouTubeIframeAPIReady = () => {
+        console.log("AudioEngine: onYouTubeIframeAPIReady callback triggered!");
         initPlayer();
       };
+
+      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(tag);
+        console.log("AudioEngine: script element appended to head.");
+      } else {
+        console.log("AudioEngine: script element already exists in head.");
+        // If script exists but YT isn't loaded yet, window.onYouTubeIframeAPIReady will handle it.
+        // If YT is already loaded, initialize directly.
+        if (window.YT && window.YT.Player) {
+          initPlayer();
+        }
+      }
     } else {
+      console.log("AudioEngine: window.YT already exists, initializing player directly...");
       initPlayer();
     }
 
@@ -231,13 +245,20 @@ export default function AudioEngine() {
       if (playerInstanceRef.current && currentSong?.videoId) {
         const activeVideoId = currentSong.videoId;
         if (currentVideoIdRef.current !== activeVideoId) {
+          console.log("AudioEngine: Video ID changed from", currentVideoIdRef.current, "to", activeVideoId);
           currentVideoIdRef.current = activeVideoId;
           if (typeof playerInstanceRef.current.loadVideoById === "function") {
-            playerInstanceRef.current.loadVideoById({
-              videoId: activeVideoId,
-              startSeconds: 0,
-            });
-            setPlaying(true);
+            try {
+              playerInstanceRef.current.loadVideoById({
+                videoId: activeVideoId,
+                startSeconds: 0,
+              });
+              setPlaying(true);
+            } catch (e) {
+              console.error("AudioEngine: loadVideoById exception:", e);
+            }
+          } else {
+            console.warn("AudioEngine: player loadVideoById not available yet, queuing up next tick");
           }
         } else {
           if (isPlaying) {
@@ -349,86 +370,97 @@ export default function AudioEngine() {
   }, [audioQuality]);
 
   const initPlayer = () => {
-    if (!window.YT || !window.YT.Player) return;
+    console.log("AudioEngine: initPlayer called. currentSong videoId:", currentSong?.videoId);
+    if (!window.YT || !window.YT.Player) {
+      console.error("AudioEngine: initPlayer failed because window.YT or window.YT.Player is undefined.");
+      return;
+    }
 
-    playerInstanceRef.current = new window.YT.Player("strumm-player-iframe", {
-      host: "https://www.youtube-nocookie.com",
-      height: "250",
-      width: "250",
-      videoId: currentSong?.metadata?.audioUrl ? "" : (currentSong?.videoId || ""),
-      playerVars: {
-        autoplay: isPlaying && !currentSong?.metadata?.audioUrl ? 1 : 0,
-        controls: 0,
-        disablekb: 1,
-        fs: 0,
-        rel: 0,
-        showinfo: 0,
-        iv_load_policy: 3,
-        modestbranding: 1,
-        playsinline: 1,
-      },
-      events: {
-        onReady: (event: any) => {
-          const ytPlayer = event.target;
-          if (!currentSong?.metadata?.audioUrl) {
-            setPlayerRef({
-              playVideo: () => ytPlayer.playVideo(),
-              pauseVideo: () => ytPlayer.pauseVideo(),
-              seekTo: (sec: number) => ytPlayer.seekTo(sec, true),
-              setVolume: (vol: number) => ytPlayer.setVolume(vol),
-              setPlaybackRate: (rate: number) => ytPlayer.setPlaybackRate(rate),
-              setPlaybackQuality: (quality: string) => {
-                if (typeof ytPlayer.setPlaybackQuality === "function") ytPlayer.setPlaybackQuality(quality);
-              },
-            });
-            if (typeof ytPlayer.setPlaybackQuality === "function") {
-              const qualityMap = {
-                "data-saver": "small",
-                balanced: "medium",
-                high: "hd720",
-              } as const;
-              ytPlayer.setPlaybackQuality(qualityMap[audioQuality]);
-            }
-            ytPlayer.setVolume(Math.round(volume * 100));
-            if (currentSong?.videoId) {
-              if (isPlaying) {
-                ytPlayer.loadVideoById({
-                  videoId: currentSong.videoId,
-                  startSeconds: 0,
-                });
-              } else {
-                ytPlayer.cueVideoById({
-                  videoId: currentSong.videoId,
-                  startSeconds: 0,
-                });
+    try {
+      playerInstanceRef.current = new window.YT.Player("strumm-player-iframe", {
+        height: "250",
+        width: "250",
+        videoId: currentSong?.metadata?.audioUrl ? "" : (currentSong?.videoId || ""),
+        playerVars: {
+          autoplay: isPlaying && !currentSong?.metadata?.audioUrl ? 1 : 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          rel: 0,
+          showinfo: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+        },
+        events: {
+          onReady: (event: any) => {
+            console.log("AudioEngine: YT Player onReady event triggered!");
+            const ytPlayer = event.target;
+            if (!currentSong?.metadata?.audioUrl) {
+              setPlayerRef({
+                playVideo: () => ytPlayer.playVideo(),
+                pauseVideo: () => ytPlayer.pauseVideo(),
+                seekTo: (sec: number) => ytPlayer.seekTo(sec, true),
+                setVolume: (vol: number) => ytPlayer.setVolume(vol),
+                setPlaybackRate: (rate: number) => ytPlayer.setPlaybackRate(rate),
+                setPlaybackQuality: (quality: string) => {
+                  if (typeof ytPlayer.setPlaybackQuality === "function") ytPlayer.setPlaybackQuality(quality);
+                },
+              });
+              if (typeof ytPlayer.setPlaybackQuality === "function") {
+                const qualityMap = {
+                  "data-saver": "small",
+                  balanced: "medium",
+                  high: "hd720",
+                } as const;
+                ytPlayer.setPlaybackQuality(qualityMap[audioQuality]);
+              }
+              ytPlayer.setVolume(Math.round(volume * 100));
+              if (currentSong?.videoId) {
+                currentVideoIdRef.current = currentSong.videoId;
+                console.log("AudioEngine: onReady loading/cueing videoId:", currentSong.videoId);
+                if (isPlaying) {
+                  ytPlayer.loadVideoById({
+                    videoId: currentSong.videoId,
+                    startSeconds: 0,
+                  });
+                } else {
+                  ytPlayer.cueVideoById({
+                    videoId: currentSong.videoId,
+                    startSeconds: 0,
+                  });
+                }
               }
             }
-          }
-        },
-        onStateChange: (event: any) => {
-          if (currentSong?.metadata?.audioUrl) return; // skip if playing podcast
+          },
+          onStateChange: (event: any) => {
+            console.log("AudioEngine: YT Player state changed:", event.data);
+            if (currentSong?.metadata?.audioUrl) return; // skip if playing podcast
 
-          const state = event.data;
-          if (state === 1) {
-            setPlaying(true);
-            setDuration(playerInstanceRef.current.getDuration() || currentSong?.duration || 0);
-            startProgressTimer();
-          } else if (state === 2) {
-            setPlaying(false);
+            const state = event.data;
+            if (state === 1) {
+              setPlaying(true);
+              setDuration(playerInstanceRef.current.getDuration() || currentSong?.duration || 0);
+              startProgressTimer();
+            } else if (state === 2) {
+              setPlaying(false);
+              stopProgressTimer();
+            } else if (state === 0) {
+              stopProgressTimer();
+              usePlayerStore.getState().handleTrackEnded();
+            }
+          },
+          onError: (err: any) => {
+            if (currentSong?.metadata?.audioUrl) return;
+            console.error("AudioEngine: YT Player error:", err);
             stopProgressTimer();
-          } else if (state === 0) {
-            stopProgressTimer();
-            usePlayerStore.getState().handleTrackEnded();
-          }
+            usePlayerStore.getState().next();
+          },
         },
-        onError: () => {
-          if (currentSong?.metadata?.audioUrl) return;
-          console.error("Strumm Music Engine: Error streaming track, skipping...");
-          stopProgressTimer();
-          usePlayerStore.getState().next();
-        },
-      },
-    });
+      });
+    } catch (e) {
+      console.error("AudioEngine: Exception while calling new window.YT.Player:", e);
+    }
   };
 
   const startProgressTimer = () => {
