@@ -724,12 +724,28 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             >
               <div className="border-b border-border/20 pb-3 mb-3 flex justify-between items-center">
                 <h3 className="font-editorial text-text font-bold text-lg">Play Queue ({queue.length})</h3>
-                <button 
-                  onClick={() => setShowQueue(false)} 
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-muted hover:text-text cursor-pointer transition"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-3">
+                  {queue.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (currentSong) {
+                          usePlayerStore.setState({ queue: [currentSong], currentIndex: 0 });
+                        } else {
+                          usePlayerStore.setState({ queue: [], currentIndex: -1, isPlaying: false });
+                        }
+                      }}
+                      className="text-xs font-semibold text-red-400 hover:text-red-300 transition cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setShowQueue(false)} 
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-muted hover:text-text cursor-pointer transition"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
               
               <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">

@@ -344,7 +344,24 @@ export default function EditorialPlayer() {
             >
               <div className="border-b border-border/20 pb-2 mb-1 flex justify-between items-center">
                 <h5 className="font-editorial text-text font-bold text-sm">Up Next ({queue.length})</h5>
-                <button onClick={() => setShowQueue(false)} className="text-[10px] uppercase text-muted hover:text-text cursor-pointer">Close</button>
+                <div className="flex items-center gap-2">
+                  {queue.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (currentSong) {
+                          usePlayerStore.setState({ queue: [currentSong], currentIndex: 0 });
+                        } else {
+                          usePlayerStore.setState({ queue: [], currentIndex: -1, isPlaying: false });
+                        }
+                      }}
+                      className="text-[10px] uppercase text-red-400 hover:text-red-300 transition cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {queue.length > 0 && <span className="text-[10px] text-muted/40">|</span>}
+                  <button onClick={() => setShowQueue(false)} className="text-[10px] uppercase text-muted hover:text-text cursor-pointer">Close</button>
+                </div>
               </div>
               
               {queue.length === 0 ? (
