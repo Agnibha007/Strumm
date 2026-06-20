@@ -1,36 +1,98 @@
-<div align="center">
-  <img src="logo/strumm.png" alt="Strumm Logo" width="150" />
-  <h1>Strumm</h1>
-  <p><em>Where your music lives. A premium, handcrafted music ecosystem.</em></p>
-</div>
+# Strumm
 
-<br />
+> "Because music is priceless. 100% Free. Zero Ads. Forever."
 
-Welcome to **Strumm**, the ultimate music experience designed with aesthetics and functionality at its core. Say goodbye to generic music apps and discover an environment where every song, podcast, and playlist feels like a personalized listening journey.
+Strumm is an ultra-premium, handcrafted music ecosystem designed to bring you the ultimate audio experience without the paywalls, interruptions, or subscriptions. Built with stunning editorial magazine aesthetics, Strumm proves that you don't need to compromise on design or features to enjoy unlimited music.
 
-## 🎵 Why Strumm?
-
-Strumm isn't just another music player—it’s a carefully curated ecosystem built around your listening habits, offering high-fidelity audio handling, a stunning dynamic user interface, and an uninterrupted musical flow.
-
-### Key Features
-- **Dynamic Theme Engine**: Strumm adapts to your style. From "Obsidian" to "Ocean Drive", the interface transforms itself using our premium glassmorphism styling and ambient glow effects.
-- **Live-Synced Theatre Mode**: Immerse yourself in the music with real-time, live-synced lyrics that automatically highlight to the rhythm of the track.
-- **Podcast Support**: Seamlessly transition from your favorite tracks to daily podcasts without ever leaving the app.
-- **Smart Queue & Shuffle**: Strumm’s intelligent queueing system ensures the music never unexpectedly stops, adapting beautifully whether you are on repeat, shuffle, or discovering new tracks.
-- **Listening History & Stats**: Keep track of the music that defines your life. Your data is synced and visualized right inside your profile.
-- **High-Fidelity Audio Controls**: Precision volume, playback speed adjustments, and seamless lock-screen Media Session integrations for your device.
-
-## 🎧 Getting Started
-Dive straight into your new dashboard. There's no complex setup required:
-1. Search for your favorite artists or explore our curated playlists.
-2. Select a track, sit back, and enjoy the **Theatre Mode** for live lyrics.
-3. Personalize your workspace via the settings panel to tweak the visual aesthetics to your liking.
-
-## 🤝 Community
-Music is meant to be shared. You can generate custom share links directly from the Strumm interface to send playlists and tracks to friends, letting them experience exactly what you are hearing.
+We believe music is a fundamental human right. It shouldn't be gated behind costly monthly subscriptions or interrupted by unskippable ads. Strumm is a passion project dedicated to delivering a flawless, high-fidelity listening experience that respects you and your music.
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ for true music enthusiasts.</sub>
-</div>
+## 🌟 Why Strumm?
+
+- **100% Free**: No premium tiers, no hidden costs. Every feature is unlocked for everyone.
+- **Zero Ads**: Pure, uninterrupted playback. No audio ads, no banner ads, ever.
+- **Premium Aesthetics**: A UI that feels like flipping through a high-end magazine, proving that free software can be beautiful.
+
+---
+
+## ✨ Features
+
+### 🎧 Persistent Background Playback
+A globally persistent music player that follows you across the app without ever dropping a beat. Fully integrated with your device's lock-screen controls via the Media Session API.
+
+### 🎤 Fullscreen Karaoke Theatre
+Immerse yourself in the music with a beautiful fullscreen theatre mode. Features real-time, dynamically synced lyrics that highlight exactly as the artist sings them.
+
+### 📥 Unrestricted MP3 Downloads
+Loved a track? Download it directly as a high-quality MP3 file to your local device. Never lose your music when you go offline, completely free of DRM and restrictions.
+
+### 🎨 Stunning Editorial Themes
+A handcrafted UI featuring dynamic gradients, micro-animations, and glassmorphism. Choose from curated themes like **Obsidian**, **Black Cherry**, **Vinyl Classic**, **Ocean Drive**, **Monochrome**, and **Aurora**. You can even upload your own custom backgrounds!
+
+### 🧠 Smart LLM-Powered Curation
+Not sure what to listen to? Let Strumm's intelligent **Flow** and **Discovery** modes (powered by the GROQ LLM API) instantly build custom playlists tailored to your exact mood and listening history.
+
+### 🗂️ Universal Playlist Importer
+Don't start from scratch. Easily import your existing library by uploading CSV files or directly pasting links from **Spotify** and **YouTube Music**. Strumm automatically searches and reconstructs your library!
+
+### 📱 Responsive Mobile Experience
+A seamless, native-feeling app experience on mobile devices. Features intuitive swipe-to-open navigation menus, an elegant mini-player, and touch-optimized controls.
+
+---
+
+## 🛠️ Architecture
+
+Strumm operates as a modern monorepo leveraging Turborepo and pnpm workspaces.
+
+```text
+strumm/
+├── apps/
+│   ├── web/           # Next.js 15 (React 19, TypeScript, Tailwind CSS v4, Framer Motion, Zustand)
+│   └── api/           # FastAPI (Python 3.11, Motor Async MongoDB, yt-dlp)
+└── packages/
+    ├── types/         # Shared TypeScript interfaces
+    ├── ui/            # Shared React UI components
+    └── config/        # Global configurations
+```
+
+---
+
+## 🚀 Running Locally
+
+### Prerequisites
+* **Node.js**: >= 20.0
+* **pnpm** or **npx pnpm**
+* **Python**: >= 3.11
+* **MongoDB**: Atlas Connection URI or Local Server
+* **FFmpeg**: Installed and added to system PATH (required for MP3 extraction)
+
+### 1. Setup Environment Configuration
+Copy the environment templates and populate your keys:
+* Frontend: `apps/web/.env.example` -> `apps/web/.env.local`
+* Backend: `apps/api/.env.example` -> `apps/api/.env`
+
+### 2. Initialize Workspaces & Launch Frontend
+From the root `/strumm` folder:
+```bash
+# Install dependencies across all workspace modules
+npx pnpm install
+
+# Compile and start Next.js frontend in development mode
+npx pnpm dev
+```
+
+### 3. Launch FastAPI Backend
+From the `apps/api` folder:
+```bash
+# Install Python packages
+pip install -r requirements.txt
+
+# Start local server
+uvicorn app.main:app --reload
+```
+The API documentation will be available at `http://localhost:8000/docs`.
+
+---
+
+**Enjoy the music, completely free and ad-free!** 🎶

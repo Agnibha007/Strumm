@@ -59,7 +59,42 @@ export default function AudioEngine() {
       audio.removeEventListener("ended", onEnded);
       audio.pause();
     };
-  }, [handleTrackEnded]);
+  }, [handleTrackEnded, setCurrentTime, setDuration, setPlaying]);
+
+  // Media Session API for Lock-Screen Controls
+  useEffect(() => {
+    if ("mediaSession" in navigator && currentSong) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentSong.title,
+        artist: currentSong.artist,
+        album: currentSong.metadata?.album || "Strumm",
+        artwork: [
+          { src: currentSong.thumbnail || "", sizes: "96x96", type: "image/jpeg" },
+          { src: currentSong.thumbnail || "", sizes: "256x256", type: "image/jpeg" },
+          { src: currentSong.thumbnail || "", sizes: "512x512", type: "image/jpeg" },
+        ],
+      });
+
+      navigator.mediaSession.setActionHandler("play", () => {
+        usePlayerStore.getState().togglePlay();
+      });
+      navigator.mediaSession.setActionHandler("pause", () => {
+        usePlayerStore.getState().togglePlay();
+      });
+      navigator.mediaSession.setActionHandler("previoustrack", () => {
+        usePlayerStore.getState().prev();
+      });
+      navigator.mediaSession.setActionHandler("nexttrack", () => {
+        usePlayerStore.getState().next();
+      });
+      navigator.mediaSession.setActionHandler("seekto", (details) => {
+        if (details.seekTime && playerInstanceRef.current) {
+          usePlayerStore.getState().setCurrentTime(details.seekTime);
+          usePlayerStore.getState().playerRef?.seekTo(details.seekTime);
+        }
+      });
+    }
+  }, [currentSong]);
 
   // 2. Load YouTube API
   useEffect(() => {
@@ -241,8 +276,8 @@ export default function AudioEngine() {
     if (!window.YT || !window.YT.Player) return;
 
     playerInstanceRef.current = new window.YT.Player("strumm-player-iframe", {
-      height: "0",
-      width: "0",
+      height: "250",
+      width: "250",
       videoId: currentSong?.metadata?.audioUrl ? "" : (currentSong?.videoId || ""),
       playerVars: {
         autoplay: isPlaying && !currentSong?.metadata?.audioUrl ? 1 : 0,
@@ -333,5 +368,10 @@ export default function AudioEngine() {
     }
   };
 
-  return <div ref={containerRef} className="absolute opacity-0 pointer-events-none w-1 h-1 -left-[9999px] -top-[9999px]" />;
+  return (
+    <div 
+      ref={containerRef} 
+      className="fixed pointer-events-none w-[250px] h-[250px] top-0 left-0 -z-50 opacity-[0.01]" 
+    />
+  );
 }
