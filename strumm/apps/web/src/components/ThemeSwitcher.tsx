@@ -14,6 +14,9 @@ export default function ThemeSwitcher() {
     { name: "Ocean Drive", desc: "Midnight blue, neon lights.", preview: "bg-[#03080F] border-[#183354]" },
     { name: "Monochrome", desc: "High contrast pure black/white.", preview: "bg-[#000000] border-[#333333]" },
     { name: "Aurora", desc: "Forest pine, emerald green.", preview: "bg-[#020907] border-[#134E3F]" },
+    { name: "Sunset Blvd", desc: "Warm gold, dusk violet tones.", preview: "bg-[#0b0612] border-[#3e1f5c]" },
+    { name: "Rose Garden", desc: "Dusty rose and matte pink.", preview: "bg-[#0f070b] border-[#4c1d36]" },
+    { name: "Cyberpunk", desc: "Pure neon yellow, neon cyan.", preview: "bg-[#000000] border-[#2e2e38]" },
   ];
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

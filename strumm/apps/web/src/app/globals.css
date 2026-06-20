@@ -79,6 +79,45 @@
   --glow: rgba(16, 185, 129, 0.15);
 }
 
+[data-theme="Sunset Blvd"] {
+  --background: #0B0612;
+  --surface: #190F25;
+  --surface-elevated: #281A3A;
+  --primary: #F59E0B;
+  --primary-hover: #FBBF24;
+  --accent: #EC4899;
+  --text: #FFFBEB;
+  --muted: #D97706;
+  --border: #3E1F5C;
+  --glow: rgba(245, 158, 11, 0.15);
+}
+
+[data-theme="Rose Garden"] {
+  --background: #0F070B;
+  --surface: #1D1117;
+  --surface-elevated: #2D1C25;
+  --primary: #EC4899;
+  --primary-hover: #F472B6;
+  --accent: #F43F5E;
+  --text: #FFF1F2;
+  --muted: #FDA4AF;
+  --border: #4C1D36;
+  --glow: rgba(236, 72, 153, 0.15);
+}
+
+[data-theme="Cyberpunk"] {
+  --background: #000000;
+  --surface: #0C0C0E;
+  --surface-elevated: #17171B;
+  --primary: #FCEE09;
+  --primary-hover: #FEF08A;
+  --accent: #00F0FF;
+  --text: #FFFFFF;
+  --muted: #9CA3AF;
+  --border: #2E2E38;
+  --glow: rgba(252, 238, 9, 0.2);
+}
+
 @theme {
   --color-background: var(--background);
   --color-surface: var(--surface);
