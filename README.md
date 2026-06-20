@@ -58,40 +58,12 @@ strumm/
 
 ---
 
-## ⏵ Running Locally
+## ⏵ Guidelines
 
-### Prerequisites
-* **Node.js**: >= 20.0
-* **pnpm** or **npx pnpm**
-* **Python**: >= 3.11
-* **MongoDB**: Atlas Connection URI or Local Server
-* **FFmpeg**: Installed and added to system PATH (required for MP3 extraction)
-
-### 1. Setup Environment Configuration
-Copy the environment templates and populate your keys:
-* Frontend: `apps/web/.env.example` -> `apps/web/.env.local`
-* Backend: `apps/api/.env.example` -> `apps/api/.env`
-
-### 2. Initialize Workspaces & Launch Frontend
-From the root `/strumm` folder:
-```bash
-# Install dependencies across all workspace modules
-npx pnpm install
-
-# Compile and start Next.js frontend in development mode
-npx pnpm dev
-```
-
-### 3. Launch FastAPI Backend
-From the `apps/api` folder:
-```bash
-# Install Python packages
-pip install -r requirements.txt
-
-# Start local server
-uvicorn app.main:app --reload
-```
-The API documentation will be available at `http://localhost:8000/docs`.
+* **Respect Artists**: While Strumm is free, we encourage supporting your favorite artists directly through merch or live shows whenever possible.
+* **Open Source Spirit**: Strumm is built by the community, for the community. If you love the app, consider contributing to its development.
+* **Privacy First**: Strumm does not track you or sell your data. Your listening habits remain yours.
+* **No Commercial Use**: Strumm is strictly designed for personal, non-commercial listening.
 
 ---
 
