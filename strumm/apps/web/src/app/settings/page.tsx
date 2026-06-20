@@ -164,7 +164,7 @@ export default function SettingsPage() {
               </div>
               {avatar.startsWith("data:image/") && (
                 <div className="mt-2 flex items-center gap-3">
-                  <img src={avatar} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-primary shadow" />
+                  <img src={avatar} alt="Preview" loading="lazy" decoding="async" className="w-12 h-12 rounded-full object-cover border border-primary shadow" />
                   <button
                     type="button"
                     onClick={() => setAvatar("")}

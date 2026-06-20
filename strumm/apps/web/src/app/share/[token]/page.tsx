@@ -120,11 +120,11 @@ export default function SharePage({ params }: SharePageProps) {
         {/* Thumbnail art */}
         <div className="w-40 h-40 rounded-xl overflow-hidden shadow-2xl border border-border/80 mx-auto relative group">
           {isSong ? (
-            <img src={item.thumbnail} alt="" className="w-full h-full object-cover" />
+            <img src={item.thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
           ) : item.songs?.length > 0 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               {item.songs.slice(0, 4).map((s: Song, idx: number) => (
-                <img key={idx} src={s.thumbnail} alt="" className="w-full h-full object-cover" />
+                <img key={idx} src={s.thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
               ))}
             </div>
           ) : (

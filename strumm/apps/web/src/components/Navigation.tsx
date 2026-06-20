@@ -108,7 +108,7 @@ export default function Navigation() {
         <div className="p-4 border-t border-border/40 bg-surface/30 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {user.avatar ? (
-              <img src={user.avatar} className="w-8 h-8 rounded-full object-cover shadow border border-border/40" />
+              <img src={user.avatar} loading="lazy" decoding="async" className="w-8 h-8 rounded-full object-cover shadow border border-border/40" />
             ) : (
               <div className="w-8 h-8 rounded-full bg-surface-elevated border border-border flex items-center justify-center">
                 <UserIcon className="w-4 h-4 text-accent" />

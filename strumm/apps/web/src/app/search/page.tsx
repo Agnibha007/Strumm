@@ -395,7 +395,7 @@ export default function SearchPage() {
                       className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
                     >
                       <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative">
-                        <img src={podcast.image} alt={podcast.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                        <img src={podcast.image} alt={podcast.title} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                         <div className="absolute right-2 bottom-2 p-1.5 bg-black/60 rounded-full">
                           <Radio className="w-3.5 h-3.5 text-primary" />
                         </div>
@@ -427,7 +427,7 @@ export default function SearchPage() {
                     >
                       <div className="w-16 h-16 rounded-full bg-surface-elevated overflow-hidden border border-border/60 mx-auto relative shadow flex items-center justify-center">
                         {curator.avatar ? (
-                          <img src={curator.avatar} alt={curator.displayName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                          <img src={curator.avatar} alt={curator.displayName} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                         ) : (
                           <User className="w-6 h-6 text-accent/65" />
                         )}

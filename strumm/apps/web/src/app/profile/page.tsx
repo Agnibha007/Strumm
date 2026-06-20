@@ -133,7 +133,7 @@ export default function ProfilePage() {
             {/* Photo Avatar */}
             <div className="w-28 h-28 rounded-full bg-surface-elevated overflow-hidden border-2 border-border/80 mx-auto relative shadow-inner">
               {profileUser.avatar ? (
-                <img src={profileUser.avatar} alt={profileUser.displayName} className="w-full h-full object-cover" />
+                <img src={profileUser.avatar} alt={profileUser.displayName} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <UserIcon className="w-10 h-10 text-muted" />
