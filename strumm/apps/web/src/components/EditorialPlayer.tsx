@@ -10,6 +10,7 @@ import FullscreenPlayerOverlay from "./FullscreenPlayerOverlay";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
+import AddToPlaylistMenu from "./AddToPlaylistMenu";
 
 export default function EditorialPlayer() {
   const {
@@ -259,12 +260,14 @@ export default function EditorialPlayer() {
             </div>
             
             <button
-              onClick={handleLikeToggle}
+              onClick={(e) => { e.stopPropagation(); handleLikeToggle(); }}
               className={`p-2 rounded hover:bg-surface-elevated cursor-pointer transition ${isLiked ? "text-primary text-glow" : "text-muted hover:text-text"}`}
               title={isLiked ? "Unlike" : "Like"}
             >
               <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
             </button>
+
+            <AddToPlaylistMenu song={currentSong} />
 
             <button
               onClick={() => setShowFullscreenMenu(true)}

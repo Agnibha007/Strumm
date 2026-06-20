@@ -25,6 +25,7 @@ import { apiUrl, cleanText } from "web/lib/api";
 import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
+import AddToPlaylistMenu from "web/components/AddToPlaylistMenu";
 
 interface FullscreenPlayerOverlayProps {
   onClose: () => void;
@@ -494,6 +495,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             >
               {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
             </button>
+
+            <AddToPlaylistMenu song={currentSong} className="!p-0 !bg-transparent hover:!bg-transparent hover:scale-105" />
 
             <button
               onClick={handleDownload}
