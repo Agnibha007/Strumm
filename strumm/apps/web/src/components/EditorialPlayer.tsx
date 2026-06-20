@@ -30,6 +30,7 @@ export default function EditorialPlayer() {
     setCurrentTime,
     setShuffle,
     setRepeatMode,
+    currentIndex,
   } = usePlayerStore();
   const { token, fetchProfile } = useAuthStore();
 
