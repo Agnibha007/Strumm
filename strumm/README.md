@@ -1,79 +1,78 @@
 # Strumm
-> "Where your music lives."
 
-Strumm is a premium, handcrafted music ecosystem rebuilt with editorial magazine design aesthetics. It operates as a monorepo leveraging Turborepo and pnpm workspaces, featuring a Next.js 15 frontend and a FastAPI (Python) backend.
+> "Because music is priceless. 100% Free. Zero Ads. Forever."
+
+Strumm is an ultra-premium, handcrafted music ecosystem designed to bring you the ultimate audio experience without the paywalls, interruptions, or subscriptions. Built with stunning editorial magazine aesthetics, Strumm proves that you don't need to compromise on design or features to enjoy unlimited music.
+
+We believe music is a fundamental human right. It shouldn't be gated behind costly monthly subscriptions or interrupted by unskippable ads. Strumm is a passion project dedicated to delivering a flawless, high-fidelity listening experience that respects you and your music.
 
 ---
 
-## Workspace Structure
+## 🌟 Why Strumm?
+
+- **100% Free**: No premium tiers, no hidden costs. Every feature is unlocked for everyone.
+- **Zero Ads**: Pure, uninterrupted playback. No audio ads, no banner ads, ever.
+- **Premium Aesthetics**: A UI that feels like flipping through a high-end magazine, proving that free software can be beautiful.
+
+---
+
+## ✨ Features
+
+### 🎧 Persistent Background Playback
+A globally persistent music player that follows you across the app without ever dropping a beat. Fully integrated with your device's lock-screen controls via the Media Session API.
+
+### 🎤 Fullscreen Karaoke Theatre
+Immerse yourself in the music with a beautiful fullscreen theatre mode. Features real-time, dynamically synced lyrics that highlight exactly as the artist sings them.
+
+### 📥 Unrestricted MP3 Downloads
+Loved a track? Download it directly as a high-quality MP3 file to your local device. Never lose your music when you go offline, completely free of DRM and restrictions.
+
+### 🎨 Stunning Editorial Themes
+A handcrafted UI featuring dynamic gradients, micro-animations, and glassmorphism. Choose from curated themes like **Obsidian**, **Black Cherry**, **Vinyl Classic**, **Ocean Drive**, **Monochrome**, and **Aurora**. You can even upload your own custom backgrounds!
+
+### 🧠 Smart LLM-Powered Curation
+Not sure what to listen to? Let Strumm's intelligent **Flow** and **Discovery** modes (powered by the GROQ LLM API) instantly build custom playlists tailored to your exact mood and listening history.
+
+### 🗂️ Universal Playlist Importer
+Don't start from scratch. Easily import your existing library by uploading CSV files or directly pasting links from **Spotify** and **YouTube Music**. Strumm automatically searches and reconstructs your library!
+
+### 📱 Responsive Mobile Experience
+A seamless, native-feeling app experience on mobile devices. Features intuitive swipe-to-open navigation menus, an elegant mini-player, and touch-optimized controls.
+
+---
+
+## 🛠️ Architecture
+
+Strumm operates as a modern monorepo leveraging Turborepo and pnpm workspaces.
+
 ```text
 strumm/
 ├── apps/
 │   ├── web/           # Next.js 15 (React 19, TypeScript, Tailwind CSS v4, Framer Motion, Zustand)
-│   └── api/           # FastAPI (Python 3.11, Motor Async MongoDB, Pydantic v2)
+│   └── api/           # FastAPI (Python 3.11, Motor Async MongoDB, yt-dlp)
 └── packages/
     ├── types/         # Shared TypeScript interfaces
     ├── ui/            # Shared React UI components
-    ├── database/      # Database helper layers
     └── config/        # Global configurations
 ```
 
 ---
 
-## Features
-
-### 1. Premium Editorial Aesthetics
-* Customized design language (Default theme: **Obsidian**).
-* Curated theme options: **Obsidian**, **Black Cherry**, **Vinyl Classic**, **Ocean Drive**, **Monochrome**, and **Aurora**.
-* Local cache theme loader to prevent visual flashes.
-* Custom background image uploads and Micro-Animations power-saver switch.
-
-### 2. Audio Engine & Persistent Player
-* Globally persistent player built using the HTML5 **Media Session API** for lock-screen controls.
-* Stream resolving internally powered by a hidden **YouTube Iframe Player API** instance.
-* Volume memory tracking and shuffle/repeat modes.
-* **Live Listening Counter**: Local listening timer that logs listening durations and syncs with the backend statistics engine every 30 seconds of playing.
-
-### 3. Smart Curation
-* Curated features (**Flow** and **Discovery**) powered by the **GROQ LLM API** to build custom playlists from current mood parameters and historical profiles. Includes clean database fallbacks if API keys are absent.
-
-### 4. Playlist Migrator & CSV Parsing
-* Drag-and-drop or upload CSV tables containing columns like `title`, `artist`, and `album`.
-* Automatically maps search terms against indexed items.
-* Displays a details sheet classifying songs into `Matched`, `Duplicates`, and `Missing`.
-* Support for importing direct Spotify and YouTube Music links.
-
-### 5. Karaoke Theatre
-* Synced `.lrc` lyrics parsing which highlights current sentences in real-time.
-* Minimalist fullscreen theatre mode displaying karaoke-style lyric animations.
-
----
-
-## Database Migration
-Strumm includes an automated migration utility that loads the legacy Yuzone JSON files (`json/` directory in the parent workspace), converts string duration structures (e.g. `"5:14"`) into integer seconds, maps legacy user profiles to Strumm structures, and upgrades legacy themes.
-
-**To run the migration:**
-Start the FastAPI backend and visit:
-```http
-GET http://localhost:8000/migration/run
-```
-
----
-
-## Running Locally
+## 🚀 Running Locally
 
 ### Prerequisites
 * **Node.js**: >= 20.0
 * **pnpm** or **npx pnpm**
 * **Python**: >= 3.11
 * **MongoDB**: Atlas Connection URI or Local Server
+* **FFmpeg**: Installed and added to system PATH (required for MP3 extraction)
 
 ### 1. Setup Environment Configuration
-Copy env templates and populate parameters:
-* Frontend: `apps/web/.env.example` to `apps/web/.env.local`
-* Backend: `apps/api/.env.example` to `apps/api/.env`
+Copy the environment templates and populate your keys:
+* Frontend: `apps/web/.env.example` -> `apps/web/.env.local`
+* Backend: `apps/api/.env.example` -> `apps/api/.env`
 
-### 2. Initialize Workspaces & Launch
+### 2. Initialize Workspaces & Launch Frontend
 From the root `/strumm` folder:
 ```bash
 # Install dependencies across all workspace modules
@@ -84,7 +83,7 @@ npx pnpm dev
 ```
 
 ### 3. Launch FastAPI Backend
-From `apps/api`:
+From the `apps/api` folder:
 ```bash
 # Install Python packages
 pip install -r requirements.txt
@@ -93,3 +92,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 The API documentation will be available at `http://localhost:8000/docs`.
+
+---
+
+**Enjoy the music, completely free and ad-free!** 🎶
