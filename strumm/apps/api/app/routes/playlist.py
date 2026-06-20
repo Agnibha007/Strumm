@@ -9,6 +9,7 @@ from app.routes.dependencies import get_current_user
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from pydantic import BaseModel
+from yt_dlp import YoutubeDL
 import logging
 
 logger = logging.getLogger("strumm-playlist")
@@ -164,16 +165,45 @@ class ImportRequest(BaseModel):
     name: str
     data: str # URL or raw CSV string
 
+def get_yt_playlist_entries_with_proxies(url: str) -> list:
+    try:
+        with YoutubeDL({"extract_flat": True, "quiet": True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if "entries" in info:
+                return info["entries"]
+    except Exception:
+        pass
+
+    try:
+        from app.routes.stream import get_free_proxies
+        proxies = get_free_proxies()
+        import random
+        random.shuffle(proxies)
+        for proxy in proxies[:10]:
+            try:
+                with YoutubeDL({"extract_flat": True, "quiet": True, "proxy": f"http://{proxy}"}) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if "entries" in info:
+                        return info["entries"]
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return []
+
 @router.post("/import")
 async def import_playlist(
     payload: ImportRequest,
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        from app.routes.search import search_yt_music_songs
         database = db.get_db()
         source = sanitize_enum(payload.source, {"csv", "spotify", "youtube"}, "csv")
         import_name = sanitize_text(payload.name, max_length=120)
         import_data = sanitize_multiline_text(payload.data, max_length=200000)
+        
+        parsed_rows = []
         matched = []
         not_found = []
         duplicates = []
@@ -187,7 +217,6 @@ async def import_playlist(
             if not reader.fieldnames or not any(k in [x.lower() for x in reader.fieldnames] for k in ["title", "name", "song"]):
                 f.seek(0)
                 csv_rows = list(csv.reader(StringIO(import_data)))
-                parsed_rows = []
                 for row in csv_rows:
                     if len(row) >= 2:
                         parsed_rows.append({
@@ -196,7 +225,6 @@ async def import_playlist(
                             "album": row[2].strip() if len(row) > 2 else ""
                         })
             else:
-                parsed_rows = []
                 # Normalize keys
                 for row in reader:
                     normalized_row = {k.lower(): v for k, v in row.items()}
@@ -205,31 +233,89 @@ async def import_playlist(
                     album = normalized_row.get("album") or normalized_row.get("record", "")
                     parsed_rows.append({"title": title.strip(), "artist": artist.strip(), "album": album.strip()})
 
-            for track in parsed_rows:
-                title = track["title"]
-                artist = track["artist"]
-                if not title:
+        elif source in ["spotify", "youtube"] and ("youtube.com" in import_data or "youtu.be" in import_data):
+            # Resolve live YouTube Playlist
+            entries = get_yt_playlist_entries_with_proxies(import_data)
+            for entry in entries:
+                video_id = entry.get("id") or entry.get("url")
+                title = entry.get("title")
+                if video_id and title:
+                    parsed_rows.append({
+                        "title": title,
+                        "artist": entry.get("uploader") or "Various Artists",
+                        "album": "",
+                        "videoId": video_id,
+                        "thumbnail": entry.get("thumbnail") or f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                        "duration": entry.get("duration") or 200
+                    })
+        
+        # If no tracks resolved but they input standard text rows, try line-by-line parsing
+        if not parsed_rows and source in ["spotify", "youtube"]:
+            for line in import_data.split("\n"):
+                line = line.strip()
+                if not line or line.startswith("http"):
                     continue
-                    
-                # Search database to see if we can resolve the song
-                # Query in play history, liked songs, or matching playlist songs
-                regex_title = escaped_regex(title)
-                regex_artist = escaped_regex(artist) if artist else None
+                parts = line.split(" - ")
+                if len(parts) >= 2:
+                    parsed_rows.append({"title": parts[0].strip(), "artist": parts[1].strip(), "album": ""})
+                else:
+                    parsed_rows.append({"title": line, "artist": "", "album": ""})
+
+        for track in parsed_rows:
+            title = track["title"]
+            artist = track.get("artist", "")
+            if not title:
+                continue
                 
-                query = {"song.title": regex_title}
+            # If track already has video details resolved (e.g. from YouTube playlist)
+            if "videoId" in track:
+                song_item = {
+                    "videoId": track["videoId"],
+                    "title": track["title"],
+                    "artist": track["artist"],
+                    "thumbnail": track["thumbnail"],
+                    "duration": track["duration"]
+                }
+                if any(x["videoId"] == song_item["videoId"] for x in matched):
+                    duplicates.append(song_item)
+                else:
+                    matched.append(song_item)
+                continue
+
+            # 1. Search local database to see if we can resolve the song quickly
+            regex_title = escaped_regex(title)
+            regex_artist = escaped_regex(artist) if artist else None
+            
+            query = {"song.title": regex_title}
+            if regex_artist:
+                query["song.artist"] = regex_artist
+                
+            match_doc = await database[db.LIKED_SONGS].find_one(query)
+            if not match_doc:
+                query = {"songs.title": regex_title}
                 if regex_artist:
-                    query["song.artist"] = regex_artist
-                    
-                match_doc = await database[db.LIKED_SONGS].find_one(query)
-                if not match_doc:
-                    query = {"songs.title": regex_title}
-                    if regex_artist:
-                        query["songs.artist"] = regex_artist
-                    match_doc = await database[db.PLAYLISTS].find_one(query, {"songs.$": 1})
-                    
-                if match_doc:
-                    song = match_doc["song"] if "song" in match_doc else match_doc["songs"][0]
-                    # Format as SongSchema structure
+                    query["songs.artist"] = regex_artist
+                match_doc = await database[db.PLAYLISTS].find_one(query, {"songs.$": 1})
+                
+            if match_doc:
+                song = match_doc["song"] if "song" in match_doc else match_doc["songs"][0]
+                song_item = {
+                    "videoId": song["videoId"],
+                    "title": song["title"],
+                    "artist": song["artist"],
+                    "thumbnail": song["thumbnail"],
+                    "duration": song["duration"]
+                }
+                if any(x["videoId"] == song_item["videoId"] for x in matched):
+                    duplicates.append(song_item)
+                else:
+                    matched.append(song_item)
+            else:
+                # 2. Local cache miss: Search YouTube Music catalog directly!
+                search_query = f"{title} {artist}".strip()
+                search_matches = await search_yt_music_songs(search_query)
+                if search_matches:
+                    song = search_matches[0]
                     song_item = {
                         "videoId": song["videoId"],
                         "title": song["title"],
@@ -245,23 +331,9 @@ async def import_playlist(
                     not_found.append({
                         "title": title,
                         "artist": artist,
-                        "album": track["album"]
+                        "album": track.get("album", "")
                     })
                     
-        elif source in ["spotify", "youtube"]:
-            # Simulate importing tracks from external link
-            # In a real system, we'd call Spotify API or YT Music Scraper
-            # For this startup product experience, we mock parse standard tracks
-            mock_tracks = [
-                {"videoId": "dQw4w9WgXcQ", "title": "Never Gonna Give You Up", "artist": "Rick Astley", "thumbnail": "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg", "duration": 212},
-                {"videoId": "cZUvEPDYcOU", "title": "Heer", "artist": "A.R. Rahman, Harshdeep Kaur, Gulzar", "thumbnail": "https://img.youtube.com/vi/cZUvEPDYcOU/hqdefault.jpg", "duration": 314},
-                {"videoId": "lOHVMmZ6n3o", "title": "Ghar Kab Aaoge", "artist": "Sonu Nigam", "thumbnail": "https://img.youtube.com/vi/lOHVMmZ6n3o/hqdefault.jpg", "duration": 191},
-                {"videoId": "i-EXgX279wU", "title": "Galliyan", "artist": "Ankit Tiwari", "thumbnail": "https://img.youtube.com/vi/i-EXgX279wU/hqdefault.jpg", "duration": 341}
-            ]
-            
-            for t in mock_tracks:
-                matched.append(t)
-                
         # If any matches, let's create a new playlist for the user!
         if matched:
             new_playlist = {
