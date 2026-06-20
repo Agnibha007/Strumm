@@ -33,6 +33,31 @@ export default function Navigation() {
     setIsOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    let touchStartX = 0;
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartX = e.touches[0].clientX;
+    };
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touchEndX = e.changedTouches[0].clientX;
+      if (touchEndX - touchStartX > 80 && touchStartX < 50) {
+        setIsOpen(true);
+      }
+    };
+    
+    if (typeof window !== "undefined") {
+      window.addEventListener("touchstart", handleTouchStart);
+      window.addEventListener("touchend", handleTouchEnd);
+    }
+    
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("touchstart", handleTouchStart);
+        window.removeEventListener("touchend", handleTouchEnd);
+      }
+    };
+  }, []);
+
   const navContent = (
     <>
       <div className="p-6">
@@ -109,15 +134,15 @@ export default function Navigation() {
 
   return (
     <>
-      <header className="md:hidden sticky top-0 z-40 bg-surface/90 backdrop-blur-xl border-b border-border/60 px-4 py-3 flex items-center justify-between">
+      <header className="md:hidden sticky top-0 z-40 bg-surface/90 backdrop-blur-xl border-b border-border/60 px-4 py-3 flex items-center gap-3">
         <button
           onClick={() => setIsOpen(true)}
-          className="p-2 -ml-2 text-muted hover:text-text hover:bg-surface-elevated rounded-lg transition"
+          className="p-2 -ml-2 text-muted hover:text-text hover:bg-surface-elevated rounded-lg transition flex-shrink-0"
           title="Open navigation"
         >
           <Menu className="w-5 h-5" />
         </button>
-        <Link href="/" className="inline-flex items-center gap-2">
+        <Link href="/" className="inline-flex items-center gap-2 flex-shrink-0">
           <BrandLogo variant="mark" size="sm" priority />
           <span className="font-editorial text-xl font-bold text-text leading-none">Strumm</span>
         </Link>

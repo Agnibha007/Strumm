@@ -165,10 +165,17 @@ export default function EditorialPlayer() {
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(280px,1.2fr)_minmax(0,1fr)] items-center gap-3 md:gap-4">
+        <div className="max-w-7xl mx-auto flex md:grid md:grid-cols-[minmax(0,1fr)_minmax(280px,1.2fr)_minmax(0,1fr)] items-center justify-between gap-3 md:gap-4">
           
           {/* Left: Song details */}
-          <div className="flex items-center gap-3 md:gap-4 min-w-0 w-full">
+          <div 
+            className="flex items-center gap-3 md:gap-4 min-w-0 flex-1 md:w-full cursor-pointer md:cursor-auto"
+            onClick={() => {
+              if (window.innerWidth < 768) {
+                setShowFullscreenMenu(true);
+              }
+            }}
+          >
             <motion.div 
               animate={isAnimated && isPlaying ? { rotate: 360 } : {}}
               transition={isAnimated && isPlaying ? { repeat: Infinity, duration: 15, ease: "linear" } : {}}
@@ -187,16 +194,16 @@ export default function EditorialPlayer() {
           </div>
 
           {/* Middle: Controls & progress */}
-          <div className="flex flex-col items-center gap-2 w-full">
+          <div className="flex flex-col items-center gap-2 flex-shrink-0 md:w-full">
             <div className="flex items-center justify-center gap-4 sm:gap-5">
               <button
                 onClick={() => setShuffle(!isShuffle)}
-                className={`p-1.5 cursor-pointer transition ${isShuffle ? "text-primary text-glow" : "text-muted hover:text-text"}`}
+                className={`hidden md:block p-1.5 cursor-pointer transition ${isShuffle ? "text-primary text-glow" : "text-muted hover:text-text"}`}
               >
                 <Shuffle className="w-3.5 h-3.5" />
               </button>
               
-              <button onClick={prev} className="p-1.5 text-muted hover:text-text cursor-pointer transition">
+              <button onClick={prev} className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition">
                 <SkipBack className="w-4 h-4 fill-current" />
               </button>
               
@@ -207,13 +214,13 @@ export default function EditorialPlayer() {
                 {isPlaying ? <Pause className="w-4 h-4 fill-current text-background" /> : <Play className="w-4 h-4 fill-current translate-x-0.5 text-background" />}
               </button>
               
-              <button onClick={next} className="p-1.5 text-muted hover:text-text cursor-pointer transition">
+              <button onClick={next} className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition">
                 <SkipForward className="w-4 h-4 fill-current" />
               </button>
 
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}
-                className={`p-1.5 cursor-pointer transition ${repeatMode !== "none" ? "text-primary text-glow" : "text-muted hover:text-text"}`}
+                className={`hidden md:block p-1.5 cursor-pointer transition ${repeatMode !== "none" ? "text-primary text-glow" : "text-muted hover:text-text"}`}
               >
                 <Repeat className="w-3.5 h-3.5" />
                 {repeatMode === "one" && <span className="absolute text-[8px] font-bold text-primary translate-x-2 -translate-y-2">1</span>}
@@ -221,7 +228,7 @@ export default function EditorialPlayer() {
             </div>
 
             {/* Progress scrubber */}
-            <div className="flex items-center gap-2 w-full text-[10px] text-muted font-semibold">
+            <div className="hidden md:flex items-center gap-2 w-full text-[10px] text-muted font-semibold">
               <span>{formatTime(currentTime)}</span>
               <div 
                 onClick={handleProgressClick}
@@ -237,7 +244,7 @@ export default function EditorialPlayer() {
           </div>
 
           {/* Right: Volume & Queue */}
-          <div className="flex items-center justify-center md:justify-end gap-3 md:gap-4 w-full">
+          <div className="hidden md:flex items-center justify-center md:justify-end gap-3 md:gap-4 w-full">
             <div className="hidden sm:flex items-center gap-2">
               <Volume2 className="w-4 h-4 text-muted" />
               <input
