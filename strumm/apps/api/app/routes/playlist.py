@@ -233,21 +233,31 @@ async def import_playlist(
                     album = normalized_row.get("album") or normalized_row.get("record", "")
                     parsed_rows.append({"title": title.strip(), "artist": artist.strip(), "album": album.strip()})
 
-        elif source in ["spotify", "youtube"] and ("youtube.com" in import_data or "youtu.be" in import_data):
-            # Resolve live YouTube Playlist
+        elif source in ["spotify", "youtube"] and ("youtube.com" in import_data or "youtu.be" in import_data or "spotify.com" in import_data):
+            # Resolve live YouTube or Spotify Playlist
             entries = get_yt_playlist_entries_with_proxies(import_data)
+            is_spotify = "spotify.com" in import_data or source == "spotify"
             for entry in entries:
-                video_id = entry.get("id") or entry.get("url")
                 title = entry.get("title")
-                if video_id and title:
-                    parsed_rows.append({
-                        "title": title,
-                        "artist": entry.get("uploader") or "Various Artists",
-                        "album": "",
-                        "videoId": video_id,
-                        "thumbnail": entry.get("thumbnail") or f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
-                        "duration": entry.get("duration") or 200
-                    })
+                if title:
+                    if is_spotify:
+                        artist = entry.get("artist") or entry.get("creator") or entry.get("uploader") or "Various Artists"
+                        parsed_rows.append({
+                            "title": title,
+                            "artist": artist,
+                            "album": ""
+                        })
+                    else:
+                        video_id = entry.get("id") or entry.get("url")
+                        if video_id:
+                            parsed_rows.append({
+                                "title": title,
+                                "artist": entry.get("uploader") or "Various Artists",
+                                "album": "",
+                                "videoId": video_id,
+                                "thumbnail": entry.get("thumbnail") or f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                                "duration": entry.get("duration") or 200
+                            })
         
         # If no tracks resolved but they input standard text rows, try line-by-line parsing
         if not parsed_rows and source in ["spotify", "youtube"]:
