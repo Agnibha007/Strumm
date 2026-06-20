@@ -341,6 +341,12 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   // 3. Calculate active lyric index from LRCLIB timestamps
   const activeIndex = getActiveLyricIndex(lyrics, currentTime);
 
+  const isFirstScrollRef = useRef(true);
+
+  useEffect(() => {
+    isFirstScrollRef.current = true;
+  }, [currentSong?.videoId, showLyrics]);
+
   // 4. Scroll active lyric line to center
   useEffect(() => {
     if (activeLineRef.current && scrollContainerRef.current) {
@@ -351,12 +357,17 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       const elementTop = element.offsetTop;
       const elementHeight = element.clientHeight;
       
+      const isFirst = isFirstScrollRef.current;
+      if (isFirst) {
+        isFirstScrollRef.current = false;
+      }
+      
       container.scrollTo({
         top: elementTop - containerHeight / 2 + elementHeight / 2,
-        behavior: "smooth",
+        behavior: isFirst ? "auto" : "smooth",
       });
     }
-  }, [activeIndex, lyricsLoading]);
+  }, [activeIndex, lyricsLoading, showLyrics]);
 
   if (!currentSong) return null;
 

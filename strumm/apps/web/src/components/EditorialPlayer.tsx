@@ -218,6 +218,17 @@ export default function EditorialPlayer() {
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
+        {/* Mobile thin top playbar */}
+        <div 
+          onClick={handleProgressClick}
+          className="absolute top-0 left-0 right-0 h-[3px] bg-border/25 cursor-pointer md:hidden"
+        >
+          <div 
+            style={{ width: `${progressPercent}%` }} 
+            className="h-full bg-primary" 
+          />
+        </div>
+        
         <div className="max-w-7xl mx-auto flex md:grid md:grid-cols-[minmax(0,1fr)_minmax(280px,1.2fr)_minmax(0,1fr)] items-center justify-between gap-3 md:gap-4">
           
           {/* Left: Song details */}

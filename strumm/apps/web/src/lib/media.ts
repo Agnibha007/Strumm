@@ -14,6 +14,13 @@ export function getArtworkCandidates(song?: Pick<Song, "videoId" | "thumbnail"> 
   const videoId = getSongVideoId(song);
   const candidates: string[] = [];
 
+  if (videoId && !videoId.startsWith("podcast-")) {
+    candidates.push(
+      `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+      `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`
+    );
+  }
+
   if (song?.thumbnail) {
     candidates.push(song.thumbnail);
   }

@@ -62,6 +62,12 @@ export default function LyricsPage() {
 
   const activeIndex = getActiveLyricIndex(lyrics, currentTime);
 
+  const isFirstScrollRef = useRef(true);
+
+  useEffect(() => {
+    isFirstScrollRef.current = true;
+  }, [currentSong?.videoId]);
+
   useEffect(() => {
     if (activeLineRef.current && scrollContainerRef.current) {
       const container = scrollContainerRef.current;
@@ -71,9 +77,14 @@ export default function LyricsPage() {
       const elementTop = element.offsetTop;
       const elementHeight = element.clientHeight;
       
+      const isFirst = isFirstScrollRef.current;
+      if (isFirst) {
+        isFirstScrollRef.current = false;
+      }
+      
       container.scrollTo({
         top: elementTop - containerHeight / 2 + elementHeight / 2,
-        behavior: "smooth",
+        behavior: isFirst ? "auto" : "smooth",
       });
     }
   }, [activeIndex]);

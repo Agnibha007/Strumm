@@ -56,14 +56,14 @@
 [data-theme="Monochrome"] {
   --background: #000000;
   --surface: #121212;
-  --surface-elevated: #1E1E1E;
+  --surface-elevated: #1C1C1E;
   --primary: #FFFFFF;
-  --primary-hover: #F3F4F6;
-  --accent: #E5E7EB;
+  --primary-hover: #ECECEC;
+  --accent: #FFFFFF;
   --text: #FFFFFF;
-  --muted: #A3A3A3;
-  --border: #3F3F46;
-  --glow: rgba(255, 255, 255, 0.15);
+  --muted: #D4D4D8;
+  --border: #48484A;
+  --glow: rgba(255, 255, 255, 0.2);
 }
 
 [data-theme="Aurora"] {

@@ -208,6 +208,125 @@ def get_yt_playlist_entries_with_proxies(url: str) -> list:
         pass
     return []
 
+def extract_spotify_playlist(url: str) -> list:
+    import httpx
+    from bs4 import BeautifulSoup
+    import json
+    
+    playlist_id = None
+    entity_type = "playlist"
+    
+    if "playlist/" in url:
+        playlist_id = url.split("playlist/")[-1].split("?")[0].split("/")[0]
+        entity_type = "playlist"
+    elif "album/" in url:
+        playlist_id = url.split("album/")[-1].split("?")[0].split("/")[0]
+        entity_type = "album"
+    elif "artist/" in url:
+        playlist_id = url.split("artist/")[-1].split("?")[0].split("/")[0]
+        entity_type = "artist"
+    elif "track/" in url:
+        playlist_id = url.split("track/")[-1].split("?")[0].split("/")[0]
+        entity_type = "track"
+        
+    if not playlist_id:
+        return []
+        
+    embed_url = f"https://open.spotify.com/embed/{entity_type}/{playlist_id}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    try:
+        resp = httpx.get(embed_url, headers=headers, follow_redirects=True, timeout=10.0)
+        if resp.status_code != 200:
+            return []
+            
+        soup = BeautifulSoup(resp.text, "html.parser")
+        next_data = soup.find("script", id="__NEXT_DATA__")
+        if not next_data:
+            return []
+            
+        data = json.loads(next_data.string)
+        
+        def find_tracklist(obj):
+            if isinstance(obj, dict):
+                if "trackList" in obj and isinstance(obj["trackList"], list):
+                    return obj["trackList"]
+                for k, v in obj.items():
+                    res = find_tracklist(v)
+                    if res:
+                        return res
+            elif isinstance(obj, list):
+                for item in obj:
+                    res = find_tracklist(item)
+                    if res:
+                        return res
+            return None
+            
+        tracklist = find_tracklist(data)
+        if not tracklist:
+            return []
+            
+        parsed = []
+        for t in tracklist:
+            title = t.get("title")
+            artists = t.get("subtitle", "")
+            artists = artists.replace("\xa0", " ").strip()
+            duration_ms = t.get("duration", 0)
+            duration_sec = int(duration_ms / 1000) if duration_ms else 200
+            
+            parsed.append({
+                "title": title,
+                "artist": artists,
+                "album": "",
+                "duration": duration_sec
+            })
+        return parsed
+    except Exception as e:
+        logger.error(f"Error scraping spotify embed: {str(e)}")
+        return []
+
+def extract_ytmusic_playlist(url: str) -> list:
+    from ytmusicapi import YTMusic
+    
+    playlist_id = None
+    if "list=" in url:
+        playlist_id = url.split("list=")[-1].split("&")[0]
+        
+    if not playlist_id:
+        return []
+        
+    try:
+        yt = YTMusic()
+        playlist = yt.get_playlist(playlist_id, limit=None)
+        tracks = playlist.get("tracks", [])
+        parsed = []
+        for t in tracks:
+            title = t.get("title")
+            artists = ", ".join([a.get("name") for a in t.get("artists", []) if a.get("name")])
+            album = t.get("album", {}).get("name") if t.get("album") else ""
+            video_id = t.get("videoId")
+            duration_sec = t.get("duration_seconds") or 200
+            thumbnail = t.get("thumbnails", [{}])[-1].get("url") if t.get("thumbnails") else ""
+            
+            item = {
+                "title": title,
+                "artist": artists,
+                "album": album,
+                "duration": duration_sec
+            }
+            if video_id:
+                item["videoId"] = video_id
+            if thumbnail:
+                item["thumbnail"] = thumbnail
+                
+            parsed.append(item)
+        return parsed
+    except Exception as e:
+        logger.error(f"Error fetching YTMusic playlist: {str(e)}")
+        return []
+
 @router.post("/import")
 async def import_playlist(
     payload: ImportRequest,
@@ -250,21 +369,17 @@ async def import_playlist(
                     album = normalized_row.get("album") or normalized_row.get("record", "")
                     parsed_rows.append({"title": title.strip(), "artist": artist.strip(), "album": album.strip()})
 
-        elif source in ["spotify", "youtube"] and ("youtube.com" in import_data or "youtu.be" in import_data or "spotify.com" in import_data):
-            # Resolve live YouTube or Spotify Playlist
-            entries = get_yt_playlist_entries_with_proxies(import_data)
-            is_spotify = "spotify.com" in import_data or source == "spotify"
-            for entry in entries:
-                title = entry.get("title")
-                if title:
-                    if is_spotify:
-                        artist = entry.get("artist") or entry.get("creator") or entry.get("uploader") or "Various Artists"
-                        parsed_rows.append({
-                            "title": title,
-                            "artist": artist,
-                            "album": ""
-                        })
-                    else:
+        elif source == "spotify" or "spotify.com" in import_data:
+            parsed_rows = extract_spotify_playlist(import_data)
+
+        elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
+            parsed_rows = extract_ytmusic_playlist(import_data)
+            if not parsed_rows:
+                # Fallback to yt-dlp flat extraction with proxy
+                entries = get_yt_playlist_entries_with_proxies(import_data)
+                for entry in entries:
+                    title = entry.get("title")
+                    if title:
                         video_id = entry.get("id") or entry.get("url")
                         if video_id:
                             parsed_rows.append({
@@ -292,7 +407,7 @@ async def import_playlist(
             if "spotify.com" in import_data or source == "spotify":
                 return {
                     "success": False,
-                    "error": "Spotify playlist links cannot be read directly due to Spotify anti-scraping protections. Please use the 'CSV Sheet (Excel)' tab to import your Spotify playlist instead."
+                    "error": "Failed to extract Spotify playlist tracks. Please make sure the playlist is public and try again."
                 }
             elif import_data.strip().startswith("http"):
                 return {
