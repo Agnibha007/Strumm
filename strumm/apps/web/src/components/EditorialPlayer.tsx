@@ -5,7 +5,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Mic2, Heart, Trash2, ChevronUp, ChevronDown } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Reorder } from "framer-motion";
 import FullscreenPlayerOverlay from "./FullscreenPlayerOverlay";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
@@ -350,52 +350,67 @@ export default function EditorialPlayer() {
               {queue.length === 0 ? (
                 <p className="text-xs text-muted text-center py-4">Queue is empty</p>
               ) : (
-                queue.map((s, idx) => (
-                  <div
-                    key={s.videoId + "-" + idx}
-                    className={`flex items-center justify-between p-1.5 rounded transition w-full ${
-                      currentSong.videoId === s.videoId ? "bg-primary/5 text-primary font-semibold" : "hover:bg-background/40"
-                    }`}
-                  >
-                    <button
-                      onClick={() => {
-                        usePlayerStore.getState().playSong(s, queue);
-                      }}
-                      className="flex items-center gap-3 text-left cursor-pointer flex-grow min-w-0"
+                <Reorder.Group
+                  axis="y"
+                  values={queue}
+                  onReorder={(newQueue) => {
+                    if (currentSong) {
+                      const newIndex = newQueue.findIndex((s) => s.videoId === currentSong.videoId);
+                      usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
+                    } else {
+                      usePlayerStore.setState({ queue: newQueue });
+                    }
+                  }}
+                  className="flex flex-col gap-2 overflow-y-auto max-h-[280px]"
+                >
+                  {queue.map((s, idx) => (
+                    <Reorder.Item
+                      key={s.videoId}
+                      value={s}
+                      className={`flex items-center justify-between p-1.5 rounded transition w-full ${
+                        currentSong.videoId === s.videoId ? "bg-primary/5 text-primary font-semibold" : "hover:bg-background/40"
+                      } cursor-grab active:cursor-grabbing select-none`}
                     >
-                      <SongArtwork song={s} className="w-7 h-7 rounded flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[11px] text-text truncate leading-tight">{s.title}</div>
-                        <div className="text-[9px] text-muted truncate">{s.artist}</div>
+                      <button
+                        onClick={() => {
+                          usePlayerStore.getState().playSong(s, queue);
+                        }}
+                        className="flex items-center gap-3 text-left cursor-pointer flex-grow min-w-0 pointer-events-auto"
+                      >
+                        <SongArtwork song={s} className="w-7 h-7 rounded flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] text-text truncate leading-tight">{s.title}</div>
+                          <div className="text-[9px] text-muted truncate">{s.artist}</div>
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-1 flex-shrink-0 ml-2 pointer-events-auto">
+                        <button
+                          disabled={idx === 0}
+                          onClick={(e) => { e.stopPropagation(); moveSong(idx, idx - 1); }}
+                          className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition text-muted hover:text-text"
+                          title="Move Up"
+                        >
+                          <ChevronUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          disabled={idx === queue.length - 1}
+                          onClick={(e) => { e.stopPropagation(); moveSong(idx, idx + 1); }}
+                          className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition text-muted hover:text-text"
+                          title="Move Down"
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeSong(idx); }}
+                          className="p-1 rounded hover:bg-red-500/10 cursor-pointer transition text-muted hover:text-red-400"
+                          title="Remove"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
-                    </button>
-                    <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-                      <button
-                        disabled={idx === 0}
-                        onClick={(e) => { e.stopPropagation(); moveSong(idx, idx - 1); }}
-                        className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition text-muted hover:text-text"
-                        title="Move Up"
-                      >
-                        <ChevronUp className="w-3 h-3" />
-                      </button>
-                      <button
-                        disabled={idx === queue.length - 1}
-                        onClick={(e) => { e.stopPropagation(); moveSong(idx, idx + 1); }}
-                        className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition text-muted hover:text-text"
-                        title="Move Down"
-                      >
-                        <ChevronDown className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeSong(idx); }}
-                        className="p-1 rounded hover:bg-red-500/10 cursor-pointer transition text-muted hover:text-red-400"
-                        title="Remove"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                    </Reorder.Item>
+                  ))}
+                </Reorder.Group>
               )}
             </motion.div>
           )}
