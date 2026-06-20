@@ -14,10 +14,6 @@ import LoginPage from "./login/page";
 export default function HomePage() {
   const { token } = useAuthStore();
   const { playSong } = usePlayerStore();
-
-  if (!token) {
-    return <LoginPage />;
-  }
   
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Song[]>([]);
@@ -86,6 +82,10 @@ export default function HomePage() {
 
     loadHomeData();
   }, [token]);
+
+  if (!token) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="space-y-10 max-w-7xl mx-auto pb-10">
