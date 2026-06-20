@@ -87,7 +87,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       <Navigation />
       
       {/* Main route contents */}
-      <main className="flex-1 pb-32 overflow-y-auto min-h-[calc(100vh-65px)] md:min-h-screen md:ml-64 relative p-4 sm:p-6 md:p-10">
+      <main className="flex-1 overflow-y-auto min-h-[calc(100vh-65px)] md:min-h-screen md:ml-64 relative px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48">
         {children}
       </main>
     </div>

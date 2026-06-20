@@ -148,7 +148,13 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
       <div className="flex flex-col md:flex-row items-center md:items-end gap-8 pb-4">
         {/* Cover image */}
         <div className="w-48 h-48 md:w-56 md:h-56 rounded-xl overflow-hidden border border-border/80 relative shadow-2xl flex-shrink-0">
-          <img src={show.image} alt={show.title} className="w-full h-full object-cover" />
+          <img
+            src={show.image}
+            alt={show.title}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover"
+          />
         </div>
 
         {/* Text details */}

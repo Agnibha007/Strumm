@@ -141,7 +141,13 @@ export default function PodcastHomePage() {
                     href={`/podcasts/show/${show.id}`}
                     className="p-4 bg-surface/40 hover:bg-surface border border-border/40 hover:border-border/85 rounded-xl flex items-center gap-4 transition group cursor-pointer"
                   >
-                    <img src={show.image} alt={show.title} className="w-16 h-16 rounded-lg object-cover shadow border border-border/40 flex-shrink-0" />
+                    <img
+                      src={show.image}
+                      alt={show.title}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-16 h-16 rounded-lg object-cover shadow border border-border/40 flex-shrink-0"
+                    />
                     <div className="min-w-0 flex-1 text-left overflow-hidden">
                       <div className="font-editorial text-base text-text font-bold leading-tight group-hover:text-primary transition truncate break-words">
                         {show.title}
@@ -195,7 +201,13 @@ export default function PodcastHomePage() {
                     className="p-3 bg-surface/30 border border-border/40 hover:bg-surface hover:border-border/80 rounded-xl transition text-left block cursor-pointer"
                   >
                     <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative">
-                      <img src={show.image} alt={show.title} className="w-full h-full object-cover" />
+                      <img
+                        src={show.image}
+                        alt={show.title}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover"
+                      />
                       <div className="absolute right-2.5 bottom-2.5 p-1.5 bg-black/60 rounded-full">
                         <Radio className="w-4 h-4 text-primary" />
                       </div>
