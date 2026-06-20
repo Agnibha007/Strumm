@@ -262,17 +262,23 @@ export default function EditorialPlayer() {
             <div className="flex items-center justify-center gap-4 sm:gap-5">
               <button
                 onClick={() => setShuffle(!isShuffle)}
+                title={isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
                 className={`hidden md:block p-1.5 cursor-pointer transition ${isShuffle ? "text-primary text-glow" : "text-muted hover:text-text"}`}
               >
                 <Shuffle className="w-3.5 h-3.5" />
               </button>
               
-              <button onClick={prev} className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition">
+              <button 
+                onClick={prev} 
+                title="Previous Track"
+                className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition"
+              >
                 <SkipBack className="w-4 h-4 fill-current" />
               </button>
               
               <button 
                 onClick={togglePlay} 
+                title={isPlaying ? "Pause" : "Play"}
                 className="p-3 bg-text text-background rounded-full hover:scale-105 cursor-pointer transition shadow-md"
               >
                 {isPlaying ? <Pause className="w-4 h-4 fill-current text-background" /> : <Play className="w-4 h-4 fill-current translate-x-0.5 text-background" />}
@@ -286,12 +292,17 @@ export default function EditorialPlayer() {
                 <ListMusic className="w-4.5 h-4.5" />
               </button>
               
-              <button onClick={next} className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition">
+              <button 
+                onClick={next} 
+                title="Next Track"
+                className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition"
+              >
                 <SkipForward className="w-4 h-4 fill-current" />
               </button>
 
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}
+                title={`Repeat Mode: ${repeatMode === "none" ? "Off" : repeatMode === "all" ? "Repeat All" : "Repeat One"}`}
                 className={`hidden md:block p-1.5 cursor-pointer transition ${repeatMode !== "none" ? "text-primary text-glow" : "text-muted hover:text-text"}`}
               >
                 <Repeat className="w-3.5 h-3.5" />
@@ -350,6 +361,7 @@ export default function EditorialPlayer() {
 
             <button
               onClick={() => setShowQueue(!showQueue)}
+              title={showQueue ? "Hide Queue" : "Show Queue"}
               className={`p-2 rounded hover:bg-surface-elevated cursor-pointer transition ${showQueue ? "text-primary" : "text-muted hover:text-text"}`}
             >
               <ListMusic className="w-4 h-4" />
