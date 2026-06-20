@@ -138,7 +138,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     };
   }, [currentSong?.videoId, onClose]);
   const [copied, setCopied] = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
+  const [downloadState, setDownloadState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const handleShare = async () => {
@@ -173,39 +173,45 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   };
 
   const handleDownload = async () => {
-    if (!currentSong || typeof window === "undefined") return;
+    if (!currentSong || typeof window === "undefined" || downloadState === "loading") return;
 
     const directAudioUrl = currentSong.metadata?.audioUrl;
     setDownloadError(null);
+    setDownloadState("loading");
 
-    if (directAudioUrl) {
+    const filename = `${safeFileName(`${currentSong.title} - ${currentSong.artist}`)}.mp3`;
+    const downloadUrl = directAudioUrl
+      ? apiUrl(`/download-audio?url=${encodeURIComponent(directAudioUrl)}&filename=${encodeURIComponent(filename)}`)
+      : apiUrl(`/download/${encodeURIComponent(currentSong.videoId)}?title=${encodeURIComponent(safeFileName(`${currentSong.title} - ${currentSong.artist}`))}`);
+
+    try {
+      const res = await fetch(downloadUrl);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.detail || "Download failed. Track might be unavailable.");
+      }
+      
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
       const link = document.createElement("a");
       link.rel = "noopener noreferrer";
-      link.href = apiUrl(
-        `/download-audio?url=${encodeURIComponent(directAudioUrl)}&filename=${encodeURIComponent(
-          `${safeFileName(`${currentSong.title} - ${currentSong.artist}`)}.mp3`
-        )}`
-      );
-      link.download = `${safeFileName(`${currentSong.title} - ${currentSong.artist}`)}.mp3`;
+      link.href = blobUrl;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       link.remove();
-      setDownloaded(true);
-      setTimeout(() => setDownloaded(false), 1800);
-    } else {
-      const link = document.createElement("a");
-      link.rel = "noopener noreferrer";
-      link.href = apiUrl(
-        `/download/${encodeURIComponent(currentSong.videoId)}?title=${encodeURIComponent(
-          safeFileName(`${currentSong.title} - ${currentSong.artist}`)
-        )}`
-      );
-      link.download = `${safeFileName(`${currentSong.title} - ${currentSong.artist}`)}.mp3`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setDownloaded(true);
-      setTimeout(() => setDownloaded(false), 1800);
+      URL.revokeObjectURL(blobUrl);
+      
+      setDownloadState("success");
+      setTimeout(() => setDownloadState("idle"), 2000);
+    } catch (err: any) {
+      setDownloadError(err.message || "Failed to download track");
+      setDownloadState("error");
+      setTimeout(() => {
+        setDownloadState("idle");
+        setDownloadError(null);
+      }, 4000);
     }
   };
 
@@ -500,16 +506,19 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
             <button
               onClick={handleDownload}
+              disabled={downloadState === "loading"}
               className={`p-2 cursor-pointer transition hover:scale-105 ${
-                downloaded
+                downloadState === "success"
                   ? "text-primary text-glow animate-pulse"
-                  : downloadError
+                  : downloadState === "error"
                     ? "text-red-400 animate-pulse"
-                    : "text-muted hover:text-text"
+                    : downloadState === "loading"
+                      ? "text-muted opacity-50 cursor-not-allowed animate-pulse"
+                      : "text-muted hover:text-text"
               }`}
               title="Download MP3"
             >
-              {downloaded ? <Check className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+              {downloadState === "success" ? <Check className="w-4 h-4" /> : downloadState === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             </button>
           </div>
 
