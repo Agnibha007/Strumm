@@ -8,7 +8,7 @@ We believe music is a fundamental human right. It shouldn't be gated behind cost
 
 ---
 
-## 🌟 Why Strumm?
+## ❖ Why Strumm?
 
 - **100% Free**: No premium tiers, no hidden costs. Every feature is unlocked for everyone.
 - **Zero Ads**: Pure, uninterrupted playback. No audio ads, no banner ads, ever.
@@ -16,32 +16,32 @@ We believe music is a fundamental human right. It shouldn't be gated behind cost
 
 ---
 
-## ✨ Features
+## ✦ Features
 
-### 🎧 Persistent Background Playback
+### ⊳ Persistent Background Playback
 A globally persistent music player that follows you across the app without ever dropping a beat. Fully integrated with your device's lock-screen controls via the Media Session API.
 
-### 🎤 Fullscreen Karaoke Theatre
+### ⊳ Fullscreen Karaoke Theatre
 Immerse yourself in the music with a beautiful fullscreen theatre mode. Features real-time, dynamically synced lyrics that highlight exactly as the artist sings them.
 
-### 📥 Unrestricted MP3 Downloads
+### ⊳ Unrestricted MP3 Downloads
 Loved a track? Download it directly as a high-quality MP3 file to your local device. Never lose your music when you go offline, completely free of DRM and restrictions.
 
-### 🎨 Stunning Editorial Themes
+### ⊳ Stunning Editorial Themes
 A handcrafted UI featuring dynamic gradients, micro-animations, and glassmorphism. Choose from curated themes like **Obsidian**, **Black Cherry**, **Vinyl Classic**, **Ocean Drive**, **Monochrome**, and **Aurora**. You can even upload your own custom backgrounds!
 
-### 🧠 Smart LLM-Powered Curation
+### ⊳ Smart LLM-Powered Curation
 Not sure what to listen to? Let Strumm's intelligent **Flow** and **Discovery** modes (powered by the GROQ LLM API) instantly build custom playlists tailored to your exact mood and listening history.
 
-### 🗂️ Universal Playlist Importer
+### ⊳ Universal Playlist Importer
 Don't start from scratch. Easily import your existing library by uploading CSV files or directly pasting links from **Spotify** and **YouTube Music**. Strumm automatically searches and reconstructs your library!
 
-### 📱 Responsive Mobile Experience
+### ⊳ Responsive Mobile Experience
 A seamless, native-feeling app experience on mobile devices. Features intuitive swipe-to-open navigation menus, an elegant mini-player, and touch-optimized controls.
 
 ---
 
-## 🛠️ Architecture
+## ⎈ Architecture
 
 Strumm operates as a modern monorepo leveraging Turborepo and pnpm workspaces.
 
@@ -58,7 +58,7 @@ strumm/
 
 ---
 
-## 🚀 Running Locally
+## ⏵ Running Locally
 
 ### Prerequisites
 * **Node.js**: >= 20.0
@@ -95,4 +95,4 @@ The API documentation will be available at `http://localhost:8000/docs`.
 
 ---
 
-**Enjoy the music, completely free and ad-free!** 🎶
+**Enjoy the music, completely free and ad-free!**
