@@ -129,6 +129,27 @@ async def download_track_mp3(
     try:
         video_id = sanitize_youtube_id(id)
         filename_hint = safe_download_filename(title)
+
+        # Try Cobalt API first to bypass YouTube bot detection/IP bans on Render
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.cobalt.tools/api/json",
+                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                    json={
+                        "url": f"https://www.youtube.com/watch?v={video_id}",
+                        "downloadMode": "audio",
+                        "audioFormat": "mp3"
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("status") != "error" and data.get("url"):
+                        from fastapi.responses import RedirectResponse
+                        return RedirectResponse(data["url"])
+        except Exception as cobalt_err:
+            logger.warning(f"Cobalt download failed, falling back to local extractor: {str(cobalt_err)}")
+
         mp3_path, filename = await asyncio.to_thread(extract_youtube_mp3, video_id, filename_hint)
         return FileResponse(
             mp3_path,

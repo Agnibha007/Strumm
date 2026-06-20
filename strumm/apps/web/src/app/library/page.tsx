@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Clock, Heart, Play, User as UserIcon, Trash2 } from "lucide-react";
+import { Clock, Heart, Play, User as UserIcon, Trash2, Plus } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 
 export default function LibraryPage() {
   const { user, token } = useAuthStore();
-  const { playSong } = usePlayerStore();
+  const { playSong, addToQueue } = usePlayerStore();
   const [likedSongs, setLikedSongs] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,20 +167,37 @@ export default function LibraryPage() {
               {likedSongs.map((item) => {
                 const s = item.song;
                 return (
-                  <button
+                  <div
                     key={s.videoId}
-                    onClick={() => handlePlayLiked(s)}
-                    className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-elevated text-left w-full cursor-pointer transition border border-transparent hover:border-border/40"
+                    className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-elevated text-left w-full transition border border-transparent hover:border-border/40 group"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      onClick={() => handlePlayLiked(s)}
+                      className="flex items-center gap-3 min-w-0 flex-grow text-left cursor-pointer"
+                    >
                       <SongArtwork song={s} className="w-9 h-9 rounded shadow flex-shrink-0" />
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-text truncate leading-tight">{s.title}</div>
                         <div className="text-xs text-muted truncate mt-0.5">{s.artist}</div>
                       </div>
+                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition">
+                      <button
+                        onClick={() => handlePlayLiked(s)}
+                        className="p-1.5 hover:bg-surface text-primary rounded-lg transition"
+                        title="Play"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                      </button>
+                      <button
+                        onClick={() => addToQueue(s)}
+                        className="p-1.5 hover:bg-surface text-muted hover:text-text rounded-lg transition"
+                        title="Add to queue"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
                     </div>
-                    <Play className="w-4 h-4 text-muted fill-current hover:text-primary transition flex-shrink-0" />
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -223,22 +240,42 @@ export default function LibraryPage() {
               {history.map((item, idx) => {
                 const s = item.song;
                 return (
-                  <button
+                  <div
                     key={`${s.videoId}-${idx}`}
-                    onClick={() => playSong(s)}
-                    className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-elevated text-left w-full cursor-pointer transition border border-transparent hover:border-border/40"
+                    className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-elevated text-left w-full transition border border-transparent hover:border-border/40 group"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      onClick={() => playSong(s)}
+                      className="flex items-center gap-3 min-w-0 flex-grow text-left cursor-pointer"
+                    >
                       <SongArtwork song={s} className="w-9 h-9 rounded shadow flex-shrink-0" />
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-text truncate leading-tight">{s.title}</div>
                         <div className="text-xs text-muted truncate mt-0.5">{s.artist}</div>
                       </div>
+                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      <span className="text-[10px] text-muted mr-1">
+                        {new Date(item.playedAt).toLocaleDateString()}
+                      </span>
+                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                        <button
+                          onClick={() => playSong(s)}
+                          className="p-1.5 hover:bg-surface text-primary rounded-lg transition"
+                          title="Play"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                        </button>
+                        <button
+                          onClick={() => addToQueue(s)}
+                          className="p-1.5 hover:bg-surface text-muted hover:text-text rounded-lg transition"
+                          title="Add to queue"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-muted flex-shrink-0">
-                      {new Date(item.playedAt).toLocaleDateString()}
-                    </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

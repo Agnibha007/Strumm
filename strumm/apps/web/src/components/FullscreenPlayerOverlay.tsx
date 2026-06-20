@@ -185,23 +185,58 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       : apiUrl(`/download/${encodeURIComponent(currentSong.videoId)}?title=${encodeURIComponent(safeFileName(`${currentSong.title} - ${currentSong.artist}`))}`);
 
     try {
-      const res = await fetch(downloadUrl);
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        throw new Error(errorData?.detail || "Download failed. Track might be unavailable.");
+      let res;
+      let succeeded = false;
+      try {
+        res = await fetch(downloadUrl);
+        if (!res.ok) {
+          throw new Error("Backend failed");
+        }
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.rel = "noopener noreferrer";
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+        succeeded = true;
+      } catch (backendErr) {
+        // Fallback directly to Cobalt API from frontend if youtube track
+        if (!directAudioUrl && currentSong.videoId) {
+          const cobaltResp = await fetch("https://api.cobalt.tools/api/json", {
+            method: "POST",
+            headers: {
+              "Accept": "application/json",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url: `https://www.youtube.com/watch?v=${currentSong.videoId}`,
+              downloadMode: "audio",
+              audioFormat: "mp3"
+            })
+          });
+          if (cobaltResp.ok) {
+            const cobaltData = await cobaltResp.json();
+            if (cobaltData.url) {
+              const link = document.createElement("a");
+              link.href = cobaltData.url;
+              link.download = filename;
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              succeeded = true;
+            }
+          }
+        }
+        
+        if (!succeeded) {
+          throw new Error("Download failed. Track might be unavailable.");
+        }
       }
-      
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      
-      const link = document.createElement("a");
-      link.rel = "noopener noreferrer";
-      link.href = blobUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(blobUrl);
       
       setDownloadState("success");
       setTimeout(() => setDownloadState("idle"), 2000);
