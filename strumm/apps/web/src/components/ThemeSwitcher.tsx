@@ -42,6 +42,7 @@ export default function ThemeSwitcher() {
           <button
             key={t.name}
             onClick={() => setTheme(t.name)}
+            title={`Apply the ${t.name} theme: ${t.desc}`}
             className={`flex items-start gap-4 p-4 rounded-lg border text-left cursor-pointer transition-all duration-300 ${
               currentTheme === t.name
                 ? "bg-surface-elevated border-primary/40 box-glow"
@@ -92,6 +93,7 @@ export default function ThemeSwitcher() {
           </div>
           <button
             onClick={() => setAnimated(!isAnimated)}
+            title={isAnimated ? "Disable fluid animations to save battery and system resources" : "Enable fluid animations for a richer visual experience"}
             className={`px-4 py-1.5 rounded-full border text-xs cursor-pointer transition ${
               isAnimated
                 ? "bg-primary/10 border-primary text-primary"

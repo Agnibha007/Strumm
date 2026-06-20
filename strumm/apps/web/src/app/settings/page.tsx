@@ -221,6 +221,7 @@ export default function SettingsPage() {
                     key={option.id}
                     type="button"
                     onClick={() => setAudioQuality(option.id)}
+                    title={`Set streaming and preloading quality to ${option.label}: ${option.detail}`}
                     className={`w-full text-left border rounded-lg p-4 transition cursor-pointer flex items-start gap-3 ${
                       selected
                         ? "border-primary bg-primary/10 text-text"

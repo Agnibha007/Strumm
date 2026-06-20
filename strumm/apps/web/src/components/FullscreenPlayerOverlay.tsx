@@ -556,6 +556,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                       <button
                         key={rate}
                         onClick={() => setPlaybackRate(rate)}
+                        title={`Set playback speed to ${rate}x`}
                         className={`px-2.5 py-1 rounded-full text-[10px] font-semibold cursor-pointer transition ${
                           playbackRate === rate ? "bg-primary text-text shadow-sm" : "text-muted hover:text-text hover:bg-surface-elevated/60"
                         }`}
@@ -662,6 +663,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                   <button
                     key={rate}
                     onClick={() => setPlaybackRate(rate)}
+                    title={`Set playback speed to ${rate}x`}
                     className={`px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition ${
                       playbackRate === rate
                         ? "bg-primary text-text shadow-md box-glow"
