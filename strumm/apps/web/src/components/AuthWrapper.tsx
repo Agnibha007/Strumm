@@ -38,9 +38,12 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     if (!loading) {
       const isAuthenticated = !!(user && token);
       if (!isAuthenticated && pathname !== "/login") {
-        router.replace("/login");
+        const currentSearch = window.location.search;
+        router.replace(`/login?redirect=${encodeURIComponent(pathname + currentSearch)}`);
       } else if (isAuthenticated && pathname === "/login") {
-        router.replace("/");
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectUrl = searchParams.get("redirect") || "/";
+        router.replace(redirectUrl);
       }
     }
   }, [user, token, loading, pathname, router]);

@@ -110,17 +110,17 @@ export default function Navigation() {
   return (
     <>
       <header className="md:hidden sticky top-0 z-40 bg-surface/90 backdrop-blur-xl border-b border-border/60 px-4 py-3 flex items-center justify-between">
-        <Link href="/" className="inline-flex items-center gap-2">
-          <BrandLogo variant="mark" size="sm" priority />
-          <span className="font-editorial text-xl font-bold text-text leading-none">Strumm</span>
-        </Link>
         <button
           onClick={() => setIsOpen(true)}
-          className="p-2 text-muted hover:text-text hover:bg-surface-elevated rounded-lg transition"
+          className="p-2 -ml-2 text-muted hover:text-text hover:bg-surface-elevated rounded-lg transition"
           title="Open navigation"
         >
           <Menu className="w-5 h-5" />
         </button>
+        <Link href="/" className="inline-flex items-center gap-2">
+          <BrandLogo variant="mark" size="sm" priority />
+          <span className="font-editorial text-xl font-bold text-text leading-none">Strumm</span>
+        </Link>
       </header>
 
       <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 bg-surface/40 border-r border-border/60 flex-col justify-between z-30 backdrop-blur-md">

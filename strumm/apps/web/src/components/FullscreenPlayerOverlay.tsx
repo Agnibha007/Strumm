@@ -61,6 +61,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [lyricsSource, setLyricsSource] = useState<string | null>(null);
   const [isLiked, setIsLiked] = useState(false);
 
   useEffect(() => {
@@ -103,6 +104,16 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       }
     }
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !currentSong?.videoId) return;
@@ -223,6 +234,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       setLyricsLoading(true);
       setLyrics(null);
       setPlainLyrics(null);
+      setLyricsSource(null);
       try {
         const response = await fetch(
           apiUrl(`/lyrics/${encodeURIComponent(currentSong.videoId)}?title=${encodeURIComponent(cleanText(currentSong.title, 160))}&artist=${encodeURIComponent(cleanText(currentSong.artist, 160))}`)
@@ -233,6 +245,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           const synced = json.data.synced;
           const plain = json.data.plain;
           const parsedLyrics = synced ? parseLrc(synced) : [];
+          setLyricsSource(json.data.source);
           
           if (json.data.isSynced && parsedLyrics.length > 0) {
             setLyrics(parsedLyrics);
@@ -278,7 +291,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const effectiveShowLyrics = showLyrics && !isPodcast;
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-6 md:p-12 text-text overflow-hidden select-none">
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-6 md:p-12 text-text overflow-y-auto overflow-x-hidden select-none">
       {/* Dynamic ambient background glowing blobs */}
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-72 h-72 md:w-96 md:h-96 rounded-full bg-primary/10 blur-[100px] pointer-events-none animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-72 h-72 md:w-96 md:h-96 rounded-full bg-accent/5 blur-[120px] pointer-events-none animate-pulse" />
@@ -575,9 +588,11 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               )}
             </div>
 
-            <div className="mt-2 text-center text-[9px] text-muted/40 tracking-wider uppercase flex-shrink-0">
-              Synced with Strumm Curation Engine
-            </div>
+            {lyricsSource !== "ytmusic" && (
+              <div className="mt-2 text-center text-[9px] text-muted/40 tracking-wider uppercase flex-shrink-0">
+                Synced with Strumm Curation Engine
+              </div>
+            )}
           </div>
         )}
 

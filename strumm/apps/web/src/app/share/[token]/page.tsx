@@ -64,6 +64,12 @@ export default function SharePage({ params }: SharePageProps) {
     router.push("/");
   };
 
+  useEffect(() => {
+    if (shareData && !error) {
+      handlePlayContent();
+    }
+  }, [shareData]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center text-muted gap-3">

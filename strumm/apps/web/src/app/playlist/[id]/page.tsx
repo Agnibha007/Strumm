@@ -272,7 +272,7 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
           {playlist.songs.length > 0 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               {playlist.songs.slice(0, 4).map((s, idx) => (
-                <SongArtwork key={idx} song={s} className="w-full h-full" />
+                <SongArtwork key={idx} song={s} className="w-full h-full" priority={true} />
               ))}
             </div>
           ) : (
@@ -450,7 +450,7 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
                     </td>
                     <td className="py-3.5 px-4 font-semibold text-text">
                       <div className="flex items-center gap-3">
-                        <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" />
+                        <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" priority={index < 5} />
                         <span className="truncate max-w-[240px]">{song.title}</span>
                       </div>
                     </td>

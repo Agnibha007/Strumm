@@ -105,9 +105,14 @@ export default function LyricsKaraoke() {
         className="relative flex-1 overflow-y-auto py-8 scrollbar-none my-4 space-y-4 px-2 text-left text-sm"
       >
         {loading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 py-12 text-muted">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <span className="text-xs">Extracting syllables...</span>
+          <div className="flex flex-col items-start h-full gap-4 py-8 animate-pulse px-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div 
+                key={i} 
+                className="h-6 rounded-xl bg-border/40" 
+                style={{ width: `${Math.random() * 40 + 40}%` }}
+              />
+            ))}
           </div>
         ) : lyrics ? (
           lyrics.map((line, idx) => {

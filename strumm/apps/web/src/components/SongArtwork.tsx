@@ -12,6 +12,7 @@ interface SongArtworkProps {
   alt?: string;
   className?: string;
   iconClassName?: string;
+  priority?: boolean;
 }
 
 export default function SongArtwork({
@@ -19,6 +20,7 @@ export default function SongArtwork({
   alt,
   className = "",
   iconClassName = "w-5 h-5",
+  priority = false,
 }: SongArtworkProps) {
   const candidates = useMemo(() => {
     const directCandidates = getArtworkCandidates(song);
@@ -50,6 +52,7 @@ export default function SongArtwork({
           alt={alt || song?.title || ""}
           fill
           unoptimized
+          priority={priority}
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
           onError={() => {
