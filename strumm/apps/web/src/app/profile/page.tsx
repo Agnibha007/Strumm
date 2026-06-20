@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "web/lib/api";
 import { signOut } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
+import Link from "next/link";
+import SongArtwork from "web/components/SongArtwork";
 
 export default function ProfilePage() {
   const { token, user: cachedUser, fetchProfile, logout } = useAuthStore();
@@ -17,6 +19,8 @@ export default function ProfilePage() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [likedCount, setLikedCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [memories, setMemories] = useState<any[]>([]);
+  const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
@@ -37,10 +41,37 @@ export default function ProfilePage() {
         setPlaylists(libJson.data.playlists || []);
         setLikedCount(libJson.data.likedSongsCount || 0);
       }
+
+      // 3. Load user memories
+      const memResponse = await fetch(apiUrl("/memories"), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const memJson = await memResponse.json();
+      if (memJson.success && memJson.data) {
+        setMemories(memJson.data || []);
+      }
     } catch (e) {
       console.warn("Unable to fetch complete profile details offline.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteMemory = async (id: string) => {
+    setDeletingMemoryId(id);
+    try {
+      const response = await fetch(apiUrl(`/memories/${id}`), {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success) {
+        setMemories(prev => prev.filter(m => m.id !== id));
+      }
+    } catch (e) {
+      console.error("Failed to delete memory:", e);
+    } finally {
+      setDeletingMemoryId(null);
     }
   };
 
@@ -219,6 +250,20 @@ export default function ProfilePage() {
 
         {/* Right: Metrics and Stats */}
         <div className="lg:col-span-7 space-y-8">
+          {/* Strumm Replay Call-to-Action */}
+          <Link href="/replay">
+            <span className="block bg-gradient-to-r from-primary/10 via-surface/60 to-accent/5 border border-primary/20 rounded-xl p-5 hover:border-primary/40 transition cursor-pointer relative overflow-hidden group">
+              <div className="flex justify-between items-center z-10 relative">
+                <div>
+                  <span className="text-[9px] tracking-widest uppercase font-semibold text-primary block">New Experience</span>
+                  <h4 className="font-editorial text-lg text-text font-bold mt-1">Strumm Replay & Sound DNA</h4>
+                  <p className="text-xs text-muted mt-1">Explore your listening minutes, top genres, discovery index, and archetypes.</p>
+                </div>
+                <Sparkles className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+              </div>
+            </span>
+          </Link>
+
           {/* Main stats counters */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-surface/30 border border-border/40 rounded-xl p-4 text-center soft-enter hover:-translate-y-0.5 transition-transform">
@@ -299,6 +344,42 @@ export default function ProfilePage() {
                       <Library className="w-4 h-4" />
                     </div>
                   </a>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Song Memories List */}
+          <div className="space-y-4">
+            <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+              Song Memories
+            </h3>
+            {memories.length === 0 ? (
+              <p className="text-xs text-muted italic">No emotional memories attached to songs yet. Open player overlay and click Memory button to attach a memory to a song.</p>
+            ) : (
+              <div className="space-y-4">
+                {memories.map((memory) => (
+                  <div key={memory.id} className="p-4 bg-surface/40 border border-border/60 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <SongArtwork song={memory.song} className="w-8 h-8 rounded flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-text truncate leading-tight">{memory.song.title}</div>
+                          <div className="text-[10px] text-muted truncate">{memory.song.artist}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMemory(memory.id)}
+                        disabled={deletingMemoryId === memory.id}
+                        className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[10px] transition cursor-pointer disabled:opacity-30"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    <div className="p-3 bg-surface-elevated/40 border-l-2 border-accent rounded-r-lg italic text-xs text-text leading-relaxed font-serif">
+                      &ldquo;{memory.note}&rdquo;
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

@@ -1,28 +1,30 @@
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status, Cookie
+from typing import Optional
 from app.database import mongodb as db
 from app.services.auth_utils import decode_access_token
 from app.services.security import parse_object_id
 from bson import ObjectId
 from pymongo.errors import PyMongoError
 
-async def get_current_user(authorization: str = Header(None)):
-    if not authorization:
+async def get_current_user(
+    authorization: str = Header(None),
+    access_token: Optional[str] = Cookie(None)
+):
+    token = None
+    if access_token:
+        token = access_token
+    elif authorization:
+        try:
+            parts = authorization.split(" ")
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+        except ValueError:
+            pass
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header missing"
-        )
-        
-    try:
-        scheme, token = authorization.split(" ")
-        if scheme.lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication scheme"
-            )
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization format"
+            detail="Authorization token missing"
         )
 
     payload = decode_access_token(token)

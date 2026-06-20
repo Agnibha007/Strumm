@@ -111,40 +111,62 @@ export default function AudioEngine() {
     }
   }, [currentSong, isPlaying]);
 
-  // 2. Load YouTube API
-  useEffect(() => {
-    console.log("AudioEngine: Mounting & Loading YouTube Iframe API...");
-    // Manually create the player target element outside of React Virtual DOM
-    // to prevent React unmount "removeChild" mismatch errors.
-    const playerDiv = document.createElement("div");
-    playerDiv.id = "strumm-player-iframe";
-    containerRef.current?.appendChild(playerDiv);
-
-    if (!window.YT || !window.YT.Player) {
-      console.log("AudioEngine: window.YT or window.YT.Player not found, setting up script...");
-      window.onYouTubeIframeAPIReady = () => {
-        console.log("AudioEngine: onYouTubeIframeAPIReady callback triggered!");
+  // 2. Lazy Load YouTube API
+  const loadYouTubeAPI = () => {
+    if (window.YT && window.YT.Player) {
+      if (!playerInstanceRef.current) {
         initPlayer();
-      };
-
-      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        document.head.appendChild(tag);
-        console.log("AudioEngine: script element appended to head.");
-      } else {
-        console.log("AudioEngine: script element already exists in head.");
-        // If script exists but YT isn't loaded yet, window.onYouTubeIframeAPIReady will handle it.
-        // If YT is already loaded, initialize directly.
-        if (window.YT && window.YT.Player) {
-          initPlayer();
-        }
       }
-    } else {
-      console.log("AudioEngine: window.YT already exists, initializing player directly...");
-      initPlayer();
+      return;
     }
 
+    usePlayerStore.getState().setPlayerLoading(true);
+    usePlayerStore.getState().setPlayerError(null);
+
+    // Manually create the player target element outside of React Virtual DOM
+    // to prevent React unmount "removeChild" mismatch errors.
+    if (containerRef.current && !document.getElementById("strumm-player-iframe")) {
+      const playerDiv = document.createElement("div");
+      playerDiv.id = "strumm-player-iframe";
+      containerRef.current.appendChild(playerDiv);
+    }
+
+    window.onYouTubeIframeAPIReady = () => {
+      console.log("AudioEngine: onYouTubeIframeAPIReady callback triggered!");
+      initPlayer();
+    };
+
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      tag.onerror = () => {
+        usePlayerStore.getState().setPlayerLoading(false);
+        usePlayerStore.getState().setPlayerError("Failed to load player engine. Retrying...");
+        setTimeout(() => {
+          if (!window.YT) {
+            const retryTag = document.createElement("script");
+            retryTag.src = "https://www.youtube.com/iframe_api";
+            document.head.appendChild(retryTag);
+          }
+        }, 3000);
+      };
+      document.head.appendChild(tag);
+      console.log("AudioEngine: script element appended to head.");
+    } else {
+      if (window.YT && window.YT.Player) {
+        initPlayer();
+      }
+    }
+  };
+
+  useEffect(() => {
+    const isYTSong = currentSong && !currentSong.metadata?.audioUrl;
+    if (isYTSong && isPlaying) {
+      loadYouTubeAPI();
+    }
+  }, [currentSong?.videoId, isPlaying]);
+
+  useEffect(() => {
     return () => {
       stopProgressTimer();
       if (playerInstanceRef.current && typeof playerInstanceRef.current.destroy === "function") {
@@ -376,6 +398,9 @@ export default function AudioEngine() {
       return;
     }
 
+    usePlayerStore.getState().setPlayerLoading(true);
+    usePlayerStore.getState().setPlayerError(null);
+
     try {
       playerInstanceRef.current = new window.YT.Player("strumm-player-iframe", {
         height: "250",
@@ -395,6 +420,7 @@ export default function AudioEngine() {
         events: {
           onReady: (event: any) => {
             console.log("AudioEngine: YT Player onReady event triggered!");
+            usePlayerStore.getState().setPlayerLoading(false);
             const ytPlayer = event.target;
             if (!currentSong?.metadata?.audioUrl) {
               setPlayerRef({
@@ -440,6 +466,7 @@ export default function AudioEngine() {
             const state = event.data;
             if (state === 1) {
               setPlaying(true);
+              usePlayerStore.getState().setPlayerLoading(false);
               setDuration(playerInstanceRef.current.getDuration() || currentSong?.duration || 0);
               startProgressTimer();
             } else if (state === 2) {
@@ -453,13 +480,19 @@ export default function AudioEngine() {
           onError: (err: any) => {
             if (currentSong?.metadata?.audioUrl) return;
             console.error("AudioEngine: YT Player error:", err);
+            usePlayerStore.getState().setPlayerLoading(false);
+            usePlayerStore.getState().setPlayerError("Playback failed or restricted. Skipping...");
             stopProgressTimer();
-            usePlayerStore.getState().next();
+            setTimeout(() => {
+              usePlayerStore.getState().next();
+            }, 2000);
           },
         },
       });
     } catch (e) {
       console.error("AudioEngine: Exception while calling new window.YT.Player:", e);
+      usePlayerStore.getState().setPlayerLoading(false);
+      usePlayerStore.getState().setPlayerError("Failed to initialize player.");
     }
   };
 

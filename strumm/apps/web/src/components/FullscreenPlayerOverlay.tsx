@@ -24,7 +24,8 @@ import {
   ChevronUp,
   ChevronDown,
   X,
-  Video
+  Video,
+  Sparkles
 } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -114,6 +115,43 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyricsSource, setLyricsSource] = useState<string | null>(null);
   const [isLiked, setIsLiked] = useState(false);
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
+  const [memoryNote, setMemoryNote] = useState("");
+  const [memoryVisibility, setMemoryVisibility] = useState<"public" | "private">("private");
+  const [memorySaving, setMemorySaving] = useState(false);
+  const [memorySuccess, setMemorySuccess] = useState(false);
+
+  const handleSaveMemory = async () => {
+    if (!currentSong || !token) return;
+    setMemorySaving(true);
+    try {
+      const response = await fetch(apiUrl("/memories"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          song: currentSong,
+          note: memoryNote,
+          visibility: memoryVisibility
+        })
+      });
+      const json = await response.json();
+      if (json.success) {
+        setMemorySuccess(true);
+        setMemoryNote("");
+        setTimeout(() => {
+          setMemorySuccess(false);
+          setShowMemoryModal(false);
+        }, 1500);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setMemorySaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!currentSong?.videoId || !token) return;
@@ -440,6 +478,17 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             <Heart className={`w-3.5 h-3.5 ${isLiked ? "fill-current" : ""}`} />
             <span className="hidden sm:inline">{isLiked ? "Liked" : "Like"}</span>
           </button>
+
+          {!isPodcast && (
+            <button
+              onClick={() => setShowMemoryModal(true)}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-border/30 bg-surface-elevated/40 text-muted hover:text-accent hover:border-accent/50 text-xs font-bold cursor-pointer transition-all"
+              title="Attach Memory"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" />
+              <span className="hidden sm:inline">Memory</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1016,6 +1065,120 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                   </Reorder.Group>
                 )}
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Attach Song Memory Modal */}
+      <AnimatePresence>
+        {showMemoryModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMemoryModal(false)}
+              className="absolute inset-0 bg-background/90 backdrop-blur-md"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", duration: 0.35 }}
+              className="relative w-full max-w-md bg-surface border border-border/80 rounded-2xl p-6 shadow-2xl space-y-6 z-10 text-left"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-accent/10 border border-accent/20 text-accent rounded-lg">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-editorial text-lg text-text font-bold">Attach Song Memory</h3>
+                    <p className="text-[10px] uppercase tracking-wider text-muted font-semibold mt-0.5">
+                      Link your emotions to this sound
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowMemoryModal(false)}
+                  className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded transition cursor-pointer"
+                >
+                  <X className="w-4.5 h-4.5" />
+                </button>
+              </div>
+
+              {memorySuccess ? (
+                <div className="py-8 text-center text-accent text-sm font-semibold animate-pulse">
+                  Memory attached successfully to this record.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-3 bg-surface-elevated/40 border border-border/50 rounded-xl">
+                    <SongArtwork song={currentSong} className="w-10 h-10 rounded shadow flex-shrink-0" />
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-text truncate">{currentSong?.title}</h4>
+                      <p className="text-[10px] text-muted truncate mt-0.5">{currentSong?.artist}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted">Your Memory Note</label>
+                    <textarea
+                      placeholder="What does this song remind you of? Write your note..."
+                      value={memoryNote}
+                      onChange={(e) => setMemoryNote(e.target.value)}
+                      className="w-full h-24 bg-background border border-border rounded-xl p-3 text-xs text-text focus:outline-none focus:border-accent/50 transition resize-none font-serif leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center bg-background border border-border rounded-xl p-3">
+                    <div>
+                      <span className="text-xs font-semibold text-text block">Visibility</span>
+                      <span className="text-[10px] text-muted">Public memories appear on passport profiles</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => setMemoryVisibility("private")}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition ${
+                          memoryVisibility === "private"
+                            ? "bg-accent/15 border border-accent/20 text-accent"
+                            : "border border-border text-muted hover:text-text"
+                        }`}
+                      >
+                        Private
+                      </button>
+                      <button
+                        onClick={() => setMemoryVisibility("public")}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition ${
+                          memoryVisibility === "public"
+                            ? "bg-accent/15 border border-accent/20 text-accent"
+                            : "border border-border text-muted hover:text-text"
+                        }`}
+                      >
+                        Public
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => setShowMemoryModal(false)}
+                      className="flex-1 py-2.5 border border-border hover:bg-surface-elevated text-text text-xs font-semibold rounded-xl transition cursor-pointer select-none"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveMemory}
+                      disabled={!memoryNote.trim() || memorySaving}
+                      className="flex-1 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-semibold rounded-xl transition cursor-pointer select-none disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      {memorySaving ? "Attaching..." : "Save Memory"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}

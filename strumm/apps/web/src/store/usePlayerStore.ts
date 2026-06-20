@@ -17,6 +17,8 @@ interface PlayerState {
   playbackRate: number;
   podcastMode: "audio" | "video";
   audioQuality: "data-saver" | "balanced" | "high";
+  isPlayerLoading: boolean;
+  playerError: string | null;
   
   // Actions
   setCurrentSong: (song: Song | null) => void;
@@ -38,6 +40,8 @@ interface PlayerState {
   setPodcastMode: (mode: "audio" | "video") => void;
   handleTrackEnded: () => void;
   restorePlayerState: (state: Partial<PlayerState>) => void;
+  setPlayerLoading: (loading: boolean) => void;
+  setPlayerError: (error: string | null) => void;
   
   // YouTube API integration callbacks
   playerRef: {
@@ -69,6 +73,10 @@ export const usePlayerStore = create<PlayerState>()(
       podcastMode: "audio",
       audioQuality: "balanced",
       playerRef: null,
+      isPlayerLoading: false,
+      playerError: null,
+      setPlayerLoading: (loading) => set({ isPlayerLoading: loading }),
+      setPlayerError: (error) => set({ playerError: error }),
 
       setCurrentSong: (song) => {
         set({ currentSong: song });

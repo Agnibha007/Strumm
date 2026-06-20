@@ -4,13 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { useAuthStore } from "web/store/useAuthStore";
-import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Mic2, Heart, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Mic2, Heart, Trash2, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
-import FullscreenPlayerOverlay from "./FullscreenPlayerOverlay";
+import dynamic from "next/dynamic";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
+
+const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"), {
+  loading: () => (
+    <div className="fixed inset-0 bg-background/90 z-[90] flex flex-col items-center justify-center gap-2">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  ),
+  ssr: false,
+});
 
 export default function EditorialPlayer() {
   const {

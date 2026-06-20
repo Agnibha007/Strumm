@@ -51,7 +51,6 @@ export default function SongArtwork({
           src={src}
           alt={alt || song?.title || ""}
           fill
-          unoptimized
           priority={priority}
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
@@ -59,7 +58,7 @@ export default function SongArtwork({
             setLoaded(false);
             setIndex((current) => current + 1);
           }}
-          className={`object-cover transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+          className={`object-cover transition-all duration-300 ${loaded ? "opacity-100 scale-100 blur-none" : "opacity-0 scale-95 blur-md"}`}
         />
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-muted">

@@ -4,6 +4,18 @@ const apiOrigin = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:800
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@strumm/types", "@strumm/ui", "@strumm/database"],
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "**",
+      },
+      {
+        protocol: "http",
+        hostname: "**",
+      },
+    ],
+  },
   async headers() {
     return [
       {
@@ -31,6 +43,14 @@ const nextConfig: NextConfig = {
           }
         ]
       }
+    ];
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/@:username",
+        destination: "/public/@:username",
+      },
     ];
   }
 };

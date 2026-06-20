@@ -1,20 +1,75 @@
 import os
 import re
 import secrets
+import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Cookie
 from pydantic import BaseModel, EmailStr
 from bson import ObjectId
 from app.database import mongodb as db
 from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password
 from app.services.email_service import send_otp_email, send_resend_otp_email
-from app.services.security import sanitize_text, sanitize_username
+from app.services.security import sanitize_text, sanitize_username, parse_object_id
 import httpx
 import logging
 
 logger = logging.getLogger("strumm-auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+SESSIONS_COLLECTION = "sessions"
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+async def create_device_session(user_id: str, email: str, username: str, request: Request, database) -> tuple[str, str]:
+    # Short expiry access token: 15 mins
+    access_token_payload = {
+        "sub": user_id,
+        "email": email,
+        "username": username,
+        "type": "access"
+    }
+    access_token = create_access_token(access_token_payload, expires_delta=timedelta(minutes=15))
+    
+    # Long expiry refresh token: 30 days
+    refresh_token = secrets.token_hex(32)
+    refresh_token_hash = hash_refresh_token(refresh_token)
+    
+    # Extract device info
+    device = request.headers.get("user-agent", "Unknown Device")
+    
+    # Save session
+    session_doc = {
+        "userId": user_id,
+        "refreshTokenHash": refresh_token_hash,
+        "device": device,
+        "createdAt": datetime.utcnow(),
+        "expiresAt": datetime.utcnow() + timedelta(days=30)
+    }
+    await database[SESSIONS_COLLECTION].insert_one(session_doc)
+    
+    return access_token, refresh_token
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=15 * 60, # 15 mins
+        path="/"
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=30 * 24 * 60 * 60, # 30 days
+        path="/"
+    )
 
 class EmailLoginRequest(BaseModel):
     email: EmailStr
@@ -199,10 +254,14 @@ async def send_signup_otp(request: EmailSignupRequest):
         }
 
 @router.post("/verify")
-async def verify_otp(request: OTPVerifyRequest):
+async def verify_otp(
+    payload: OTPVerifyRequest,
+    request: Request,
+    response: Response
+):
     try:
-        email = request.email.lower()
-        otp = request.otp.strip()
+        email = payload.email.lower()
+        otp = payload.otp.strip()
         
         database = db.get_db()
         otp_doc = await database["otps"].find_one({"email": email})
@@ -275,13 +334,11 @@ async def verify_otp(request: OTPVerifyRequest):
                 return {"success": False, "error": "Account not found. Please sign up first."}
             user_id = str(user["_id"])
             
-        # Generate JWT session
-        token_payload = {
-            "sub": user_id,
-            "email": email,
-            "username": user.get("username"),
-        }
-        token = create_access_token(token_payload)
+        # Generate cookies and sessions
+        access_token, refresh_token = await create_device_session(
+            user_id, email, user.get("username"), request, database
+        )
+        set_auth_cookies(response, access_token, refresh_token)
         
         # Serialize user fields
         user["id"] = user_id
@@ -293,7 +350,7 @@ async def verify_otp(request: OTPVerifyRequest):
         return {
             "success": True,
             "data": {
-                "token": token,
+                "token": access_token,
                 "user": user
             }
         }
@@ -305,9 +362,13 @@ async def verify_otp(request: OTPVerifyRequest):
         }
 
 @router.post("/google")
-async def google_login(request: GoogleLoginRequest):
+async def google_login(
+    payload: GoogleLoginRequest,
+    request: Request,
+    response: Response
+):
     try:
-        claims = await verify_google_id_token(request.idToken)
+        claims = await verify_google_id_token(payload.idToken)
         email = claims["email"].lower()
         display_name = sanitize_text(claims.get("name") or email.split("@")[0], max_length=120)
         avatar = sanitize_text(claims.get("picture"), max_length=500) if claims.get("picture") else None
@@ -356,13 +417,11 @@ async def google_login(request: GoogleLoginRequest):
                 await database[db.USERS].update_one({"_id": user["_id"]}, {"$set": updates})
                 user.update(updates)
                 
-        # Generate JWT session
-        token_payload = {
-            "sub": user_id,
-            "email": email,
-            "username": user.get("username"),
-        }
-        token = create_access_token(token_payload)
+        # Generate cookies and sessions
+        access_token, refresh_token = await create_device_session(
+            user_id, email, user.get("username"), request, database
+        )
+        set_auth_cookies(response, access_token, refresh_token)
         
         user["id"] = user_id
         if "_id" in user:
@@ -373,7 +432,7 @@ async def google_login(request: GoogleLoginRequest):
         return {
             "success": True,
             "data": {
-                "token": token,
+                "token": access_token,
                 "user": user
             }
         }
@@ -385,10 +444,14 @@ async def google_login(request: GoogleLoginRequest):
         }
 
 @router.post("/login")
-async def email_password_login(request: EmailPasswordLoginRequest):
+async def email_password_login(
+    payload: EmailPasswordLoginRequest,
+    request: Request,
+    response: Response
+):
     try:
-        email = request.email.lower()
-        password = request.password
+        email = payload.email.lower()
+        password = payload.password
         
         database = db.get_db()
         user = await database[db.USERS].find_one({"email": email})
@@ -404,13 +467,11 @@ async def email_password_login(request: EmailPasswordLoginRequest):
             
         user_id = str(user["_id"])
         
-        # Generate JWT session
-        token_payload = {
-            "sub": user_id,
-            "email": email,
-            "username": user.get("username"),
-        }
-        token = create_access_token(token_payload)
+        # Generate cookies and sessions
+        access_token, refresh_token = await create_device_session(
+            user_id, email, user.get("username"), request, database
+        )
+        set_auth_cookies(response, access_token, refresh_token)
         
         # Serialize user fields
         user["id"] = user_id
@@ -422,10 +483,110 @@ async def email_password_login(request: EmailPasswordLoginRequest):
         return {
             "success": True,
             "data": {
-                "token": token,
+                "token": access_token,
                 "user": user
             }
         }
     except Exception as e:
         logger.error(f"Error logging in: {str(e)}")
         return {"success": False, "error": f"Authentication error: {str(e)}"}
+
+@router.post("/refresh")
+async def refresh_session(
+    response: Response,
+    request: Request,
+    refresh_token: Optional[str] = Cookie(None)
+):
+    try:
+        token = refresh_token
+        if not token:
+            auth_header = request.headers.get("authorization")
+            if auth_header and auth_header.lower().startswith("bearer "):
+                token = auth_header[7:]
+            else:
+                try:
+                    body = await request.json()
+                    token = body.get("refreshToken") or body.get("refresh_token")
+                except Exception:
+                    pass
+
+        if not token:
+            raise HTTPException(status_code=401, detail="Refresh token missing")
+
+        token_hash = hash_refresh_token(token)
+        database = db.get_db()
+        session = await database[SESSIONS_COLLECTION].find_one({"refreshTokenHash": token_hash})
+        
+        if not session or session.get("expiresAt") < datetime.utcnow():
+            if session:
+                await database[SESSIONS_COLLECTION].delete_one({"_id": session["_id"]})
+            raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
+
+        user_id = session["userId"]
+        user = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
+        if not user:
+            raise HTTPException(status_code=401, detail="User account not found")
+
+        new_access_token_payload = {
+            "sub": user_id,
+            "email": user.get("email"),
+            "username": user.get("username"),
+            "type": "access"
+        }
+        new_access_token = create_access_token(new_access_token_payload, expires_delta=timedelta(minutes=15))
+        
+        new_refresh_token = secrets.token_hex(32)
+        new_refresh_token_hash = hash_refresh_token(new_refresh_token)
+        
+        await database[SESSIONS_COLLECTION].update_one(
+            {"_id": session["_id"]},
+            {
+                "$set": {
+                    "refreshTokenHash": new_refresh_token_hash,
+                    "createdAt": datetime.utcnow(),
+                    "expiresAt": datetime.utcnow() + timedelta(days=30),
+                    "device": request.headers.get("user-agent", "Unknown Device")
+                }
+            }
+        )
+        
+        set_auth_cookies(response, new_access_token, new_refresh_token)
+        
+        user["id"] = user_id
+        if "_id" in user:
+            del user["_id"]
+        if "createdAt" in user:
+            user["createdAt"] = user["createdAt"].isoformat()
+            
+        return {
+            "success": True,
+            "data": {
+                "token": new_access_token,
+                "refreshToken": new_refresh_token,
+                "user": user
+            }
+        }
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error rotating refresh token: {str(e)}")
+        return {"success": False, "error": f"Refresh failed: {str(e)}"}
+
+@router.post("/logout")
+async def logout_session(
+    response: Response,
+    refresh_token: Optional[str] = Cookie(None)
+):
+    try:
+        if refresh_token:
+            token_hash = hash_refresh_token(refresh_token)
+            database = db.get_db()
+            await database[SESSIONS_COLLECTION].delete_one({"refreshTokenHash": token_hash})
+            
+        response.delete_cookie(key="access_token", path="/")
+        response.delete_cookie(key="refresh_token", path="/")
+        
+        return {"success": True, "data": {"message": "Logged out successfully"}}
+    except Exception as e:
+        logger.error(f"Error during logout: {str(e)}")
+        return {"success": False, "error": f"Logout error: {str(e)}"}

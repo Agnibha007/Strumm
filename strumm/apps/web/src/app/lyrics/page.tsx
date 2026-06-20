@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { useThemeStore } from "web/store/useThemeStore";
 import { Mic2, Loader2, Music4, ArrowLeft, Play, Pause, SkipForward, SkipBack } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -10,14 +11,50 @@ import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 
 export default function LyricsPage() {
   const { currentSong, currentTime, isPlaying, togglePlay, next, prev } = usePlayerStore();
+  const { isAnimated } = useThemeStore();
   const router = useRouter();
 
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [backdropColor, setBackdropColor] = useState<string>("rgba(255, 85, 0, 0.15)");
 
   const activeLineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Dynamic dominant color extraction from thumbnail
+  useEffect(() => {
+    if (!currentSong?.thumbnail) return;
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = currentSong.thumbnail;
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 10;
+        canvas.height = 10;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, 10, 10);
+        const data = ctx.getImageData(0, 0, 10, 10).data;
+        
+        let r = 0, g = 0, b = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i];
+          g += data[i+1];
+          b += data[i+2];
+        }
+        const count = data.length / 4;
+        r = Math.round(r / count);
+        g = Math.round(g / count);
+        b = Math.round(b / count);
+        
+        setBackdropColor(`rgba(${r}, ${g}, ${b}, 0.25)`);
+      } catch (e) {
+        console.warn("Cross-origin thumbnail color extraction restricted. Using fallback.");
+      }
+    };
+  }, [currentSong?.thumbnail]);
 
   useEffect(() => {
     if (!currentSong?.videoId) return;
@@ -96,6 +133,11 @@ export default function LyricsPage() {
         className="absolute inset-0 bg-cover bg-center filter blur-3xl opacity-30 transition-all duration-1000 scale-110"
         style={currentSong ? { backgroundImage: `url(${currentSong.thumbnail})` } : {}}
       />
+      {/* Dynamic Dominant Color Blending */}
+      <div 
+        className="absolute inset-0 transition-all duration-1000" 
+        style={{ background: `radial-gradient(circle at center, ${backdropColor} 0%, transparent 70%)` }}
+      />
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/60" />
 
       {/* Header */}
@@ -131,36 +173,42 @@ export default function LyricsPage() {
       {/* Lyrics container */}
       <div 
         ref={scrollContainerRef}
-        className="relative z-10 flex-1 overflow-y-auto py-12 scrollbar-none my-6 text-center max-w-4xl mx-auto w-full space-y-6 md:space-y-8 px-4"
+        className="relative z-10 flex-1 overflow-y-auto py-12 scrollbar-none my-6 text-center max-w-4xl mx-auto w-full space-y-6 md:space-y-8 px-4 flex flex-col justify-center"
       >
         {!currentSong ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted gap-3">
-            <Music4 className="w-12 h-12 opacity-30" />
-            <h3 className="font-editorial text-xl text-text font-bold">Silence is Golden</h3>
-            <p className="text-xs">Queue a song to begin reading the translation.</p>
+          <div className="flex flex-col items-center justify-center text-muted gap-4 max-w-sm mx-auto p-8 bg-surface/40 border border-border/50 rounded-2xl shadow-xl backdrop-blur-md">
+            <div className="p-4 bg-primary/10 border border-primary/20 text-primary rounded-full">
+              <Music4 className="w-8 h-8 opacity-75" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-editorial text-xl text-text font-bold">Silence is Golden</h3>
+              <p className="text-xs text-muted max-w-xs leading-relaxed">Queue a song to begin reading the translation.</p>
+            </div>
           </div>
         ) : loading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-muted">
+          <div className="flex flex-col items-center justify-center gap-3 text-muted">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
             <span className="text-xs uppercase tracking-widest">Parsing lines...</span>
           </div>
         ) : lyrics ? (
-          lyrics.map((line, idx) => {
-            const isActive = idx === activeIndex;
-            return (
-              <div
-                key={idx}
-                ref={isActive ? activeLineRef : null}
-                className={`transition-all duration-500 py-3 leading-relaxed select-none cursor-pointer font-editorial ${
-                  isActive 
-                    ? "text-3xl md:text-5xl text-primary font-bold text-glow scale-105" 
-                    : "text-xl md:text-3xl text-muted/30 hover:text-muted/60"
-                }`}
-              >
-                {line.text}
-              </div>
-            );
-          })
+          <div className="space-y-6 md:space-y-8">
+            {lyrics.map((line, idx) => {
+              const isActive = idx === activeIndex;
+              return (
+                <div
+                  key={idx}
+                  ref={isActive ? activeLineRef : null}
+                  className={`transition-all duration-500 py-3 leading-relaxed select-none cursor-pointer font-editorial ${
+                    isActive 
+                      ? "text-3xl md:text-5xl text-primary font-bold text-glow scale-105" 
+                      : "text-xl md:text-3xl text-muted/30 hover:text-muted/60"
+                  }`}
+                >
+                  {line.text}
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="whitespace-pre-line py-8 text-muted/80 leading-relaxed font-editorial text-center italic text-xl md:text-3xl select-none max-w-2xl mx-auto">
             {plainLyrics}

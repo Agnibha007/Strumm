@@ -74,6 +74,23 @@ async def rate_limiting_middleware(request: Request, call_next):
 @app.on_event("startup")
 async def startup_db_client():
     db.connect_db()
+    try:
+        database = db.get_db()
+        # Create users indexes
+        await database[db.USERS].create_index("email", unique=True)
+        await database[db.USERS].create_index("username", unique=True)
+        
+        # Create history compound index: userId + playedAt
+        await database[db.PLAYBACK_HISTORIES].create_index([("userId", 1), ("playedAt", -1)])
+        
+        # Create playlists index: userId
+        await database[db.PLAYLISTS].create_index("userId")
+        
+        # Create shares TTL index: expiry
+        await database[db.SHARES].create_index("expiry", expireAfterSeconds=0)
+        logger.info("Successfully initialized database indexes and TTL.")
+    except Exception as e:
+        logger.error(f"Error establishing database indexes on startup: {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

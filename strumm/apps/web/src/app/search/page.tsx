@@ -19,16 +19,23 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [trending, setTrending] = useState<string[]>(["Lofi Beats", "Indian Classical", "Rain Ambient", "Electronic Focus", "Jazz Cafe"]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [activeFilter, setActiveFilter] = useState<"All" | "Songs" | "Artists" | "Albums" | "Podcasts" | "Playlists" | "Profiles">("All");
+  const searchCacheRef = useRef<Record<string, any>>({});
+  
   const [results, setResults] = useState<{
     songs: Song[];
     playlists: Playlist[];
     podcasts: PodcastShow[];
     users: any[];
+    artists: any[];
+    albums: any[];
   }>({
     songs: [],
     playlists: [],
     podcasts: [],
-    users: []
+    users: [],
+    artists: [],
+    albums: []
   });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -101,24 +108,46 @@ export default function SearchPage() {
     }
   }, []);
 
-  // 3. Search query debounce and execution
+  // 3. Search query debounce and execution with local cache
   useEffect(() => {
     if (!query.trim()) {
-      setResults({ songs: [], playlists: [], podcasts: [], users: [] });
+      setResults({ songs: [], playlists: [], podcasts: [], users: [], artists: [], albums: [] });
+      return;
+    }
+
+    const categoryParam = activeFilter === "All" ? "" : activeFilter.toLowerCase();
+    const cacheKey = `${query.trim()}:${categoryParam}`;
+
+    if (searchCacheRef.current[cacheKey]) {
+      setResults(searchCacheRef.current[cacheKey]);
       return;
     }
 
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const response = await fetch(apiUrl(`/search?q=${encodeURIComponent(cleanText(query, 120))}`));
+        const cat = categoryParam === "profiles" ? "users" : categoryParam;
+        const url = activeFilter === "All"
+          ? apiUrl(`/search?q=${encodeURIComponent(cleanText(query, 120))}`)
+          : apiUrl(`/search?q=${encodeURIComponent(cleanText(query, 120))}&category=${cat}`);
+          
+        const response = await fetch(url);
         const json = await response.json();
         if (json.success && json.data) {
-          setResults(json.data.results);
+          const fetchedResults = {
+            songs: json.data.results.songs || [],
+            playlists: json.data.results.playlists || [],
+            podcasts: json.data.results.podcasts || [],
+            users: json.data.results.users || [],
+            artists: json.data.results.artists || [],
+            albums: json.data.results.albums || []
+          };
+          setResults(fetchedResults);
+          searchCacheRef.current[cacheKey] = fetchedResults;
+          
           if (json.data.trending) {
             setTrending(json.data.trending);
           }
-          // Save to smart search history
           if (query.trim().length >= 2) {
             saveRecentSearch(query.trim());
           }
@@ -131,7 +160,7 @@ export default function SearchPage() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, activeFilter]);
 
   // 4. Save recent searches
   const saveRecentSearch = (term: string) => {
@@ -215,6 +244,23 @@ export default function SearchPage() {
         </div>
       </div>
 
+      {/* Filter Pills */}
+      <div className="flex flex-wrap gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {(["All", "Songs", "Artists", "Albums", "Podcasts", "Playlists", "Profiles"] as const).map((filter) => (
+          <button
+            key={filter}
+            onClick={() => setActiveFilter(filter)}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-full border transition cursor-pointer select-none whitespace-nowrap ${
+              activeFilter === filter
+                ? "bg-primary border-primary text-text shadow-lg"
+                : "bg-surface/50 border-border/60 text-muted hover:border-border hover:text-text"
+            }`}
+          >
+            {filter}
+          </button>
+        ))}
+      </div>
+
       {/* Main Results / Recommendations */}
       <AnimatePresence mode="wait">
         {!query.trim() ? (
@@ -286,10 +332,12 @@ export default function SearchPage() {
             )}
 
             {!loading &&
-              results.songs.length === 0 &&
-              results.playlists.length === 0 &&
-              results.podcasts.length === 0 &&
-              results.users.length === 0 && (
+              (results.songs || []).length === 0 &&
+              (results.playlists || []).length === 0 &&
+              (results.podcasts || []).length === 0 &&
+              (results.users || []).length === 0 &&
+              (results.artists || []).length === 0 &&
+              (results.albums || []).length === 0 && (
                 <div className="text-center py-16 space-y-2 border border-dashed border-border/60 rounded-xl bg-surface/20">
                   <HelpCircle className="w-8 h-8 text-muted mx-auto" />
                   <p className="font-editorial text-lg text-text">No records found</p>
@@ -300,7 +348,7 @@ export default function SearchPage() {
               )}
 
             {/* Render Song Matches */}
-            {results.songs.length > 0 && (
+            {(activeFilter === "All" || activeFilter === "Songs") && results.songs.length > 0 && (
               <div className="space-y-4">
                 <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Song Results
@@ -353,8 +401,67 @@ export default function SearchPage() {
               </div>
             )}
 
+            {/* Render Artists */}
+            {(activeFilter === "All" || activeFilter === "Artists") && results.artists && results.artists.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                  Artists
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                  {results.artists.map((artist) => (
+                    <div
+                      key={artist.id}
+                      className="p-4 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-center"
+                    >
+                      <div className="w-16 h-16 rounded-full bg-surface-elevated overflow-hidden border border-border/60 mx-auto relative shadow flex items-center justify-center">
+                        {artist.thumbnail ? (
+                          <img src={artist.thumbnail} alt={artist.name} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-6 h-6 text-accent/65" />
+                        )}
+                      </div>
+                      <div className="text-xs font-semibold text-text mt-3.5 truncate leading-tight">
+                        {artist.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Render Albums */}
+            {(activeFilter === "All" || activeFilter === "Albums") && results.albums && results.albums.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                  Albums
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                  {results.albums.map((album) => (
+                    <div
+                      key={album.id}
+                      className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left font-sans"
+                    >
+                      <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative">
+                        {album.thumbnail ? (
+                          <img src={album.thumbnail} alt={album.title} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                        ) : (
+                          <FolderHeart className="w-8 h-8 text-accent/60 mx-auto mt-8" />
+                        )}
+                      </div>
+                      <div className="font-editorial text-sm text-text font-bold mt-3.5 truncate">
+                        {album.title}
+                      </div>
+                      <div className="text-[10px] text-muted truncate mt-1">
+                        By {album.artist} {album.year ? `• ${album.year}` : ""}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Render Playlists */}
-            {results.playlists.length > 0 && (
+            {(activeFilter === "All" || activeFilter === "Playlists") && results.playlists.length > 0 && (
               <div className="space-y-4">
                 <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Shared Playlists
@@ -382,7 +489,7 @@ export default function SearchPage() {
             )}
 
             {/* Render Podcast Shows */}
-            {results.podcasts.length > 0 && (
+            {(activeFilter === "All" || activeFilter === "Podcasts") && results.podcasts.length > 0 && (
               <div className="space-y-4">
                 <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Podcast Feeds
@@ -413,7 +520,7 @@ export default function SearchPage() {
             )}
 
             {/* Render Users / Curators */}
-            {results.users.length > 0 && (
+            {(activeFilter === "All" || activeFilter === "Profiles") && results.users.length > 0 && (
               <div className="space-y-4">
                 <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Strumm Curators

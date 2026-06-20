@@ -12,9 +12,121 @@ import logging
 logger = logging.getLogger("strumm-user")
 router = APIRouter(tags=["user"])
 
+# Helper to calculate sound DNA
+def calculate_sound_dna(histories: List[Dict[str, Any]]) -> Dict[str, int]:
+    if not histories:
+        return {
+            "energy": 5,
+            "discovery": 5,
+            "nostalgia": 5,
+            "variety": 5,
+            "repeatRate": 5
+        }
+    
+    total_plays = len(histories)
+    
+    # 1. Energy
+    energy_score = 5
+    high_energy_count = 0
+    low_energy_count = 0
+    high_energy_keywords = {"funk", "remix", "dance", "rock", "hype", "party", "rap", "metal", "electronic", "funk mi camino", "illuminati"}
+    low_energy_keywords = {"lo-fi", "sleep", "binaural", "serenity", "delta", "theta", "gamma", "acoustic", "sad", "relax", "meditation"}
+    
+    # 2. Nostalgia
+    nostalgia_count = 0
+    nostalgia_keywords = {"classic", "retro", "19", "old", "vintage", "hemanta", "sandhya", "kishore", "lata", "rd burman", "antique", "ghazal"}
+    
+    # Unique tracks/artists
+    unique_songs = set()
+    unique_artists = set()
+    song_counts = {}
+    
+    for h in histories:
+        song = h.get("song", {})
+        title = str(song.get("title", "")).lower()
+        artist = str(song.get("artist", "")).lower()
+        vid = song.get("videoId")
+        if vid:
+            unique_songs.add(vid)
+            song_counts[vid] = song_counts.get(vid, 0) + 1
+        if artist:
+            unique_artists.add(artist)
+            
+        if any(kw in title or kw in artist for kw in high_energy_keywords):
+            high_energy_count += 1
+        if any(kw in title or kw in artist for kw in low_energy_keywords):
+            low_energy_count += 1
+        if any(kw in title or kw in artist for kw in nostalgia_keywords):
+            nostalgia_count += 1
+            
+    if high_energy_count + low_energy_count > 0:
+        energy_score = int(round((high_energy_count / (high_energy_count + low_energy_count)) * 10))
+        energy_score = max(1, min(10, energy_score))
+        
+    # 2. Discovery
+    discovery_score = int(round((len(unique_artists) / max(1, total_plays)) * 10))
+    discovery_score = max(1, min(10, discovery_score))
+    
+    # 3. Nostalgia
+    nostalgia_score = int(round((nostalgia_count / total_plays) * 10))
+    nostalgia_score = max(1, min(10, nostalgia_score))
+    
+    # 4. Variety
+    variety_score = int(round((len(unique_songs) / max(1, total_plays)) * 10))
+    variety_score = max(1, min(10, variety_score))
+    
+    # 5. Repeat Rate
+    repeated_songs = sum(1 for c in song_counts.values() if c > 1)
+    repeat_rate_score = int(round((repeated_songs / max(1, len(unique_songs))) * 10))
+    repeat_rate_score = max(1, min(10, repeat_rate_score))
+    
+    return {
+        "energy": energy_score,
+        "discovery": discovery_score,
+        "nostalgia": nostalgia_score,
+        "variety": variety_score,
+        "repeatRate": repeat_rate_score
+    }
+
+def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, int]) -> str:
+    if not histories:
+        return "Novice Listener"
+    
+    midnight_count = 0
+    for h in histories:
+        played_at = h.get("playedAt")
+        if isinstance(played_at, datetime):
+            hour = played_at.hour
+            if 0 <= hour < 6:
+                midnight_count += 1
+                
+    if midnight_count / len(histories) > 0.4:
+        return "Midnight Explorer"
+        
+    if sound_dna["discovery"] > 7:
+        return "Sonic Pathfinder"
+        
+    if sound_dna["repeatRate"] > 7:
+        return "Memory Collector"
+        
+    if sound_dna["nostalgia"] > 6:
+        return "Retro Archivist"
+        
+    return "Melody Harmonizer"
+
 # User Profile
 @router.get("/profile")
 async def get_profile(current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": current_user["id"]}).to_list(length=1000)
+        dna = calculate_sound_dna(histories)
+        current_user["soundDNA"] = dna
+    except Exception as e:
+        logger.error(f"Error calculating soundDNA for profile: {e}")
+        current_user["soundDNA"] = {
+            "energy": 5, "discovery": 5, "nostalgia": 5, "variety": 5, "repeatRate": 5
+        }
     return {
         "success": True,
         "data": current_user
@@ -386,6 +498,9 @@ async def delete_user_account(current_user: dict = Depends(get_current_user)):
         # Delete user follows
         await database["follows"].delete_many({"userId": user_id})
         
+        # Delete user memories
+        await database["songMemories"].delete_many({"userId": user_id})
+        
         logger.info(f"User account {user_id} and all associated collections deleted successfully.")
         return {
             "success": True,
@@ -394,3 +509,316 @@ async def delete_user_account(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error deleting user account {user_id}: {str(e)}")
         return {"success": False, "error": f"Failed to delete account: {str(e)}"}
+
+class MemoryCreateRequest(BaseModel):
+    song: SongSchema
+    note: str
+    visibility: str = "private" # public, private
+
+@router.get("/replay")
+async def get_replay(current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": current_user["id"]}).to_list(length=2000)
+        
+        total_seconds = sum(h.get("listenDuration", 30) for h in histories)
+        total_minutes = round(total_seconds / 60)
+        
+        # Top Songs / Artists / Time of Day
+        song_counts = {}
+        artist_counts = {}
+        time_slots = {"Morning (6AM-12PM)": 0, "Afternoon (12PM-6PM)": 0, "Evening (6PM-12AM)": 0, "Midnight (12AM-6AM)": 0}
+        
+        for h in histories:
+            song = h.get("song", {})
+            vid = song.get("videoId")
+            title = song.get("title", "Unknown Track")
+            artist = song.get("artist", "Unknown Artist")
+            thumbnail = song.get("thumbnail", "")
+            duration = song.get("duration", 180)
+            
+            if vid:
+                song_counts[vid] = song_counts.get(vid, {"count": 0, "title": title, "artist": artist, "thumbnail": thumbnail, "duration": duration})
+                song_counts[vid]["count"] += 1
+                
+            if artist:
+                artist_counts[artist] = artist_counts.get(artist, {"count": 0, "artist": artist, "thumbnail": thumbnail})
+                artist_counts[artist]["count"] += 1
+                
+            played_at = h.get("playedAt")
+            if isinstance(played_at, datetime):
+                hour = played_at.hour
+                if 6 <= hour < 12:
+                    time_slots["Morning (6AM-12PM)"] += 1
+                elif 12 <= hour < 18:
+                    time_slots["Afternoon (12PM-6PM)"] += 1
+                elif 18 <= hour < 24:
+                    time_slots["Evening (6PM-12AM)"] += 1
+                else:
+                    time_slots["Midnight (12AM-6AM)"] += 1
+                    
+        sorted_songs = sorted(song_counts.values(), key=lambda x: x["count"], reverse=True)[:5]
+        sorted_artists = sorted(artist_counts.values(), key=lambda x: x["count"], reverse=True)[:5]
+        favorite_time = max(time_slots, key=time_slots.get) if histories else "Evening (6PM-12AM)"
+        
+        # Sound DNA & Personality
+        sound_dna = calculate_sound_dna(histories)
+        personality = get_music_personality(histories, sound_dna)
+        
+        # Calculate discovery score
+        discovery_score = sound_dna["discovery"] * 10
+        
+        # Simulated/mapped top genres
+        genres = {}
+        for h in histories:
+            title = str(h.get("song", {}).get("title", "")).lower()
+            artist = str(h.get("song", {}).get("artist", "")).lower()
+            if "funk" in title or "camino" in title:
+                genres["Funk"] = genres.get("Funk", 0) + 1
+            elif "serenity" in title or "waves" in title or "lo-fi" in title:
+                genres["Ambient"] = genres.get("Ambient", 0) + 1
+            elif "singh" in artist or "pritam" in artist:
+                genres["Romantic Bollywood"] = genres.get("Romantic Bollywood", 0) + 1
+            elif "mukherjee" in artist:
+                genres["Bengali Classic"] = genres.get("Bengali Classic", 0) + 1
+            else:
+                genres["Pop / Indie"] = genres.get("Pop / Indie", 0) + 1
+        sorted_genres = sorted(genres.items(), key=lambda x: x[1], reverse=True)[:3]
+        top_genres = [g[0] for g in sorted_genres] if sorted_genres else ["Pop / Indie"]
+        
+        return {
+            "success": True,
+            "data": {
+                "totalMinutes": total_minutes,
+                "topSongs": sorted_songs,
+                "topArtists": sorted_artists,
+                "topGenres": top_genres,
+                "favoriteTime": favorite_time,
+                "discoveryScore": discovery_score,
+                "personality": personality,
+                "soundDNA": sound_dna
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error generating Strumm Replay: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/users/{user_id}/taste-match")
+async def get_taste_match(user_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        my_id = current_user["id"]
+        
+        if my_id == user_id:
+            return {
+                "success": True,
+                "data": {
+                    "percentage": 100,
+                    "commonArtists": [],
+                    "commonSongs": [],
+                    "sharedMoods": ["Myself"]
+                }
+            }
+            
+        target_user = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
+        if not target_user:
+            return {"success": False, "error": "Target user not found"}
+            
+        # Get histories
+        my_histories = await database[db.PLAYBACK_HISTORIES].find({"userId": my_id}).to_list(length=1000)
+        their_histories = await database[db.PLAYBACK_HISTORIES].find({"userId": user_id}).to_list(length=1000)
+        
+        my_artists = {str(h.get("song", {}).get("artist", "")).strip() for h in my_histories if h.get("song", {}).get("artist")}
+        their_artists = {str(h.get("song", {}).get("artist", "")).strip() for h in their_histories if h.get("song", {}).get("artist")}
+        
+        my_songs = {str(h.get("song", {}).get("videoId", "")) for h in my_histories if h.get("song", {}).get("videoId")}
+        their_songs = {str(h.get("song", {}).get("videoId", "")) for h in their_histories if h.get("song", {}).get("videoId")}
+        
+        common_artists = list(my_artists.intersection(their_artists))
+        common_songs_ids = my_songs.intersection(their_songs)
+        
+        # Get common song details
+        common_songs = []
+        for vid in common_songs_ids:
+            # find first song matching in histories
+            for h in my_histories:
+                if h.get("song", {}).get("videoId") == vid:
+                    common_songs.append(h.get("song", {}).get("title"))
+                    break
+            if len(common_songs) >= 5:
+                break
+                
+        # Calculate matching percentage
+        artists_union = my_artists.union(their_artists)
+        artist_match_score = (len(common_artists) / max(1, len(artists_union))) * 100
+        
+        songs_union = my_songs.union(their_songs)
+        song_match_score = (len(common_songs_ids) / max(1, len(songs_union))) * 100
+        
+        match_percentage = int(round(max(15, min(95, 20 + artist_match_score * 0.5 + song_match_score * 0.5 + (15 if common_artists else 0)))))
+        
+        shared_moods = []
+        if match_percentage > 70:
+            shared_moods = ["Harmonious", "Eclectic"]
+        elif match_percentage > 45:
+            shared_moods = ["Chilled", "Curious"]
+        else:
+            shared_moods = ["Diverse", "Independent"]
+            
+        return {
+            "success": True,
+            "data": {
+                "percentage": match_percentage,
+                "commonArtists": common_artists[:5],
+                "commonSongs": common_songs[:5],
+                "sharedMoods": shared_moods
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error calculating taste match: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+# --- Song Memories CRUD ---
+
+@router.get("/memories")
+async def get_memories(current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        memories = await database["songMemories"].find({"userId": current_user["id"]}).sort("createdAt", -1).to_list(length=100)
+        for m in memories:
+            m["id"] = str(m["_id"])
+            del m["_id"]
+            if "date" in m and m["date"]:
+                m["date"] = m["date"].isoformat()
+            if "createdAt" in m and m["createdAt"]:
+                m["createdAt"] = m["createdAt"].isoformat()
+        return {"success": True, "data": memories}
+    except Exception as e:
+        logger.error(f"Error fetching memories: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+@router.post("/memories")
+async def create_memory(payload: MemoryCreateRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        memory_doc = {
+            "userId": current_user["id"],
+            "song": payload.song.model_dump(),
+            "note": sanitize_text(payload.note, max_length=1000),
+            "date": datetime.utcnow(),
+            "visibility": payload.visibility if payload.visibility in {"public", "private"} else "private",
+            "createdAt": datetime.utcnow()
+        }
+        res = await database["songMemories"].insert_one(memory_doc)
+        memory_doc["id"] = str(res.inserted_id)
+        del memory_doc["_id"]
+        memory_doc["date"] = memory_doc["date"].isoformat()
+        memory_doc["createdAt"] = memory_doc["createdAt"].isoformat()
+        return {"success": True, "data": memory_doc}
+    except Exception as e:
+        logger.error(f"Error creating memory: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+@router.put("/memories/{memory_id}")
+async def update_memory(memory_id: str, note: str = Body(..., embed=True), visibility: str = Body("private", embed=True), current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        memory_oid = parse_object_id(memory_id)
+        
+        memory = await database["songMemories"].find_one({"_id": memory_oid, "userId": current_user["id"]})
+        if not memory:
+            return {"success": False, "error": "Memory not found or access denied."}
+            
+        await database["songMemories"].update_one(
+            {"_id": memory_oid},
+            {"$set": {
+                "note": sanitize_text(note, max_length=1000),
+                "visibility": visibility if visibility in {"public", "private"} else "private"
+            }}
+        )
+        return {"success": True, "data": {"message": "Memory updated successfully."}}
+    except Exception as e:
+        logger.error(f"Error updating memory {memory_id}: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+@router.delete("/memories/{memory_id}")
+async def delete_memory(memory_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        memory_oid = parse_object_id(memory_id)
+        
+        res = await database["songMemories"].delete_one({"_id": memory_oid, "userId": current_user["id"]})
+        if res.deleted_count == 0:
+            return {"success": False, "error": "Memory not found or access denied."}
+            
+        return {"success": True, "data": {"message": "Memory deleted successfully."}}
+    except Exception as e:
+        logger.error(f"Error deleting memory {memory_id}: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+# --- Public Profiles (@username) ---
+
+@router.get("/public/{username}")
+async def get_public_profile(username: str):
+    try:
+        database = db.get_db()
+        user = await database[db.USERS].find_one({"username": username.lower()})
+        if not user:
+            return {"success": False, "error": "User profile not found."}
+            
+        user_id = str(user["_id"])
+        
+        # Get public playlists
+        playlists = await database[db.PLAYLISTS].find({"userId": user_id, "visibility": "public"}).to_list(length=30)
+        for p in playlists:
+            p["id"] = str(p["_id"])
+            del p["_id"]
+            if "createdAt" in p:
+                p["createdAt"] = p["createdAt"].isoformat()
+                
+        # Get public memories
+        memories = await database["songMemories"].find({"userId": user_id, "visibility": "public"}).sort("createdAt", -1).to_list(length=20)
+        for m in memories:
+            m["id"] = str(m["_id"])
+            del m["_id"]
+            if "date" in m:
+                m["date"] = m["date"].isoformat()
+            if "createdAt" in m:
+                m["createdAt"] = m["createdAt"].isoformat()
+                
+        # Get stats
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": user_id}).to_list(length=1000)
+        sound_dna = calculate_sound_dna(histories)
+        
+        total_seconds = sum(h.get("listenDuration", 30) for h in histories)
+        total_minutes = round(total_seconds / 60)
+        
+        # Top Artists
+        artist_counts = {}
+        for h in histories:
+            artist = h.get("song", {}).get("artist", "Unknown Artist")
+            thumbnail = h.get("song", {}).get("thumbnail", "")
+            if artist:
+                artist_counts[artist] = artist_counts.get(artist, {"count": 0, "artist": artist, "thumbnail": thumbnail})
+                artist_counts[artist]["count"] += 1
+        sorted_artists = sorted(artist_counts.values(), key=lambda x: x["count"], reverse=True)[:5]
+        
+        # Clean private user fields for security
+        public_data = {
+            "id": user_id,
+            "username": user["username"],
+            "displayName": user["displayName"],
+            "avatar": user.get("avatar"),
+            "theme": user.get("theme", "Obsidian"),
+            "soundDNA": sound_dna,
+            "totalMinutes": total_minutes,
+            "topArtists": sorted_artists,
+            "playlists": playlists,
+            "memories": memories,
+            "createdAt": user["createdAt"].isoformat() if "createdAt" in user else None
+        }
+        
+        return {"success": True, "data": public_data}
+    except Exception as e:
+        logger.error(f"Error fetching public profile {username}: {str(e)}")
+        return {"success": False, "error": str(e)}
