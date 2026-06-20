@@ -493,6 +493,12 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 <span className="absolute text-[7px] font-extrabold text-primary translate-x-1.5 -translate-y-2">1</span>
               )}
             </button>
+          </div>
+
+          {/* Secondary Action controls */}
+          <div className={`flex items-center justify-center gap-6 w-full mt-2 transition-all ${
+            effectiveShowLyrics ? "hidden lg:flex lg:justify-start" : "flex justify-center"
+          }`}>
 
             <button
               onClick={handleShare}
