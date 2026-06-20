@@ -159,7 +159,7 @@ export default function EditorialPlayer() {
 
   // Format seconds to MM:SS
   const formatTime = (seconds: number) => {
-    if (isNaN(seconds) || seconds === null || seconds === undefined) return "0:00";
+    if (seconds === null || seconds === undefined || isNaN(seconds) || !isFinite(seconds)) return "0:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
