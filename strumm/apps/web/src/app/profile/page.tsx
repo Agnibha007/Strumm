@@ -127,7 +127,7 @@ export default function ProfilePage() {
             {/* Stamp Logo */}
             <div className="flex justify-between items-center text-[10px] text-muted tracking-widest uppercase font-bold border-b border-border/20 pb-3 select-none">
               <span>Passport Control</span>
-              <span className="text-primary font-mono">№ ST-{profileUser.createdAt.substring(2, 4)}{profileUser.id.substring(0, 4).toUpperCase()}</span>
+              <span className="text-primary font-mono">№ ST-{((profileUser.createdAt || "").substring(2, 4)) || "26"}{((profileUser.id || "").substring(0, 4) || "0000").toUpperCase()}</span>
             </div>
 
             {/* Photo Avatar */}

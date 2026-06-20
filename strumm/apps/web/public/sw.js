@@ -31,6 +31,17 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/"))),
+      .catch(() => {
+        return caches.match(request).then((cached) => {
+          if (cached) return cached;
+          if (
+            request.mode === "navigate" ||
+            (request.headers.get("accept") && request.headers.get("accept").includes("text/html"))
+          ) {
+            return caches.match("/");
+          }
+          return null;
+        });
+      }),
   );
 });

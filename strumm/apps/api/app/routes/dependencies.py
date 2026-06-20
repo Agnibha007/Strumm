@@ -54,7 +54,12 @@ async def get_current_user(authorization: str = Header(None)):
             detail="User account not found"
         )
         
-    # Serialize ObjectId
+    # Serialize ObjectId and dates
     user["id"] = str(user["_id"])
     del user["_id"]
+    if "createdAt" in user and user["createdAt"]:
+        if hasattr(user["createdAt"], "isoformat"):
+            user["createdAt"] = user["createdAt"].isoformat()
+        else:
+            user["createdAt"] = str(user["createdAt"])
     return user
