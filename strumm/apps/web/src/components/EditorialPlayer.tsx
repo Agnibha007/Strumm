@@ -251,6 +251,14 @@ export default function EditorialPlayer() {
               >
                 {isPlaying ? <Pause className="w-4 h-4 fill-current text-background" /> : <Play className="w-4 h-4 fill-current translate-x-0.5 text-background" />}
               </button>
+
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowQueue(!showQueue); }}
+                className="md:hidden p-2 text-muted hover:text-text cursor-pointer transition"
+                title="Queue"
+              >
+                <ListMusic className="w-4.5 h-4.5" />
+              </button>
               
               <button onClick={next} className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition">
                 <SkipForward className="w-4 h-4 fill-current" />

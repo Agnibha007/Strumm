@@ -18,9 +18,14 @@ import {
   Share2,
   Check,
   Download,
-  Heart
+  Heart,
+  ListMusic,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  X
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
 import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 import SongArtwork from "web/components/SongArtwork";
@@ -52,11 +57,52 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     setShuffle,
     setRepeatMode,
     setPlaybackRate,
+    queue,
+    currentIndex,
   } = usePlayerStore();
   const { token } = useAuthStore();
 
   const { isAnimated } = useThemeStore();
   const router = useRouter();
+  
+  const [showQueue, setShowQueue] = useState(false);
+
+  const removeSong = (idxToRemove: number) => {
+    const newQueue = queue.filter((_, idx) => idx !== idxToRemove);
+    let newIndex = currentIndex;
+    if (idxToRemove === currentIndex) {
+      if (newQueue.length > 0) {
+        newIndex = idxToRemove >= newQueue.length ? newQueue.length - 1 : idxToRemove;
+        usePlayerStore.getState().playSong(newQueue[newIndex], newQueue);
+      } else {
+        usePlayerStore.setState({ currentSong: null, currentIndex: -1, isPlaying: false, queue: [] });
+      }
+    } else {
+      if (idxToRemove < currentIndex) {
+        newIndex = currentIndex - 1;
+      }
+      usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
+    }
+  };
+
+  const moveSong = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= queue.length) return;
+    const newQueue = [...queue];
+    const [removed] = newQueue.splice(fromIdx, 1);
+    newQueue.splice(toIdx, 0, removed);
+    
+    let newIndex = currentIndex;
+    if (currentIndex === fromIdx) {
+      newIndex = toIdx;
+    } else if (currentIndex === toIdx) {
+      newIndex = fromIdx;
+    } else if (fromIdx < currentIndex && toIdx >= currentIndex) {
+      newIndex = currentIndex - 1;
+    } else if (fromIdx > currentIndex && toIdx <= currentIndex) {
+      newIndex = currentIndex + 1;
+    }
+    usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
+  };
   
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
@@ -552,14 +598,22 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 downloadState === "success"
                   ? "text-primary text-glow animate-pulse"
                   : downloadState === "error"
-                    ? "text-red-400 animate-pulse"
-                    : downloadState === "loading"
-                      ? "text-muted opacity-50 cursor-not-allowed animate-pulse"
-                      : "text-muted hover:text-text"
+                  ? "text-red-400 animate-pulse"
+                  : downloadState === "loading"
+                  ? "text-muted opacity-50 cursor-not-allowed animate-pulse"
+                  : "text-muted hover:text-text"
               }`}
               title="Download MP3"
             >
               {downloadState === "success" ? <Check className="w-4 h-4" /> : downloadState === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            </button>
+
+            <button
+              onClick={() => setShowQueue(true)}
+              className="p-2 text-muted hover:text-text cursor-pointer transition hover:scale-105"
+              title="Show Play Queue"
+            >
+              <ListMusic className="w-4 h-4" />
             </button>
           </div>
 
@@ -650,6 +704,90 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
         )}
 
       </div>
+
+      {/* Queue Modal overlay */}
+      <AnimatePresence>
+        {showQueue && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowQueue(false)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md bg-surface border border-border/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10 p-5 md:p-6"
+            >
+              <div className="border-b border-border/20 pb-3 mb-3 flex justify-between items-center">
+                <h3 className="font-editorial text-text font-bold text-lg">Play Queue ({queue.length})</h3>
+                <button 
+                  onClick={() => setShowQueue(false)} 
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-muted hover:text-text cursor-pointer transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                {queue.length === 0 ? (
+                  <p className="text-sm text-muted text-center py-8">Queue is empty</p>
+                ) : (
+                  queue.map((s, idx) => (
+                    <div
+                      key={s.videoId + "-" + idx}
+                      className={`flex items-center justify-between p-2 rounded-xl transition w-full ${
+                        currentSong?.videoId === s.videoId ? "bg-primary/10 text-primary font-semibold" : "hover:bg-white/5"
+                      }`}
+                    >
+                      <button
+                        onClick={() => {
+                          usePlayerStore.getState().playSong(s, queue);
+                        }}
+                        className="flex items-center gap-3 text-left cursor-pointer flex-grow min-w-0"
+                      >
+                        <SongArtwork song={s} className="w-8 h-8 rounded flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs text-text truncate leading-tight">{s.title}</div>
+                          <div className="text-[10px] text-muted truncate">{s.artist}</div>
+                        </div>
+                      </button>
+                      <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                        <button
+                          disabled={idx === 0}
+                          onClick={(e) => { e.stopPropagation(); moveSong(idx, idx - 1); }}
+                          className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition text-muted hover:text-text"
+                          title="Move Up"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          disabled={idx === queue.length - 1}
+                          onClick={(e) => { e.stopPropagation(); moveSong(idx, idx + 1); }}
+                          className="p-1 rounded hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer transition text-muted hover:text-text"
+                          title="Move Down"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeSong(idx); }}
+                          className="p-1 rounded hover:bg-red-500/10 cursor-pointer transition text-muted hover:text-red-400"
+                          title="Remove"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
