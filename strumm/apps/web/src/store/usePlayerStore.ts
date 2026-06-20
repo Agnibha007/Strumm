@@ -15,6 +15,7 @@ interface PlayerState {
   repeatMode: "none" | "all" | "one";
   reducedAnimation: boolean;
   playbackRate: number;
+  podcastMode: "audio" | "video";
   
   // Actions
   setCurrentSong: (song: Song | null) => void;
@@ -32,6 +33,7 @@ interface PlayerState {
   setShuffle: (shuffle: boolean) => void;
   setRepeatMode: (mode: "none" | "all" | "one") => void;
   setReducedAnimation: (reduced: boolean) => void;
+  setPodcastMode: (mode: "audio" | "video") => void;
   handleTrackEnded: () => void;
   restorePlayerState: (state: Partial<PlayerState>) => void;
   
@@ -61,6 +63,7 @@ export const usePlayerStore = create<PlayerState>()(
       repeatMode: "none",
       reducedAnimation: false,
       playbackRate: 1.0,
+      podcastMode: "audio",
       playerRef: null,
 
       setCurrentSong: (song) => {
@@ -196,6 +199,8 @@ export const usePlayerStore = create<PlayerState>()(
 
       setReducedAnimation: (reducedAnimation) => set({ reducedAnimation }),
 
+      setPodcastMode: (podcastMode) => set({ podcastMode }),
+
       handleTrackEnded: () => {
         const { queue, currentIndex, repeatMode, isShuffle, playerRef } = get();
         if (!queue.length) {
@@ -329,6 +334,7 @@ export const usePlayerStore = create<PlayerState>()(
         repeatMode: state.repeatMode,
         reducedAnimation: state.reducedAnimation,
         playbackRate: state.playbackRate,
+        podcastMode: state.podcastMode,
       }),
     }
   )

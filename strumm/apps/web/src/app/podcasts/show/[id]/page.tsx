@@ -15,7 +15,7 @@ interface PodcastShowPageProps {
 export default function PodcastShowPage({ params }: PodcastShowPageProps) {
   const { id } = use(params);
   const { token } = useAuthStore();
-  const { playSong } = usePlayerStore();
+  const { playSong, setPodcastMode } = usePlayerStore();
   const router = useRouter();
 
   const [show, setShow] = useState<PodcastShow | null>(null);
@@ -65,7 +65,7 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
     }
   };
 
-  const handlePlayEpisode = (episode: PodcastEpisode) => {
+  const handlePlayEpisode = (episode: PodcastEpisode, forceVideo: boolean = false) => {
     // Map dynamic PodcastEpisode type to Song shape for unified player handling
     const songRepresentation: Song = {
       videoId: `podcast-${episode.id}`,
@@ -75,9 +75,14 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
       duration: episode.duration,
       metadata: {
         album: show?.title || "Podcasts",
-        audioUrl: episode.audioUrl
+        audioUrl: episode.audioUrl,
+        videoAvailable: episode.videoAvailable,
+        videoUrl: episode.videoUrl,
+        mediaType: episode.mediaType,
+        description: episode.description
       }
     };
+    setPodcastMode(forceVideo && episode.videoAvailable ? "video" : "audio");
     playSong(songRepresentation, []);
   };
 
@@ -213,13 +218,25 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handlePlayEpisode(episode)}
-                  className="flex-shrink-0 px-4 py-2 bg-surface-elevated hover:bg-primary text-text hover:text-white border border-border/80 hover:border-primary/20 text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition select-none"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  Stream Episode
-                </button>
+                <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => handlePlayEpisode(episode, false)}
+                    className="px-4 py-2 bg-surface-elevated hover:bg-primary text-text hover:text-white border border-border/80 hover:border-primary/20 text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition select-none"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    Stream Episode
+                  </button>
+
+                  {episode.videoAvailable && (
+                    <button
+                      onClick={() => handlePlayEpisode(episode, true)}
+                      className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition select-none"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      Watch Video
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

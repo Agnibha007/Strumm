@@ -20,6 +20,7 @@ export default function AudioEngine() {
     setCurrentTime,
     setDuration,
     setPlayerRef,
+    podcastMode,
   } = usePlayerStore();
 
   const playerInstanceRef = useRef<any>(null);
@@ -143,9 +144,29 @@ export default function AudioEngine() {
     };
   }, []);
 
-  // 3. Watch for changes in active song
+  // 3. Watch for changes in active song and mode
   useEffect(() => {
     if (!htmlAudioRef.current) return;
+
+    const isVideoMode = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
+
+    if (isVideoMode) {
+      // Pause YouTube player
+      if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
+        try {
+          playerInstanceRef.current.pauseVideo();
+        } catch (e) {}
+      }
+      stopProgressTimer();
+
+      // Pause HTML Audio player
+      try {
+        htmlAudioRef.current.pause();
+      } catch (e) {}
+
+      // Do NOT set playerRef here; VideoPlayer component will register its own playerRef when it mounts
+      return;
+    }
 
     if (currentSong?.metadata?.audioUrl) {
       // A. Podcast / HTML audio file
@@ -158,11 +179,18 @@ export default function AudioEngine() {
       stopProgressTimer();
 
       const audioUrl = currentSong.metadata.audioUrl;
-      if (htmlAudioRef.current.src !== audioUrl) {
+      const isSrcChanged = htmlAudioRef.current.src !== audioUrl;
+      if (isSrcChanged) {
         htmlAudioRef.current.src = audioUrl;
         htmlAudioRef.current.load();
       }
       htmlAudioRef.current.volume = volume;
+
+      // Sync currentTime when switching mode or starting
+      const targetTime = usePlayerStore.getState().currentTime;
+      if (targetTime > 0 && isFinite(targetTime)) {
+        htmlAudioRef.current.currentTime = targetTime;
+      }
 
       if (isPlaying) {
         htmlAudioRef.current.play().catch((e) => console.log("HTML Audio play blocked:", e));
@@ -237,10 +265,13 @@ export default function AudioEngine() {
         });
       }
     }
-  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl]);
+  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode]);
 
   // 4. Watch for play/pause toggle from UI
   useEffect(() => {
+    const isVideoMode = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
+    if (isVideoMode) return;
+
     if (currentSong?.metadata?.audioUrl) {
       if (htmlAudioRef.current) {
         if (isPlaying) {
@@ -267,10 +298,13 @@ export default function AudioEngine() {
         } catch (e) {}
       }
     }
-  }, [isPlaying]);
+  }, [isPlaying, podcastMode, currentSong?.metadata?.videoAvailable]);
 
   // 5. Watch for volume changes from UI
   useEffect(() => {
+    const isVideoMode = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
+    if (isVideoMode) return;
+
     if (currentSong?.metadata?.audioUrl) {
       if (htmlAudioRef.current) {
         htmlAudioRef.current.volume = volume;
@@ -282,7 +316,7 @@ export default function AudioEngine() {
         } catch (e) {}
       }
     }
-  }, [volume]);
+  }, [volume, podcastMode, currentSong?.metadata?.videoAvailable]);
 
   const initPlayer = () => {
     if (!window.YT || !window.YT.Player) return;

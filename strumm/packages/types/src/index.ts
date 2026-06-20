@@ -36,6 +36,10 @@ export interface SongMetadata {
   lyricsUrl?: string;
   syncedLyrics?: string;
   audioUrl?: string;
+  videoAvailable?: boolean;
+  videoUrl?: string | null;
+  mediaType?: "audio" | "video";
+  description?: string;
 }
 
 export interface Song {
@@ -107,4 +111,8 @@ export interface PodcastEpisode {
   duration: number; // in seconds
   description: string;
   publishedAt?: string;
+  videoAvailable?: boolean;
+  videoUrl?: string | null;
+  mediaType?: "audio" | "video";
 }
+

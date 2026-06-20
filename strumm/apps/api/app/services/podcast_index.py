@@ -88,6 +88,16 @@ def map_episode(episode: Dict[str, Any], show_id: str) -> Optional[Dict[str, Any
     if not audio_url:
         return None
 
+    enc_type = str(episode.get("enclosureType", "")).lower()
+    video_available = False
+    media_type = "audio"
+    video_url = None
+
+    if enc_type.startswith("video/"):
+        video_available = True
+        media_type = "video"
+        video_url = audio_url
+
     return {
         "id": str(episode.get("id", "")),
         "showId": show_id,
@@ -99,6 +109,9 @@ def map_episode(episode: Dict[str, Any], show_id: str) -> Optional[Dict[str, Any
             max_length=5000,
         ),
         "publishedAt": _published_at(episode.get("datePublished")),
+        "videoAvailable": video_available,
+        "videoUrl": sanitize_text(video_url, max_length=1200) if video_url else None,
+        "mediaType": media_type,
     }
 
 
@@ -139,3 +152,16 @@ async def get_episodes(feed_id: str, *, max_results: int = 30) -> List[Dict[str,
         if mapped:
             episodes.append(mapped)
     return episodes
+
+
+async def get_episode_by_id(episode_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        sanitized_id = int(episode_id)
+        data = await _get("/episodes/byid", {"id": sanitized_id, "fulltext": 1})
+        episode = data.get("episode")
+        if episode:
+            return map_episode(episode, str(episode.get("feedId", "")))
+        return None
+    except Exception as e:
+        logger.error(f"Failed to fetch episode {episode_id} from PodcastIndex: {str(e)}")
+        return None

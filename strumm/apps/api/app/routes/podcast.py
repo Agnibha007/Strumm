@@ -89,11 +89,23 @@ async def import_podcast_rss(
             audio_url = ""
             duration = 0
             
-            # Find audio enclosure
+            # Find enclosure
+            audio_url = ""
+            video_url = ""
+            video_available = False
+            media_type = "audio"
+            
             if "enclosures" in entry:
                 for enc in entry.enclosures:
-                    if enc.get("type", "").startswith("audio/"):
+                    enc_type = enc.get("type", "")
+                    if enc_type.startswith("audio/"):
                         audio_url = enc.get("href", "")
+                        break
+                    elif enc_type.startswith("video/"):
+                        video_url = enc.get("href", "")
+                        video_available = True
+                        media_type = "video"
+                        audio_url = video_url # fallback for audio players
                         break
                         
             if not audio_url:
@@ -123,7 +135,10 @@ async def import_podcast_rss(
                 "audioUrl": audio_url,
                 "duration": duration,
                 "description": sanitize_text(entry.get("description", entry.get("summary", "")), max_length=5000),
-                "publishedAt": datetime.utcnow() # fallback
+                "publishedAt": datetime.utcnow(), # fallback
+                "videoAvailable": video_available,
+                "videoUrl": video_url if video_url else None,
+                "mediaType": media_type
             }
             episodes_to_insert.append(ep_doc)
             
@@ -219,6 +234,9 @@ async def get_show_details(id: str = Path(...)):
         async for ep in ep_cursor:
             ep["id"] = str(ep["_id"])
             del ep["_id"]
+            ep["videoAvailable"] = ep.get("videoAvailable", False)
+            ep["videoUrl"] = ep.get("videoUrl", None)
+            ep["mediaType"] = ep.get("mediaType", "audio")
             episodes.append(ep)
             
         return {
@@ -262,4 +280,55 @@ async def follow_show(
             return {"success": True, "data": {"following": True, "message": "Followed podcast show."}}
     except Exception as e:
         logger.error(f"Error following podcast: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/episode/{id}")
+async def get_episode_details(id: str = Path(...)):
+    try:
+        cleaned_id = sanitize_text(id, max_length=64)
+        
+        # 1. If ID is numeric, query PodcastIndex first
+        if cleaned_id.isdigit():
+            from app.services.podcast_index import get_episode_by_id as get_idx_episode
+            try:
+                ep = await get_idx_episode(cleaned_id)
+                if ep:
+                    show = await get_podcast_index_show(ep["showId"])
+                    return {
+                        "success": True,
+                        "data": {
+                            "episode": ep,
+                            "show": show
+                        }
+                    }
+            except Exception as index_err:
+                logger.error(f"PodcastIndex episode fetch error: {index_err}")
+                
+        # 2. Query database for local shows/episodes
+        database = db.get_db()
+        ep = await database[db.PODCAST_EPISODES].find_one({"_id": parse_object_id(id)})
+        if ep:
+            ep["id"] = str(ep["_id"])
+            del ep["_id"]
+            ep["videoAvailable"] = ep.get("videoAvailable", False)
+            ep["videoUrl"] = ep.get("videoUrl", None)
+            ep["mediaType"] = ep.get("mediaType", "audio")
+            
+            show = await database[db.PODCAST_SHOWS].find_one({"_id": parse_object_id(ep["showId"])})
+            if show:
+                show["id"] = str(show["_id"])
+                del show["_id"]
+                
+            return {
+                "success": True,
+                "data": {
+                    "episode": ep,
+                    "show": show
+                }
+            }
+            
+        return {"success": False, "error": "Episode not found"}
+    except Exception as e:
+        logger.error(f"Error fetching episode details: {str(e)}")
         return {"success": False, "error": str(e)}
