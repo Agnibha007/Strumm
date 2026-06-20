@@ -371,7 +371,7 @@ export default function AudioEngine() {
   return (
     <div 
       ref={containerRef} 
-      className="fixed pointer-events-none w-[250px] h-[250px] top-0 left-0 -z-50 opacity-[0.01]" 
+      className="fixed pointer-events-none w-[300px] h-[300px] top-0 left-0 -z-50" 
     />
   );
 }

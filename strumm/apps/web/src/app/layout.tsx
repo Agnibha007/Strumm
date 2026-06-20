@@ -4,6 +4,7 @@ import "./globals.css";
 import Providers from "web/components/Providers";
 import AuthWrapper from "web/components/AuthWrapper";
 import PersistentPlayerWrapper from "web/components/PersistentPlayerWrapper";
+import NotificationToast from "web/components/NotificationToast";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -101,6 +102,7 @@ export default function RootLayout({
             {children}
           </AuthWrapper>
           <PersistentPlayerWrapper />
+          <NotificationToast />
         </Providers>
       </body>
     </html>

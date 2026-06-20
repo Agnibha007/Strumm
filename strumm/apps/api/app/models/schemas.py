@@ -5,14 +5,19 @@ from app.services.security import sanitize_enum, sanitize_multiline_text, saniti
 
 # --- Common Schemas ---
 class SongMetadata(BaseModel):
+    model_config = {"extra": "allow"}
+
     album: Optional[str] = None
     genre: Optional[str] = None
     year: Optional[int] = None
     lyricsUrl: Optional[str] = None
     syncedLyrics: Optional[str] = None
+    audioUrl: Optional[str] = None
 
 class SongSchema(BaseModel):
-    videoId: str = Field(..., description="YouTube video ID, primary music identifier")
+    model_config = {"extra": "allow"}
+
+    videoId: Optional[str] = Field(None, description="YouTube video ID, primary music identifier")
     title: str
     artist: str
     thumbnail: str
@@ -21,7 +26,9 @@ class SongSchema(BaseModel):
 
     @field_validator("videoId")
     @classmethod
-    def validate_video_id(cls, value: str) -> str:
+    def validate_video_id(cls, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return value
         return sanitize_youtube_id(value)
 
     @field_validator("title", "artist")

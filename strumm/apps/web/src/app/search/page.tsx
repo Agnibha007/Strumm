@@ -8,10 +8,12 @@ import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import { useNotificationStore } from "web/store/useNotificationStore";
 
 export default function SearchPage() {
   const { token } = useAuthStore();
   const { playSong, addToQueue } = usePlayerStore();
+  const { show } = useNotificationStore();
   
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -66,14 +68,14 @@ export default function SearchPage() {
       });
       const json = await response.json();
       if (json.success) {
-        alert("Song successfully added to playlist!");
+        show(`Added "${song.title}" to playlist!`, "success");
         setAddingToPlaylistSong(null);
         loadUserPlaylists();
       } else {
-        alert(json.error || "Failed to add song to playlist.");
+        show(json.error || "Failed to add song to playlist.", json.error?.includes("already") ? "warning" : "error");
       }
     } catch (e) {
-      alert("Failed to connect to backend server.");
+      show("Failed to connect to backend server.", "error");
     }
   };
 
@@ -168,10 +170,10 @@ export default function SearchPage() {
       });
       const json = await response.json();
       if (json.success) {
-        alert(json.data.message);
+        show(json.data.message, "success");
       }
     } catch (e) {
-      alert("Failed to update liked songs.");
+      show("Failed to update liked songs.", "error");
     }
   };
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PlusCircle, Loader2, X } from "lucide-react";
 import { useAuthStore } from "web/store/useAuthStore";
+import { useNotificationStore } from "web/store/useNotificationStore";
 import { apiUrl } from "web/lib/api";
 import { Playlist, Song } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,6 +19,8 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
   const [open, setOpen] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const { show } = useNotificationStore();
 
   const fetchPlaylists = async () => {
     if (!token) return;
@@ -56,12 +59,12 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
       });
       const json = await res.json();
       if (json.success) {
-        // success
+        show(`Added "${song.title}" to playlist!`, "success");
       } else {
-        alert(json.error || "Failed to add to playlist");
+        show(json.error || "Failed to add to playlist", json.error?.includes("already") ? "warning" : "error");
       }
     } catch (e) {
-      alert("Error adding to playlist");
+      show("Error adding to playlist", "error");
     } finally {
       setOpen(false);
     }
