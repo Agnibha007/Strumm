@@ -235,3 +235,127 @@ async def get_discover(
     except Exception as e:
         logger.error(f"Error creating discovery recommendation: {str(e)}")
         return {"success": False, "error": str(e)}
+
+from pydantic import BaseModel
+
+class ChatRequest(BaseModel):
+    prompt: str
+
+@router.post("/explore-chat")
+async def explore_chat(
+    payload: ChatRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        from datetime import datetime
+        database = db.get_db()
+        userId = current_user["id"]
+        user_prompt = sanitize_text(payload.prompt, max_length=1000)
+        
+        # 1. Fetch user likes
+        likes_cursor = database[db.LIKED_SONGS].find({"userId": userId}).limit(15)
+        likes = [l async for l in likes_cursor]
+        likes_summary = ", ".join([f"'{s['song']['title']}' by {s['song']['artist']}" for s in likes])
+        
+        # 2. Fetch user history
+        history_cursor = database[db.PLAYBACK_HISTORIES].find({"userId": userId}).sort("playedAt", -1).limit(15)
+        history = [h async for h in history_cursor]
+        history_summary = ", ".join([f"'{s['song']['title']}' by {s['song']['artist']}" for s in history])
+        
+        # 3. Fetch user playlist names
+        playlists_cursor = database[db.PLAYLISTS].find({"userId": userId}, {"name": 1})
+        playlists = [p async for p in playlists_cursor]
+        playlist_summary = ", ".join([p["name"] for p in playlists])
+        
+        if not likes_summary:
+            likes_summary = "None (New user)"
+        if not history_summary:
+            history_summary = "None (New user)"
+        if not playlist_summary:
+            playlist_summary = "None (No playlists created yet)"
+            
+        system_prompt = (
+            "You are 'Strumm AI', a premium, intelligent music curator assistant. Your goal is to help the user discover music, answer music-related questions, suggest tracks, and build custom playlists.\n"
+            "You are provided with details about the user's music taste:\n"
+            f"1. Liked songs: {likes_summary}\n"
+            f"2. Listening history: {history_summary}\n"
+            f"3. User's existing playlist names: {playlist_summary}\n\n"
+            "Your response MUST be a valid JSON object containing exactly the following keys:\n"
+            "- 'message': (string) Your text response to the user's message. Be conversational, polite, and explain your recommendations or actions. Keep it brief (2-4 sentences).\n"
+            "- 'songs': (array of objects) If recommending songs (either matching their prompt or based on their history), include a list of up to 6 recommended songs. Each object must have keys 'title' and 'artist'. Otherwise, return an empty array [].\n"
+            "- 'create_playlist': (boolean) Set to true ONLY if the user explicitly asked to create, save, build, or make a playlist. Otherwise, set to false.\n"
+            "- 'playlist_name': (string) If create_playlist is true, specify a creative name for the playlist (e.g., 'Late Night Drive' or 'Lofi Focus Mix'). Otherwise, null.\n"
+            "- 'playlist_description': (string) If create_playlist is true, specify a short description (e.g., 'Curated by Strumm AI based on your preference for Chill Lofi.'). Otherwise, null.\n\n"
+            "Rules:\n"
+            "1. Suggest ONLY real, existing songs and artists.\n"
+            "2. Return ONLY the JSON object. Do not include markdown code block wrappers (like ```json), introductory text, or concluding notes. Just raw JSON."
+        )
+        
+        if not GROQ_API_KEY:
+            return {"success": False, "error": "Groq API key not configured on server."}
+            
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3-8b-8192",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.7
+                },
+                timeout=15.0
+            )
+            
+        if response.status_code != 200:
+            return {"success": False, "error": f"Failed to get response from Groq. Code: {response.status_code}"}
+            
+        content = response.json()["choices"][0]["message"]["content"].strip()
+        if content.startswith("```"):
+            content = content.replace("```json", "").replace("```", "").strip()
+            
+        result_data = json.loads(content)
+        message = result_data.get("message", "Here are your tracks:")
+        songs_suggestions = result_data.get("songs", [])
+        create_playlist = result_data.get("create_playlist", False)
+        playlist_name = result_data.get("playlist_name", "AI Curated Playlist")
+        playlist_description = result_data.get("playlist_description", "Generated dynamically by Strumm AI.")
+        
+        resolved_songs = []
+        if songs_suggestions:
+            resolved_songs = await resolve_suggestions(songs_suggestions)
+            
+        created_playlist_info = None
+        if create_playlist and resolved_songs:
+            new_playlist = {
+                "userId": userId,
+                "name": playlist_name,
+                "description": playlist_description,
+                "songs": resolved_songs,
+                "visibility": "private",
+                "followers": 0,
+                "createdAt": datetime.utcnow()
+            }
+            res = await database[db.PLAYLISTS].insert_one(new_playlist)
+            created_playlist_info = {
+                "id": str(res.inserted_id),
+                "name": playlist_name,
+                "songs_count": len(resolved_songs)
+            }
+            
+        return {
+            "success": True,
+            "data": {
+                "message": message,
+                "songs": resolved_songs,
+                "playlist": created_playlist_info
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error in explore chat interaction: {str(e)}")
+        return {"success": False, "error": str(e)}

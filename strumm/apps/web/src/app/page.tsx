@@ -10,6 +10,7 @@ import { Search, Play, Heart, Sparkles, Loader2, ListMusic } from "lucide-react"
 import { Song } from "@strumm/types";
 
 import LoginPage from "./login/page";
+import AICuratorChat from "web/components/AICuratorChat";
 
 export default function HomePage() {
   const { token } = useAuthStore();
@@ -185,6 +186,7 @@ export default function HomePage() {
                 ))}
               </div>
             )}
+            <AICuratorChat />
           </div>
 
           {/* Liked Songs */}
