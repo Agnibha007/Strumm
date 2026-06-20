@@ -7,6 +7,46 @@ import { PodcastShow } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
 
+const SafePodcastImage = ({
+  src,
+  alt,
+  className,
+  ...props
+}: {
+  src?: string;
+  alt?: string;
+  className?: string;
+  [key: string]: any;
+}) => {
+  const [currentSrc, setCurrentSrc] = useState(src || "/strumm-icon.png");
+  const [errorCount, setErrorCount] = useState(0);
+
+  useEffect(() => {
+    setCurrentSrc(src || "/strumm-icon.png");
+    setErrorCount(0);
+  }, [src]);
+
+  const handleError = () => {
+    if (errorCount === 0 && src) {
+      setErrorCount(1);
+      setCurrentSrc(apiUrl(`/image-proxy?url=${encodeURIComponent(src)}`));
+    } else if (errorCount === 1) {
+      setErrorCount(2);
+      setCurrentSrc("/strumm-icon.png");
+    }
+  };
+
+  return (
+    <img
+      src={currentSrc}
+      alt={alt || ""}
+      onError={handleError}
+      className={className}
+      {...props}
+    />
+  );
+};
+
 export default function PodcastHomePage() {
   const { token } = useAuthStore();
   const router = useRouter();
@@ -141,7 +181,7 @@ export default function PodcastHomePage() {
                     href={`/podcasts/show/${show.id}`}
                     className="p-4 bg-surface/40 hover:bg-surface border border-border/40 hover:border-border/85 rounded-xl flex items-center gap-4 transition group cursor-pointer"
                   >
-                    <img
+                    <SafePodcastImage
                       src={show.image}
                       alt={show.title}
                       loading="lazy"
@@ -201,7 +241,7 @@ export default function PodcastHomePage() {
                     className="p-3 bg-surface/30 border border-border/40 hover:bg-surface hover:border-border/80 rounded-xl transition text-left block cursor-pointer"
                   >
                     <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative">
-                      <img
+                      <SafePodcastImage
                         src={show.image}
                         alt={show.title}
                         loading="lazy"

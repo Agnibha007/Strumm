@@ -12,6 +12,46 @@ interface PodcastShowPageProps {
   params: Promise<{ id: string }>;
 }
 
+const SafePodcastImage = ({
+  src,
+  alt,
+  className,
+  ...props
+}: {
+  src?: string;
+  alt?: string;
+  className?: string;
+  [key: string]: any;
+}) => {
+  const [currentSrc, setCurrentSrc] = useState(src || "/strumm-icon.png");
+  const [errorCount, setErrorCount] = useState(0);
+
+  useEffect(() => {
+    setCurrentSrc(src || "/strumm-icon.png");
+    setErrorCount(0);
+  }, [src]);
+
+  const handleError = () => {
+    if (errorCount === 0 && src) {
+      setErrorCount(1);
+      setCurrentSrc(apiUrl(`/image-proxy?url=${encodeURIComponent(src)}`));
+    } else if (errorCount === 1) {
+      setErrorCount(2);
+      setCurrentSrc("/strumm-icon.png");
+    }
+  };
+
+  return (
+    <img
+      src={currentSrc}
+      alt={alt || ""}
+      onError={handleError}
+      className={className}
+      {...props}
+    />
+  );
+};
+
 export default function PodcastShowPage({ params }: PodcastShowPageProps) {
   const { id } = use(params);
   const { token } = useAuthStore();
@@ -148,7 +188,7 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
       <div className="flex flex-col md:flex-row items-center md:items-end gap-8 pb-4">
         {/* Cover image */}
         <div className="w-48 h-48 md:w-56 md:h-56 rounded-xl overflow-hidden border border-border/80 relative shadow-2xl flex-shrink-0">
-          <img
+          <SafePodcastImage
             src={show.image}
             alt={show.title}
             loading="lazy"
