@@ -143,7 +143,7 @@ export default function AICuratorChat() {
                 <div>
                   <div className="font-bold text-[11px] text-emerald-300">Smart Playlist Created</div>
                   <div className="mt-0.5 text-[10px] text-muted">
-                    "{msg.playlist.name}" was saved into your library with {msg.playlist.songs_count} tracks.
+                    &quot;{msg.playlist.name}&quot; was saved into your library with {msg.playlist.songs_count} tracks.
                   </div>
                 </div>
               </div>
