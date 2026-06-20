@@ -166,6 +166,45 @@ async def search_local_users(q: str) -> List[Dict[str, Any]]:
         logger.error(f"Local user search failed: {str(e)}")
         return []
 
+@router.get("/song/{id}")
+async def get_song_by_id(id: str):
+    try:
+        yt = YTMusic()
+        # ytmusicapi get_song doesn't fetch metadata well in all versions, get_watch_playlist is better
+        watch = await asyncio.to_thread(yt.get_watch_playlist, videoId=id, limit=1)
+        if not watch or not watch.get("tracks"):
+            return {"success": False, "error": "Song not found"}
+            
+        track = watch["tracks"][0]
+        
+        duration_sec = track.get("length")
+        if not duration_sec:
+            duration_sec = 200
+            
+        artists_list = track.get("artists", [])
+        artist_name = ", ".join([a.get("name", "") for a in artists_list if a.get("name")]) if artists_list else "Unknown Artist"
+        
+        thumbnails = track.get("thumbnail", [])
+        thumb_url = thumbnails[-1].get("url", "") if thumbnails else f"https://img.youtube.com/vi/{id}/hqdefault.jpg"
+        
+        album_info = track.get("album")
+        album_name = album_info.get("name", "") if album_info else ""
+        
+        song = {
+            "videoId": id,
+            "title": track.get("title", "Untitled Track"),
+            "artist": artist_name,
+            "thumbnail": thumb_url,
+            "duration": duration_sec,
+            "metadata": {
+                "album": album_name
+            }
+        }
+        return {"success": True, "data": song}
+    except Exception as e:
+        logger.error(f"Error fetching song {id}: {str(e)}")
+        return {"success": False, "error": str(e)}
+
 @router.get("")
 async def search_all(
     q: str = Query(..., min_length=1, description="Search query string"),
