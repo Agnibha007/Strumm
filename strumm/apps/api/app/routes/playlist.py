@@ -288,6 +288,23 @@ async def import_playlist(
                 else:
                     parsed_rows.append({"title": line, "artist": "", "album": ""})
 
+        if not parsed_rows:
+            if "spotify.com" in import_data or source == "spotify":
+                return {
+                    "success": False,
+                    "error": "Spotify playlist links cannot be read directly due to Spotify anti-scraping protections. Please use the 'CSV Sheet (Excel)' tab to import your Spotify playlist instead."
+                }
+            elif import_data.strip().startswith("http"):
+                return {
+                    "success": False,
+                    "error": "Failed to extract playlist tracks. Make sure the playlist is public and the URL is correct."
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "No tracks found in the provided import data. Check your format and try again."
+                }
+
         for track in parsed_rows:
             title = track["title"]
             artist = track.get("artist", "")
