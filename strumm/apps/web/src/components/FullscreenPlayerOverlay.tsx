@@ -298,7 +298,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const effectiveShowLyrics = showLyrics && !isPodcast;
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-6 md:p-12 text-text overflow-y-auto overflow-x-hidden select-none">
+    <div className={`fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-4 md:p-12 text-text overflow-x-hidden select-none transition-all ${effectiveShowLyrics ? "overflow-y-hidden" : "overflow-y-auto"}`}>
       {/* Dynamic ambient background glowing blobs */}
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-72 h-72 md:w-96 md:h-96 rounded-full bg-primary/10 blur-[100px] pointer-events-none animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-72 h-72 md:w-96 md:h-96 rounded-full bg-accent/5 blur-[120px] pointer-events-none animate-pulse" />
@@ -356,21 +356,21 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       </div>
 
       {/* Main Grid/Flex View */}
-      <div className={`w-full flex-1 mt-6 md:mt-10 min-h-0 z-10 mx-auto max-w-7xl transition-all duration-500 ${
+      <div className={`w-full flex-1 mt-4 md:mt-10 min-h-0 z-10 mx-auto max-w-7xl transition-all duration-500 ${
         effectiveShowLyrics 
-          ? "grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16" 
+          ? "flex flex-col lg:grid lg:grid-cols-2 gap-4 lg:gap-16" 
           : "flex flex-col items-center justify-center max-w-xl"
       }`}>
         
         {/* Left Side: Song Details & Controls */}
-        <div className={`flex flex-col justify-center items-center gap-6 h-full w-full transition-all duration-500 ${
+        <div className={`flex flex-col justify-center items-center w-full transition-all duration-500 ${
           effectiveShowLyrics 
-            ? "lg:items-start text-center lg:text-left" 
-            : "items-center text-center"
+            ? "gap-2 lg:gap-6 lg:items-start text-center lg:text-left flex-shrink-0" 
+            : "gap-6 h-full items-center text-center"
         }`}>
           
           {/* Album Cover Card */}
-          <div className="relative group flex-shrink-0">
+          <div className={`relative group flex-shrink-0 ${effectiveShowLyrics ? "hidden lg:block" : "block"}`}>
             <div
               className={`overflow-hidden border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 rounded-2xl md:rounded-3xl ${
                 effectiveShowLyrics 
@@ -386,17 +386,17 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
           {/* Song title and artist */}
           <div className="w-full min-w-0 overflow-hidden px-2">
-            <h2 className="font-editorial text-2xl md:text-4xl lg:text-5xl font-bold text-text leading-tight tracking-tight mb-2 w-full truncate">
+            <h2 className={`font-editorial font-bold text-text leading-tight tracking-tight mb-1 w-full truncate transition-all ${effectiveShowLyrics ? "text-xl md:text-3xl lg:text-5xl" : "text-2xl md:text-4xl lg:text-5xl"}`}>
               {currentSong.title}
             </h2>
-            <p className="text-sm md:text-base text-muted font-medium w-full truncate">
+            <p className={`text-muted font-medium w-full truncate transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
               {currentSong.artist}
             </p>
           </div>
 
           {/* Playback speed selector */}
           <div className={`flex flex-col items-center gap-1.5 w-full transition-all ${
-            effectiveShowLyrics ? "lg:items-start" : "items-center"
+            effectiveShowLyrics ? "hidden lg:flex lg:items-start" : "flex items-center"
           }`}>
             <span className="text-[10px] tracking-wider uppercase font-semibold text-muted/60">Speed Control</span>
             <div className="flex items-center gap-1 bg-surface-elevated/40 border border-border/30 p-1 rounded-full w-fit backdrop-blur-md">
@@ -530,7 +530,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
           {/* Volume control */}
           <div className={`flex items-center gap-3 w-full max-w-[200px] mt-1 justify-center transition-all ${
-            effectiveShowLyrics ? "lg:justify-start" : "justify-center"
+            effectiveShowLyrics ? "hidden lg:flex lg:justify-start" : "flex justify-center"
           }`}>
             <Volume2 className="w-4 h-4 text-muted" />
             <input
@@ -551,7 +551,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
         {/* Right Side: Lyrics Section */}
         {effectiveShowLyrics && (
-          <div className="flex flex-col h-full bg-surface-elevated/20 border border-border/30 rounded-3xl p-5 md:p-7 min-h-[250px] max-h-[350px] lg:max-h-full overflow-hidden backdrop-blur-md w-full transition-all">
+          <div className="flex flex-col flex-1 lg:h-full bg-surface-elevated/20 border border-border/30 rounded-3xl p-4 md:p-7 min-h-0 overflow-hidden backdrop-blur-md w-full transition-all">
             <div className="flex justify-between items-center border-b border-border/20 pb-3 mb-3 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <Mic2 className="w-4 h-4 text-primary" />
