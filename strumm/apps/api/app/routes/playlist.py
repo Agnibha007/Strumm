@@ -165,9 +165,24 @@ class ImportRequest(BaseModel):
     name: str
     data: str # URL or raw CSV string
 
+class DummyLogger:
+    def debug(self, msg):
+        pass
+    def warning(self, msg):
+        pass
+    def error(self, msg):
+        pass
+
 def get_yt_playlist_entries_with_proxies(url: str) -> list:
+    opts = {
+        "extract_flat": True,
+        "quiet": True,
+        "no_warnings": True,
+        "logger": DummyLogger(),
+        "ignoreerrors": True
+    }
     try:
-        with YoutubeDL({"extract_flat": True, "quiet": True}) as ydl:
+        with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if "entries" in info:
                 return info["entries"]
@@ -181,7 +196,9 @@ def get_yt_playlist_entries_with_proxies(url: str) -> list:
         random.shuffle(proxies)
         for proxy in proxies[:10]:
             try:
-                with YoutubeDL({"extract_flat": True, "quiet": True, "proxy": f"http://{proxy}"}) as ydl:
+                proxy_opts = dict(opts)
+                proxy_opts["proxy"] = f"http://{proxy}"
+                with YoutubeDL(proxy_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                     if "entries" in info:
                         return info["entries"]
