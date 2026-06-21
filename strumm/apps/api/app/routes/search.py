@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, BackgroundTask
 from typing import Optional, List, Dict, Any
 import os
 import asyncio
@@ -208,7 +208,8 @@ async def get_song_by_id(id: str):
 @router.get("")
 async def search_all(
     q: str = Query(..., min_length=1, description="Search query string"),
-    category: Optional[str] = Query(None, description="Optional category filter: songs, playlists, podcasts, users, albums, artists")
+    category: Optional[str] = Query(None, description="Optional category filter: songs, playlists, podcasts, users, albums, artists"),
+    background_tasks: Optional[BackgroundTask] = None
 ):
     try:
         q = sanitize_text(q, max_length=120)
@@ -257,6 +258,16 @@ async def search_all(
         
         for cat, data in zip(categories_to_run, completed_results):
             results[cat] = data
+
+        # Background Cache Warming: pre-resolve top search results
+        if results["songs"] and background_tasks:
+            try:
+                from app.routes.stream import pre_resolve_tracks
+                song_ids = [s["videoId"] for s in results["songs"] if s.get("videoId")]
+                if song_ids:
+                    background_tasks.add_task(pre_resolve_tracks, song_ids)
+            except Exception as e:
+                logger.warning(f"Failed to schedule background cache warming for search: {str(e)}")
 
         trending = ["Lofi Beats", "Indian Classical", "Rain Ambient", "Electronic Focus", "Jazz Cafe"]
         

@@ -573,9 +573,11 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
                         "playedAtDateTime": played_at
                     }
                 g = song_groups[vid]
-                g["plays"] += 1
-                g["count"] += 1
                 g["totalSeconds"] += listen_dur
+                # Count plays as: (Total listened time / Song duration), but at least 1 if there's any active listening history entry
+                calculated_plays = max(1, int(round(g["totalSeconds"] / max(1, duration))))
+                g["plays"] = calculated_plays
+                g["count"] = calculated_plays
                 if played_at and (not g["playedAtDateTime"] or played_at > g["playedAtDateTime"]):
                     g["playedAtDateTime"] = played_at
                     g["lastPlayed"] = played_at_str
@@ -592,8 +594,6 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
                         "uniqueSongsSet": set()
                     }
                 ag = artist_groups[artist]
-                ag["plays"] += 1
-                ag["count"] += 1
                 ag["totalSeconds"] += listen_dur
                 if vid:
                     ag["uniqueSongsSet"].add(vid)
@@ -621,6 +621,10 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         for name, ag in artist_groups.items():
             ag["minutes"] = round(ag["totalSeconds"] / 60)
             ag["uniqueSongs"] = len(ag["uniqueSongsSet"])
+            # Sum up actual calculated song plays for this artist
+            artist_plays = sum(g["plays"] for g in song_groups.values() if g.get("artist", "").lower() == name.lower())
+            ag["plays"] = max(1, artist_plays)
+            ag["count"] = ag["plays"]
             del ag["uniqueSongsSet"]
             del ag["totalSeconds"]
             
@@ -953,21 +957,12 @@ async def get_users_public_profile(username: str):
         sorted_artists = []
         sorted_songs = []
         if show_top:
-            # Top Artists
-            artist_counts = {}
-            for h in histories:
-                artist = h.get("song", {}).get("artist", "Unknown Artist")
-                thumbnail = h.get("song", {}).get("thumbnail", "")
-                if artist:
-                    artist_counts[artist] = artist_counts.get(artist, {"count": 0, "artist": artist, "thumbnail": thumbnail})
-                    artist_counts[artist]["count"] += 1
-            sorted_artists = sorted(artist_counts.values(), key=lambda x: x["count"], reverse=True)[:5]
-
             # Top Songs
             song_counts = {}
             for h in histories:
                 song = h.get("song", {})
                 vid = song.get("videoId")
+                duration = song.get("duration", 180)
                 if vid:
                     if vid not in song_counts:
                         song_counts[vid] = {
@@ -976,11 +971,42 @@ async def get_users_public_profile(username: str):
                             "image": song.get("thumbnail"),
                             "videoId": vid,
                             "plays": 0,
-                            "minutes": 0
+                            "minutes": 0,
+                            "totalSeconds": 0,
+                            "duration": duration
                         }
-                    song_counts[vid]["plays"] += 1
-                    song_counts[vid]["minutes"] += round(h.get("listenDuration", 30) / 60)
+                    song_counts[vid]["totalSeconds"] += h.get("listenDuration", 0)
+                    song_counts[vid]["minutes"] = round(song_counts[vid]["totalSeconds"] / 60)
+            
+            # Post-calculate song plays
+            for vid, sc in song_counts.items():
+                sc["plays"] = max(1, int(round(sc["totalSeconds"] / max(1, sc["duration"]))))
+                # cleanup temp fields
+                del sc["totalSeconds"]
+                del sc["duration"]
+
             sorted_songs = sorted(song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+
+            # Top Artists
+            artist_counts = {}
+            for h in histories:
+                artist = h.get("song", {}).get("artist", "Unknown Artist")
+                thumbnail = h.get("song", {}).get("thumbnail", "")
+                if artist:
+                    if artist not in artist_counts:
+                        artist_counts[artist] = {
+                            "artist": artist,
+                            "thumbnail": thumbnail,
+                            "count": 0,
+                            "plays": 0
+                        }
+            # Sum up artist plays based on their songs' calculated plays
+            for artist, ac in artist_counts.items():
+                artist_plays = sum(s["plays"] for s in song_counts.values() if s.get("artist", "").lower() == artist.lower())
+                ac["plays"] = max(1, artist_plays)
+                ac["count"] = ac["plays"]
+
+            sorted_artists = sorted(artist_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
         
         public_data = {
             "id": user_id,

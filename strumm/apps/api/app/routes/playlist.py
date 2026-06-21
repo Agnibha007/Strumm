@@ -66,10 +66,15 @@ async def get_playlists(
         logger.error(f"Error fetching user playlists: {str(e)}")
         return {"success": False, "error": str(e)}
 
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, BackgroundTask
+
+# Note: We need to import BackgroundTask from fastapi. Let's do it locally inside get_playlist or update top imports.
+# We will do it inside the endpoint or import at top. Let's import at top first or locally.
 @router.get("/{id}")
 async def get_playlist(
     id: str = Path(...),
-    current_user: Optional[dict] = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_current_user),
+    background_tasks: Optional[BackgroundTask] = None
 ):
     try:
         database = db.get_db()
@@ -85,6 +90,16 @@ async def get_playlist(
         if playlist["visibility"] == "private" and (not current_user or playlist["userId"] != current_user["id"]):
             return {"success": False, "error": "Access denied to private playlist"}
             
+        # Warm stream resolver cache in background for top songs in playlist
+        if playlist.get("songs") and background_tasks:
+            try:
+                from app.routes.stream import pre_resolve_tracks
+                song_ids = [s["videoId"] for s in playlist["songs"] if s.get("videoId")]
+                if song_ids:
+                    background_tasks.add_task(pre_resolve_tracks, song_ids)
+            except Exception as e:
+                logger.warning(f"Failed to queue background playlist resolve: {str(e)}")
+
         return {
             "success": True,
             "data": playlist

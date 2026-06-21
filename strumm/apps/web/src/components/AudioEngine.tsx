@@ -36,13 +36,41 @@ export default function AudioEngine() {
     htmlAudioRef.current = new Audio();
     const audio = htmlAudioRef.current;
 
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const updatePositionState = () => {
+      if ("mediaSession" in navigator && typeof navigator.mediaSession.setPositionState === "function") {
+        try {
+          const duration = audio.duration;
+          const position = audio.currentTime;
+          if (isFinite(duration) && isFinite(position) && duration > 0) {
+            navigator.mediaSession.setPositionState({
+              duration: duration,
+              position: position,
+              playbackRate: audio.playbackRate || 1.0
+            });
+          }
+        } catch (e) {}
+      }
+    };
+
+    const onPlay = () => {
+      setPlaying(true);
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.playbackState = "playing";
+      }
+    };
+    const onPause = () => {
+      setPlaying(false);
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.playbackState = "paused";
+      }
+    };
     const onTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
+      updatePositionState();
     };
     const onDurationChange = () => {
       setDuration(audio.duration || 0);
+      updatePositionState();
     };
     const onEnded = () => {
       handleTrackEnded();
@@ -67,37 +95,82 @@ export default function AudioEngine() {
   // Media Session API for Lock-Screen Controls
   useEffect(() => {
     if ("mediaSession" in navigator && currentSong) {
+      // Force secure thumbnail to prevent mixed content issues
+      let secureArtwork = currentSong.thumbnail;
+      if (secureArtwork && secureArtwork.startsWith("http://")) {
+        secureArtwork = secureArtwork.replace("http://", "https://");
+      }
+
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentSong.title,
         artist: currentSong.artist,
         album: currentSong.metadata?.album || "Strumm",
         artwork: [
-          { src: currentSong.thumbnail || "", sizes: "96x96", type: "image/jpeg" },
-          { src: currentSong.thumbnail || "", sizes: "256x256", type: "image/jpeg" },
-          { src: currentSong.thumbnail || "", sizes: "512x512", type: "image/jpeg" },
+          { src: secureArtwork || "", sizes: "96x96", type: "image/jpeg" },
+          { src: secureArtwork || "", sizes: "256x256", type: "image/jpeg" },
+          { src: secureArtwork || "", sizes: "512x512", type: "image/jpeg" },
         ],
       });
 
-      navigator.mediaSession.setActionHandler("play", () => {
-        usePlayerStore.getState().togglePlay();
-      });
-      navigator.mediaSession.setActionHandler("pause", () => {
-        usePlayerStore.getState().togglePlay();
-      });
-      navigator.mediaSession.setActionHandler("previoustrack", () => {
-        usePlayerStore.getState().prev();
-      });
-      navigator.mediaSession.setActionHandler("nexttrack", () => {
-        usePlayerStore.getState().next();
-      });
-      navigator.mediaSession.setActionHandler("seekto", (details) => {
-        if (details.seekTime && playerInstanceRef.current) {
-          usePlayerStore.getState().setCurrentTime(details.seekTime);
-          usePlayerStore.getState().playerRef?.seekTo(details.seekTime);
-        }
-      });
+      // Synchronize action handlers to control playback mechanisms
+      const updateHandlers = () => {
+        navigator.mediaSession.setActionHandler("play", () => {
+          if (!isPlaying) {
+            usePlayerStore.getState().togglePlay();
+          }
+        });
+        navigator.mediaSession.setActionHandler("pause", () => {
+          if (isPlaying) {
+            usePlayerStore.getState().togglePlay();
+          }
+        });
+        navigator.mediaSession.setActionHandler("previoustrack", () => {
+          const state = usePlayerStore.getState();
+          if (state.currentTime > 5) {
+            state.playerRef?.seekTo(0);
+            state.setCurrentTime(0);
+          } else {
+            state.prev();
+          }
+        });
+        navigator.mediaSession.setActionHandler("nexttrack", () => {
+          usePlayerStore.getState().next();
+        });
+        navigator.mediaSession.setActionHandler("seekto", (details) => {
+          if (details.seekTime !== undefined) {
+            const time = details.seekTime;
+            usePlayerStore.getState().playerRef?.seekTo(time);
+            usePlayerStore.getState().setCurrentTime(time);
+          }
+        });
+        navigator.mediaSession.setActionHandler("seekbackward", (details) => {
+          const offset = details.seekOffset || 10;
+          const targetTime = Math.max(0, usePlayerStore.getState().currentTime - offset);
+          usePlayerStore.getState().playerRef?.seekTo(targetTime);
+          usePlayerStore.getState().setCurrentTime(targetTime);
+        });
+        navigator.mediaSession.setActionHandler("seekforward", (details) => {
+          const offset = details.seekOffset || 10;
+          const targetTime = Math.min(usePlayerStore.getState().duration, usePlayerStore.getState().currentTime + offset);
+          usePlayerStore.getState().playerRef?.seekTo(targetTime);
+          usePlayerStore.getState().setCurrentTime(targetTime);
+        });
+      };
+
+      updateHandlers();
     }
-  }, [currentSong]);
+
+    return () => {
+      if ("mediaSession" in navigator) {
+        const actions = ["play", "pause", "previoustrack", "nexttrack", "seekto", "seekbackward", "seekforward"] as const;
+        for (const action of actions) {
+          try {
+            navigator.mediaSession.setActionHandler(action, null);
+          } catch (e) {}
+        }
+      }
+    };
+  }, [currentSong, isPlaying]);
 
   // Dynamically update document title based on active track and playback state
   useEffect(() => {
@@ -509,6 +582,20 @@ export default function AudioEngine() {
           const dur = playerInstanceRef.current.getDuration();
           setCurrentTime(curr);
           if (dur !== undefined && dur !== null && !isNaN(dur)) setDuration(dur);
+          
+          // Sync MediaSession position state for YT Player
+          if ("mediaSession" in navigator && typeof navigator.mediaSession.setPositionState === "function") {
+            if (isFinite(dur) && isFinite(curr) && dur > 0) {
+              const playbackRate = typeof playerInstanceRef.current.getPlaybackRate === "function"
+                ? playerInstanceRef.current.getPlaybackRate()
+                : 1.0;
+              navigator.mediaSession.setPositionState({
+                duration: dur,
+                position: curr,
+                playbackRate: playbackRate || 1.0
+              });
+            }
+          }
         } catch (e) {}
       }
     }, 250);

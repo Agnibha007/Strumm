@@ -321,8 +321,6 @@ async def get_room(roomId: str, current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Strumm Room not found.")
         
     room["id"] = str(room["_id"])
-    del room["_id"]
-    
     # Fetch member profile details
     members_profiles = []
     for mid in room.get("members", []):
@@ -336,6 +334,34 @@ async def get_room(roomId: str, current_user: dict = Depends(get_current_user)):
     room["membersProfiles"] = members_profiles
     
     return {"success": True, "data": room}
+
+# Delete Room
+@router.delete("/rooms/{roomId}")
+async def delete_room(roomId: str, current_user: dict = Depends(get_current_user)):
+    database = db.get_db()
+    oid = parse_object_id(roomId)
+    
+    room = await database[ROOMS_COLLECTION].find_one({"_id": oid})
+    if not room:
+        raise HTTPException(status_code=404, detail="Strumm Room not found.")
+        
+    if room.get("hostId") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only the room host can delete this room.")
+        
+    # Notify connected websocket clients to leave/close the room
+    # We can broadcast a 'room_deleted' websocket event if active connections are tracked,
+    # or let the websocket disconnect handle cleanups. Let's delete the room from database first:
+    await database[ROOMS_COLLECTION].delete_one({"_id": oid})
+    
+    # Broadcast deletion event if possible
+    active_room_connections = manager.rooms.get(roomId, {})
+    for client_ws in list(active_room_connections.values()):
+        try:
+            await client_ws.send_json({"type": "room_deleted"})
+        except Exception:
+            pass
+            
+    return {"success": True, "message": "Room deleted successfully."}
 
 # Blend Playlist Generator
 @router.post("/blend/{targetUserId}")

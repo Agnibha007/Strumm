@@ -319,31 +319,50 @@ export const usePlayerStore = create<PlayerState>()(
       updateMediaSession: (song: Song) => {
         if (typeof window !== "undefined" && "mediaSession" in navigator) {
           const artworkSrc = getBestArtwork(song) || song.thumbnail;
+          
+          // Force secure thumbnail to prevent mixed content issues
+          let secureArtwork = artworkSrc;
+          if (secureArtwork && secureArtwork.startsWith("http://")) {
+            secureArtwork = secureArtwork.replace("http://", "https://");
+          }
+
           navigator.mediaSession.metadata = new MediaMetadata({
             title: song.title,
             artist: song.artist,
-            album: song.metadata?.album || "Strumm Ecosystem",
+            album: song.metadata?.album || "Strumm",
             artwork: [
-              { src: artworkSrc, sizes: "96x96", type: "image/jpeg" },
-              { src: artworkSrc, sizes: "128x128", type: "image/jpeg" },
-              { src: artworkSrc, sizes: "192x192", type: "image/jpeg" },
-              { src: artworkSrc, sizes: "256x256", type: "image/jpeg" },
-              { src: artworkSrc, sizes: "384x384", type: "image/jpeg" },
-              { src: artworkSrc, sizes: "512x512", type: "image/jpeg" },
+              { src: secureArtwork || "", sizes: "96x96", type: "image/jpeg" },
+              { src: secureArtwork || "", sizes: "128x128", type: "image/jpeg" },
+              { src: secureArtwork || "", sizes: "192x192", type: "image/jpeg" },
+              { src: secureArtwork || "", sizes: "256x256", type: "image/jpeg" },
+              { src: secureArtwork || "", sizes: "384x384", type: "image/jpeg" },
+              { src: secureArtwork || "", sizes: "512x512", type: "image/jpeg" },
             ],
           });
 
           // Setup system lockscreen media control actions
           navigator.mediaSession.setActionHandler("play", () => {
-            get().playerRef?.playVideo();
-            set({ isPlaying: true });
+            const { isPlaying, playerRef } = get();
+            if (!isPlaying) {
+              playerRef?.playVideo();
+              set({ isPlaying: true });
+            }
           });
           navigator.mediaSession.setActionHandler("pause", () => {
-            get().playerRef?.pauseVideo();
-            set({ isPlaying: false });
+            const { isPlaying, playerRef } = get();
+            if (isPlaying) {
+              playerRef?.pauseVideo();
+              set({ isPlaying: false });
+            }
           });
           navigator.mediaSession.setActionHandler("previoustrack", () => {
-            get().prev();
+            const { currentTime, prev, playerRef } = get();
+            if (currentTime > 5) {
+              playerRef?.seekTo(0);
+              set({ currentTime: 0 });
+            } else {
+              prev();
+            }
           });
           navigator.mediaSession.setActionHandler("nexttrack", () => {
             get().next();
@@ -353,6 +372,18 @@ export const usePlayerStore = create<PlayerState>()(
               get().playerRef?.seekTo(details.seekTime);
               set({ currentTime: details.seekTime });
             }
+          });
+          navigator.mediaSession.setActionHandler("seekbackward", (details) => {
+            const offset = details.seekOffset || 10;
+            const targetTime = Math.max(0, get().currentTime - offset);
+            get().playerRef?.seekTo(targetTime);
+            set({ currentTime: targetTime });
+          });
+          navigator.mediaSession.setActionHandler("seekforward", (details) => {
+            const offset = details.seekOffset || 10;
+            const targetTime = Math.min(get().duration, get().currentTime + offset);
+            get().playerRef?.seekTo(targetTime);
+            set({ currentTime: targetTime });
           });
         }
       },

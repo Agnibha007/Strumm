@@ -156,6 +156,11 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         setRoom(prev => prev ? { ...prev, queue: [...(prev.queue || []), eventData.song] } : null);
       } 
       
+      else if (wsEvent === "room:deleted" || payload.type === "room_deleted") {
+        alert("This Strumm Room has been deleted by the host.");
+        router.push("/rooms");
+      }
+      
       else if (wsEvent === "signal") {
         const { from, signal } = eventData;
         // WebRTC Signaling Answer/Offer/Candidate Processing
@@ -193,6 +198,25 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       event,
       data: { timestamp: currentTime }
     }));
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!confirm("Are you sure you want to delete this room? This will disconnect all listeners.")) return;
+    try {
+      const response = await fetch(apiUrl(`/social/rooms/${id}`), {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success) {
+        router.push("/rooms");
+      } else {
+        alert(json.error || "Failed to delete room.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error deleting room.");
+    }
   };
 
   const handleSuggestSearch = async () => {
@@ -356,17 +380,28 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             {room.name}
           </h2>
         </div>
-        <button
-          onClick={toggleVoiceChat}
-          className={`py-2 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition ${
-            voiceActive 
-              ? "bg-green-500/10 border border-green-500/30 text-green-400" 
-              : "bg-surface border border-border/60 hover:bg-surface-elevated text-text"
-          }`}
-        >
-          {voiceActive ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-          {voiceActive ? "Voice Connected" : "Voice Channel"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleVoiceChat}
+            className={`py-2 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition ${
+              voiceActive 
+                ? "bg-green-500/10 border border-green-500/30 text-green-400" 
+                : "bg-surface border border-border/60 hover:bg-surface-elevated text-text"
+            }`}
+          >
+            {voiceActive ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+            {voiceActive ? "Voice Connected" : "Voice Channel"}
+          </button>
+          
+          {isHost && (
+            <button
+              onClick={handleDeleteRoom}
+              className="py-2 px-4 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-xl text-xs font-semibold cursor-pointer transition"
+            >
+              Delete Room
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start min-w-0">

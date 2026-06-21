@@ -1,7 +1,7 @@
 import os
 import json
 import random
-from fastapi import APIRouter, Depends, Query, Path
+from fastapi import APIRouter, Depends, Query, Path, BackgroundTask
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from app.database import mongodb as db
@@ -128,7 +128,8 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
 @router.get("/flow")
 async def get_flow(
     mood: str = Query("Chill", description="Mood state: Chill, Focus, Energetic, Sad, Creative"),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    background_tasks: Optional[BackgroundTask] = None
 ):
     try:
         mood = sanitize_text(mood, max_length=80) or "Chill"
@@ -171,6 +172,16 @@ async def get_flow(
                 ]
         else:
             resolved = await resolve_suggestions(suggestions)
+
+        # Warm stream resolver cache in background
+        if resolved and background_tasks:
+            try:
+                from app.routes.stream import pre_resolve_tracks
+                song_ids = [s["videoId"] for s in resolved if s.get("videoId")]
+                if song_ids:
+                    background_tasks.add_task(pre_resolve_tracks, song_ids)
+            except Exception as e:
+                logger.warning(f"Failed to queue background flow resolve: {str(e)}")
             
         return {
             "success": True,
@@ -186,7 +197,8 @@ async def get_flow(
 
 @router.get("/explore-mix")
 async def get_discover(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    background_tasks: Optional[BackgroundTask] = None
 ):
     try:
         database = db.get_db()
@@ -223,6 +235,16 @@ async def get_discover(
                 ]
         else:
             resolved = await resolve_suggestions(suggestions)
+
+        # Warm stream resolver cache in background
+        if resolved and background_tasks:
+            try:
+                from app.routes.stream import pre_resolve_tracks
+                song_ids = [s["videoId"] for s in resolved if s.get("videoId")]
+                if song_ids:
+                    background_tasks.add_task(pre_resolve_tracks, song_ids)
+            except Exception as e:
+                logger.warning(f"Failed to queue background discover resolve: {str(e)}")
             
         return {
             "success": True,
