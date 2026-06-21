@@ -207,9 +207,9 @@ async def get_song_by_id(id: str):
 
 @router.get("")
 async def search_all(
+    background_tasks: BackgroundTasks,
     q: str = Query(..., min_length=1, description="Search query string"),
     category: Optional[str] = Query(None, description="Optional category filter: songs, playlists, podcasts, users, albums, artists"),
-    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         q = sanitize_text(q, max_length=120)

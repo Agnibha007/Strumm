@@ -537,8 +537,8 @@ async def stream_transcoded_audio(safe_url: str, bitrate: str):
 
 @router.get("/resolve/{id}")
 async def resolve_track(
+    background_tasks: BackgroundTasks,
     id: str = Path(..., description="The YouTube videoId to resolve"),
-    background_tasks: BackgroundTasks = None
 ):
     try:
         id = sanitize_youtube_id(id)

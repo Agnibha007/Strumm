@@ -127,9 +127,9 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
 
 @router.get("/flow")
 async def get_flow(
+    background_tasks: BackgroundTasks,
     mood: str = Query("Chill", description="Mood state: Chill, Focus, Energetic, Sad, Creative"),
     current_user: dict = Depends(get_current_user),
-    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         mood = sanitize_text(mood, max_length=80) or "Chill"
@@ -197,8 +197,8 @@ async def get_flow(
 
 @router.get("/explore-mix")
 async def get_discover(
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
-    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         database = db.get_db()

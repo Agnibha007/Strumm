@@ -72,9 +72,9 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, Backgr
 # We will do it inside the endpoint or import at top. Let's import at top first or locally.
 @router.get("/{id}")
 async def get_playlist(
+    background_tasks: BackgroundTasks,
     id: str = Path(...),
     current_user: Optional[dict] = Depends(get_current_user),
-    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         database = db.get_db()
