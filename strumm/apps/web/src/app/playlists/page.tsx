@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import PlaylistImport from "web/components/PlaylistImport";
-import { Plus, BookOpen, FilePlus2, Upload, X } from "lucide-react";
+import { Plus, BookOpen, FilePlus2, Upload, X, Search } from "lucide-react";
 import { Playlist } from "@strumm/types";
 import { apiUrl, cleanText } from "web/lib/api";
 import { useRouter } from "next/navigation";
@@ -18,6 +18,13 @@ export default function PlaylistsPage() {
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredPlaylists = userPlaylists.filter(
+    (p) =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   const loadPlaylists = async () => {
     try {
@@ -193,35 +200,69 @@ export default function PlaylistsPage() {
           ) : userPlaylists.length === 0 ? (
             <p className="text-xs text-muted italic py-6">No playlists found. Build a custom record folder.</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {userPlaylists.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => router.push(`/playlist/${p.id}`)}
-                  className="p-4 rounded-lg bg-background/40 border border-border/40 hover:border-primary/40 hover:bg-surface-elevated/40 text-left cursor-pointer transition group soft-enter hover:-translate-y-0.5"
-                >
-                  <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative mb-4">
-                    {p.songs.length > 0 ? (
-                      <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
-                        {p.songs.slice(0, 4).map((song, idx) => (
-                          <SongArtwork key={`${song.videoId}-${idx}`} song={song} className="w-full h-full" />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <BookOpen className="w-10 h-10 text-accent/50" />
-                      </div>
-                    )}
+            <div className="space-y-4">
+              {userPlaylists.length > 0 && (
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-muted" />
                   </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-editorial text-lg text-text font-bold leading-tight truncate group-hover:text-primary transition">{p.name}</div>
-                      <div className="text-xs text-muted mt-1">{p.songs.length} songs</div>
-                    </div>
-                    <BookOpen className="w-4 h-4 text-muted group-hover:text-primary transition flex-shrink-0 mt-1" />
-                  </div>
-                </button>
-              ))}
+                  <input
+                    type="text"
+                    placeholder="Search curations by name or description..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-background/50 border border-border/60 hover:border-border/80 focus:border-primary/50 rounded-xl pl-9 pr-9 py-2 text-xs text-text focus:outline-none transition shadow-sm"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted hover:text-text cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {filteredPlaylists.length === 0 ? (
+                <div className="text-center py-10 border border-dashed border-border/40 rounded-xl bg-background/10">
+                  <Search className="w-8 h-8 text-muted mx-auto mb-2" />
+                  <p className="font-editorial text-base text-text">No playlists match your search</p>
+                  <p className="text-[11px] text-muted">Try typing a different name or keyword.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filteredPlaylists.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => router.push(`/playlist/${p.id}`)}
+                      className="p-4 rounded-lg bg-background/40 border border-border/40 hover:border-primary/40 hover:bg-surface-elevated/40 text-left cursor-pointer transition group soft-enter hover:-translate-y-0.5"
+                    >
+                      <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative mb-4">
+                        {p.songs.length > 0 ? (
+                          <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
+                            {p.songs.slice(0, 4).map((song, idx) => (
+                              <SongArtwork key={`${song.videoId}-${idx}`} song={song} className="w-full h-full" />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <BookOpen className="w-10 h-10 text-accent/50" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-editorial text-lg text-text font-bold leading-tight truncate group-hover:text-primary transition">{p.name}</div>
+                          <div className="text-xs text-muted mt-1">{p.songs.length} songs</div>
+                        </div>
+                        <BookOpen className="w-4 h-4 text-muted group-hover:text-primary transition flex-shrink-0 mt-1" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

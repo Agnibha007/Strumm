@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X } from "lucide-react";
+import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search } from "lucide-react";
 import { Playlist, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -28,6 +28,9 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editVisibility, setEditVisibility] = useState<"public" | "private">("private");
+
+  // Search filter state
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadPlaylist = async () => {
     setLoading(true);
@@ -59,13 +62,15 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
   }, [id, token]);
 
   const handlePlayAll = () => {
-    if (!playlist || playlist.songs.length === 0) return;
-    playSong(playlist.songs[0], playlist.songs);
+    const targetSongs = searchQuery ? filteredSongs : (playlist?.songs || []);
+    if (targetSongs.length === 0) return;
+    playSong(targetSongs[0], targetSongs);
   };
 
   const handleShufflePlay = () => {
-    if (!playlist || playlist.songs.length === 0) return;
-    const shuffled = [...playlist.songs].sort(() => Math.random() - 0.5);
+    const targetSongs = searchQuery ? filteredSongs : (playlist?.songs || []);
+    if (targetSongs.length === 0) return;
+    const shuffled = [...targetSongs].sort(() => Math.random() - 0.5);
     playSong(shuffled[0], shuffled);
   };
 
@@ -252,6 +257,15 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
   }
 
   const isOwner = user && playlist.userId === user.id;
+
+  const filteredSongs = playlist
+    ? playlist.songs.filter(
+        (song) =>
+          song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          song.artist.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
+
   const totalDuration = playlist.songs.reduce((acc, song) => acc + song.duration, 0);
 
   return (
@@ -422,11 +436,48 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
 
       {/* Song list layout */}
       <div className="space-y-4">
+        {playlist.songs.length > 0 && (
+          <div className="relative flex items-center gap-3">
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-muted" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search tracks inside this playlist by title or artist..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-surface/30 border border-border/60 hover:border-border/80 focus:border-primary/50 rounded-xl pl-10 pr-10 py-2.5 text-xs text-text focus:outline-none transition shadow-sm"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-muted hover:text-text cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <span className="text-[10px] text-muted font-medium whitespace-nowrap bg-surface-elevated/40 border border-border/40 px-3 py-1.5 rounded-lg select-none">
+                {filteredSongs.length} of {playlist.songs.length} found
+              </span>
+            )}
+          </div>
+        )}
+
         {playlist.songs.length === 0 ? (
           <div className="text-center py-16 border border-dashed border-border/60 rounded-xl bg-surface/20 space-y-2">
             <Music className="w-8 h-8 text-muted mx-auto" />
             <p className="font-editorial text-lg text-text">This folder is empty</p>
             <p className="text-xs text-muted">Use search to find and add tracks into this curation.</p>
+          </div>
+        ) : filteredSongs.length === 0 ? (
+          <div className="text-center py-16 border border-dashed border-border/60 rounded-xl bg-surface/20 space-y-2">
+            <Search className="w-8 h-8 text-muted mx-auto" />
+            <p className="font-editorial text-lg text-text">No matching tracks found</p>
+            <p className="text-xs text-muted">Try typing a different song title or artist query.</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border/60 bg-surface/20">
@@ -443,59 +494,62 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/20">
-                {playlist.songs.map((song, index) => (
-                  <tr key={index} className="hover:bg-surface/50 group transition">
-                    <td className="py-3.5 px-4 text-center text-muted font-medium font-sans">
-                      {index + 1}
-                    </td>
-                    <td className="py-3.5 px-4 font-semibold text-text">
-                      <div className="flex items-center gap-3">
-                        <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" priority={index < 5} />
-                        <span className="truncate max-w-[240px]">{song.title}</span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-muted font-medium truncate max-w-[180px]">
-                      {song.artist}
-                    </td>
-                    <td className="py-3.5 px-4 text-center text-muted font-mono">
-                      {Math.floor(song.duration / 60)}:{(song.duration % 60) < 10 ? "0" : ""}{song.duration % 60}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-                        <button
-                          onClick={() => playSong(song, playlist.songs)}
-                          className="p-1.5 hover:bg-surface-elevated text-primary rounded transition"
-                          title="Play song"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                        </button>
-                        <button
-                          onClick={() => handleLikeSong(song)}
-                          className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded transition"
-                          title="Like track"
-                        >
-                          <Heart className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => addToQueue(song)}
-                          className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded transition"
-                          title="Add to queue"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                        {isOwner && (
+                {filteredSongs.map((song, index) => {
+                  const originalIndex = playlist.songs.indexOf(song);
+                  return (
+                    <tr key={index} className="hover:bg-surface/50 group transition">
+                      <td className="py-3.5 px-4 text-center text-muted font-medium font-sans">
+                        {index + 1}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-text">
+                        <div className="flex items-center gap-3">
+                          <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" priority={index < 5} />
+                          <span className="truncate max-w-[240px]">{song.title}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-muted font-medium truncate max-w-[180px]">
+                        {song.artist}
+                      </td>
+                      <td className="py-3.5 px-4 text-center text-muted font-mono">
+                        {Math.floor(song.duration / 60)}:{(song.duration % 60) < 10 ? "0" : ""}{song.duration % 60}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                           <button
-                            onClick={() => handleRemoveTrack(index)}
-                            className="p-1.5 hover:bg-primary/10 text-muted hover:text-primary rounded transition"
-                            title="Remove track"
+                            onClick={() => playSong(song, filteredSongs)}
+                            className="p-1.5 hover:bg-surface-elevated text-primary rounded transition"
+                            title="Play song"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Play className="w-3.5 h-3.5 fill-current" />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            onClick={() => handleLikeSong(song)}
+                            className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded transition"
+                            title="Like track"
+                          >
+                            <Heart className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => addToQueue(song)}
+                            className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded transition"
+                            title="Add to queue"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                          {isOwner && (
+                            <button
+                              onClick={() => handleRemoveTrack(originalIndex)}
+                              className="p-1.5 hover:bg-primary/10 text-muted hover:text-primary rounded transition"
+                              title="Remove track"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

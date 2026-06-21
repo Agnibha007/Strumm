@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Users, Music, Play, Radio, Loader2 } from "lucide-react";
+import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
 
@@ -29,7 +29,17 @@ interface ActiveRoom {
   hostId: string;
 }
 
-export default function FriendActivitySidebar() {
+interface FriendActivitySidebarProps {
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+  onActiveChange?: (active: boolean) => void;
+}
+
+export default function FriendActivitySidebar({
+  isCollapsed,
+  onToggleCollapse,
+  onActiveChange
+}: FriendActivitySidebarProps) {
   const { token, user } = useAuthStore();
   const { playSong } = usePlayerStore();
   const [friends, setFriends] = useState<FriendActivity[]>([]);
@@ -70,13 +80,96 @@ export default function FriendActivitySidebar() {
     }
   }, [token]);
 
-  if (!token || friends.length === 0) return null;
+  const hasActivity = token && friends.length > 0;
+
+  useEffect(() => {
+    if (onActiveChange) {
+      onActiveChange(!!hasActivity);
+    }
+  }, [hasActivity, onActiveChange]);
+
+  if (!hasActivity) return null;
+
+  if (isCollapsed) {
+    return (
+      <aside className="w-16 border-l border-border/60 bg-surface/20 hidden xl:flex flex-col h-screen fixed right-0 top-0 pt-6 pb-20 px-2 z-20 backdrop-blur-md items-center transition-all duration-300">
+        {/* Toggle button to expand */}
+        <button
+          onClick={onToggleCollapse}
+          className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg border border-border/40 transition mb-6 cursor-pointer"
+          title="Expand Activity"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        <div className="w-full flex flex-col items-center gap-4 overflow-y-auto scrollbar-none">
+          {friends.map((friend) => {
+            const hasSong = !!friend.currentActivity?.song;
+            return (
+              <div key={friend.id} className="relative group cursor-pointer">
+                {friend.avatar ? (
+                  <img 
+                    src={friend.avatar} 
+                    alt={friend.displayName} 
+                    loading="lazy" 
+                    decoding="async" 
+                    className={`w-9 h-9 rounded-full object-cover border transition ${
+                      hasSong ? "border-green-500 animate-pulse" : "border-border"
+                    }`} 
+                  />
+                ) : (
+                  <div className={`w-9 h-9 rounded-full bg-surface-elevated flex items-center justify-center border transition ${
+                    hasSong ? "border-green-500 animate-pulse" : "border-border"
+                  }`}>
+                    <Music className="w-4 h-4 text-accent" />
+                  </div>
+                )}
+                {hasSong && (
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border border-background rounded-full" />
+                )}
+                
+                {/* Tooltip on hover */}
+                <div className="absolute right-12 top-1/2 -translate-y-1/2 bg-surface-elevated border border-border px-3 py-2 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 whitespace-nowrap z-50 text-left min-w-[180px]">
+                  <div className="text-xs font-bold text-text">{friend.displayName}</div>
+                  <div className="text-[9px] text-muted">@{friend.username}</div>
+                  {hasSong ? (
+                    <div className="mt-1.5 border-t border-border/20 pt-1.5 flex items-center gap-1.5">
+                      <img 
+                        src={friend.currentActivity!.song.thumbnail} 
+                        className="w-6 h-6 rounded object-cover" 
+                        alt="" 
+                      />
+                      <div className="min-w-0">
+                        <div className="text-[9px] font-bold text-text truncate leading-snug">{friend.currentActivity!.song.title}</div>
+                        <div className="text-[8px] text-muted truncate">{friend.currentActivity!.song.artist}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[9px] text-muted italic mt-1 font-sans">Offline</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+    );
+  }
 
   return (
-    <aside className="w-80 border-l border-border/60 bg-surface/20 hidden xl:flex flex-col h-screen fixed right-0 top-0 pt-6 pb-20 px-5 z-20 backdrop-blur-md overflow-y-auto">
-      <div className="flex items-center gap-2 border-b border-border/20 pb-4 mb-4">
-        <Users className="w-4 h-4 text-primary" />
-        <h3 className="font-editorial text-sm uppercase tracking-wider text-text font-bold">Circle Activity</h3>
+    <aside className="w-80 border-l border-border/60 bg-surface/20 hidden xl:flex flex-col h-screen fixed right-0 top-0 pt-6 pb-20 px-5 z-20 backdrop-blur-md overflow-y-auto transition-all duration-300">
+      <div className="flex items-center justify-between border-b border-border/20 pb-4 mb-4 gap-3">
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-primary" />
+          <h3 className="font-editorial text-sm uppercase tracking-wider text-text font-bold">Circle Activity</h3>
+        </div>
+        <button
+          onClick={onToggleCollapse}
+          className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg border border-transparent hover:border-border transition cursor-pointer"
+          title="Collapse Activity"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       {loading ? (
@@ -87,7 +180,7 @@ export default function FriendActivitySidebar() {
       ) : (
         <div className="space-y-4">
           {friends.map((friend) => {
-            const hasActivity = !!friend.currentActivity?.song;
+            const hasSongActivity = !!friend.currentActivity?.song;
             const userRoom = activeRooms.find(r => r.hostId === friend.id);
 
             return (
@@ -108,12 +201,12 @@ export default function FriendActivitySidebar() {
                     </Link>
                     <span className="text-[10px] text-muted truncate block">@{friend.username}</span>
                   </div>
-                  {hasActivity && (
+                  {hasSongActivity && (
                     <span className="w-1.5 h-1.5 bg-green-500 rounded-full flex-shrink-0 animate-pulse" />
                   )}
                 </div>
 
-                {hasActivity ? (
+                {hasSongActivity ? (
                   <div className="space-y-2">
                     <div className="p-2 bg-primary/5 border border-primary/10 rounded-lg flex items-center gap-2 min-w-0">
                       <img 
@@ -133,7 +226,7 @@ export default function FriendActivitySidebar() {
                       </div>
                       <button
                         onClick={() => playSong(friend.currentActivity!.song as any, [friend.currentActivity!.song as any])}
-                        className="p-1 bg-primary text-white rounded-full hover:scale-105 transition flex-shrink-0"
+                        className="p-1.5 bg-primary text-white rounded-full hover:scale-105 transition flex-shrink-0 cursor-pointer"
                         title="Listen along"
                       >
                         <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
