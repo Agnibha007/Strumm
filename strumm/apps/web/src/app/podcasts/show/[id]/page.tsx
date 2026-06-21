@@ -47,6 +47,8 @@ const SafePodcastImage = ({
       alt={alt || ""}
       onError={handleError}
       className={className}
+      loading="lazy"
+      decoding="async"
       {...props}
     />
   );

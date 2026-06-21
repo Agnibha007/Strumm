@@ -226,7 +226,7 @@ export default function CirclePage() {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {req.sender?.avatar ? (
-                        <img src={req.sender.avatar} alt="" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
+                        <img src={req.sender.avatar} alt="" loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-surface-elevated border border-border flex items-center justify-center flex-shrink-0">
                           <Users className="w-5 h-5 text-accent" />
@@ -290,7 +290,7 @@ export default function CirclePage() {
                     <div className="flex items-start justify-between min-w-0 gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {friend.avatar ? (
-                          <img src={friend.avatar} alt="" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
+                          <img src={friend.avatar} alt="" loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
                         ) : (
                           <div className="w-10 h-10 rounded-full bg-surface-elevated border border-border flex items-center justify-center flex-shrink-0">
                             <Users className="w-5 h-5 text-accent" />
@@ -369,7 +369,7 @@ export default function CirclePage() {
                     }`}
                   >
                     {notif.senderAvatar ? (
-                      <img src={notif.senderAvatar} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                      <img src={notif.senderAvatar} alt="" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
                     ) : (
                       <div className="w-7 h-7 rounded-full bg-surface border border-border flex items-center justify-center flex-shrink-0">
                         <Users className="w-3.5 h-3.5 text-accent" />

@@ -772,7 +772,7 @@ function ProfilePageContent() {
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="font-bold text-primary font-mono w-4 flex-shrink-0">{idx + 1}</span>
                       {song.image && (
-                        <img src={song.image} alt={song.title} className="w-7 h-7 rounded object-cover flex-shrink-0" />
+                        <img src={song.image} alt={song.title} loading="lazy" decoding="async" className="w-7 h-7 rounded object-cover flex-shrink-0" />
                       )}
                       <div className="text-left min-w-0">
                         <span className="font-semibold text-text block truncate leading-tight">{song.title}</span>

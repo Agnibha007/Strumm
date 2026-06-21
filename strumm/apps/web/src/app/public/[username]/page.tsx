@@ -428,7 +428,7 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-mono text-muted">0{idx + 1}</span>
                   {artist.thumbnail ? (
-                    <img src={artist.thumbnail} alt={artist.artist} className="w-8 h-8 rounded-full object-cover" />
+                    <img src={artist.thumbnail} alt={artist.artist} loading="lazy" decoding="async" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-surface-elevated border border-border flex items-center justify-center">
                       <Music className="w-4 h-4 text-accent" />

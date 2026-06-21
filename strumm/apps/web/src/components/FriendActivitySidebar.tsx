@@ -94,7 +94,7 @@ export default function FriendActivitySidebar() {
               <div key={friend.id} className="p-3 bg-surface-elevated/20 border border-border/40 rounded-xl space-y-3 min-w-0 transition hover:border-primary/20">
                 <div className="flex items-center gap-2.5 min-w-0">
                   {friend.avatar ? (
-                    <img src={friend.avatar} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border" />
+                    <img src={friend.avatar} alt="" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border" />
                   ) : (
                     <div className="w-7 h-7 rounded-full bg-surface-elevated flex items-center justify-center flex-shrink-0 border border-border">
                       <Music className="w-3.5 h-3.5 text-accent" />
@@ -119,6 +119,8 @@ export default function FriendActivitySidebar() {
                       <img 
                         src={friend.currentActivity!.song.thumbnail} 
                         alt="" 
+                        loading="lazy"
+                        decoding="async"
                         className="w-8 h-8 rounded object-cover flex-shrink-0" 
                       />
                       <div className="min-w-0 flex-1">
