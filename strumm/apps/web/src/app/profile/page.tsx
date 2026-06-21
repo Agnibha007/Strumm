@@ -1,57 +1,124 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
-import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, X } from "lucide-react";
+import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, X, Loader2, Play } from "lucide-react";
 import { Playlist, User } from "@strumm/types";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiUrl } from "web/lib/api";
 import { signOut } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import SongArtwork from "web/components/SongArtwork";
 
-export default function ProfilePage() {
+function ProfilePageContent() {
   const { token, user: cachedUser, fetchProfile, logout } = useAuthStore();
   const router = useRouter();
-  
-  const [profileUser, setProfileUser] = useState<User | null>(cachedUser);
+  const searchParams = useSearchParams();
+  const usernameParam = searchParams.get("username");
+
+  const [displayedUser, setDisplayedUser] = useState<any | null>(null);
+  const [isOwnProfile, setIsOwnProfile] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [likedCount, setLikedCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [memories, setMemories] = useState<any[]>([]);
+
+  // Social states for public view
+  const [circleStatus, setCircleStatus] = useState<"none" | "pending" | "accepted" | "blocked" | "loading">("none");
+  const [isRequester, setIsRequester] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [socialLoading, setSocialLoading] = useState(false);
+  const [tasteMatch, setTasteMatch] = useState<any | null>(null);
+
+  // Deletion states
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
   const [accountError, setAccountError] = useState<string | null>(null);
 
-  const loadProfileAndLibrary = async () => {
+  const loadProfileData = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // 1. Sync fresh user profile stats
-      await fetchProfile();
-      
-      // 2. Load playlists and library data
-      const libResponse = await fetch(apiUrl("/library"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const libJson = await libResponse.json();
-      if (libJson.success && libJson.data) {
-        setPlaylists(libJson.data.playlists || []);
-        setLikedCount(libJson.data.likedSongsCount || 0);
-      }
+      const currentUsername = cachedUser?.username;
+      const isParamOwn = !usernameParam || (currentUsername && usernameParam.toLowerCase() === currentUsername.toLowerCase());
 
-      // 3. Load user memories
-      const memResponse = await fetch(apiUrl("/memories"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const memJson = await memResponse.json();
-      if (memJson.success && memJson.data) {
-        setMemories(memJson.data || []);
+      if (isParamOwn) {
+        setIsOwnProfile(true);
+        // Sync fresh profile stats
+        await fetchProfile();
+        
+        // Load playlists and library data
+        const libResponse = await fetch(apiUrl("/library"), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const libJson = await libResponse.json();
+        if (libJson.success && libJson.data) {
+          setPlaylists(libJson.data.playlists || []);
+          setLikedCount(libJson.data.likedSongsCount || 0);
+        }
+
+        // Load user memories
+        const memResponse = await fetch(apiUrl("/memories"), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const memJson = await memResponse.json();
+        if (memJson.success && memJson.data) {
+          setMemories(memJson.data || []);
+        }
+      } else {
+        setIsOwnProfile(false);
+        // Fetch public user
+        const res = await fetch(apiUrl(`/users/public/${usernameParam}`));
+        const json = await res.json();
+        if (!json.success || !json.data) {
+          setError(json.error || "Listener not found");
+          setDisplayedUser(null);
+          return;
+        }
+
+        const publicData = json.data;
+        setDisplayedUser(publicData);
+        setPlaylists(publicData.publicPlaylists || []);
+        setMemories(publicData.memories || []);
+        setLikedCount(0); // public stats fallback
+
+        // Fetch social status and taste match
+        if (token && publicData.id) {
+          try {
+            const statusResponse = await fetch(apiUrl(`/social/status/${publicData.id}`), {
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+            const statusJson = await statusResponse.json();
+            if (statusJson.success) {
+              setCircleStatus(statusJson.status);
+              setIsRequester(statusJson.isRequester);
+              setRequestId(statusJson.requestId);
+            }
+          } catch (statusError) {
+            console.error(statusError);
+          }
+
+          try {
+            const matchResp = await fetch(apiUrl(`/users/${publicData.id}/taste-match`), {
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+            const matchJson = await matchResp.json();
+            if (matchJson.success && matchJson.data) {
+              setTasteMatch(matchJson.data);
+            }
+          } catch (matchError) {
+            console.error(matchError);
+          }
+        }
       }
     } catch (e) {
-      console.warn("Unable to fetch complete profile details offline.");
+      console.warn("Unable to fetch complete profile details offline.", e);
+      setError("Unable to load profile data.");
     } finally {
       setLoading(false);
     }
@@ -75,18 +142,75 @@ export default function ProfilePage() {
     }
   };
 
-  useEffect(() => {
-    if (token) {
-      loadProfileAndLibrary();
+  const handleReact = async (memoryId: string, reactionType: string) => {
+    if (!token || isOwnProfile) return;
+    try {
+      const res = await fetch(apiUrl(`/social/memories/${memoryId}/react`), {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ reactionType })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMemories(prev => prev.map(m => {
+          if (m.id === memoryId) {
+            const reactions = { ...(m.reactions || {}) };
+            const list = reactions[reactionType] ? [...reactions[reactionType]] : [];
+            if (cachedUser && !list.includes(cachedUser.id)) {
+              list.push(cachedUser.id);
+            }
+            reactions[reactionType] = list;
+            return { ...m, reactions };
+          }
+          return m;
+        }));
+      }
+    } catch (e) {
+      console.error(e);
     }
-  }, [token]);
+  };
 
-  // Sync state with store updates
+  // Clear previous state on navigation
   useEffect(() => {
-    if (cachedUser) {
-      setProfileUser(cachedUser);
+    setDisplayedUser(null);
+    setPlaylists([]);
+    setMemories([]);
+    setTasteMatch(null);
+    setCircleStatus("loading");
+    setLoading(true);
+    setError(null);
+
+    if (token) {
+      loadProfileData();
     }
-  }, [cachedUser]);
+  }, [usernameParam, token]);
+
+  // Sync state with personal store updates
+  useEffect(() => {
+    const currentUsername = cachedUser?.username;
+    const isParamOwn = !usernameParam || (currentUsername && usernameParam.toLowerCase() === currentUsername.toLowerCase());
+    if (isParamOwn && cachedUser) {
+      setDisplayedUser({
+        id: cachedUser.id,
+        username: cachedUser.username,
+        displayName: cachedUser.displayName,
+        avatar: cachedUser.avatar,
+        bio: (cachedUser as any).bio || "",
+        createdAt: cachedUser.createdAt,
+        soundDNA: (cachedUser as any).soundDNA || { energy: 5, discovery: 5, nostalgia: 5, variety: 5, repeatRate: 5 },
+        replayHighlights: {
+          totalMinutes: Math.round((cachedUser.statistics?.totalListeningTime || 0) / 60),
+          monthlyMinutes: Math.round((cachedUser.statistics?.monthlyListeningTime || 0) / 60)
+        },
+        topArtists: cachedUser.statistics?.topArtists || [],
+        topSongs: cachedUser.statistics?.topSongs || [],
+        settings: cachedUser.settings
+      });
+    }
+  }, [cachedUser, usernameParam]);
 
   const handleLogout = () => {
     logout();
@@ -94,14 +218,14 @@ export default function ProfilePage() {
   };
 
   const handleUpdateSetting = async (key: string, value: any) => {
-    if (!token || !profileUser) return;
+    if (!token || !displayedUser) return;
     const updatedSettings = {
-      ...profileUser.settings,
+      ...displayedUser.settings,
       [key]: value
     };
     
-    setProfileUser({
-      ...profileUser,
+    setDisplayedUser({
+      ...displayedUser,
       settings: updatedSettings
     });
 
@@ -151,12 +275,108 @@ export default function ProfilePage() {
     }
   };
 
-  if (!profileUser) return null;
+  const handleSendRequest = async () => {
+    if (!token || !displayedUser?.id) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/request/${displayedUser.id}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCircleStatus("pending");
+        setIsRequester(true);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handleAcceptRequest = async () => {
+    if (!token || !requestId) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/accept/${requestId}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCircleStatus("accepted");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handleRemoveCircle = async () => {
+    if (!token || !displayedUser?.id) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/remove/${displayedUser.id}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCircleStatus("none");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handleCreateBlend = async () => {
+    if (!token || !displayedUser?.id) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/blend/${displayedUser.id}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success && json.data?.id) {
+        router.push(`/playlist/${json.data.id}`);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="text-xs uppercase tracking-widest">Resolving user passport...</span>
+      </div>
+    );
+  }
+
+  if (error || !displayedUser) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-center max-w-md mx-auto p-6 gap-4">
+        <AlertCircle className="w-12 h-12 text-primary opacity-50" />
+        <h3 className="font-editorial text-2xl text-text font-bold">Listener Not Found</h3>
+        <p className="text-sm text-muted">{error || "The requested user handle does not exist on Strumm or is set to private."}</p>
+      </div>
+    );
+  }
 
   // Format statistics
-  const totalMinutes = Math.round((profileUser.statistics?.totalListeningTime || 0) / 60);
-  const monthlyMinutes = Math.round((profileUser.statistics?.monthlyListeningTime || 0) / 60);
-  const topArtists = profileUser.statistics?.topArtists || [];
+  const totalMinutes = displayedUser.replayHighlights?.totalMinutes || 0;
+  const monthlyMinutes = displayedUser.replayHighlights?.monthlyMinutes || 0;
+  const topArtists = displayedUser.topArtists || [];
+  const topSongs = displayedUser.topSongs || [];
+  const soundDNA = displayedUser.soundDNA || { energy: 5, discovery: 5, nostalgia: 5, variety: 5, repeatRate: 5 };
   
   // Custom badges based on listening stats
   const badges = [];
@@ -166,6 +386,28 @@ export default function ProfilePage() {
   if (playlists.length > 2) badges.push({ name: "Curation King", desc: "Created 3+ custom playlists", icon: FolderHeart });
   if (badges.length === 0) badges.push({ name: "Novice", desc: "Passport activated", icon: UserIcon });
 
+  const renderDNABar = (value: number, label: string) => {
+    const filled = "█".repeat(value);
+    const empty = "░".repeat(Math.max(0, 10 - value));
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between text-[11px] font-semibold">
+          <span className="text-text/90">{label}</span>
+          <span className="text-primary">{value * 10}%</span>
+        </div>
+        <div className="font-mono text-primary text-xs tracking-wider select-none">{filled}{empty}</div>
+      </div>
+    );
+  };
+
+  const issuedDate = displayedUser.createdAt 
+    ? new Date(displayedUser.createdAt).toLocaleDateString() 
+    : displayedUser.passport?.createdAt 
+      ? new Date(displayedUser.passport.createdAt).toLocaleDateString() 
+      : "2026";
+
+  const passportNumber = `№ ST-${((displayedUser.createdAt || "").substring(2, 4)) || "26"}${((displayedUser.id || displayedUser.username || "0000").substring(0, 4)).toUpperCase()}`;
+
   return (
     <div className="space-y-10 max-w-5xl mx-auto soft-enter">
       {/* Header */}
@@ -174,7 +416,7 @@ export default function ProfilePage() {
           Curation Passport
         </span>
         <h2 className="text-3xl sm:text-4xl font-editorial text-text tracking-tight font-bold mt-1">
-          Strumm Passport
+          {isOwnProfile ? "Strumm Passport" : `${displayedUser.displayName}'s Passport`}
         </h2>
       </div>
 
@@ -187,13 +429,13 @@ export default function ProfilePage() {
             {/* Stamp Logo */}
             <div className="flex justify-between items-center text-[10px] text-muted tracking-widest uppercase font-bold border-b border-border/20 pb-3 select-none">
               <span>Passport Control</span>
-              <span className="text-primary font-mono">№ ST-{((profileUser.createdAt || "").substring(2, 4)) || "26"}{((profileUser.id || "").substring(0, 4) || "0000").toUpperCase()}</span>
+              <span className="text-primary font-mono">{passportNumber}</span>
             </div>
 
             {/* Photo Avatar */}
             <div className="w-28 h-28 rounded-full bg-surface-elevated overflow-hidden border-2 border-border/80 mx-auto relative shadow-inner">
-              {profileUser.avatar ? (
-                <img src={profileUser.avatar} alt={profileUser.displayName} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+              {displayedUser.avatar ? (
+                <img src={displayedUser.avatar} alt={displayedUser.displayName} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <UserIcon className="w-10 h-10 text-muted" />
@@ -204,12 +446,17 @@ export default function ProfilePage() {
             {/* Basic Info */}
             <div className="space-y-1">
               <h3 className="font-editorial text-2xl text-text font-bold leading-tight">
-                {profileUser.displayName}
+                {displayedUser.displayName}
               </h3>
-              <p className="text-xs text-muted">@{profileUser.username}</p>
+              <p className="text-xs text-muted">@{displayedUser.username}</p>
+              {displayedUser.bio && (
+                <p className="text-xs text-muted/80 italic mt-2 max-w-xs mx-auto">
+                  &ldquo;{displayedUser.bio}&rdquo;
+                </p>
+              )}
               <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted/65 mt-2 font-semibold">
                 <Calendar className="w-3.5 h-3.5" />
-                <span>Issued {new Date(profileUser.createdAt).toLocaleDateString()}</span>
+                <span>Issued {issuedDate}</span>
               </div>
             </div>
 
@@ -226,7 +473,7 @@ export default function ProfilePage() {
                       key={idx}
                       className="p-2.5 rounded-lg bg-surface-elevated border border-border/40 flex items-center gap-2 text-left"
                     >
-                      <div className="p-1.5 bg-primary/10 border border-primary/20 text-primary rounded">
+                      <div className="p-1.5 bg-primary/10 border border-primary/20 text-primary rounded flex-shrink-0">
                         <Icon className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0">
@@ -243,115 +490,208 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="border-t border-border/20 pt-5 space-y-3">
-              <h4 className="text-[10px] tracking-wider uppercase text-muted font-bold text-left select-none">
-                Privacy Controls
-              </h4>
-              <div className="space-y-3.5 text-left border border-border/40 p-4 rounded-xl bg-surface/30">
-                <div className="flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-semibold text-text block">Broadcast Listening Activity</span>
-                    <span className="text-[10px] text-muted block mt-0.5">Let Circle members see what song you are playing now.</span>
+            {/* Circle Action Buttons if Public User */}
+            {token && !isOwnProfile && (
+              <div className="flex flex-wrap items-center gap-2 mt-4 justify-center border-t border-border/20 pt-5">
+                {circleStatus === "none" && (
+                  <button
+                    disabled={socialLoading}
+                    onClick={handleSendRequest}
+                    className="w-full px-4 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg transition cursor-pointer select-none"
+                  >
+                    {socialLoading ? "Processing..." : "Add to Circle"}
+                  </button>
+                )}
+                {circleStatus === "pending" && isRequester && (
+                  <span className="w-full text-center px-4 py-2 bg-surface-elevated text-muted text-xs font-semibold rounded-lg border border-border/40 select-none">
+                    Pending Acceptance
+                  </span>
+                )}
+                {circleStatus === "pending" && !isRequester && (
+                  <button
+                    disabled={socialLoading}
+                    onClick={handleAcceptRequest}
+                    className="w-full px-4 py-2 bg-accent hover:bg-accent/80 text-text text-xs font-semibold rounded-lg transition cursor-pointer select-none"
+                  >
+                    {socialLoading ? "Processing..." : "Accept Invitation"}
+                  </button>
+                )}
+                {circleStatus === "accepted" && (
+                  <div className="space-y-2.5 w-full">
+                    <span className="block text-center px-4 py-2 bg-primary/10 border border-primary/20 text-primary text-xs font-semibold rounded-lg select-none">
+                      In your Circle
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={socialLoading}
+                        onClick={handleCreateBlend}
+                        className="flex-1 px-3 py-2 bg-accent hover:bg-accent/80 text-text text-xs font-semibold rounded-lg transition cursor-pointer flex items-center justify-center gap-1.5 select-none"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Create Blend Mix
+                      </button>
+                      <button
+                        disabled={socialLoading}
+                        onClick={handleRemoveCircle}
+                        className="px-3 py-2 border border-border hover:bg-red-500/10 hover:text-red-400 text-xs font-semibold rounded-lg transition cursor-pointer select-none"
+                      >
+                        Leave
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={profileUser.settings?.showListeningActivity ?? true}
-                    onChange={(e) => handleUpdateSetting("showListeningActivity", e.target.checked)}
-                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
-                  <div>
-                    <span className="font-semibold text-text block">Public Passport Visibility</span>
-                    <span className="text-[10px] text-muted block mt-0.5">Allow non-Circle users to view your Strumm Passport.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={profileUser.settings?.publicPassport ?? true}
-                    onChange={(e) => handleUpdateSetting("publicPassport", e.target.checked)}
-                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
-                  <div>
-                    <span className="font-semibold text-text block">Show Top Tracks & Artists</span>
-                    <span className="text-[10px] text-muted block mt-0.5">Display listening statistics in your public passport.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={profileUser.settings?.showTopSongs ?? true}
-                    onChange={(e) => handleUpdateSetting("showTopSongs", e.target.checked)}
-                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
-                  <div>
-                    <span className="font-semibold text-text block">Allow Incoming Circle Requests</span>
-                    <span className="text-[10px] text-muted block mt-0.5">Let others invite you into their music circle.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={profileUser.settings?.allowRequests ?? true}
-                    onChange={(e) => handleUpdateSetting("allowRequests", e.target.checked)}
-                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
-                  />
-                </div>
+                )}
               </div>
-            </div>
+            )}
 
-            <div className="border-t border-border/20 pt-5 space-y-3">
-              <h4 className="text-[10px] tracking-wider uppercase text-muted font-bold text-left select-none">
-                Account Control
-              </h4>
-              {accountError && (
-                <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{accountError}</span>
+            {/* Privacy settings for Own profile */}
+            {isOwnProfile && displayedUser.settings && (
+              <div className="border-t border-border/20 pt-5 space-y-3">
+                <h4 className="text-[10px] tracking-wider uppercase text-muted font-bold text-left select-none">
+                  Privacy Controls
+                </h4>
+                <div className="space-y-3.5 text-left border border-border/40 p-4 rounded-xl bg-surface/30">
+                  <div className="flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-semibold text-text block">Broadcast Listening Activity</span>
+                      <span className="text-[10px] text-muted block mt-0.5">Let Circle members see what song you are playing now.</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={displayedUser.settings.showListeningActivity ?? true}
+                      onChange={(e) => handleUpdateSetting("showListeningActivity", e.target.checked)}
+                      className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
+                    <div>
+                      <span className="font-semibold text-text block">Public Passport Visibility</span>
+                      <span className="text-[10px] text-muted block mt-0.5">Allow non-Circle users to view your Strumm Passport.</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={displayedUser.settings.publicPassport ?? true}
+                      onChange={(e) => handleUpdateSetting("publicPassport", e.target.checked)}
+                      className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
+                    <div>
+                      <span className="font-semibold text-text block">Show Top Tracks & Artists</span>
+                      <span className="text-[10px] text-muted block mt-0.5">Display listening statistics in your public passport.</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={displayedUser.settings.showTopSongs ?? true}
+                      onChange={(e) => handleUpdateSetting("showTopSongs", e.target.checked)}
+                      className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
+                    <div>
+                      <span className="font-semibold text-text block">Allow Incoming Circle Requests</span>
+                      <span className="text-[10px] text-muted block mt-0.5">Let others invite you into their music circle.</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={displayedUser.settings.allowRequests ?? true}
+                      onChange={(e) => handleUpdateSetting("allowRequests", e.target.checked)}
+                      className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                    />
+                  </div>
                 </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  onClick={handleLogout}
-                  className="py-2.5 border border-border hover:bg-surface-elevated text-text text-xs font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none"
-                >
-                  <LogOut className="w-4 h-4 text-muted" />
-                  Sign Out
-                </button>
-                <button
-                  onClick={() => {
-                    setAccountError(null);
-                    setIsDeleteModalOpen(true);
-                  }}
-                  disabled={deleting}
-                  className="py-2.5 bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {deleting ? "Erasing..." : "Delete Account"}
-                </button>
               </div>
-            </div>
+            )}
+
+            {/* Logout/Account settings for Own profile */}
+            {isOwnProfile && (
+              <div className="border-t border-border/20 pt-5 space-y-3">
+                <h4 className="text-[10px] tracking-wider uppercase text-muted font-bold text-left select-none">
+                  Account Control
+                </h4>
+                {accountError && (
+                  <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{accountError}</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    onClick={handleLogout}
+                    className="py-2.5 border border-border hover:bg-surface-elevated text-text text-xs font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none"
+                  >
+                    <LogOut className="w-4 h-4 text-muted" />
+                    Sign Out
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAccountError(null);
+                      setIsDeleteModalOpen(true);
+                    }}
+                    disabled={deleting}
+                    className="py-2.5 bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {deleting ? "Erasing..." : "Delete Account"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Right: Metrics and Stats */}
         <div className="lg:col-span-7 space-y-8">
           {/* Strumm Replay Call-to-Action */}
-          <Link href="/replay">
-            <span className="block bg-gradient-to-r from-primary/10 via-surface/60 to-accent/5 border border-primary/20 rounded-xl p-5 hover:border-primary/40 transition cursor-pointer relative overflow-hidden group">
-              <div className="flex justify-between items-center z-10 relative">
-                <div>
-                  <span className="text-[9px] tracking-widest uppercase font-semibold text-primary block">New Experience</span>
-                  <h4 className="font-editorial text-lg text-text font-bold mt-1">Strumm Replay & Sound DNA</h4>
-                  <p className="text-xs text-muted mt-1">Explore your listening minutes, top genres, discovery index, and archetypes.</p>
+          {isOwnProfile ? (
+            <Link href="/replay">
+              <span className="block bg-gradient-to-r from-primary/10 via-surface/60 to-accent/5 border border-primary/20 rounded-xl p-5 hover:border-primary/40 transition cursor-pointer relative overflow-hidden group">
+                <div className="flex justify-between items-center z-10 relative">
+                  <div>
+                    <span className="text-[9px] tracking-widest uppercase font-semibold text-primary block">New Experience</span>
+                    <h4 className="font-editorial text-lg text-text font-bold mt-1">Strumm Replay & Sound DNA</h4>
+                    <p className="text-xs text-muted mt-1">Explore your listening minutes, top genres, discovery index, and archetypes.</p>
+                  </div>
+                  <Sparkles className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
                 </div>
-                <Sparkles className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+              </span>
+            </Link>
+          ) : tasteMatch && (
+            <div className="bg-gradient-to-r from-primary/10 to-accent/5 border border-primary/20 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] tracking-widest uppercase font-semibold text-primary block">
+                    Social Taste Match
+                  </span>
+                  <h3 className="font-editorial text-lg text-text font-bold mt-1">
+                    How aligned is your sound?
+                  </h3>
+                </div>
+                <div className="text-right">
+                  <span className="font-editorial text-3xl font-bold text-primary">{tasteMatch.percentage}%</span>
+                  <span className="text-[9px] text-muted block uppercase font-semibold">Match</span>
+                </div>
               </div>
-            </span>
-          </Link>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border/20 pt-4 text-xs text-muted leading-relaxed">
+                {tasteMatch.commonArtists.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-text font-bold">Shared Artists</span>
+                    <p>{tasteMatch.commonArtists.join(", ")}</p>
+                  </div>
+                )}
+                {tasteMatch.sharedMoods.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-text font-bold">Vibe Compatibility</span>
+                    <p className="text-primary font-semibold">{tasteMatch.sharedMoods.join(" • ")}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Main stats counters */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-surface/30 border border-border/40 rounded-xl p-4 text-center soft-enter hover:-translate-y-0.5 transition-transform">
+            <div className="bg-surface/30 border border-border/40 rounded-xl p-4 text-center hover:-translate-y-0.5 transition-transform">
               <Clock className="w-5 h-5 text-primary mx-auto mb-1.5" />
               <div className="text-2xl font-editorial font-bold text-text">
                 {totalMinutes}
@@ -361,7 +701,7 @@ export default function ProfilePage() {
               </div>
             </div>
             
-            <div className="bg-surface/30 border border-border/40 rounded-xl p-4 text-center soft-enter hover:-translate-y-0.5 transition-transform">
+            <div className="bg-surface/30 border border-border/40 rounded-xl p-4 text-center hover:-translate-y-0.5 transition-transform">
               <Calendar className="w-5 h-5 text-accent mx-auto mb-1.5" />
               <div className="text-2xl font-editorial font-bold text-text">
                 {monthlyMinutes}
@@ -371,14 +711,29 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="bg-surface/30 border border-border/40 rounded-xl p-4 text-center soft-enter hover:-translate-y-0.5 transition-transform">
+            <div className="bg-surface/30 border border-border/40 rounded-xl p-4 text-center hover:-translate-y-0.5 transition-transform">
               <Heart className="w-5 h-5 text-rose-500 mx-auto mb-1.5" />
               <div className="text-2xl font-editorial font-bold text-text">
-                {likedCount}
+                {isOwnProfile ? likedCount : "-"}
               </div>
               <div className="text-[9px] uppercase tracking-wider text-muted font-bold mt-1">
                 Likes
               </div>
+            </div>
+          </div>
+
+          {/* Sound DNA component */}
+          <div className="bg-surface/30 border border-border/60 rounded-xl p-6 space-y-6">
+            <div>
+              <h3 className="font-editorial text-xl text-text font-bold">Sound DNA</h3>
+              <p className="text-xs text-muted">Acoustic blueprints calculated from history.</p>
+            </div>
+            <div className="space-y-4">
+              {renderDNABar(soundDNA.energy, "Energy")}
+              {renderDNABar(soundDNA.discovery, "Discovery")}
+              {renderDNABar(soundDNA.nostalgia, "Nostalgia")}
+              {renderDNABar(soundDNA.variety, "Variety")}
+              {renderDNABar(soundDNA.repeatRate, "Repeat Rate")}
             </div>
           </div>
 
@@ -395,26 +750,52 @@ export default function ProfilePage() {
                   <div key={idx} className="flex justify-between items-center py-2.5 first:pt-0 last:pb-0 text-xs">
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-primary font-mono w-4">{idx + 1}</span>
-                      <span className="font-semibold text-text">{artist.name}</span>
+                      <span className="font-semibold text-text">{artist.name || artist.artist}</span>
                     </div>
-                    <span className="text-muted font-semibold">{artist.playCount} plays</span>
+                    <span className="text-muted font-semibold">{artist.playCount || artist.count || 0} plays</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
+          {/* Top Songs section */}
+          {topSongs.length > 0 && (
+            <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-4">
+              <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                Heavy Rotation Tracks
+              </h3>
+              <div className="divide-y divide-border/20 font-sans">
+                {topSongs.map((song: any, idx: number) => (
+                  <div key={idx} className="flex justify-between items-center py-2.5 first:pt-0 last:pb-0 text-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="font-bold text-primary font-mono w-4 flex-shrink-0">{idx + 1}</span>
+                      {song.image && (
+                        <img src={song.image} alt={song.title} className="w-7 h-7 rounded object-cover flex-shrink-0" />
+                      )}
+                      <div className="text-left min-w-0">
+                        <span className="font-semibold text-text block truncate leading-tight">{song.title}</span>
+                        <span className="text-[10px] text-muted truncate">{song.artist}</span>
+                      </div>
+                    </div>
+                    <span className="text-muted font-semibold flex-shrink-0">{song.plays || song.playCount || 0} plays</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Playlists grid */}
           <div className="space-y-4">
             <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
-              Curator Folder Archives
+              {isOwnProfile ? "Curator Folder Archives" : "Public Playlists"}
             </h3>
             {playlists.length === 0 ? (
               <p className="text-xs text-muted italic">No playlists created yet.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {playlists.map((playlist) => (
-                  <a
+                  <Link
                     key={playlist.id}
                     href={`/playlist/${playlist.id}`}
                     className="p-3.5 bg-surface/40 hover:bg-surface border border-border/40 hover:border-border/80 rounded-xl flex items-center justify-between transition group cursor-pointer"
@@ -423,12 +804,12 @@ export default function ProfilePage() {
                       <div className="font-editorial text-base text-text font-bold leading-tight group-hover:text-primary transition">
                         {playlist.name}
                       </div>
-                      <div className="text-xs text-muted mt-1">{playlist.songs.length} records</div>
+                      <div className="text-xs text-muted mt-1">{(playlist.songs || []).length} records</div>
                     </div>
                     <div className="p-2 bg-surface-elevated rounded-lg border border-border/40 text-muted group-hover:text-primary transition">
                       <Library className="w-4 h-4" />
                     </div>
-                  </a>
+                  </Link>
                 ))}
               </div>
             )}
@@ -440,7 +821,7 @@ export default function ProfilePage() {
               Song Memories
             </h3>
             {memories.length === 0 ? (
-              <p className="text-xs text-muted italic">No emotional memories attached to songs yet. Open player overlay and click Memory button to attach a memory to a song.</p>
+              <p className="text-xs text-muted italic">No emotional memories attached to songs yet.</p>
             ) : (
               <div className="space-y-4">
                 {memories.map((memory) => (
@@ -453,13 +834,43 @@ export default function ProfilePage() {
                           <div className="text-[10px] text-muted truncate">{memory.song.artist}</div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteMemory(memory.id)}
-                        disabled={deletingMemoryId === memory.id}
-                        className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[10px] transition cursor-pointer disabled:opacity-30"
-                      >
-                        Delete
-                      </button>
+                      {isOwnProfile ? (
+                        <button
+                          onClick={() => handleDeleteMemory(memory.id)}
+                          disabled={deletingMemoryId === memory.id}
+                          className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[10px] transition cursor-pointer disabled:opacity-30"
+                        >
+                          Delete
+                        </button>
+                      ) : (
+                        token && (
+                          <div className="flex items-center gap-1.5">
+                            {[
+                              { type: "heart", emoji: "❤️" },
+                              { type: "sparkles", emoji: "✨" },
+                              { type: "thumbsup", emoji: "👍" }
+                            ].map(({ type, emoji }) => {
+                              const users = memory.reactions?.[type] || [];
+                              const hasReacted = cachedUser && users.includes(cachedUser.id);
+                              const count = users.length;
+                              return (
+                                <button
+                                  key={type}
+                                  onClick={() => handleReact(memory.id, type)}
+                                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border transition cursor-pointer select-none ${
+                                    hasReacted
+                                      ? "bg-primary/10 border-primary/30 text-primary"
+                                      : "bg-surface-elevated/40 border-border/40 hover:border-primary/30 text-muted hover:text-text"
+                                  }`}
+                                >
+                                  <span>{emoji}</span>
+                                  {count > 0 && <span className="font-semibold font-mono">{count}</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )
+                      )}
                     </div>
                     <div className="p-3 bg-surface-elevated/40 border-l-2 border-accent rounded-r-lg italic text-xs text-text leading-relaxed font-serif">
                       &ldquo;{memory.note}&rdquo;
@@ -543,5 +954,18 @@ export default function ProfilePage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="text-xs uppercase tracking-widest">Resolving user passport...</span>
+      </div>
+    }>
+      <ProfilePageContent />
+    </Suspense>
   );
 }

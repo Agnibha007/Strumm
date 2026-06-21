@@ -902,3 +902,108 @@ async def get_public_profile(username: str):
     except Exception as e:
         logger.error(f"Error fetching public profile {username}: {str(e)}")
         return {"success": False, "error": str(e)}
+
+@router.get("/users/public/{username}")
+async def get_users_public_profile(username: str):
+    try:
+        database = db.get_db()
+        user = await database[db.USERS].find_one({"username": username.lower()})
+        if not user:
+            return {"success": False, "error": "User profile not found."}
+            
+        # Respect publicPassport privacy setting
+        passport_enabled = user.get("settings", {}).get("publicPassport", True)
+        if not passport_enabled:
+            return {"success": False, "error": "This passport is set to private."}
+
+        user_id = str(user["_id"])
+        
+        # Get public playlists
+        playlists = await database[db.PLAYLISTS].find({"userId": user_id, "visibility": "public"}).to_list(length=30)
+        for p in playlists:
+            p["id"] = str(p["_id"])
+            del p["_id"]
+            if "createdAt" in p:
+                p["createdAt"] = p["createdAt"].isoformat()
+                
+        # Get public memories
+        memories = await database["songMemories"].find({"userId": user_id, "visibility": "public"}).sort("createdAt", -1).to_list(length=20)
+        for m in memories:
+            m["id"] = str(m["_id"])
+            del m["_id"]
+            if "date" in m:
+                m["date"] = m["date"].isoformat()
+            if "createdAt" in m:
+                m["createdAt"] = m["createdAt"].isoformat()
+                
+        # Get stats
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": user_id}).to_list(length=1000)
+        sound_dna = calculate_sound_dna(histories)
+        
+        total_seconds = sum(h.get("listenDuration", 30) for h in histories)
+        total_minutes = round(total_seconds / 60)
+        
+        # Calculate monthly seconds/minutes
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        monthly_seconds = sum(h.get("listenDuration", 30) for h in histories if h.get("playedAt", datetime.utcnow()) >= thirty_days_ago)
+        monthly_minutes = round(monthly_seconds / 60)
+        
+        # Respect showTopSongs privacy setting
+        show_top = user.get("settings", {}).get("showTopSongs", True)
+        sorted_artists = []
+        sorted_songs = []
+        if show_top:
+            # Top Artists
+            artist_counts = {}
+            for h in histories:
+                artist = h.get("song", {}).get("artist", "Unknown Artist")
+                thumbnail = h.get("song", {}).get("thumbnail", "")
+                if artist:
+                    artist_counts[artist] = artist_counts.get(artist, {"count": 0, "artist": artist, "thumbnail": thumbnail})
+                    artist_counts[artist]["count"] += 1
+            sorted_artists = sorted(artist_counts.values(), key=lambda x: x["count"], reverse=True)[:5]
+
+            # Top Songs
+            song_counts = {}
+            for h in histories:
+                song = h.get("song", {})
+                vid = song.get("videoId")
+                if vid:
+                    if vid not in song_counts:
+                        song_counts[vid] = {
+                            "title": song.get("title"),
+                            "artist": song.get("artist"),
+                            "image": song.get("thumbnail"),
+                            "videoId": vid,
+                            "plays": 0,
+                            "minutes": 0
+                        }
+                    song_counts[vid]["plays"] += 1
+                    song_counts[vid]["minutes"] += round(h.get("listenDuration", 30) / 60)
+            sorted_songs = sorted(song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+        
+        public_data = {
+            "id": user_id,
+            "username": user["username"],
+            "displayName": user["displayName"],
+            "avatar": user.get("avatar"),
+            "bio": user.get("bio", ""),
+            "passport": {
+                "createdAt": user["createdAt"].isoformat() if "createdAt" in user else None,
+                "theme": user.get("theme", "Obsidian"),
+            },
+            "soundDNA": sound_dna,
+            "replayHighlights": {
+                "totalMinutes": total_minutes,
+                "monthlyMinutes": monthly_minutes,
+            },
+            "topArtists": sorted_artists,
+            "topSongs": sorted_songs,
+            "publicPlaylists": playlists,
+            "memories": memories
+        }
+        
+        return {"success": True, "data": public_data}
+    except Exception as e:
+        logger.error(f"Error fetching users public profile {username}: {str(e)}")
+        return {"success": False, "error": str(e)}
