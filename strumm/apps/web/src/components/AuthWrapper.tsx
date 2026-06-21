@@ -33,7 +33,11 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   // Sync NextAuth Google session
   useEffect(() => {
     if (session && (session as any).accessToken && (session as any).user) {
-      login((session as any).accessToken, (session as any).user);
+      const currentToken = useAuthStore.getState().token;
+      const currentUser = useAuthStore.getState().user;
+      if (!currentToken || !currentUser || !currentUser.settings) {
+        login((session as any).accessToken, (session as any).user);
+      }
     }
   }, [session]);
 

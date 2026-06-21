@@ -83,10 +83,10 @@ function ProfilePageContent() {
 
         const publicData = json.data;
         setDisplayedUser(publicData);
-        // The API returns "playlists" field for public playlists
-        setPlaylists(publicData.playlists || []);
+        // The API returns publicPlaylists or playlists for public users
+        setPlaylists(publicData.publicPlaylists || publicData.playlists || []);
         setMemories(publicData.memories || []);
-        setLikedCount(0); // public stats fallback
+        setLikedCount(publicData.likedCount || 0); // public stats fallback
 
         // Fetch social status and taste match
         if (token && publicData.id) {
@@ -379,13 +379,39 @@ function ProfilePageContent() {
   const topSongs = displayedUser.topSongs || [];
   const soundDNA = displayedUser.soundDNA || { energy: 5, discovery: 5, nostalgia: 5, variety: 5, repeatRate: 5 };
   
-  // Custom badges based on listening stats
-  const badges = [];
-  if (totalMinutes > 0) badges.push({ name: "Melomanist", desc: "First minutes logged", icon: Sparkles });
-  if (totalMinutes > 60) badges.push({ name: "Audiophile", desc: "Listened over 1 hour", icon: Star });
-  if (likedCount > 5) badges.push({ name: "Tastemaker", desc: "Liked 5+ records", icon: Award });
-  if (playlists.length > 2) badges.push({ name: "Curation King", desc: "Created 3+ custom playlists", icon: FolderHeart });
-  if (badges.length === 0) badges.push({ name: "Novice", desc: "Passport activated", icon: UserIcon });
+  // Define all available badges/passport stamps
+  const allBadges = [
+    { 
+      name: "Novice", 
+      desc: "Passport activated", 
+      icon: UserIcon, 
+      earned: true 
+    },
+    { 
+      name: "Melomanist", 
+      desc: "First minutes logged", 
+      icon: Sparkles, 
+      earned: totalMinutes > 0 
+    },
+    { 
+      name: "Audiophile", 
+      desc: "Listened over 1 hour", 
+      icon: Star, 
+      earned: totalMinutes > 60 
+    },
+    { 
+      name: "Tastemaker", 
+      desc: "Liked 5+ records", 
+      icon: Award, 
+      earned: likedCount > 5 
+    },
+    { 
+      name: "Curation King", 
+      desc: "Created 3+ playlists", 
+      icon: FolderHeart, 
+      earned: playlists.length > 2 
+    }
+  ];
 
   const renderDNABar = (value: number, label: string) => {
     const filled = "█".repeat(value);
@@ -467,21 +493,29 @@ function ProfilePageContent() {
                 Passport Stamp Archives
               </h4>
               <div className="grid grid-cols-2 gap-2">
-                {badges.map((badge, idx) => {
+                {allBadges.map((badge, idx) => {
                   const Icon = badge.icon;
                   return (
                     <div
                       key={idx}
-                      className="p-2.5 rounded-lg bg-surface-elevated border border-border/40 flex items-center gap-2 text-left"
+                      className={`p-2.5 rounded-lg border transition duration-300 flex items-center gap-2 text-left select-none ${
+                        badge.earned
+                          ? "bg-surface-elevated border-border/80 text-text"
+                          : "bg-surface-elevated/20 border-border/20 text-muted opacity-40 grayscale"
+                      }`}
                     >
-                      <div className="p-1.5 bg-primary/10 border border-primary/20 text-primary rounded flex-shrink-0">
+                      <div className={`p-1.5 rounded flex-shrink-0 border ${
+                        badge.earned
+                          ? "bg-primary/10 border-primary/20 text-primary"
+                          : "bg-muted/5 border-border/20 text-muted"
+                      }`}>
                         <Icon className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[10px] font-bold text-text truncate leading-tight">
+                        <div className="text-[10px] font-bold truncate leading-tight">
                           {badge.name}
                         </div>
-                        <div className="text-[8px] text-muted truncate mt-0.5 leading-none">
+                        <div className="text-[8px] truncate mt-0.5 leading-none">
                           {badge.desc}
                         </div>
                       </div>

@@ -1002,6 +1002,9 @@ async def get_users_public_profile(username: str):
         monthly_seconds = sum(h.get("listenDuration", 30) for h in histories if h.get("playedAt", datetime.utcnow()) >= thirty_days_ago)
         monthly_minutes = round(monthly_seconds / 60)
         
+        # Get liked count
+        liked_count = await database[db.LIKED_SONGS].count_documents({"userId": {"$in": [user_id, ObjectId(user_id)]}})
+        
         # Respect showTopSongs privacy setting
         show_top = user.get("settings", {}).get("showTopSongs", True)
         sorted_artists = []
@@ -1073,6 +1076,7 @@ async def get_users_public_profile(username: str):
                 "totalMinutes": total_minutes,
                 "monthlyMinutes": monthly_minutes,
             },
+            "likedCount": liked_count,
             "topArtists": sorted_artists,
             "topSongs": sorted_songs,
             "publicPlaylists": playlists,
