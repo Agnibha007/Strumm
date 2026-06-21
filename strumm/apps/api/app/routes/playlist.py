@@ -124,7 +124,7 @@ async def update_playlist(
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
             
-        if playlist["userId"] != current_user["id"]:
+        if str(playlist["userId"]) != current_user["id"]:
             return {"success": False, "error": "Unauthorized to modify this playlist"}
             
         update_data = {}
@@ -164,7 +164,7 @@ async def delete_playlist(
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
             
-        if playlist["userId"] != current_user["id"]:
+        if str(playlist["userId"]) != current_user["id"]:
             return {"success": False, "error": "Unauthorized to delete this playlist"}
             
         await database[db.PLAYLISTS].delete_one({"_id": parse_object_id(id)})
@@ -554,7 +554,7 @@ async def add_song_to_playlist(
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
             
-        if playlist["userId"] != current_user["id"]:
+        if str(playlist["userId"]) != current_user["id"]:
             return {"success": False, "error": "Unauthorized to modify this playlist"}
             
         song_dict = payload.song.model_dump()
