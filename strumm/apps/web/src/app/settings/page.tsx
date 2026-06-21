@@ -150,7 +150,7 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="relative flex-shrink-0">
-                  <label className="py-2.5 px-4 bg-surface-elevated hover:bg-surface border border-border/80 text-text text-xs rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none">
+                  <label className="py-2 px-4 bg-surface-elevated hover:bg-surface border border-border/80 text-text text-xs rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none">
                     <Upload className="w-3.5 h-3.5 text-primary" />
                     Upload Image
                     <input
@@ -204,7 +204,7 @@ export default function SettingsPage() {
 
         {/* Right: Theme Switcher component */}
         <div className="lg:col-span-6 space-y-6">
-          <div className="bg-surface/30 border border-border/40 p-6 rounded-xl space-y-5">
+          <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-5">
             <div>
               <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
                 <Wifi className="w-4 h-4 text-primary" />
@@ -241,7 +241,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="bg-surface/30 border border-border/40 p-6 rounded-xl">
+          <div className="bg-surface border border-border/60 rounded-xl p-6">
             <ThemeSwitcher />
           </div>
         </div>

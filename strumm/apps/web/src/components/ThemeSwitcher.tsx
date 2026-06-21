@@ -62,12 +62,17 @@ export default function ThemeSwitcher() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-editorial tracking-tight text-text">Theme Engine</h2>
-        <p className="text-sm text-muted">Select an editorial palette to dress your universe.</p>
+      <div className="border-b border-border/20 pb-2">
+        <h3 className="font-editorial text-xl text-text flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-primary" />
+          Theme Engine
+        </h3>
       </div>
+      <p className="text-[11px] leading-relaxed text-muted mt-1">
+        Select an editorial palette to dress your universe.
+      </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {themes.map((t) => (
           <button
             key={t.name}
@@ -98,8 +103,8 @@ export default function ThemeSwitcher() {
           </div>
           
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 px-4 py-2 bg-surface hover:bg-surface-elevated text-xs border border-border rounded cursor-pointer transition">
-              <Image className="w-3.5 h-3.5 text-accent" />
+            <label className="py-2 px-4 bg-surface-elevated hover:bg-surface border border-border/80 text-text text-xs rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none">
+              <Image className="w-3.5 h-3.5 text-primary" />
               Upload Image
               <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
             </label>
@@ -124,10 +129,10 @@ export default function ThemeSwitcher() {
           <button
             onClick={() => setAnimated(!isAnimated)}
             title={isAnimated ? "Disable fluid animations to save battery and system resources" : "Enable fluid animations for a richer visual experience"}
-            className={`px-4 py-1.5 rounded-full border text-xs cursor-pointer transition ${
+            className={`px-4 py-1.5 rounded-lg border text-xs cursor-pointer transition ${
               isAnimated
                 ? "bg-primary/10 border-primary text-primary"
-                : "bg-surface border-border text-muted"
+                : "bg-surface border-border/80 text-muted"
             }`}
           >
             {isAnimated ? "Enabled" : "Disabled (Battery Saver)"}
