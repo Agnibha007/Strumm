@@ -1,0 +1,108 @@
+[{
+  "_id": {
+    "$oid": "696a6d57fcf95ad35aa93d6c"
+  },
+  "userEmail": "monami.mukherjee00@gmail.com",
+  "userId": "696882791342ff9be1ed7c6b",
+  "suggestion": "Good work!",
+  "createdAt": {
+    "$date": "2026-01-16T16:54:47.175Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6982bc68343d9133074bbcb4"
+  },
+  "userEmail": "arakirierei@gmail.com",
+  "userId": "6982bbb949f3c74ee81b10e0",
+  "suggestion": "Hello. Just found out about your project and kudos! I've looked around a bit, and I know it'd be a hassle, but can you implement an option to sync playlists from other apps?",
+  "createdAt": {
+    "$date": "2026-02-04T03:26:32.929Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1f5973f8526fd342936f2"
+  },
+  "userEmail": "kekkekkek011@gmail.com",
+  "userId": "69a1ebadd9d5e7f7bf845e36",
+  "suggestion": "In playlist section , personalised section is showing on top in my opinion if there was a option for removing that then it would have been better , and if pin option can be added then also it would be better . Overall nice experience",
+  "createdAt": {
+    "$date": "2026-02-27T19:50:47.329Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6985b59e79f13bb88bd43f82"
+  },
+  "userEmail": "diddylovekidshahahaha@gmail.com",
+  "userId": "6985b49749f3c74ee81b5219",
+  "suggestion": "Excellent work. Came from reddit. Make it more personalized",
+  "createdAt": {
+    "$date": "2026-02-06T09:34:22.550Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69b9d6a859f2af9031440fce"
+  },
+  "userEmail": "kekkekkek011@gmail.com",
+  "userId": "69a1ebadd9d5e7f7bf845e36",
+  "suggestion": "There is a issue I am facing from 1-2 weeks , the song does not play and just remains stopped please find a solution it's been few weeks since this",
+  "createdAt": {
+    "$date": "2026-03-17T22:33:12.507Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69b48ad8da5ea971a70a6e9f"
+  },
+  "userEmail": "kekkekkek011@gmail.com",
+  "userId": "69a1ebadd9d5e7f7bf845e36",
+  "suggestion": "There is a glitch , even though I start playing the music it does not play",
+  "createdAt": {
+    "$date": "2026-03-13T22:08:24.834Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6982771d823d398dc24be061"
+  },
+  "userEmail": "kunalsharma23484a@gmail.com",
+  "userId": "698275f049f3c74ee81b0636",
+  "suggestion": "Can it be synced with our YouTube and Spotify playlist. Losing more than 1500+ songs make it less appealing. Also, an app would be great. Rather than just a website.",
+  "createdAt": {
+    "$date": "2026-02-03T22:30:53.688Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984a350432026743ac6ba6f"
+  },
+  "userEmail": "danielmeier201@gmail.com",
+  "userId": "6984a2ce49f3c74ee81b4d2f",
+  "suggestion": "Could you maybe make it an actual App to Download in the Future? That would be so much better, but the Website is amazing",
+  "createdAt": {
+    "$date": "2026-02-05T14:04:00.585Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a975501c503775ba0d63cc"
+  },
+  "userEmail": "kekkekkek011@gmail.com",
+  "userId": "69a1ebadd9d5e7f7bf845e36",
+  "suggestion": "There is glitch , when I play song it starts but does not actually start it shows as it is playing but actually nothing is happening, it's kind of annoying",
+  "createdAt": {
+    "$date": "2026-03-05T12:21:36.299Z"
+  },
+  "__v": 0
+}]

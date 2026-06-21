@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+:root {
+  /* Obsidian Theme (Default) */
+  --background: #080808;
+  --surface: #121212;
+  --surface-elevated: #1A1A1A;
+  --primary: #FF5500;
+  --primary-hover: #FF7733;
+  --accent: #C6A15B;
+  --text: #FFFFFF;
+  --muted: #8E8E93;
+  --border: #222222;
+  --glow: rgba(255, 85, 0, 0.15);
+}
+
+[data-theme="Black Cherry"] {
+  --background: #0B0505;
+  --surface: #170C0D;
+  --surface-elevated: #261617;
+  --primary: #D12B3B;
+  --primary-hover: #E84555;
+  --accent: #FCE181;
+  --text: #FFF3F3;
+  --muted: #AA8C8D;
+  --border: #3A1F21;
+  --glow: rgba(209, 43, 59, 0.15);
+}
+
+[data-theme="Vinyl Classic"] {
+  --background: #0A0A0A;
+  --surface: #1E1A17;
+  --surface-elevated: #2D2723;
+  --primary: #E68A00;
+  --primary-hover: #FFA31A;
+  --accent: #BFA58A;
+  --text: #FAF8F5;
+  --muted: #8F8378;
+  --border: #38302B;
+  --glow: rgba(230, 138, 0, 0.15);
+}
+
+[data-theme="Ocean Drive"] {
+  --background: #03080F;
+  --surface: #0A1626;
+  --surface-elevated: #10233B;
+  --primary: #00D2FF;
+  --primary-hover: #33DBFF;
+  --accent: #FF007F;
+  --text: #F0F7FF;
+  --muted: #728FA5;
+  --border: #183354;
+  --glow: rgba(0, 210, 255, 0.15);
+}
+
+[data-theme="Monochrome"] {
+  --background: #000000;
+  --surface: #111111;
+  --surface-elevated: #222222;
+  --primary: #FFFFFF;
+  --primary-hover: #E5E5E5;
+  --accent: #888888;
+  --text: #FFFFFF;
+  --muted: #777777;
+  --border: #333333;
+  --glow: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="Aurora"] {
+  --background: #020907;
+  --surface: #071C14;
+  --surface-elevated: #0C2E22;
+  --primary: #10B981;
+  --primary-hover: #34D399;
+  --accent: #6366F1;
+  --text: #ECFDF5;
+  --muted: #6EE7B7;
+  --border: #134E3F;
+  --glow: rgba(16, 185, 129, 0.15);
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-accent: var(--accent);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-glow: var(--glow);
+  
+  --font-sans: var(--font-outfit), sans-serif;
+  --font-serif: var(--font-playfair), serif;
+}
+
+/* Custom premium transitions */
+* {
+  transition: background-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              border-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              box-shadow 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text);
+  font-family: var(--font-outfit), sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Typography styles */
+h1, h2, h3, h4, .font-editorial {
+  font-family: var(--font-playfair), Georgia, serif;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-elevated);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Custom Glassmorphism styles */
+.glass {
+  background: rgba(18, 18, 18, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.text-glow {
+  text-shadow: 0 0 12px var(--glow);
+}
+
+.box-glow {
+  box-shadow: 0 4px 30px var(--glow);
+}
+
+@keyframes soft-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.soft-enter {
+  animation: soft-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .soft-enter {
+    animation: none;
+  }
+}

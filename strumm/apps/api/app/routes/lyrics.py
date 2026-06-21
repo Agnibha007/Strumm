@@ -1,0 +1,212 @@
+import os
+import asyncio
+from datetime import datetime
+from typing import Optional
+from fastapi import APIRouter, Path, Query
+import httpx
+from ytmusicapi import YTMusic
+from app.database import mongodb as db
+from app.services.security import sanitize_multiline_text, sanitize_text, sanitize_youtube_id
+import logging
+import re
+
+logger = logging.getLogger("strumm-lyrics")
+router = APIRouter(prefix="/lyrics", tags=["lyrics"])
+
+LRCLIB_BASE_URL = os.getenv("LRCLIB_BASE_URL", "https://lrclib.net/api")
+HTTP_USER_AGENT = os.getenv("HTTP_USER_AGENT", "Strumm/1.0 (https://localhost)")
+
+def has_lrc_timestamps(value: Optional[str]) -> bool:
+    return bool(value and "[" in value and "]" in value)
+
+def normalize_match_text(value: str) -> str:
+    cleaned = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", value.lower())
+    cleaned = re.sub(r"[^a-z0-9]+", " ", cleaned)
+    return " ".join(cleaned.split())
+
+def choose_lrclib_match(matches: list[dict], title: str, artist: str) -> Optional[dict]:
+    if not matches:
+        return None
+
+    wanted_title = normalize_match_text(title)
+    wanted_artist = normalize_match_text(artist)
+
+    def score(match: dict) -> int:
+        track = normalize_match_text(str(match.get("trackName") or match.get("name") or ""))
+        artist_name = normalize_match_text(str(match.get("artistName") or ""))
+        value = 0
+        if track == wanted_title:
+            value += 10
+        elif wanted_title in track or track in wanted_title:
+            value += 5
+        if artist_name == wanted_artist:
+            value += 8
+        elif wanted_artist and (wanted_artist in artist_name or artist_name in wanted_artist):
+            value += 4
+        if match.get("syncedLyrics"):
+            value += 3
+        return value
+
+    return max(matches, key=score)
+
+async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = None, duration: Optional[int] = None) -> Optional[dict]:
+    params = {
+        "track_name": sanitize_text(title, max_length=160),
+        "artist_name": sanitize_text(artist, max_length=160),
+    }
+    if album:
+        params["album_name"] = sanitize_text(album, max_length=160)
+    if duration:
+        params["duration"] = str(duration)
+
+    try:
+        async with httpx.AsyncClient(headers={"User-Agent": HTTP_USER_AGENT}, timeout=30.0) as client:
+            response = await client.get(
+                f"{LRCLIB_BASE_URL}/search",
+                params={"track_name": params["track_name"], "artist_name": params["artist_name"]},
+            )
+            response.raise_for_status()
+            data = choose_lrclib_match(response.json(), title, artist)
+            if not data:
+                return None
+
+            synced = sanitize_multiline_text(data.get("syncedLyrics") or "", max_length=50000)
+            plain = sanitize_multiline_text(data.get("plainLyrics") or "", max_length=50000)
+            if synced or plain:
+                return {
+                    "plain": plain,
+                    "synced": synced,
+                    "source": "lrclib",
+                    "isSynced": has_lrc_timestamps(synced),
+                }
+    except Exception as e:
+        logger.warning(f"LRCLIB lookup failed for '{title}' by '{artist}': {type(e).__name__}: {e!r}")
+    return None
+
+def fetch_ytmusic_lyrics_sync(video_id: str) -> Optional[dict]:
+    yt = YTMusic()
+    watch = yt.get_watch_playlist(videoId=video_id, limit=1)
+    lyrics_browse_id = watch.get("lyrics")
+    if isinstance(lyrics_browse_id, dict):
+        lyrics_browse_id = lyrics_browse_id.get("browseId")
+    if not isinstance(lyrics_browse_id, str) or not lyrics_browse_id:
+        return None
+
+    lyrics = yt.get_lyrics(lyrics_browse_id)
+    plain = sanitize_multiline_text(lyrics.get("lyrics", ""), max_length=50000) if lyrics else ""
+    if not plain:
+        return None
+
+    return {
+        "plain": plain,
+        "synced": "",
+        "source": "ytmusic",
+        "isSynced": False,
+    }
+
+async def fetch_ytmusic_lyrics(video_id: str) -> Optional[dict]:
+    try:
+        return await asyncio.to_thread(fetch_ytmusic_lyrics_sync, video_id)
+    except Exception as e:
+        logger.warning(f"YTMusic lyrics fallback failed for {video_id}: {str(e)}")
+    return None
+
+def unavailable_lyrics(title: str, artist: str) -> dict:
+    return {
+        "plain": f"Lyrics are not available for '{title}' by '{artist}' yet.",
+        "synced": "",
+        "source": "unavailable",
+        "isSynced": False,
+    }
+
+@router.get("/{id}")
+async def get_lyrics(
+    id: str = Path(..., description="The YouTube videoId to get lyrics for"),
+    title: Optional[str] = Query(None, description="Optional title hint"),
+    artist: Optional[str] = Query(None, description="Optional artist hint")
+):
+    try:
+        id = sanitize_youtube_id(id)
+        title = sanitize_text(title, max_length=160) if title else None
+        artist = sanitize_text(artist, max_length=160) if artist else None
+        database = db.get_db()
+        
+        # 1. Search DB cache first
+        # Look inside playlists or history for song title/artist if not supplied
+        song_title = title
+        song_artist = artist
+        
+        if not song_title or not song_artist:
+            # Look up song in play history or playlists
+            song_doc = await database[db.PLAYLISTS].find_one(
+                {"songs.videoId": id},
+                {"songs.$": 1}
+            )
+            if song_doc and "songs" in song_doc:
+                song_title = song_doc["songs"][0].get("title")
+                song_artist = song_doc["songs"][0].get("artist")
+            else:
+                liked_doc = await database[db.LIKED_SONGS].find_one({"song.videoId": id})
+                if liked_doc:
+                    song_title = liked_doc["song"].get("title")
+                    song_artist = liked_doc["song"].get("artist")
+
+        if not song_title:
+            song_title = "Unknown Song"
+        if not song_artist:
+            song_artist = "Unknown Artist"
+
+        # Check if lyrics are already cached in an active collection
+        lyrics_cache = await database["lyrics_cache"].find_one({"videoId": id})
+        if lyrics_cache and lyrics_cache.get("source") in {"lrclib", "ytmusic"}:
+            return {
+                "success": True,
+                "data": {
+                        "videoId": id,
+                        "plain": lyrics_cache.get("plain"),
+                        "synced": lyrics_cache.get("synced"),
+                        "source": lyrics_cache.get("source", "cache"),
+                        "isSynced": bool(lyrics_cache.get("isSynced", has_lrc_timestamps(lyrics_cache.get("synced"))))
+                    }
+                }
+
+        lyrics = await fetch_lrclib_lyrics(song_title, song_artist)
+        if not lyrics or not lyrics.get("plain") and not lyrics.get("synced"):
+            lyrics = await fetch_ytmusic_lyrics(id)
+        if not lyrics:
+            lyrics = unavailable_lyrics(song_title, song_artist)
+        
+        # Cache lyrics
+        await database["lyrics_cache"].update_one(
+            {"videoId": id},
+            {
+                "$set": {
+                    "videoId": id,
+                    "title": song_title,
+                    "artist": song_artist,
+                    "plain": lyrics["plain"],
+                    "synced": lyrics["synced"],
+                    "source": lyrics["source"],
+                    "isSynced": lyrics["isSynced"],
+                    "updatedAt": datetime.utcnow()
+                }
+            },
+            upsert=True
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "videoId": id,
+                "plain": lyrics["plain"],
+                "synced": lyrics["synced"],
+                "source": lyrics["source"],
+                "isSynced": lyrics["isSynced"]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error in lyrics resolution for {id}: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Failed to retrieve lyrics: {str(e)}"
+        }

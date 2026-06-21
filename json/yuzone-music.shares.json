@@ -1,0 +1,140 @@
+[{
+  "_id": {
+    "$oid": "6993bafcc556a7e70f164e0e"
+  },
+  "userId": {
+    "$oid": "6967c776e819a0a36b06365b"
+  },
+  "contentType": "song",
+  "contentId": "VcCCzKt6-Qs",
+  "shareToken": "c51c9f823c5d433323cfd3a7571331d0",
+  "expiresAt": null,
+  "viewCount": 2,
+  "createdAt": {
+    "$date": "2026-02-17T00:49:00.466Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-17T00:55:36.028Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6983553242af603ae7d7cb70"
+  },
+  "userId": {
+    "$oid": "6983539a49f3c74ee81b19a7"
+  },
+  "contentType": "song",
+  "contentId": "dIPh15ZRI_o",
+  "shareToken": "51cbe14f0d4ae497e63a324630995717",
+  "expiresAt": null,
+  "viewCount": 0,
+  "createdAt": {
+    "$date": "2026-02-04T14:18:26.343Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-04T14:18:26.343Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696dc67e1e3c445fff6b1331"
+  },
+  "userId": {
+    "$oid": "6969d1581342ff9be1ed81e3"
+  },
+  "contentType": "song",
+  "contentId": "-1Y2vjh2kYc",
+  "shareToken": "49aa2ef89f73e892ab885a01d7059e89",
+  "expiresAt": null,
+  "viewCount": 1,
+  "createdAt": {
+    "$date": "2026-01-19T05:51:58.371Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-19T05:52:04.895Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6983544ff2e6cf9187dc954b"
+  },
+  "userId": {
+    "$oid": "6983539a49f3c74ee81b19a7"
+  },
+  "contentType": "playlist",
+  "contentId": "69835418f2e6cf9187dc9534",
+  "shareToken": "fc3f8255299aca20903c9175c84c647d",
+  "expiresAt": null,
+  "viewCount": 1,
+  "createdAt": {
+    "$date": "2026-02-04T14:14:39.405Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:11:13.427Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699c8e75533cb95da848cfc0"
+  },
+  "userId": {
+    "$oid": "6967c776e819a0a36b06365b"
+  },
+  "contentType": "song",
+  "contentId": "kKYYydqWHz4",
+  "shareToken": "e917f8dd65953c2c2233eb15f765a409",
+  "expiresAt": null,
+  "viewCount": 8,
+  "createdAt": {
+    "$date": "2026-02-23T17:29:25.319Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-08T10:25:09.507Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698f25be978c5c49f99de87b"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "contentType": "song",
+  "contentId": "sCYMSr4V7O0",
+  "shareToken": "465011a63e21ca0a6f431f0981da8de6",
+  "expiresAt": null,
+  "viewCount": 2,
+  "createdAt": {
+    "$date": "2026-02-13T13:23:10.117Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-13T13:24:29.660Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981a0f339988b3e551423bf"
+  },
+  "userId": {
+    "$oid": "6981a00049f3c74ee81af03b"
+  },
+  "contentType": "song",
+  "contentId": "MU3EOO4fWQo",
+  "shareToken": "2aad6c0d005200ee49f4109fbcbe7f97",
+  "expiresAt": null,
+  "viewCount": 1,
+  "createdAt": {
+    "$date": "2026-02-03T07:17:07.745Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T07:17:36.845Z"
+  },
+  "__v": 0
+}]

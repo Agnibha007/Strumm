@@ -1,0 +1,3795 @@
+[{
+  "_id": {
+    "$oid": "696b2161e8cf32293f278174"
+  },
+  "userId": {
+    "$oid": "69679612e819a0a36b06355d"
+  },
+  "videoId": "lOHVMmZ6n3o",
+  "title": "Ghar Kab Aaoge",
+  "artist": "Sonu Nigam, Roopkumar Rathod, Arijit Singh & Vishal Mishra",
+  "thumbnail": "https://i.ytimg.com/vi/lOHVMmZ6n3o/sddefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCghqEJQEGHgg6AJIWg&rs=AMzJL3mqa5p1NcvITw8cyZeQyWfbvsQbQA",
+  "duration": "3:11",
+  "likedAt": {
+    "$date": "2026-01-17T05:42:57.461Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-17T05:42:57.461Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-17T05:42:57.461Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848343baa7a4efd65cd125"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "TsGZm1uDns4",
+  "title": "Jetpack",
+  "artist": "Bandingo YGNE",
+  "thumbnail": "https://lh3.googleusercontent.com/UGJigrABkh1asks9eooLO9xh9yjGRblgibAf_UQoYyDZVRs3ErcecTZ3YlLkMhXsOVg-0J9lXpXo7biZYQ=w120-h120-l90-rj",
+  "duration": "1:57",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:15.447Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:15.447Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:15.447Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848354baa7a4efd65cd13a"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "gPHTgVo-AEA",
+  "title": "Arafricain",
+  "artist": "Sofiane, GIMS",
+  "thumbnail": "https://lh3.googleusercontent.com/LOgyS4zXK4PpRHbFCpwb8BgaCWyVQOOOq-KWHCeBY2jACovSQIYS93kQVKoPyMbwLI3EsnEU5SAccFNR=w120-h120-l90-rj",
+  "duration": "3:00",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:32.732Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:32.732Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:32.732Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484b4476b26d1053b678f"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "Ug-7LsbwzOo",
+  "title": "Petit cœur",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:32",
+  "likedAt": {
+    "$date": "2026-02-05T11:53:24.692Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:53:24.692Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:53:24.692Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484c6476b26d1053b67a9"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "gLwkRz12nis",
+  "title": "Zidane",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:30",
+  "likedAt": {
+    "$date": "2026-02-05T11:53:42.696Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:53:42.696Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:53:42.696Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484f3476b26d1053b67e3"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "vuxFA0oXMHQ",
+  "title": "Arc-en-ciel",
+  "artist": "Booba",
+  "thumbnail": "https://lh3.googleusercontent.com/LYXM2jPQRY-vNb1aOg-zurZbXej8rRv3lpS55AGGoXhMG-zAm5dXbvLiW26kf52wQpPWLkkUyPF-2n_q=w120-h120-l90-rj",
+  "duration": "2:50",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:27.102Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:27.102Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:27.102Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848503476b26d1053b67f1"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "lRaV4sK4Gp4",
+  "title": "Loco Contigo (feat. J. Balvin & Tyga)",
+  "artist": "DJ Snake, J Balvin, Tyga",
+  "thumbnail": "https://lh3.googleusercontent.com/9w0F83sPH1NxG7xhtSHX42edxqFKJM61hmYt4HPJ0PRXkFrrob0t-kMB7_cXb56MUN6b2_0SKAcN2DIhWA=w120-h120-l90-rj",
+  "duration": "3:06",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:43.691Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:43.691Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:43.691Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69857c4564fa19a28bf11800"
+  },
+  "userId": {
+    "$oid": "69854c9f49f3c74ee81b4ff0"
+  },
+  "videoId": "YALvuUpY_b0",
+  "title": "Apna Bana Le (From \"Bhediya\")",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/EqN-4y9jQg91mt-94KKI8L1xu3olMS-Fh_WLL5tMlnqh1pSRzt-uWdnTVlY_GBnvLuA_WJmS6FYAXJlZtQ=w120-h120-l90-rj",
+  "duration": "4:22",
+  "likedAt": {
+    "$date": "2026-02-06T05:29:41.879Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-06T05:29:41.879Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-06T05:29:41.879Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6998e90cab508e77a87ca565"
+  },
+  "userId": {
+    "$oid": "6998cbe4370a422e99a60133"
+  },
+  "videoId": "ySYYsOl9mrQ",
+  "title": "Ajj Kall",
+  "artist": "Saivi Fareed",
+  "thumbnail": "https://lh3.googleusercontent.com/DCXKmuf0CH8wFHVeikiMdZ4vbE2_bg1AwSwsBuIC6nKQvsceKGkneyIhBbqcrllDnFJJifBgRQdC0-Q4=w120-h120-l90-rj",
+  "duration": "2:32",
+  "likedAt": {
+    "$date": "2026-02-20T23:06:52.461Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-20T23:06:52.463Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-20T23:06:52.463Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69aac69472c72262cf2cfe5b"
+  },
+  "userId": {
+    "$oid": "6982ac0549f3c74ee81b0ee7"
+  },
+  "videoId": "dJA21rdxGk0",
+  "title": "Pyaro Vrindavan",
+  "artist": "Indresh Upadhyay",
+  "thumbnail": "https://lh3.googleusercontent.com/4jfodQ_JXeydMo9eKFHuMGc0nHwq1oxqe465lu6f19qtS4ROOfDqFTWLDiHtH7pbuC2HFYnyeFKD8oDo=w120-h120-l90-rj",
+  "duration": "13:22",
+  "likedAt": {
+    "$date": "2026-03-06T12:20:36.057Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-06T12:20:36.058Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-06T12:20:36.058Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696795cf5984d24dfa00fb77"
+  },
+  "userId": {
+    "$oid": "69670b067d09ba53d7127c0e"
+  },
+  "videoId": "Kw3935PH01E",
+  "title": "Zoo",
+  "artist": "Shakira",
+  "thumbnail": "https://i.ytimg.com/vi/Kw3935PH01E/sddefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCghqEJQEGHgg6AJIWg&rs=AMzJL3luO8h-se4mHOcAfdwrqF3SAf5ShA",
+  "duration": "3:18",
+  "likedAt": {
+    "$date": "2026-01-14T13:10:39.640Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-14T13:10:39.641Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-14T13:10:39.641Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696a5aecbdd0a9ea122b124c"
+  },
+  "userId": {
+    "$oid": "69679612e819a0a36b06355d"
+  },
+  "videoId": "_wMrgq8XLig",
+  "title": "Ei Meghla Dine Ekla",
+  "artist": "Hemanta Mukherjee",
+  "thumbnail": "https://lh3.googleusercontent.com/IbuNZPD1tDrfXcFcxGGBprOBcehbq54d5dSEwzBWfYo7jHEvJEiBrIzuD3sKqth2-7h7UIlw3bu9hjukQw=w120-h120-l90-rj",
+  "duration": "2:50",
+  "likedAt": {
+    "$date": "2026-01-16T15:36:12.955Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-16T15:36:12.955Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-16T15:36:12.955Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981da344e0fb004d77806e6"
+  },
+  "userId": {
+    "$oid": "6981d9f749f3c74ee81afb4e"
+  },
+  "videoId": "DCYmJDO2_IE",
+  "title": "Cinnamon Girl",
+  "artist": "Lana Del Rey",
+  "thumbnail": "https://lh3.googleusercontent.com/AeUhq5jA8bcgxZJaiT_aRQ4yRDDtibuIy36CVFSobUZvix-rY4Yeo9oPSI-d2xln87WvFNUAJr3QDTTa=w120-h120-l90-rj",
+  "duration": "5:01",
+  "likedAt": {
+    "$date": "2026-02-03T11:21:24.205Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T11:21:24.205Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T11:21:24.205Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848386baa7a4efd65cd1a5"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "kkpdKgQ2Vbw",
+  "title": "TRA la LA!",
+  "artist": "Bandingo YGNE",
+  "thumbnail": "https://lh3.googleusercontent.com/eMXgtCNg8FP2O6LabZeVBrrPCZRjUsWoIQnfcq98B-AD-9O-60oXlNrujM_HqWTXDz2y4CkuJqWHJpeL=w120-h120-l90-rj",
+  "duration": "2:27",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:22.943Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:22.943Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:22.943Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848395baa7a4efd65cd1ba"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "rcRgK31EgdY",
+  "title": "Affaires",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "2:35",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:37.387Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:37.388Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:37.388Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698483aebaa7a4efd65cd1e4"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "D6l5mEKVYbU",
+  "title": "Ghetto",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:50",
+  "likedAt": {
+    "$date": "2026-02-05T11:49:02.677Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:49:02.678Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:49:02.678Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a029db22c82ec3d698492b"
+  },
+  "userId": {
+    "$oid": "699efca2d9d5e7f7bf8442b0"
+  },
+  "videoId": "yfgfYfS4XBo",
+  "title": "Hello Juliet",
+  "artist": "Clarion",
+  "thumbnail": "https://lh3.googleusercontent.com/bTdNPGbzW_iF69037TpWwXIoaJGQcBeN8-38WQEdWmFENEtvtgw6tleAr82idhS8Sb5j5JMueVDjgHU=w120-h120-l90-rj",
+  "duration": "3:28",
+  "likedAt": {
+    "$date": "2026-02-26T11:09:15.525Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-26T11:09:15.526Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-26T11:09:15.526Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981c4ed7bf43518cb687d63"
+  },
+  "userId": {
+    "$oid": "6981c33549f3c74ee81af6cb"
+  },
+  "videoId": "-3vUz7QPljM",
+  "title": "DARKHAAST (feat. Sunidhi Chauhan & Arijit Singh)",
+  "artist": "Mithoon",
+  "thumbnail": "https://lh3.googleusercontent.com/w1EZeqcglVG2xSP4bFR0NYyim4B9uQhBdp2JXPsfloVgnrb72gNOCdqG0stwaSVa6ADU20mSSGArQ4U=w120-h120-l90-rj",
+  "duration": "6:15",
+  "likedAt": {
+    "$date": "2026-02-03T09:50:37.441Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T09:50:37.442Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T09:50:37.442Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981da31c0ed707cfab4aa1d"
+  },
+  "userId": {
+    "$oid": "6981d9f749f3c74ee81afb4e"
+  },
+  "videoId": "sEetXo3R-aM",
+  "title": "Diet Mountain Dew",
+  "artist": "Lana Del Rey",
+  "thumbnail": "https://lh3.googleusercontent.com/F5k4fYPgIA1lnykIMM0dqji6pKcpAgc26CAJB8Z3OCaCSfpyBMUM6ruxvbgpU8GTZfNELXP9dpf4BxlT=w120-h120-l90-rj",
+  "duration": "3:43",
+  "likedAt": {
+    "$date": "2026-02-03T11:21:21.197Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T11:21:21.198Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T11:21:21.198Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981daf2c0ed707cfab4ac37"
+  },
+  "userId": {
+    "$oid": "6981d8f249f3c74ee81afb3b"
+  },
+  "videoId": "S6DhdT0NAzI",
+  "title": "The Jawaani Song",
+  "artist": "Vishal-Shekhar",
+  "thumbnail": "https://lh3.googleusercontent.com/tqUBOzXswDf7E5_c9J64PoWiZLRBx8Mn3QIge4jdPQhUwrAcBAAtbSbTdpHlJ9vdcLhUIC2fi-jHwSK8=w120-h120-l90-rj",
+  "duration": "4:14",
+  "likedAt": {
+    "$date": "2026-02-03T11:24:34.325Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T11:24:34.326Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T11:24:34.326Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6982735c2b9c6220b217dde3"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "YTnlPh_TSFw",
+  "title": "Sleeping City Funk (Super Slowed)",
+  "artist": "DJ Raulipues",
+  "thumbnail": "https://lh3.googleusercontent.com/mFwUnJIF5qsn0ej3zFneWMrVtIb9gigU47ejsvrbfCGtKHf5YRVzZBwJ-B5Y8yfv4K6qT5ajLiJiGPo=w120-h120-l90-rj",
+  "duration": "2:08",
+  "likedAt": {
+    "$date": "2026-02-03T22:14:52.504Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T22:14:52.505Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T22:14:52.505Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698273652b9c6220b217ddf9"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "VoEgjKe6f5Q",
+  "title": "ME PERGO (Slowed)",
+  "artist": "SK3TCH01",
+  "thumbnail": "https://lh3.googleusercontent.com/c_6uEGOhYX4AZmYd3tlZlfQ3YkB0TdxKuWCoU_jn0d2izunW413UpW2QH2MuHg3ndTBMcgPdcARQ3HFi=w120-h120-l90-rj",
+  "duration": "1:18",
+  "likedAt": {
+    "$date": "2026-02-03T22:15:01.975Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T22:15:01.975Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T22:15:01.975Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69844a978b1c252a35309d8d"
+  },
+  "userId": {
+    "$oid": "6984482649f3c74ee81b41c3"
+  },
+  "videoId": "d0JpdfOLXI0",
+  "title": "Pal Pal Dil Ke Paas (from Blackmail)",
+  "artist": "Kishore Kumar",
+  "thumbnail": "https://lh3.googleusercontent.com/qoqJmeAuTGcWU9_ED1NJThXbVu4dSZ6hJnr1xjOwEjXAOrO7liLer-FIlJ8okX_-sPh6AhLq0jgv2uY=w120-h120-l90-rj",
+  "duration": "5:30",
+  "likedAt": {
+    "$date": "2026-02-05T07:45:27.921Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T07:45:27.921Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T07:45:27.921Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984830fbaa7a4efd65cd0df"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "PSKEwuQwCPU",
+  "title": "Friday",
+  "artist": "Booba",
+  "thumbnail": "https://lh3.googleusercontent.com/5gFsQhF2j3rqwLjVo96GnXR4HPcdav1RPtLA2HqgwL4_ON0HODxjW00xqZz2YwDpPztJ2QwoFrh0-rmB=w120-h120-l90-rj",
+  "duration": "3:38",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:23.138Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:23.139Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:23.139Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848338baa7a4efd65cd117"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "ae-tP2RX_LM",
+  "title": "AGAMAGOHENMAPOKE - I Got My Gun in My Pocket",
+  "artist": "Mister V",
+  "thumbnail": "https://lh3.googleusercontent.com/4UufUQHcZsTf-qE5vDeNbZsqBJezrt6Spz4K_ZlmTmRhOKoGMTbpsypl3jx78ityYYkqg-YVjbZCooQh_A=w120-h120-l90-rj",
+  "duration": "2:24",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:04.109Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:04.109Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:04.109Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984834abaa7a4efd65cd12c"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "t0y7WQtw4RM",
+  "title": "Baby Powder",
+  "artist": "Bandingo YGNE",
+  "thumbnail": "https://lh3.googleusercontent.com/Dt2k_lLjNR-r9WLwEURpDofrKYHlSKpFjZe4oyTTthQOaqGOpgQaEpKey5gy4FhY4q38kPjTU-d0fd23=w120-h120-l90-rj",
+  "duration": "2:48",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:22.856Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:22.857Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:22.857Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848379baa7a4efd65cd18a"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "ThJpHt-QDkU",
+  "title": "Collision",
+  "artist": "Still Fresh",
+  "thumbnail": "https://lh3.googleusercontent.com/JwS0leo6Pa03omA1bF8_pTnSgblOWiWfcN4QFkiLq3QxhpaQFZ7geHFWaZEiJ_XPYqzcOhzbdKkpU44i=w120-h120-l90-rj",
+  "duration": "3:42",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:09.975Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:09.975Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:09.975Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699041b8331d06f48fbb8490"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "SHNMIFcwgI8",
+  "title": "Aaj Bhi",
+  "artist": "Vishal Mishra",
+  "thumbnail": "https://lh3.googleusercontent.com/vRClYUselHI5D-9zipRXlihdXBTbTdgvgcSi8TMsR7elljoCwR24iPrJtMiXFvS-Ygev7lEe_PEj9pzNxg=w120-h120-l90-rj",
+  "duration": "4:02",
+  "likedAt": {
+    "$date": "2026-02-14T09:34:48.659Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-14T09:34:48.663Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-14T09:34:48.663Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6998e8a8e96388c5d6621127"
+  },
+  "userId": {
+    "$oid": "6998cbe4370a422e99a60133"
+  },
+  "videoId": "KrJ5c-Egz-U",
+  "title": "Khat",
+  "artist": "Navjot Ahuja",
+  "thumbnail": "https://lh3.googleusercontent.com/uzfTAu64E4d7zsoQHAd2sOX24RIYd5jYeaX3B_STbS0lk0X_cxrTquiFmZEU3khp6WwtTFrrmEEiaEg=w120-h120-l90-rj",
+  "duration": "4:57",
+  "likedAt": {
+    "$date": "2026-02-20T23:05:12.706Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-20T23:05:12.708Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-20T23:05:12.708Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696bd0c989f1ba3451e6902c"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "6u3yD2Difi0",
+  "title": "Theher Ja",
+  "artist": "Abhishek Arora",
+  "thumbnail": "https://lh3.googleusercontent.com/Wgw5eLBR_YLAi9T3bNhY1a0ov2dqVaIXnyixbsRGM1C6_TGt53nOGO9HDcEJHyAlT8ZIUh81yyCn9Q80=w120-h120-l90-rj",
+  "duration": "2:42",
+  "likedAt": {
+    "$date": "2026-01-17T18:11:21.370Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-17T18:11:21.370Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-17T18:11:21.370Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981cbcdc0ed707cfab49da1"
+  },
+  "userId": {
+    "$oid": "6981ca5649f3c74ee81af901"
+  },
+  "videoId": "4T_ZsIpavEE",
+  "title": "Dhaage",
+  "artist": "Sparsh Shrivastava",
+  "thumbnail": "https://lh3.googleusercontent.com/MUXvGLi4GCnfHAKCUqPDv2qhjKlkzcA5z2ahXT-qnKgJgyxe8M0Xnu3XnC5IhN7YopOQgtfU__kkxQZbvA=w120-h120-l90-rj",
+  "duration": "2:54",
+  "likedAt": {
+    "$date": "2026-02-03T10:19:57.995Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T10:19:57.995Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T10:19:57.995Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69827359839c639473a50673"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "6X7LxBCW6Yg",
+  "title": "DANCING FUNK",
+  "artist": "DJ Javi26 & Zyas",
+  "thumbnail": "https://lh3.googleusercontent.com/-Lsl_xkPFxhmmgLEdotnScMDX40NH6exc_lsS0xOo8IKDMyoV2K70f85vUCeLTB7d0tY4rQTRVHGCUR-=w120-h120-l90-rj",
+  "duration": "1:36",
+  "likedAt": {
+    "$date": "2026-02-03T22:14:49.661Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T22:14:49.661Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T22:14:49.661Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984835cbaa7a4efd65cd141"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "QaU0qQpBExg",
+  "title": "Siri",
+  "artist": "ICO",
+  "thumbnail": "https://lh3.googleusercontent.com/nKJbDaR6tO313ngrcAvVpwWCDUkdV_uIlpYZXMznTC6jj8JbcpmmKjjpiYgMMu85yEr-9f5UXPmzn6w3=w120-h120-l90-rj",
+  "duration": "2:08",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:40.201Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:40.201Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:40.201Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848360baa7a4efd65cd148"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "YtrI4P4XYv8",
+  "title": "Ouais ouais",
+  "artist": "Zola",
+  "thumbnail": "https://lh3.googleusercontent.com/dLBm0dXULM5CRvOwJ7LYeQwj05Sx5hAzPELmeXVD7hlK5d1uVOs3egc_yHQgzTL_a5bEnqN8I5Vtd1c0=w120-h120-l90-rj",
+  "duration": "2:55",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:44.659Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:44.659Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:44.659Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848399baa7a4efd65cd1c1"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "9Daq2YuutYo",
+  "title": "3h36",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:35",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:41.395Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:41.395Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:41.395Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484de476b26d1053b67c0"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "QpX3wcq0BdE",
+  "title": "Moi ça m'ira",
+  "artist": "DTF",
+  "thumbnail": "https://lh3.googleusercontent.com/uucthvkJTJNK918iirR_h_JIEyuZhTNpdzePD-XJtsJ8Y6HGGqykv-McFxTVXyBvruu8FYa5FJI1RRY=w120-h120-l90-rj",
+  "duration": "2:36",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:06.056Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:06.056Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:06.056Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484f8476b26d1053b67ea"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "LXyjfMkw5zU",
+  "title": "Lalala",
+  "artist": "Y2K, bbno$",
+  "thumbnail": "https://lh3.googleusercontent.com/DwHD-RQpSaS9Dzo5jp3Auob3Az5yYzLqxZScMQbnnB3mHC53LYxWU6QIEEMQewAbeWgmTokMy-vHNBIl=w120-h120-l90-rj",
+  "duration": "2:41",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:32.264Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:32.264Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:32.264Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69863f9684d197c99d7ccfc6"
+  },
+  "userId": {
+    "$oid": "69863eff8ef4140fe66886b3"
+  },
+  "videoId": "jMNllny2noo",
+  "title": "Sanun Nahar Wale Pool",
+  "artist": "Noor Jehan",
+  "thumbnail": "https://lh3.googleusercontent.com/V4XJ2HEMAUVpGITjSwGoYvCuL5YKIpJ1CnrOP7KPjEIG4ln96zewwz7YmrlE9sakDWL3o_GRCuYAXxZv=w120-h120-l90-rj",
+  "duration": "4:05",
+  "likedAt": {
+    "$date": "2026-02-06T19:23:02.606Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-06T19:23:02.606Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-06T19:23:02.606Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d717de6d57ae0473a027"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "piUHBTXsoiY",
+  "title": "Raabta",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/cIBhVvfJ7D3j2_cxgedlEiAgTKKvHwvJo51HXVUd7r5MLmM8iYSro5y6qpAmtgCivlPYVBL-Tg2MIXM=w120-h120-l90-rj",
+  "duration": "4:04",
+  "likedAt": {
+    "$date": "2026-02-27T17:40:39.568Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:40:39.569Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:40:39.569Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d72dde6d57ae0473a03f"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "FOA9iyxsW_A",
+  "title": "AGAR TUM SAATH HO",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/AT2wfk1PvKjnHO7BzH2i2NkAvqRy_oZNEq48QGBlLJb51AuguCiR3mzp99X1uFdZezAkoSJ2WGjUU-HXZg=w120-h120-l90-rj",
+  "duration": "5:42",
+  "likedAt": {
+    "$date": "2026-02-27T17:41:01.496Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:41:01.497Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:41:01.497Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6969144e59a53cec62131910"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "UB50sWSJKwg",
+  "title": "JOGO MORTO",
+  "artist": "mocne",
+  "thumbnail": "https://lh3.googleusercontent.com/CCeLtJtxYs8FAEgjLSJkT5_yEFZSloz5zyuszGeaRovF8TWxiAW0bmf55cqMNBXS2HSFJXXc4g02JY8i=w120-h120-l90-rj",
+  "duration": "2:21",
+  "likedAt": {
+    "$date": "2026-01-15T16:22:38.721Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-15T16:22:38.721Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-15T16:22:38.721Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484ee476b26d1053b67dc"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "GQwj_FRntp8",
+  "title": "Con Calma",
+  "artist": "Daddy Yankee, Snow",
+  "thumbnail": "https://lh3.googleusercontent.com/qiW8LOnUWmVWzhwOOfAa-GsD2eHfIXAyDy7aUFwPhANsRLxom-zkk1JL4wNiMthxFw4QBTl6_K-e06VARw=w120-h120-l90-rj",
+  "duration": "3:14",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:22.859Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:22.859Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:22.859Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6990436a3174e80c63c39136"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "nWbBIf5_LTY",
+  "title": "Gulabi Ankhen - From \"The Train\"",
+  "artist": "Mohammed Rafi, R. D. Burman",
+  "thumbnail": "https://lh3.googleusercontent.com/pFLzN2c4mXHd3trCWLH856Fr2rrHotJWGDTXTlSzPqUatRKfwJ7zItaQ1B4_spEp2ySn9CLCM071JHs5=w120-h120-l90-rj",
+  "duration": "3:20",
+  "likedAt": {
+    "$date": "2026-02-14T09:42:02.921Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-14T09:42:02.924Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-14T09:42:02.924Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6991e30ba6f5044b1d6ba486"
+  },
+  "userId": {
+    "$oid": "6981d8f249f3c74ee81afb3b"
+  },
+  "videoId": "gZ0vHQKfNH8",
+  "title": "Paaro",
+  "artist": "Aditya Rikhari",
+  "thumbnail": "https://lh3.googleusercontent.com/4ZTR_G1hSTb78-zeZgLkFUtkGEqjWsA-1pbJRU9n73LyCafLKexTQBgtXnqJWUAxPX9hbC6jZY7f-BmS=w120-h120-l90-rj",
+  "duration": "2:34",
+  "likedAt": {
+    "$date": "2026-02-15T15:15:23.760Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-15T15:15:23.761Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-15T15:15:23.761Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d718de6d57ae0473a02d"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "OtLcqr3RQJY",
+  "title": "snowfall",
+  "artist": "Øneheart",
+  "thumbnail": "https://lh3.googleusercontent.com/2IYboQLztE7gb4-j8qNYM5H65M9X_u2vHuebHvXpWTw0ikELEnkrUZVjwa7HOYq8_CE-7MA8c-rd6CyZ=w120-h120-l90-rj",
+  "duration": "2:05",
+  "likedAt": {
+    "$date": "2026-02-27T17:40:40.736Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:40:40.737Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:40:40.737Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696dc66a1e3c445fff6b131d"
+  },
+  "userId": {
+    "$oid": "6969d1581342ff9be1ed81e3"
+  },
+  "videoId": "-1Y2vjh2kYc",
+  "title": "Funk Destravado (Slowed)",
+  "artist": "SEKIRX",
+  "thumbnail": "https://lh3.googleusercontent.com/eFVvQSL6IGlGjwQwk0HvD6TfAqWLEH8ITrwo06vP321Rb48RbW0dKtTzk_Ni9VHqIuUZlodij8RIhqc=w120-h120-l90-rj",
+  "duration": "2:21",
+  "likedAt": {
+    "$date": "2026-01-19T05:51:38.673Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-19T05:51:38.673Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-19T05:51:38.673Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981da2d4e0fb004d77806d6"
+  },
+  "userId": {
+    "$oid": "6981d9f749f3c74ee81afb4e"
+  },
+  "videoId": "ntZONYzAMCo",
+  "title": "Brooklyn Baby",
+  "artist": "Lana Del Rey",
+  "thumbnail": "https://lh3.googleusercontent.com/JhE58dXPM2G3GlpCXRE-j5HMwr2tZCcZbHx9NidDNGEzxyZ_m-paIAtd5lO2u3q9qJnNc7f1-71Q3DII=w120-h120-l90-rj",
+  "duration": "5:52",
+  "likedAt": {
+    "$date": "2026-02-03T11:21:17.437Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T11:21:17.438Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T11:21:17.438Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848318baa7a4efd65cd0ed"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "80FMWMuquAI",
+  "title": "No Flex Zone",
+  "artist": "Rae Sremmurd",
+  "thumbnail": "https://lh3.googleusercontent.com/8wYbNRCFWrZowMTlChQ1eY9ysPTwu24V_Z69J7DZAoBEAO9FVSrvKF-bXwQN-9yKNvgrS_HclibFPYGS=w120-h120-l90-rj",
+  "duration": "3:52",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:32.378Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:32.378Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:32.378Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984832dbaa7a4efd65cd109"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "UkaUat0YckM",
+  "title": "1er jour d'école",
+  "artist": "Chilla",
+  "thumbnail": "https://lh3.googleusercontent.com/jk8CHmIy5GxROrFe4XX8wm9ZhuL-4NUMYLoP0eNKrLf0LbO_-2Gx_3UaHAsl8XuHwmXnQh5PpEBSILiV=w120-h120-l90-rj",
+  "duration": "3:22",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:53.802Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:53.802Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:53.802Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698483a2baa7a4efd65cd1cf"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "Ht4y9AAECU0",
+  "title": "Ouais",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:42",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:50.340Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:50.340Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:50.340Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484cb476b26d1053b67b0"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "otnpKyrnD0Y",
+  "title": "93 Gangstérisme",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:00",
+  "likedAt": {
+    "$date": "2026-02-05T11:53:47.156Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:53:47.156Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:53:47.156Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699750147d74a0eb116cdd4d"
+  },
+  "userId": {
+    "$oid": "698e048b8ef4140fe668f1fb"
+  },
+  "videoId": "kvYswJ4qId0",
+  "title": "FUNK UNIVERSO (Guitar Version)",
+  "artist": "Irokz",
+  "thumbnail": "https://lh3.googleusercontent.com/dTvML5MG4x49VsM6udPuJdAp1D2xW3zzENLtVZ50yCx_kevRsyEIDVjKFY4YKUtZQvZe5AQHArCXjvgS=w120-h120-l90-rj",
+  "duration": "2:52",
+  "likedAt": {
+    "$date": "2026-02-19T18:01:56.966Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-19T18:01:56.967Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-19T18:01:56.967Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6998cc94e9cd2faf6f8ed214"
+  },
+  "userId": {
+    "$oid": "6998cbe4370a422e99a60133"
+  },
+  "videoId": "JPfoLgd3uKg",
+  "title": "Sheesha (Aakhya Mai Aakh Ghali Jo Beran)",
+  "artist": "Mitta Ror",
+  "thumbnail": "https://lh3.googleusercontent.com/qSLRDoW9xku1Tn0g5cH-1Xfw4NF7HjSdPU8j0rfsNoPSl3r5TN-5OEC8g8mF_I1TbpxDDMZp4t_mlE6y=w120-h120-l90-rj",
+  "duration": "3:17",
+  "likedAt": {
+    "$date": "2026-02-20T21:05:24.063Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-20T21:05:24.065Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-20T21:05:24.065Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699c964717c9d963696e1ea9"
+  },
+  "userId": {
+    "$oid": "6982222a49f3c74ee81b046a"
+  },
+  "videoId": "cvLavGNYtX8",
+  "title": "Kal Chaudhvin Ki Raat Thi",
+  "artist": "Jagjit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/0EZTKXMm-u94b_cXLgUVYfDeqlxHWAJH8OrF7ED_GwTpupPiKMMiAKHDh2-_7ccAt9ORV9hWP7riLocRVA=w120-h120-l90-rj",
+  "duration": "6:12",
+  "likedAt": {
+    "$date": "2026-02-23T18:02:47.054Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-23T18:02:47.056Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-23T18:02:47.056Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d74b46c19bb04cd1487f"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "w-xUb3G2px0",
+  "title": "Mileya Mileya",
+  "artist": "Sachin-Jigar, Rekha Bhardwaj, Jigar Saraiya, Priya Andrews, Priya Saraiya",
+  "thumbnail": "https://lh3.googleusercontent.com/3EbAChKsh-alP4P9q54j6ihNO8GGhjzDSmImI55BxGpABhIKPllRCUrGv62zdrVB3sBHD8nbmDXsdsZP=w120-h120-l90-rj",
+  "duration": "4:27",
+  "likedAt": {
+    "$date": "2026-02-27T17:41:31.521Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:41:31.521Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:41:31.521Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6967aaab3e39324f274caaec"
+  },
+  "userId": {
+    "$oid": "69679612e819a0a36b06355d"
+  },
+  "videoId": "SPK9W-vcBqo",
+  "title": "Milne Hai Mujhse Aayi",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/3q33amH9hzn1dO8IeAX7TMb1QtEVfvVbqd2eSCaelOXNVmfMjbpDYdqD2HSiXtNP6i5Es7oynkWU2NfOXA=w60-h60-l90-rj",
+  "duration": "4:56",
+  "likedAt": {
+    "$date": "2026-01-14T14:39:39.242Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-14T14:39:39.247Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-14T14:39:39.247Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981a0ca39988b3e5514233d"
+  },
+  "userId": {
+    "$oid": "6981a00049f3c74ee81af03b"
+  },
+  "videoId": "MU3EOO4fWQo",
+  "title": "S.T.A.Y.",
+  "artist": "Hans Zimmer",
+  "thumbnail": "https://lh3.googleusercontent.com/vHg1BrOwidLFzCWeJ2mYDXtb3rUIvyhW4JPOrNai2K08-Va329yERoCTtt_SW0BT-9cY_roe-Mvd4vK1=w120-h120-l90-rj",
+  "duration": "6:24",
+  "likedAt": {
+    "$date": "2026-02-03T07:16:26.214Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T07:16:26.214Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T07:16:26.214Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848134baa7a4efd65cd03e"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "ghiSpmZu6tk",
+  "title": "ZEZE (feat. Travis Scott & Offset)",
+  "artist": "Kodak Black, Offset, Travis Scott",
+  "thumbnail": "https://lh3.googleusercontent.com/6PJu7wYm_LSgkc4rPJSoW1ua-ueza0fZy1J8-XRWv0DZUYQ9RbTKHgpXf256BDyONzLP86RvK4lPlojr=w120-h120-l90-rj",
+  "duration": "3:49",
+  "likedAt": {
+    "$date": "2026-02-05T11:38:28.725Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:38:28.726Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:38:28.726Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848313baa7a4efd65cd0e6"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "rj9sZsKE7-g",
+  "title": "20 Min",
+  "artist": "Lil Uzi Vert",
+  "thumbnail": "https://lh3.googleusercontent.com/7cTnCwOoZJClzTlsF7YZ__Onj7LGOWPMiaNBcmATC3qDayNeAUSu1u5AdNTL_zDdPF1a2HLJ6bLe_rsS=w120-h120-l90-rj",
+  "duration": "3:41",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:27.812Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:27.812Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:27.812Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848326baa7a4efd65cd102"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "gPFIBw_ht5A",
+  "title": "The Race",
+  "artist": "Tay-K",
+  "thumbnail": "https://lh3.googleusercontent.com/iWQ_mmyExyIMgZiQw-3X6ftYPPdYVD5pWW6XSHXaZwb3OTPDvPDWdhS674n7h6J4U0rm5UObnDy-cdY=w120-h120-l90-rj",
+  "duration": "2:20",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:46.249Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:46.250Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:46.250Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984833cbaa7a4efd65cd11e"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "m8wBdZbOm2I",
+  "title": "Dubs",
+  "artist": "Bandingo YGNE, Trill Vice",
+  "thumbnail": "https://lh3.googleusercontent.com/NuCS8_TApZfJhOZFG8n4X_auA_nB0YRgqdzPJEehHN2PpXnk0nGw7aYfl4gOYJQRUpgksLiRPoOL72M=w120-h120-l90-rj",
+  "duration": "3:51",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:08.940Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:08.940Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:08.940Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848495476b26d1053b677c"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "1tBw5ckF3xI",
+  "title": "Où je vais",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "2:59",
+  "likedAt": {
+    "$date": "2026-02-05T11:52:53.981Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:52:53.981Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:52:53.981Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484c2baa7a4efd65cd21e"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "L8dvUAmPlIo",
+  "title": "CR",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:06",
+  "likedAt": {
+    "$date": "2026-02-05T11:53:38.075Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:53:38.075Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:53:38.075Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6985bd4ff6b94a42700a78d0"
+  },
+  "userId": {
+    "$oid": "698276fd49f3c74ee81b063b"
+  },
+  "videoId": "rXoReWNm8Zo",
+  "title": "Antidote",
+  "artist": "Karan Aujla",
+  "thumbnail": "https://lh3.googleusercontent.com/hM_cAPbpZC2IAMilLJHSZ_ALUpF2vih1XwzgINDR0so2vRW3OCyTmxVTN0eMzSfoNUb4S8j5X-uNJsAg=w120-h120-l90-rj",
+  "duration": "3:08",
+  "likedAt": {
+    "$date": "2026-02-06T10:07:11.427Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-06T10:07:11.428Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-06T10:07:11.428Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69873ab9d5f45af401255c75"
+  },
+  "userId": {
+    "$oid": "69873a7d8ef4140fe6688bf2"
+  },
+  "videoId": "BLZWkjBXfN8",
+  "title": "In the End",
+  "artist": "Linkin Park",
+  "thumbnail": "https://lh3.googleusercontent.com/lkNJVMp3siDfSw_zVYj3tE6fQS7G6Gj2gzoxrIwS7K4TwqmL_uSBb9-PKACNLIP_7XLQib4tC5XwWbpD=w120-h120-l90-rj",
+  "duration": "3:37",
+  "likedAt": {
+    "$date": "2026-02-07T13:14:33.433Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-07T13:14:33.434Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-07T13:14:33.434Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69873d6ea67c8423e9decd69"
+  },
+  "userId": {
+    "$oid": "69873a7d8ef4140fe6688bf2"
+  },
+  "videoId": "69yljgPeeKo",
+  "title": "Gahanakusumkunja Majhe",
+  "artist": "Rezwana Chowdhury Bannya",
+  "thumbnail": "https://lh3.googleusercontent.com/YI4CyqsFKMYKa6SEBGzS85AzEEHPOpIs4CkY18tHHuAp3vxrNsXQQPiNpiWZN4wcmmms_Uxtew4UBFuJow=w120-h120-l90-rj",
+  "duration": "5:08",
+  "likedAt": {
+    "$date": "2026-02-07T13:26:06.379Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-07T13:26:06.379Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-07T13:26:06.379Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6988b7987da7f89650b202af"
+  },
+  "userId": {
+    "$oid": "698276fd49f3c74ee81b063b"
+  },
+  "videoId": "SgBxMXZj4tE",
+  "title": "Tera Saaya 2.0 x Talwiinder",
+  "artist": "MM Production Sunshine",
+  "thumbnail": "https://lh3.googleusercontent.com/MNqf6jtelirnG2dxGan3SR-xKPVd-ykRaWrM4fMcDFFEi3VmSFtU71LEyW0_SumCwoCaSEk4kg1lIGw=w120-h120-l90-rj",
+  "duration": "3:02",
+  "likedAt": {
+    "$date": "2026-02-08T16:19:36.483Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-08T16:19:36.483Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-08T16:19:36.483Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698e118aa2b95a7e8504d9bd"
+  },
+  "userId": {
+    "$oid": "698e048b8ef4140fe668f1fb"
+  },
+  "videoId": "Cl5Vkd4N03Q",
+  "title": "After Dark",
+  "artist": "Mr.Kitty",
+  "thumbnail": "https://lh3.googleusercontent.com/b92yfjtgYeBaZDIzQViE8zlfsDwvImUJuGqwIBOQmyxrcG1cvyVdJKzuIiZLKU_aBM_X4h43rXgUkjMD=w120-h120-l90-rj",
+  "duration": "4:20",
+  "likedAt": {
+    "$date": "2026-02-12T17:44:42.975Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-12T17:44:42.978Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-12T17:44:42.978Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699067f4ea4fed144cb1f706"
+  },
+  "userId": {
+    "$oid": "69906616370a422e99a59c17"
+  },
+  "videoId": "n7sHNSas3n0",
+  "title": "Rukh Din Hai Ya Mehre Sama",
+  "artist": "Owais Raza Qadri",
+  "thumbnail": "https://lh3.googleusercontent.com/e4seJuTEFierzw0v2cfavntLsF35NEo62T4x2qT55P6gOvIufh5P1Slck-_0vtNkOcC-08ku3wYdmIgP=w120-h120-l90-rj",
+  "duration": "12:05",
+  "likedAt": {
+    "$date": "2026-02-14T12:17:56.709Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-14T12:17:56.710Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-14T12:17:56.710Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69916b7702a2e3d3c9e971c0"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "C14askJ1tO8",
+  "title": "Haareya",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/2PwfflU6pRilCWP1Qidvjzwu3GCwwPpVWj-UcyRbhiokCKun9hF7hAdSQbGehlH6TjkeH9xyfacXY1Nk=w120-h120-l90-rj",
+  "duration": "3:35",
+  "likedAt": {
+    "$date": "2026-02-15T06:45:11.757Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-15T06:45:11.760Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-15T06:45:11.760Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699c8ef0c065b79d31bf27da"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "kKYYydqWHz4",
+  "title": "Reflections",
+  "artist": "Monolink",
+  "thumbnail": "https://lh3.googleusercontent.com/5XON7jeMtR_o6fUfLM25uogLFRIeeHX2B8XLblfyloOSlT6R46x7SzQWT6TQgUSWrZWaz0JjcD3O-oU=w120-h120-l90-rj",
+  "duration": "4:46",
+  "likedAt": {
+    "$date": "2026-02-23T17:31:28.098Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-23T17:31:28.098Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-23T17:31:28.098Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69aba45d67ea290d5d73ed61"
+  },
+  "userId": {
+    "$oid": "6982ac0549f3c74ee81b0ee7"
+  },
+  "videoId": "Z0VbANbyH2o",
+  "title": "Tere Hawaale",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/EKLJnn97hUrFSI2R4hFqrWT5yfznhIS8o_e3mJKgSN07wFjFXGFMUROm28GZodfkFU1gYn1Hwazg0fr7ow=w120-h120-l90-rj",
+  "duration": "5:47",
+  "likedAt": {
+    "$date": "2026-03-07T04:06:53.100Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-07T04:06:53.101Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-07T04:06:53.101Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69833b88dff2a79aaa2be7dd"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "x-gBMn8Hu8s",
+  "title": "Jaat Ki Yaari",
+  "artist": "Tarun Panchal Feat Mahi Panchal",
+  "thumbnail": "https://lh3.googleusercontent.com/F4oJFGxFaih6dU2ttUK7fRZl00-pBvmBfMWYYYbqWrHSDqao3xmeIUDxGZtFmU5AlQNLaqFWMMpx7efe=w120-h120-l90-rj",
+  "duration": "3:20",
+  "likedAt": {
+    "$date": "2026-02-04T12:28:56.458Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-04T12:28:56.458Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-04T12:28:56.458Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698460360344befd9887be5c"
+  },
+  "userId": {
+    "$oid": "69845fa949f3c74ee81b4838"
+  },
+  "videoId": "eiub0usVWdw",
+  "title": "Humpa Humpa",
+  "artist": "Fäaschtbänkler",
+  "thumbnail": "https://lh3.googleusercontent.com/aW1fVjlnt9jFsCH_0XLyv8WWV9rrsLyEOCQe6mKjxiGm9qonjgdmojit6WFjDHlijrCofIUpVulaHPXWQQ=w120-h120-l90-rj",
+  "duration": "2:31",
+  "likedAt": {
+    "$date": "2026-02-05T09:17:42.958Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T09:17:42.958Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T09:17:42.958Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698482c5baa7a4efd65cd0a7"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "T6aMu9bKfQA",
+  "title": "Ma Bella",
+  "artist": "Junior Bvndo",
+  "thumbnail": "https://lh3.googleusercontent.com/FsiVlntPI4t-qBP01vWWnI-gyYASktCnAIRA50v6DKREukjlxScSTrRLpy7XC1Ams3QkKP6zjlfpEM-n=w120-h120-l90-rj",
+  "duration": "2:33",
+  "likedAt": {
+    "$date": "2026-02-05T11:45:09.161Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:45:09.161Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:45:09.161Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698483aabaa7a4efd65cd1dd"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "t8A9ruKqbg8",
+  "title": "Métagorique",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:04",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:58.363Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:58.363Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:58.363Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698483b6baa7a4efd65cd1f2"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "YFYGfLfOu1w",
+  "title": "Binks 2.0",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "2:38",
+  "likedAt": {
+    "$date": "2026-02-05T11:49:10.866Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:49:10.866Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:49:10.866Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484ea476b26d1053b67d5"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "U0Sf0hoFpHE",
+  "title": "Contra La Pared",
+  "artist": "Sean Paul, J Balvin",
+  "thumbnail": "https://lh3.googleusercontent.com/5tpWyeg7G7WzE8CjEictXD-5cCNHfo7HdPQWoWo-omwMqBkLz1CqR6e9jOKSoui39A__pO6qFskV5rI=w120-h120-l90-rj",
+  "duration": "3:45",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:18.644Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:18.644Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:18.644Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984966906e217439a2ef809"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "TApCh4vmqow",
+  "title": "MBK Rocket",
+  "artist": "Lorenzo",
+  "thumbnail": "https://lh3.googleusercontent.com/mgblJ5rJ6IZyfn4ZnYFzO1MFuAtAzBMSQd1f89ZcpmZ8W7VW1dz0SxWuTYIDdLRpERwYDrOvJSMgZQ0i=w120-h120-l90-rj",
+  "duration": "2:13",
+  "likedAt": {
+    "$date": "2026-02-05T13:08:57.425Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T13:08:57.425Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T13:08:57.425Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6967966463c286a8a8d94acd"
+  },
+  "userId": {
+    "$oid": "69670b067d09ba53d7127c0e"
+  },
+  "videoId": "62WAHfllwMM",
+  "title": "Pyasa (feat. Tito+)",
+  "artist": "Nanku",
+  "thumbnail": "https://lh3.googleusercontent.com/gwxR5tqVDgcwz4ZfvWUeSPsUtRXfhEss-RBOZpFK1e_DYSNjXXyekbzF1rgzQNU48OznvPN8NFFIRc8=w60-h60-l90-rj",
+  "duration": "5:00",
+  "likedAt": {
+    "$date": "2026-01-14T13:13:08.717Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-14T13:13:08.718Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-14T13:13:08.718Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6967bbb57f3ca39ec6be315c"
+  },
+  "userId": {
+    "$oid": "69679612e819a0a36b06355d"
+  },
+  "videoId": "FA_J8XwpCaQ",
+  "title": "Tu Jaane Na",
+  "artist": "Pritam Chakraborty, Atif Aslam",
+  "thumbnail": "https://lh3.googleusercontent.com/2_0MIu6f5PUC3VO5R5vw_U1CTPBcRtDhbzOW1rgAd4QmiKMommcDYbL1CrV78AzP-6EkaR-MzF673WwJ0w=w120-h120-l90-rj",
+  "duration": "5:42",
+  "likedAt": {
+    "$date": "2026-01-14T15:52:21.474Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-14T15:52:21.475Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-14T15:52:21.475Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69688528327904838421f364"
+  },
+  "userId": {
+    "$oid": "696882791342ff9be1ed7c6b"
+  },
+  "videoId": "XPu9ZE4Onzc",
+  "title": "Kya Mujhe Pyar Hai",
+  "artist": "K.K.",
+  "thumbnail": "https://lh3.googleusercontent.com/uCM2kWNzgiv8jUDff-kpyZ8_oB7IlvcPREba71X5BT8zD6oc7Tg_61Y0PdG4aqYsWPVhnYww0-kKQERs=w120-h120-l90-rj",
+  "duration": "4:27",
+  "likedAt": {
+    "$date": "2026-01-15T06:11:52.048Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-15T06:11:52.049Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-15T06:11:52.049Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69827352839c639473a5066c"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "MWsuHKUgZ98",
+  "title": "FUNK MI CAMINO",
+  "artist": "Sayfalse",
+  "thumbnail": "https://lh3.googleusercontent.com/jnyfYqDTEIOCRBniYvt8lUDjcQUSL8yTUcMjHujRjE2fy79dplYGuUYgln30968EXYu-dnJFyWGCpgU=w120-h120-l90-rj",
+  "duration": "1:20",
+  "likedAt": {
+    "$date": "2026-02-03T22:14:42.196Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T22:14:42.197Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T22:14:42.197Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698278172b9c6220b217dea3"
+  },
+  "userId": {
+    "$oid": "698275f049f3c74ee81b0636"
+  },
+  "videoId": "uOQG38DriDM",
+  "title": "Tu",
+  "artist": "Talwiinder",
+  "thumbnail": "https://lh3.googleusercontent.com/FIwp9sL1e4IzrwooiRDM_MRv2Sm-he03r3OI596PXCXILjjQPv0wAu4BEdc-xVX6hUeZtmKSO2C3_VW7dQ=w120-h120-l90-rj",
+  "duration": "2:13",
+  "likedAt": {
+    "$date": "2026-02-03T22:35:03.913Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T22:35:03.913Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T22:35:03.913Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69827ed9bfcfcc655ed02ac8"
+  },
+  "userId": {
+    "$oid": "69827e4649f3c74ee81b0904"
+  },
+  "videoId": "98PveXBl0lc",
+  "title": "Drive You Insane",
+  "artist": "Daniel Di Angelo",
+  "thumbnail": "https://lh3.googleusercontent.com/-zWePN_amRzelW34PyYt9wYhgEdRayNYohE7hiBhEstM2s37fLTpv_8bY3X6JBav1t8jTLEufLwzAMvCIg=w120-h120-l90-rj",
+  "duration": "3:33",
+  "likedAt": {
+    "$date": "2026-02-03T23:03:53.132Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T23:03:53.132Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T23:03:53.132Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698286b6661047506ba9ce1c"
+  },
+  "userId": {
+    "$oid": "6982866349f3c74ee81b0aa7"
+  },
+  "videoId": "iu2mgYgOGgc",
+  "title": "HARE KRISHNA",
+  "artist": "Fakira",
+  "thumbnail": "https://lh3.googleusercontent.com/nFpu3BGrFOry1z5ONqv5qbvxzp1qYcgC-q1cpkIrFX7_NRACU543AmG2Jb4dJxAj2gv50EMr1QyKx-A_Zg=w120-h120-l90-rj",
+  "duration": "7:03",
+  "likedAt": {
+    "$date": "2026-02-03T23:37:26.298Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T23:37:26.298Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T23:37:26.298Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69836a93709b96c9c4dba770"
+  },
+  "userId": {
+    "$oid": "6981cac149f3c74ee81af94a"
+  },
+  "videoId": "UQn_G22w8PA",
+  "title": "Yeh Raaten Yeh Mausam",
+  "artist": "Kishore Kumar, Asha Bhosle, Sanam, Simran Shgal",
+  "thumbnail": "https://lh3.googleusercontent.com/AlBrYrfsKMlNzh64-qVN7GZAjQcaPOVTXCAQ8HbaJnb9B9jtft3BCgZk7GAIo2Ni2XBBkZJ9SLM02jJm=w120-h120-l90-rj",
+  "duration": "3:29",
+  "likedAt": {
+    "$date": "2026-02-04T15:49:39.330Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-04T15:49:39.330Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-04T15:49:39.330Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984834fbaa7a4efd65cd133"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "V-povoP-838",
+  "title": "Julien",
+  "artist": "Damso",
+  "thumbnail": "https://lh3.googleusercontent.com/tUJL6X5HYvoG7Smx7E6JfNZ2fBgwoFjI-o0ThTFF8n-K5T8Hs_WOFiZJdZzdoERmo8yj6JbsmE-cU2Ws=w120-h120-l90-rj",
+  "duration": "3:23",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:27.864Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:27.865Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:27.865Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984837ebaa7a4efd65cd191"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "eDISJ_3oggc",
+  "title": "Rêves (pt. 1)",
+  "artist": "VILK",
+  "thumbnail": "https://lh3.googleusercontent.com/f33wyuKvie8FjdQRBjbbPCcflJgElJ-oOdcQJEdNmrEFcAUeLTUNXNuQLkih3QcuNXEqls2DEMpaeWHI=w120-h120-l90-rj",
+  "duration": "4:11",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:14.107Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:14.107Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:14.107Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984838cbaa7a4efd65cd1ac"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "7n5CQUEn0yQ",
+  "title": "Des choses à dire",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:49",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:28.465Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:28.466Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:28.466Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848390baa7a4efd65cd1b3"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "wkLx-vrSdhU",
+  "title": "C'est pas mon cas",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:16",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:32.825Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:32.825Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:32.825Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698483bbbaa7a4efd65cd1f9"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "CUcQ6rcBdZw",
+  "title": "Pas vu pas pris",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:39",
+  "likedAt": {
+    "$date": "2026-02-05T11:49:15.360Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:49:15.361Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:49:15.361Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484b8476b26d1053b6796"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "Cyw9uqukNeg",
+  "title": "Amis d'avant",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:46",
+  "likedAt": {
+    "$date": "2026-02-05T11:53:28.766Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:53:28.767Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:53:28.767Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d733de6d57ae0473a049"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "c-8abSPAPOU",
+  "title": "back to friends",
+  "artist": "sombr",
+  "thumbnail": "https://lh3.googleusercontent.com/3MXiigZPuOrnx5imqnNpcemYNlkYqCoMeZBnCr8obqew8nNUf-cFqviScHNNo207t_7hs4ToWW_vvc862g=w120-h120-l90-rj",
+  "duration": "3:20",
+  "likedAt": {
+    "$date": "2026-02-27T17:41:07.616Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:41:07.617Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:41:07.617Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69833b5cdff2a79aaa2be7c4"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "BWyNzznE2Ys",
+  "title": "TERI FARIYAD EXTENDED VERSION",
+  "artist": "REKHA BHARDWAJ",
+  "thumbnail": "https://lh3.googleusercontent.com/ObRsqFph8YRJgAiFt6Myb7W_QZZViEd5S_OE1H7EUGHhIjBkHqbqE83FKI8wehrxzqeteziHCqCOkfqH=w120-h120-l90-rj",
+  "duration": "3:08",
+  "likedAt": {
+    "$date": "2026-02-04T12:28:12.895Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-04T12:28:12.895Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-04T12:28:12.895Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6985c56f26c4c0beccf5ca9e"
+  },
+  "userId": {
+    "$oid": "698276fd49f3c74ee81b063b"
+  },
+  "videoId": "NMRhx71bGo4",
+  "title": "Let It Happen",
+  "artist": "Tame Impala",
+  "thumbnail": "https://lh3.googleusercontent.com/J67cuSWAzGMlj8d9orcAZjPHsl8RWcXIXkT1d8mGmx9jmXPvXkYpFzuLnucmaqJwVMqxPlSq1GbqPeQy=w120-h120-l90-rj",
+  "duration": "7:48",
+  "likedAt": {
+    "$date": "2026-02-06T10:41:51.937Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-06T10:41:51.937Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-06T10:41:51.937Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698cabdc4536e45a032b4556"
+  },
+  "userId": {
+    "$oid": "698cab838ef4140fe668ebed"
+  },
+  "videoId": "YF06JzQyL70",
+  "title": "Waqt Ki Baatein",
+  "artist": "Dream Note",
+  "thumbnail": "https://lh3.googleusercontent.com/9dz-eOpfGhRq3h81D7Mn7PNCTDHlfa_TAkTisxqD6JqYf9IV3tGgWAbOidoJV4-F4gF2lmeJSu89JUdW=w120-h120-l90-rj",
+  "duration": "4:04",
+  "likedAt": {
+    "$date": "2026-02-11T16:18:36.681Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-11T16:18:36.685Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-11T16:18:36.685Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699bcf351af62f7d993d5bb0"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "TIQ_Gh7clQ8",
+  "title": "Tenu Sang Rakhna (From \"Jigra\")",
+  "artist": "Achint",
+  "thumbnail": "https://lh3.googleusercontent.com/F8s9lSInfQQu6PvEl23by6_KPoazHLcjk4226uEZqcabT7w_QQP4IX8nxutH5pLJOtwAi32VfMhRJPo=w120-h120-l90-rj",
+  "duration": "4:10",
+  "likedAt": {
+    "$date": "2026-02-23T03:53:25.296Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-23T03:53:25.297Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-23T03:53:25.297Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69aaa312e8ed9209ba38f95e"
+  },
+  "userId": {
+    "$oid": "698d35018ef4140fe668ed43"
+  },
+  "videoId": "XhCBruock0E",
+  "title": "Mascara",
+  "artist": "Deftones",
+  "thumbnail": "https://i.ytimg.com/vi/XhCBruock0E/mqdefault.jpg",
+  "duration": "3:46",
+  "likedAt": {
+    "$date": "2026-03-06T09:49:06.406Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-06T09:49:06.407Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-06T09:49:06.407Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69838449516e94518b9ab74d"
+  },
+  "userId": {
+    "$oid": "6983835149f3c74ee81b1c57"
+  },
+  "videoId": "LYz-ktFWZB4",
+  "title": "Invincible",
+  "artist": "Pop Smoke",
+  "thumbnail": "https://lh3.googleusercontent.com/TyS1IDFlBoN-b1VBg2_rFa048n2gkPykYwfkQyi9xFjXteIRdMmoYrteGZXpTi8oHDxOOoG5GciH5e8c=w120-h120-l90-rj",
+  "duration": "2:08",
+  "likedAt": {
+    "$date": "2026-02-04T17:39:21.096Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-04T17:39:21.096Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-04T17:39:21.096Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848111baa7a4efd65cd02b"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "Mg3k-MzEujE",
+  "title": "Tic Tac Toe (feat. Kodak Black)",
+  "artist": "Meek Mill, Kodak Black",
+  "thumbnail": "https://lh3.googleusercontent.com/pgFR_Gm45cZaC9bQbdrrDnOe793rj4U3vsVkPEDchkMw_4pH9Lelox82iRXubdFg7BHc8dcSRvI1AKKJ=w120-h120-l90-rj",
+  "duration": "3:06",
+  "likedAt": {
+    "$date": "2026-02-05T11:37:53.441Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:37:53.442Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:37:53.442Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984830abaa7a4efd65cd0d8"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "HyAFzFsfTEE",
+  "title": "Baby Squirt",
+  "artist": "Vald",
+  "thumbnail": "https://lh3.googleusercontent.com/YifD_RHxWWoSr0AWUOZJXIrEhFlnA-CDV9g3d5qzFpnjHzDYRM-vMaBcZJNf5ch1sG0P9k9evDqK9qs=w120-h120-l90-rj",
+  "duration": "3:40",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:18.367Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:18.368Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:18.368Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848368baa7a4efd65cd156"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "BRtWdYUaVmk",
+  "title": "Jon Snow",
+  "artist": "Lacrim",
+  "thumbnail": "https://lh3.googleusercontent.com/nSmBs23fwHKXKQ2IPWvS9wLvP6F-RUM26pMjDTj25izBUdhEu9w_3K8ty-XCQfDLIFV7z-SDUskF7SLgRg=w120-h120-l90-rj",
+  "duration": "3:19",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:52.682Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:52.682Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:52.682Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848375baa7a4efd65cd183"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "a1DK2VdM75k",
+  "title": "Fuck Up Some Commas",
+  "artist": "Future",
+  "thumbnail": "https://lh3.googleusercontent.com/GQMmZxSzAhujzUYMZLjjYZAq63bdYnLygx_HfL-v6C5lSAhKGGhSuxz5lr4E95FB_nPbXHkPdG22p-39=w120-h120-l90-rj",
+  "duration": "3:58",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:05.591Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:05.592Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:05.592Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484bd476b26d1053b679d"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "9TIk3U-6So8",
+  "title": "Fuck le 17",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:33",
+  "likedAt": {
+    "$date": "2026-02-05T11:53:33.210Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:53:33.212Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:53:33.212Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69876b7b5782280d08443fc2"
+  },
+  "userId": {
+    "$oid": "69873a7d8ef4140fe6688bf2"
+  },
+  "videoId": "r7zTKRonHXM",
+  "title": "Closer (feat. Halsey)",
+  "artist": "The Chainsmokers",
+  "thumbnail": "https://lh3.googleusercontent.com/jvgMIjgbvnqnwLwjtqNa0euo9WStdIxrJnpQURgbwuPazT2OpZUdYPZe1gss2fK39oC8ITofFmeGxKY=w120-h120-l90-rj",
+  "duration": "4:06",
+  "likedAt": {
+    "$date": "2026-02-07T16:42:35.857Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-07T16:42:35.858Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-07T16:42:35.858Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6989702d26113b4c7630a9b8"
+  },
+  "userId": {
+    "$oid": "6981ee9d49f3c74ee81afcf8"
+  },
+  "videoId": "Zr5JXBCHKzs",
+  "title": "Darling (From \"7 Khoon Maaf\")",
+  "artist": "Vishal Bhardwaj",
+  "thumbnail": "https://lh3.googleusercontent.com/-Ki1-sCODMA-8DUjqd7pmzNqGAMVZckr5jhxUAJtwRZzVFHSTFWOpT_WUXl9S3eWmUEwLAB30dhxlf8=w120-h120-l90-rj",
+  "duration": "3:29",
+  "likedAt": {
+    "$date": "2026-02-09T05:27:09.252Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-09T05:27:09.252Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-09T05:27:09.252Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d752de6d57ae0473a05f"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "FCRUrHJW468",
+  "title": "Safarnama",
+  "artist": "Lucky Ali",
+  "thumbnail": "https://lh3.googleusercontent.com/AT2wfk1PvKjnHO7BzH2i2NkAvqRy_oZNEq48QGBlLJb51AuguCiR3mzp99X1uFdZezAkoSJ2WGjUU-HXZg=w120-h120-l90-rj",
+  "duration": "4:12",
+  "likedAt": {
+    "$date": "2026-02-27T17:41:38.245Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:41:38.246Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:41:38.246Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69679b04c193180e93ddcd94"
+  },
+  "userId": {
+    "$oid": "69670b067d09ba53d7127c0e"
+  },
+  "videoId": "OwpgvSo_G0g",
+  "title": "‘Golden’ Lyric Video | KPop Demon Hunters | Netflix Family",
+  "artist": "Saja Boys",
+  "thumbnail": "https://i.ytimg.com/vi/OwpgvSo_G0g/sddefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCghqEJQEGHgg6AJIWg&rs=AMzJL3mEVZ64L8nfpbtb9K_KIKCPFIgRPQ",
+  "duration": "3:22",
+  "likedAt": {
+    "$date": "2026-01-14T13:32:52.796Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-14T13:32:52.797Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-14T13:32:52.797Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981da36c0ed707cfab4aa27"
+  },
+  "userId": {
+    "$oid": "6981d9f749f3c74ee81afb4e"
+  },
+  "videoId": "fRQg_9ulGuI",
+  "title": "Summertime Sadness",
+  "artist": "Lana Del Rey",
+  "thumbnail": "https://lh3.googleusercontent.com/F5k4fYPgIA1lnykIMM0dqji6pKcpAgc26CAJB8Z3OCaCSfpyBMUM6ruxvbgpU8GTZfNELXP9dpf4BxlT=w120-h120-l90-rj",
+  "duration": "4:25",
+  "likedAt": {
+    "$date": "2026-02-03T11:21:26.567Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T11:21:26.569Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T11:21:26.569Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981fc9cf7cd6beccf87d902"
+  },
+  "userId": {
+    "$oid": "6981fc5b49f3c74ee81b031a"
+  },
+  "videoId": "93CXsVAICig",
+  "title": "Tera Aashiq (From \"Ikkis\")",
+  "artist": "Master Saleem",
+  "thumbnail": "https://lh3.googleusercontent.com/m2qcWmsxKDVtm2N1KN_wIuXNvI-bte8FOvy5kYhFGkvbfUQbMl5SM_jAOhvTRE6UpgFRB8E6nikuQBw=w120-h120-l90-rj",
+  "duration": "4:13",
+  "likedAt": {
+    "$date": "2026-02-03T13:48:12.459Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T13:48:12.459Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T13:48:12.459Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698482cdbaa7a4efd65cd0b0"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "Osvg7Ofd5d0",
+  "title": "Mo Bamba",
+  "artist": "Sheck Wes",
+  "thumbnail": "https://lh3.googleusercontent.com/cKsv-zOpojnTu2eZJSq0tLor-eygWz-KGW2w3FhUpbUdcmtXHg30EE7I-l-bthg3RFmJOhpvscfWXtci=w120-h120-l90-rj",
+  "duration": "3:04",
+  "likedAt": {
+    "$date": "2026-02-05T11:45:17.388Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:45:17.388Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:45:17.388Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848321baa7a4efd65cd0fb"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "AlsA2GtlpFY",
+  "title": "all my friends",
+  "artist": "21 Savage",
+  "thumbnail": "https://lh3.googleusercontent.com/rUVbkze3VcKTw9FIC-i5aOTMCIn6qoZpEY0As1-x5VjFX6jPqlpLGeryGi6AazH3CkIsV-koBf2Wzhlk=w120-h120-l90-rj",
+  "duration": "3:32",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:41.863Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:41.863Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:41.863Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484e2476b26d1053b67c7"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "iI6wSN477bY",
+  "title": "Muñequita Linda",
+  "artist": "Juan Magán, Deorro, MAKJ, YFN Lucci",
+  "thumbnail": "https://lh3.googleusercontent.com/klTvfbDezCWXgoQ-l9-vv-FQniJtBLQr_hXfvB4k9VPeSgpn59Oj9rIwqs7EGjl5HB-Ehx894lipMvg=w120-h120-l90-rj",
+  "duration": "3:31",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:10.517Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:10.518Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:10.518Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a4c4a8cf0867c02e5f252a"
+  },
+  "userId": {
+    "$oid": "699efca2d9d5e7f7bf8442b0"
+  },
+  "videoId": "BI9HQCzpDgQ",
+  "title": "Earrings",
+  "artist": "Malcolm Todd",
+  "thumbnail": "https://lh3.googleusercontent.com/sm9gz2XQFzc-Gp7qsQzIJGuIsowoyVI43ki4048evRTzCi8IN2FcTyv42YttCDRH-93amTRkG05hqnOK=w120-h120-l90-rj",
+  "duration": "2:32",
+  "likedAt": {
+    "$date": "2026-03-01T22:58:48.853Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-01T22:58:48.854Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-01T22:58:48.854Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a594232ea54f8744bba523"
+  },
+  "userId": {
+    "$oid": "69a5935cd9d5e7f7bf847888"
+  },
+  "videoId": "EVwqn15ZScs",
+  "title": "Same Old Death",
+  "artist": "Flicka Roe",
+  "thumbnail": "https://lh3.googleusercontent.com/bAJuhIp4JYyD9qkMwK5rE8mSKFDUY22xZg2X7O_NYqfUZZOc_PH9DFl5jsvQgf6iIsPNXW021gd5DTYq=w120-h120-l90-rj",
+  "duration": "3:11",
+  "likedAt": {
+    "$date": "2026-03-02T13:44:03.301Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-02T13:44:03.303Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-02T13:44:03.303Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696e7257a586beadf6824966"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "qai2Qx_vduA",
+  "title": "FUNK SIGILO (SLOWED)",
+  "artist": "h6itam",
+  "thumbnail": "https://lh3.googleusercontent.com/pkp9UcitSMda4MUCAHGbbNyGGt_FmLTT0cH45b0fxEpzCZB2afZVcAc8XoZsoso8C8jtBMVcaP0qFGnP=w120-h120-l90-rj",
+  "duration": "1:44",
+  "likedAt": {
+    "$date": "2026-01-19T18:05:11.096Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-19T18:05:11.096Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-19T18:05:11.096Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981cb2299a063e71e7eb8d2"
+  },
+  "userId": {
+    "$oid": "6981cac149f3c74ee81af94a"
+  },
+  "videoId": "uT_HXrrmHX8",
+  "title": "Sitaare (From \"Ikkis\")",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/XvvdvvJF54vqL_1FSspuGguIKMMz5OhyhXMRls0jrBra5OcVujKFCHdI-hKxtnwbO-v-lDKdPmSUD_h33w=w120-h120-l90-rj",
+  "duration": "4:03",
+  "likedAt": {
+    "$date": "2026-02-03T10:17:06.246Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T10:17:06.247Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T10:17:06.247Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698273602b9c6220b217dded"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "tcOzbPOtl7k",
+  "title": "DIRTY SHOES FUNK",
+  "artist": "DJ Javi26",
+  "thumbnail": "https://lh3.googleusercontent.com/Wpq27q8Edrb5gWI1TGuG06Jc83-54fJZlFcnjNWRYrWBLNMgYzO3uWTr9SKCUVTWdg3ncPTJw0XwrvHi=w120-h120-l90-rj",
+  "duration": "1:33",
+  "likedAt": {
+    "$date": "2026-02-03T22:14:56.584Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T22:14:56.585Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T22:14:56.585Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69833a12dff2a79aaa2be740"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "oHeCtIEBdQY",
+  "title": "Aarzu",
+  "artist": "Noor",
+  "thumbnail": "https://lh3.googleusercontent.com/HTdP0gvxBLPwrQKk-B1aRkcuYJ1NCLauLznR8q9BmRPsIxYSx0MQTGfepTYfT6peN_RSn4rghZ3fiLnK=w120-h120-l90-rj",
+  "duration": "3:08",
+  "likedAt": {
+    "$date": "2026-02-04T12:22:42.629Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-04T12:22:42.630Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-04T12:22:42.630Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698482e5baa7a4efd65cd0bd"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "tptvLH2sOFs",
+  "title": "À l’heure où je me couche",
+  "artist": "Casseurs Flowters",
+  "thumbnail": "https://lh3.googleusercontent.com/1LByXW3ekDb1V0DgY4iIE5Crfm_NNUx3qMJpl8mdGYdPJ44Fh6LEMX05RJ5jeAzCaQ5zGAdXYX5D6MnP=w120-h120-l90-rj",
+  "duration": "3:41",
+  "likedAt": {
+    "$date": "2026-02-05T11:45:41.087Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:45:41.087Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:45:41.087Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848332baa7a4efd65cd110"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "U7soh5-EjGY",
+  "title": "Chill Bill (feat. J. Davi$ & Spooks)",
+  "artist": "Rob $tone, J. Davi$, J Spooks",
+  "thumbnail": "https://lh3.googleusercontent.com/4OqbfGvt7Bb0joByOsACkF47lHDTzF_03n_rw_i9J2m8zD3orKatJI_ib6JmSqSsL_EOttCB_CYly_Y=w120-h120-l90-rj",
+  "duration": "2:58",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:58.957Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:58.957Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:58.957Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984836cbaa7a4efd65cd15d"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "STT-BPW3sqM",
+  "title": "Eh boy",
+  "artist": "Bolémvn",
+  "thumbnail": "https://lh3.googleusercontent.com/S223vrEVokHgNv3Ut8-e32ToUzdOMkXKwKDCvNZcagxacgfGUYwPQMdd-aK0YDVuxS2Vfha2EleBXiQ8=w120-h120-l90-rj",
+  "duration": "3:04",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:56.919Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:56.920Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:56.920Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848382baa7a4efd65cd198"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "vHRJHIaDpD8",
+  "title": "Faut que",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/P3BsGJINKPcyql_NmKAEqKc_Ck-mL5TnVR9ykJwUOA8XbtnqA3i9ayLu-ZMZE8uJjTd5Bnk3z6r6WwdGaA=w120-h120-l90-rj",
+  "duration": "3:14",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:18.250Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:18.250Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:18.250Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484e6476b26d1053b67ce"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "VKC_hzJ3jzg",
+  "title": "Señorita",
+  "artist": "Shawn Mendes, Camila Cabello",
+  "thumbnail": "https://lh3.googleusercontent.com/TK-09E9wZOUk84ktqwb-zNBXfnY3Z927d3fpJ3ObwwOyREKzjAQMMYx0pGSjVAAV2zpRJDpDAavlAPSz=w120-h120-l90-rj",
+  "duration": "3:11",
+  "likedAt": {
+    "$date": "2026-02-05T11:54:14.684Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:54:14.684Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:54:14.684Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699066d45f9f2143ab1526dd"
+  },
+  "userId": {
+    "$oid": "69906616370a422e99a59c17"
+  },
+  "videoId": "ncENsF4MuUI",
+  "title": "Rukh Din Hai Ya Mahre Sama",
+  "artist": "Sayyed Kaifi Ali Razvi",
+  "thumbnail": "https://lh3.googleusercontent.com/_MHCy8mWTYrR1XXLbYGa1QXj9wyozz3K1-EBZ7W3qlXjIPuecyJwnN_-vGXIwkBjkRw2NCRJ-PTvTaN1=w120-h120-l90-rj",
+  "duration": "4:59",
+  "likedAt": {
+    "$date": "2026-02-14T12:13:08.224Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-14T12:13:08.227Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-14T12:13:08.227Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69958961505b6caf8ffdf05c"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "6GrtI-9hNBE",
+  "title": "Manali Trance",
+  "artist": "Yo Yo Honey Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/_wUWKZiAi9eHn4AoRzXBNEeZI2oI-c1lpVNBRvhjWSRAp1mzt8Su550uB3Uu9DcA7rsYGGyM7Smcu_8=w120-h120-l90-rj",
+  "duration": "3:24",
+  "likedAt": {
+    "$date": "2026-02-18T09:41:53.356Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-18T09:41:53.357Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-18T09:41:53.357Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d75e46c19bb04cd1488a"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "9qnqYL0eNNI",
+  "title": "Yellow",
+  "artist": "Coldplay",
+  "thumbnail": "https://lh3.googleusercontent.com/7RK5kFu8RjjulsxsPCJ55wmJLchKaaIRAYih0ldj--RGbnOOdA0U2vmLWyVfjPW82nR-Dwm2r8PhEi61=w120-h120-l90-rj",
+  "duration": "4:27",
+  "likedAt": {
+    "$date": "2026-02-27T17:41:50.453Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:41:50.453Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:41:50.453Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a4c639cf0867c02e5f2566"
+  },
+  "userId": {
+    "$oid": "699efca2d9d5e7f7bf8442b0"
+  },
+  "videoId": "nNN88hijp-o",
+  "title": "Roommates",
+  "artist": "Malcolm Todd",
+  "thumbnail": "https://lh3.googleusercontent.com/Zt6G8bBzIUgFQMGL8J0DwmKftdC7UL4v9X11dfaC39ps4QynHgxnJXWpLAaggE3HLqEIm1ow6v97wvu0pA=w120-h120-l90-rj",
+  "duration": "3:35",
+  "likedAt": {
+    "$date": "2026-03-01T23:05:29.021Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-01T23:05:29.022Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-01T23:05:29.022Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a5794c4c1845cc54ea4fbe"
+  },
+  "userId": {
+    "$oid": "69a5790ed9d5e7f7bf847786"
+  },
+  "videoId": "-0BT4M4jrXQ",
+  "title": "Chaand (Tu Jo Dekh Le)",
+  "artist": "Chaar Diwaari & Encore ABJ",
+  "thumbnail": "https://lh3.googleusercontent.com/vI7zFk0YJXPryc_3mshBXDFWPDcyzZsxp-D4x-I5ZLwAXqNJ8xEenrA96T5Fg0548jRUlpigNNbUOWB2=w120-h120-l90-rj",
+  "duration": "6:46",
+  "likedAt": {
+    "$date": "2026-03-02T11:49:32.623Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-02T11:49:32.623Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-02T11:49:32.623Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69686a869b48df72ee6dc93b"
+  },
+  "userId": {
+    "$oid": "69679612e819a0a36b06355d"
+  },
+  "videoId": "PTaPA-odTpM",
+  "title": "Shree Hari Stotram",
+  "artist": "Agam Aggarwal",
+  "thumbnail": "https://lh3.googleusercontent.com/HpYTeRdO7QABMmgXjJJQe_251F8vFaHpGD0dJ-2n1TpzwLKrgSXa1Q2t4ubuZcEurkFmLTvpWYwtxw31Ag=w120-h120-l90-rj",
+  "duration": "4:58",
+  "likedAt": {
+    "$date": "2026-01-15T04:18:14.558Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-15T04:18:14.558Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-15T04:18:14.558Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696b5da91c8c15eb8f91e7ff"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "DdI598gKkKw",
+  "title": "Apocalypse",
+  "artist": "Cigarettes After Sex",
+  "thumbnail": "https://lh3.googleusercontent.com/LHBhxCNvBYMqTtgBAOf83nUpFKI6DH-jGw0u6SAM3WnQ-OGXD8geTcB3P10nLolxqj8WItfiGL7kX7vv=w120-h120-l90-rj",
+  "duration": "4:51",
+  "likedAt": {
+    "$date": "2026-01-17T10:00:09.582Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-17T10:00:09.583Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-17T10:00:09.583Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69827fa924e7b00415767b9b"
+  },
+  "userId": {
+    "$oid": "69827f7949f3c74ee81b0982"
+  },
+  "videoId": "Rh3bJKkEhk8",
+  "title": "tv off (feat. Lefty Gunplay)",
+  "artist": "Kendrick Lamar",
+  "thumbnail": "https://lh3.googleusercontent.com/oeqS763H5PDQ7RL3gUnJlvDgZx6MYr5VE7bV7MBanuv7hgB-98wF1JYy-KI-Zxurxc5trLpksuPNUcY=w120-h120-l90-rj",
+  "duration": "3:41",
+  "likedAt": {
+    "$date": "2026-02-03T23:07:21.845Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T23:07:21.848Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T23:07:21.848Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698383afc13e360b5c227aa1"
+  },
+  "userId": {
+    "$oid": "6983835149f3c74ee81b1c57"
+  },
+  "videoId": "N7BJpof3nBw",
+  "title": "latch",
+  "artist": "Mavi",
+  "thumbnail": "https://lh3.googleusercontent.com/p6TyfcmTu3ncWGojZSk_KLtHrFQVsFf4ZzTlOdmKVZTxjb39xRt6z5_NpY4q3Z1_oE2dH51tshCd-fVD=w120-h120-l90-rj",
+  "duration": "2:40",
+  "likedAt": {
+    "$date": "2026-02-04T17:36:47.283Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-04T17:36:47.284Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-04T17:36:47.284Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698482bfbaa7a4efd65cd0a0"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "Kzo0_j1BTIs",
+  "title": "Bae",
+  "artist": "RK",
+  "thumbnail": "https://lh3.googleusercontent.com/eeXxPUxVbkBo_rqLllna5_9RWctBz38aqSIYq0J9KIT6JF-2cBgg2nT-JkmkKKRIi0ri3U26AYvmcaao=w120-h120-l90-rj",
+  "duration": "2:55",
+  "likedAt": {
+    "$date": "2026-02-05T11:45:03.634Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:45:03.635Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:45:03.635Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848306baa7a4efd65cd0d1"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "aT9dRQBqY0c",
+  "title": "Débrouillard",
+  "artist": "Kaaris",
+  "thumbnail": "https://lh3.googleusercontent.com/t73_B1gOOFB5hNnPpmOvStz-yo3HP6mHaCFHpcfzEZZWv64S0-fHTB-Yw90Wy3qBM_c3oaLfud5VPmQ=w120-h120-l90-rj",
+  "duration": "2:57",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:14.027Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:14.027Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:14.027Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848364baa7a4efd65cd14f"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "vx4mUsvY8wk",
+  "title": "Spiderman (Freestyle OKLM)",
+  "artist": "Zola",
+  "thumbnail": "https://lh3.googleusercontent.com/ySUmv4t5PhxSe1FlXJqGYKHu9QVMOkvvO-DRzWBBMfKl5aIN5f9IpTeo5yaQbHzWphFNLsjQqXRwZCQ=w120-h120-l90-rj",
+  "duration": "2:26",
+  "likedAt": {
+    "$date": "2026-02-05T11:47:48.775Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:47:48.775Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:47:48.775Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848371baa7a4efd65cd164"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "2lAcWFxxH9s",
+  "title": "King's Dead (with Kendrick Lamar, Future & James Blake)",
+  "artist": "Jay Rock, Kendrick Lamar, Future, James Blake",
+  "thumbnail": "https://lh3.googleusercontent.com/sx9PfHz9wRQyqRW-yypp4alN-uLemhWzZ7dBg5r8Jg307xTkuU21qw9DraT2uA7S17blwoSjP-Sb-rEL=w120-h120-l90-rj",
+  "duration": "2:42",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:01.337Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:01.337Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:01.337Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698483b2baa7a4efd65cd1eb"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "UM0myVnVp8A",
+  "title": "Pente noire",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:50",
+  "likedAt": {
+    "$date": "2026-02-05T11:49:06.571Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:49:06.571Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:49:06.571Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984966206e217439a2ef802"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "GkBpzh_TRZo",
+  "title": "Power Rangers",
+  "artist": "Lorenzo",
+  "thumbnail": "https://lh3.googleusercontent.com/mgblJ5rJ6IZyfn4ZnYFzO1MFuAtAzBMSQd1f89ZcpmZ8W7VW1dz0SxWuTYIDdLRpERwYDrOvJSMgZQ0i=w120-h120-l90-rj",
+  "duration": "2:49",
+  "likedAt": {
+    "$date": "2026-02-05T13:08:50.975Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T13:08:50.976Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T13:08:50.976Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6985c42526c4c0beccf5ca5c"
+  },
+  "userId": {
+    "$oid": "698276fd49f3c74ee81b063b"
+  },
+  "videoId": "6KjVYeQ9SRw",
+  "title": "Dracula (JENNIE Remix)",
+  "artist": "Tame Impala",
+  "thumbnail": "https://lh3.googleusercontent.com/FQsPsZdaGUkT3_Q-9iilsYnS6xc0CAerb6pIhUou-skal6-jMQQ-xUigopbvfqVP_e-msHiabmCN2wCl=w120-h120-l90-rj",
+  "duration": "3:30",
+  "likedAt": {
+    "$date": "2026-02-06T10:36:21.253Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-06T10:36:21.253Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-06T10:36:21.253Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699f4b4887dd080afe3e59c1"
+  },
+  "userId": {
+    "$oid": "699efca2d9d5e7f7bf8442b0"
+  },
+  "videoId": "18SwG-kep7s",
+  "title": "No Scrubs",
+  "artist": "TLC",
+  "thumbnail": "https://lh3.googleusercontent.com/uDiq3FQzlt3lLeCu95s6nhj2uD0KlOdWESBMK4nAXPsTW4j1avOpuf2R07zQWjfVO2NXhkcDOOxabo_pKg=w120-h120-s-l90-rj",
+  "duration": "3:35",
+  "likedAt": {
+    "$date": "2026-02-25T19:19:36.802Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-25T19:19:36.803Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-25T19:19:36.803Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a2f61b12a4952b2434c7f6"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "4AK30HvoIRk",
+  "title": "People",
+  "artist": "Libianca",
+  "thumbnail": "https://lh3.googleusercontent.com/u1qHiA2hmfTmZAsgLrn9f5NBk1-LAZbXkvEHT-4Uxw7iT42Ip7Vxy0MQJLx-m5CUKTu8MK08CPHYfQw=w120-h120-l90-rj",
+  "duration": "3:05",
+  "likedAt": {
+    "$date": "2026-02-28T14:05:15.307Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-28T14:05:15.309Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-28T14:05:15.309Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a7e4ecd940e9032a97a1d3"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "CrL3h1Bq0Iw",
+  "title": "Baarish",
+  "artist": "Mohammed Irfan, Gajendra Verma, Mithoon",
+  "thumbnail": "https://lh3.googleusercontent.com/MUzRb1IAibIh-O3lK0MVkFlvIu4vZ98TDUpVQoofvKQR0nnx6i95kKzzFj550hJKfcgKoyEQKZozUn2n=w120-h120-l90-rj",
+  "duration": "6:15",
+  "likedAt": {
+    "$date": "2026-03-04T07:53:16.258Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-04T07:53:16.260Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-04T07:53:16.260Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6969135659a53cec62131901"
+  },
+  "userId": {
+    "$oid": "696800c91342ff9be1ed7c43"
+  },
+  "videoId": "Mbz8Gox1YJk",
+  "title": "Ishare Tere",
+  "artist": "Guru Randhawa, Dhvani Bhanushali",
+  "thumbnail": "https://lh3.googleusercontent.com/bRHk48zvXAst0-4DQ4D3gmTOWCVwMCIdb44HsjjKAkWE9oxraOhM0acyW1RooB-ULWvn8NsBFx5BgHW-=w120-h120-l90-rj",
+  "duration": "3:10",
+  "likedAt": {
+    "$date": "2026-01-15T16:18:30.303Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-15T16:18:30.303Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-15T16:18:30.303Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696a6a76e9f86f3afae27132"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "cULQhvuq1Zc",
+  "title": "Sweater Weather",
+  "artist": "The Neighbourhood",
+  "thumbnail": "https://lh3.googleusercontent.com/rcGbeinqN-Z-9fLWpGlxeZlvH6tQZGDubHqEPDk91Wp3XKkWNuhNUQQnFWnaZHn9LPeaikxQlUE3O3ZBXg=w120-h120-l90-rj",
+  "duration": "4:01",
+  "likedAt": {
+    "$date": "2026-01-16T16:42:30.353Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-16T16:42:30.353Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-16T16:42:30.353Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6981a07539988b3e55142265"
+  },
+  "userId": {
+    "$oid": "6981a00049f3c74ee81af03b"
+  },
+  "videoId": "2o9KfyPqQzY",
+  "title": "No Time for Caution",
+  "artist": "Hans Zimmer",
+  "thumbnail": "https://lh3.googleusercontent.com/vHg1BrOwidLFzCWeJ2mYDXtb3rUIvyhW4JPOrNai2K08-Va329yERoCTtt_SW0BT-9cY_roe-Mvd4vK1=w120-h120-l90-rj",
+  "duration": "4:07",
+  "likedAt": {
+    "$date": "2026-02-03T07:15:01.084Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-03T07:15:01.084Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-03T07:15:01.084Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698483a6baa7a4efd65cd1d6"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "rCT0xlCrmzo",
+  "title": "Si j'avais",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "2:51",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:54.431Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:54.431Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:54.431Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698484cf476b26d1053b67b7"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "dbc8oRggh3Q",
+  "title": "Tricheur",
+  "artist": "Nekfeu, Damso",
+  "thumbnail": "https://lh3.googleusercontent.com/eBmIIMSPjvM45jY-0_oR6qNeZY5VqdFfVYzt3jAk4WHAb6gT85uVlRbqW9r3000lhPUAIfqCSZYmZEk=w120-h120-l90-rj",
+  "duration": "4:09",
+  "likedAt": {
+    "$date": "2026-02-05T11:53:51.473Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:53:51.473Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:53:51.473Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6986f8e630be83a3ef017975"
+  },
+  "userId": {
+    "$oid": "6986f8518ef4140fe66889dc"
+  },
+  "videoId": "hkcxCEairzc",
+  "title": "Allah Hi Reham",
+  "artist": "Shankar Ehsaan Loy",
+  "thumbnail": "https://lh3.googleusercontent.com/Q8IfqzFqS9SQe0JVJ-l6PDxGiLlNLk4RzEUiMUUT6SFFrQHfxq33dy6ODxMFXSA15oCCWSmWT0-JCok=w120-h120-l90-rj",
+  "duration": "4:02",
+  "likedAt": {
+    "$date": "2026-02-07T08:33:42.640Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-07T08:33:42.640Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-07T08:33:42.640Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6991e2bda6f5044b1d6ba450"
+  },
+  "userId": {
+    "$oid": "6981d8f249f3c74ee81afb3b"
+  },
+  "videoId": "U04qjtXo7V0",
+  "title": "Paro",
+  "artist": "Aditya Rikhari",
+  "thumbnail": "https://lh3.googleusercontent.com/YLIBg-fDFvMkLJIpLzH1mRvLrtjo4Tm1qtQnJaLqMltMqkc9gXvxQkFU3-KYZ2ax70C5l0Fmfl3rVCCB=w120-h120-l90-rj",
+  "duration": "1:11",
+  "likedAt": {
+    "$date": "2026-02-15T15:14:05.079Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-15T15:14:05.081Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-15T15:14:05.081Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "699c18f290275cf59be0715e"
+  },
+  "userId": {
+    "$oid": "6998cbe4370a422e99a60133"
+  },
+  "videoId": "e4IuPELeXEw",
+  "title": "Midnight Call",
+  "artist": "Harkirat Sangha, Starboy X",
+  "thumbnail": "https://lh3.googleusercontent.com/de651XJsqIQU9DjiVu3CAdJvu9Ou2T5s-jexrc4gL3w9EEfSegXauLqbkcuZUbyH9pmDwKZ0v3xy0KFJ=w120-h120-l90-rj",
+  "duration": "2:44",
+  "likedAt": {
+    "$date": "2026-02-23T09:08:02.638Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-23T09:08:02.639Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-23T09:08:02.639Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a4c55569520d89b52f4875"
+  },
+  "userId": {
+    "$oid": "699efca2d9d5e7f7bf8442b0"
+  },
+  "videoId": "s9i-W7a4ZVQ",
+  "title": "4Me 4Me",
+  "artist": "Malcolm Todd",
+  "thumbnail": "https://lh3.googleusercontent.com/WUMCVLbLD1N9qLq0chD7XXQa6p_dJvULplkVWnJQVygXFyGpmidQ8j0D6lmc5ak7sKOFqc87B48kPJ0C=w120-h120-l90-rj",
+  "duration": "3:31",
+  "likedAt": {
+    "$date": "2026-03-01T23:01:41.713Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-01T23:01:41.714Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-01T23:01:41.714Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a597a7e5c445e8ea7c6921"
+  },
+  "userId": {
+    "$oid": "69a5935cd9d5e7f7bf847888"
+  },
+  "videoId": "gQKPecXCn2U",
+  "title": "Poison",
+  "artist": "Sofia Mills",
+  "thumbnail": "https://lh3.googleusercontent.com/PWylztFBZegpLjyTPStOWLHwNcB-CWNaQkT2VaW6ZOa0RCiCMWhfBswtlBEy2G8pzFO6anmLOH0Rsf3q=w120-h120-l90-rj",
+  "duration": "5:43",
+  "likedAt": {
+    "$date": "2026-03-02T13:59:03.786Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-02T13:59:03.787Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-02T13:59:03.787Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69aaa122464b9af10e9b4381"
+  },
+  "userId": {
+    "$oid": "698d35018ef4140fe668ed43"
+  },
+  "videoId": "XOzs1FehYOA",
+  "title": "My Own Summer (Shove It)",
+  "artist": "Deftones",
+  "thumbnail": "https://i.ytimg.com/vi/XOzs1FehYOA/mqdefault.jpg",
+  "duration": "3:35",
+  "likedAt": {
+    "$date": "2026-03-06T09:40:50.650Z"
+  },
+  "createdAt": {
+    "$date": "2026-03-06T09:40:50.652Z"
+  },
+  "updatedAt": {
+    "$date": "2026-03-06T09:40:50.652Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6969fc637942a1405711387b"
+  },
+  "userId": {
+    "$oid": "69679612e819a0a36b06355d"
+  },
+  "videoId": "AzQhX9HuQUo",
+  "title": "Ei Path Jodi Na Shes Hoy",
+  "artist": "Hemanta Mukherjee, Sandhya Mukherjee",
+  "thumbnail": "https://lh3.googleusercontent.com/291Qh9V3-rCcYQovIvnrZlC53FjiJxrxJ-eep_fjvhlDV9OTvNs3H-xas5sUrZW646t_uw8sTkn1824Y=w120-h120-l90-rj",
+  "duration": "3:11",
+  "likedAt": {
+    "$date": "2026-01-16T08:52:51.126Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-16T08:52:51.127Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-16T08:52:51.127Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "696baf38a98a7b5bd5b0c5e9"
+  },
+  "userId": {
+    "$oid": "69679612e819a0a36b06355d"
+  },
+  "videoId": "E4RUrjd3tEw",
+  "title": "Bhogoban 2.0",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/qa0sSpUsVlkpBCZS7qfFPbZSzuIF8R2TNix4_LMH096clt2oFX0YjyoZjwzV5aPosVX8pOHKDzv6pBo=w120-h120-l90-rj",
+  "duration": "4:36",
+  "likedAt": {
+    "$date": "2026-01-17T15:48:08.964Z"
+  },
+  "createdAt": {
+    "$date": "2026-01-17T15:48:08.965Z"
+  },
+  "updatedAt": {
+    "$date": "2026-01-17T15:48:08.965Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698480a0baa7a4efd65ccfdf"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "dE8WgbDfU3k",
+  "title": "Dalida",
+  "artist": "Soolking",
+  "thumbnail": "https://lh3.googleusercontent.com/RIN0lltDwiwEBsMKdnlrT3YprkrTiPazb2hkP7VP5MALfB1KCgdCg1omCcMwgvVgyudMSKCTFn2W7fU=w120-h120-l90-rj",
+  "duration": "3:45",
+  "likedAt": {
+    "$date": "2026-02-05T11:36:00.447Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:36:00.448Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:36:00.448Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698480c5baa7a4efd65cd006"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "pXoIIh-P2do",
+  "title": "Beaucoup",
+  "artist": "Youv Dee",
+  "thumbnail": "https://lh3.googleusercontent.com/9fSO2ZYOZRt2BfuyUHQHEr2Ck1Oy8Y9HCws9n2-QAyA56HtXxLkuu6MT2epr-5jcbHuZAyzw2qh2tc0=w120-h120-l90-rj",
+  "duration": "2:30",
+  "likedAt": {
+    "$date": "2026-02-05T11:36:37.149Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:36:37.150Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:36:37.150Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69848300baa7a4efd65cd0ca"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "Oty4M2t21W8",
+  "title": "Rechute",
+  "artist": "Vald",
+  "thumbnail": "https://lh3.googleusercontent.com/YifD_RHxWWoSr0AWUOZJXIrEhFlnA-CDV9g3d5qzFpnjHzDYRM-vMaBcZJNf5ch1sG0P9k9evDqK9qs=w120-h120-l90-rj",
+  "duration": "3:20",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:08.170Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:08.170Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:08.170Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984831dbaa7a4efd65cd0f4"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "ZXKDHQRbWBo",
+  "title": "New Patek",
+  "artist": "Lil Uzi Vert",
+  "thumbnail": "https://lh3.googleusercontent.com/n3e_Y8aOmlrpjdAcuUTPA_TPFc3uGDvRaN3YDawj0JnAFc16vw2t6DSo2BHB1_Bx_OEKp06bsuUwcag=w120-h120-l90-rj",
+  "duration": "5:44",
+  "likedAt": {
+    "$date": "2026-02-05T11:46:37.299Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:46:37.299Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:46:37.299Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6984839dbaa7a4efd65cd1c8"
+  },
+  "userId": {
+    "$oid": "6984777149f3c74ee81b4b04"
+  },
+  "videoId": "pw3zqxExUZ0",
+  "title": "Bombarder",
+  "artist": "13 Block",
+  "thumbnail": "https://lh3.googleusercontent.com/qAOOSnfKipn-JmYx7wNCQP6gGQSlDIQ1sp2PRLSfDUdWFJA0lUxhYeJKazbHzcR0GZj1jLAvIQyMFe4N=w120-h120-l90-rj",
+  "duration": "3:57",
+  "likedAt": {
+    "$date": "2026-02-05T11:48:45.715Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-05T11:48:45.715Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-05T11:48:45.715Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69857d83faf8c003785df351"
+  },
+  "userId": {
+    "$oid": "69854c9f49f3c74ee81b4ff0"
+  },
+  "videoId": "rrD-IKRi9Ak",
+  "title": "Muskurane",
+  "artist": "Arijit Singh",
+  "thumbnail": "https://lh3.googleusercontent.com/WH68vjo4U-Oj2ePdL9S73EEdv0g7xv466dLrym5VItjk_PBK2TWteM30EuDXn5dMiRt3s7YsK95buzE=w120-h120-l90-rj",
+  "duration": "5:35",
+  "likedAt": {
+    "$date": "2026-02-06T05:34:59.950Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-06T05:34:59.950Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-06T05:34:59.950Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "698d4e0ac602ca80a0f6d72a"
+  },
+  "userId": {
+    "$oid": "696889ab1342ff9be1ed7c6d"
+  },
+  "videoId": "umN5muYdaSk",
+  "title": "Jai Sri Krsna",
+  "artist": "Mayapuris",
+  "thumbnail": "https://lh3.googleusercontent.com/vgtKFME9BNjQA7b5aPqxtXxDVuDBB7e6CAmWa_K0lbvN_V1dQSAsn8UGWhdxKCcL7a21cjVXBYsD3GI=w120-h120-l90-rj",
+  "duration": "4:58",
+  "likedAt": {
+    "$date": "2026-02-12T03:50:34.366Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-12T03:50:34.367Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-12T03:50:34.367Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69a1d72f46c19bb04cd14871"
+  },
+  "userId": {
+    "$oid": "696b5b9a1342ff9be1ed89b1"
+  },
+  "videoId": "HBmaPAnaZhc",
+  "title": "anxiety & mixed emotions",
+  "artist": "Chance Peña",
+  "thumbnail": "https://lh3.googleusercontent.com/HJaVWO-dcD9X6JRNL3RbRfZ7ydrVoyYeTr3PK1cSJa4lUPrAP6LizhIvuV4t75rXX2lMziRwKxdS_-A=w120-h120-l90-rj",
+  "duration": "2:21",
+  "likedAt": {
+    "$date": "2026-02-27T17:41:03.478Z"
+  },
+  "createdAt": {
+    "$date": "2026-02-27T17:41:03.479Z"
+  },
+  "updatedAt": {
+    "$date": "2026-02-27T17:41:03.479Z"
+  },
+  "__v": 0
+}]
