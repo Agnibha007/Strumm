@@ -23,7 +23,7 @@ async def create_playlist(
     try:
         database = db.get_db()
         new_playlist = {
-            "userId": current_user["id"],
+            "userId": ObjectId(current_user["id"]),
             "name": payload.name,
             "description": payload.description or "",
             "songs": [],
@@ -34,6 +34,7 @@ async def create_playlist(
         
         result = await database[db.PLAYLISTS].insert_one(new_playlist)
         new_playlist["id"] = str(result.inserted_id)
+        new_playlist["userId"] = str(new_playlist["userId"])
         del new_playlist["_id"]
         
         return {
@@ -51,10 +52,11 @@ async def get_playlists(
     try:
         database = db.get_db()
         # Find user's playlists
-        cursor = database[db.PLAYLISTS].find({"userId": current_user["id"]})
+        cursor = database[db.PLAYLISTS].find({"userId": ObjectId(current_user["id"])})
         playlists = []
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
+            doc["userId"] = str(doc["userId"])
             del doc["_id"]
             playlists.append(doc)
             
@@ -84,10 +86,11 @@ async def get_playlist(
             return {"success": False, "error": "Playlist not found"}
             
         playlist["id"] = str(playlist["_id"])
+        playlist["userId"] = str(playlist["userId"])
         del playlist["_id"]
         
         # Check permissions
-        if playlist["visibility"] == "private" and (not current_user or playlist["userId"] != current_user["id"]):
+        if playlist["visibility"] == "private" and (not current_user or playlist["userId"] != ObjectId(current_user["id"])):
             return {"success": False, "error": "Access denied to private playlist"}
             
         # Warm stream resolver cache in background for top songs in playlist
@@ -121,7 +124,7 @@ async def update_playlist(
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
             
-        if playlist["userId"] != current_user["id"]:
+        if playlist["userId"] != ObjectId(current_user["id"]):
             return {"success": False, "error": "Unauthorized to modify this playlist"}
             
         update_data = {}
@@ -161,7 +164,7 @@ async def delete_playlist(
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
             
-        if playlist["userId"] != current_user["id"]:
+        if playlist["userId"] != ObjectId(current_user["id"]):
             return {"success": False, "error": "Unauthorized to delete this playlist"}
             
         await database[db.PLAYLISTS].delete_one({"_id": parse_object_id(id)})
@@ -511,7 +514,7 @@ async def import_playlist(
         # If any matches, let's create a new playlist for the user!
         if matched:
             new_playlist = {
-                "userId": current_user["id"],
+                "userId": ObjectId(current_user["id"]),
                 "name": f"Imported: {import_name}",
                 "description": f"Imported from {source} on {datetime.utcnow().strftime('%Y-%m-%d')}",
                 "songs": matched,
@@ -551,7 +554,7 @@ async def add_song_to_playlist(
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
             
-        if playlist["userId"] != current_user["id"]:
+        if playlist["userId"] != ObjectId(current_user["id"]):
             return {"success": False, "error": "Unauthorized to modify this playlist"}
             
         song_dict = payload.song.model_dump()
