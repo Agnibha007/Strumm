@@ -5,6 +5,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import Link from "next/link";
 
 import { Search, Play, Heart, Sparkles, Loader2, ListMusic } from "lucide-react";
 import { Song } from "@strumm/types";
@@ -196,7 +197,7 @@ export default function HomePage() {
                 <Heart className="w-5 h-5 text-red-500 fill-current" />
                 Your Liked Songs
               </h3>
-              <a href="/library" className="text-[10px] text-muted uppercase tracking-wider font-semibold hover:text-text transition">View All</a>
+              <Link href="/library" className="text-[10px] text-muted uppercase tracking-wider font-semibold hover:text-text transition">View All</Link>
             </div>
             
             {likedSongs.length === 0 ? (
