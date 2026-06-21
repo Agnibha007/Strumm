@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus } from "lucide-react";
+import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus, Shuffle } from "lucide-react";
 import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -44,6 +44,47 @@ export default function SearchPage() {
   // Playlist addition states & effects
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
   const [addingToPlaylistSong, setAddingToPlaylistSong] = useState<Song | null>(null);
+
+  // Album tracks state
+  const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null);
+  const [albumTracks, setAlbumTracks] = useState<Song[]>([]);
+  const [loadingAlbumTracks, setLoadingAlbumTracks] = useState(false);
+
+  // Fetch album tracks when selectedAlbum changes
+  useEffect(() => {
+    if (!selectedAlbum) {
+      setAlbumTracks([]);
+      return;
+    }
+    const loadTracks = async () => {
+      setLoadingAlbumTracks(true);
+      try {
+        const response = await fetch(apiUrl(`/search/albums/${encodeURIComponent(selectedAlbum.id)}/tracks`));
+        const json = await response.json();
+        if (json.success && json.data) {
+          setAlbumTracks(json.data.tracks || []);
+        } else {
+          show(json.error || "Failed to load album tracks.", "error");
+        }
+      } catch (e) {
+        show("Failed to connect to backend server.", "error");
+      } finally {
+        setLoadingAlbumTracks(false);
+      }
+    };
+    loadTracks();
+  }, [selectedAlbum]);
+
+  const handlePlayAlbum = () => {
+    if (albumTracks.length === 0) return;
+    playSong(albumTracks[0], albumTracks);
+  };
+
+  const handleShuffleAlbum = () => {
+    if (albumTracks.length === 0) return;
+    const shuffled = [...albumTracks].sort(() => Math.random() - 0.5);
+    playSong(shuffled[0], shuffled);
+  };
 
   const loadUserPlaylists = async () => {
     if (!token) return;
@@ -440,7 +481,8 @@ export default function SearchPage() {
                   {results.albums.map((album) => (
                     <div
                       key={album.id}
-                      className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left font-sans"
+                      onClick={() => setSelectedAlbum(album)}
+                      className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left font-sans cursor-pointer"
                     >
                       <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative">
                         {album.thumbnail ? (
@@ -557,7 +599,7 @@ export default function SearchPage() {
       {/* Add to Playlist Modal */}
       <AnimatePresence>
         {addingToPlaylistSong && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -588,6 +630,139 @@ export default function SearchPage() {
                       <span className="text-[10px] text-muted">{playlist.songs.length} tracks</span>
                     </button>
                   ))
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Album Tracks Overlay/Modal */}
+      <AnimatePresence>
+        {selectedAlbum && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-surface border border-border/80 rounded-2xl p-6 max-w-2xl w-full shadow-2xl space-y-6 relative flex flex-col max-h-[85vh] overflow-hidden"
+            >
+              {/* Header section */}
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex gap-4 min-w-0">
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow-md relative flex-shrink-0">
+                    {selectedAlbum.thumbnail ? (
+                      <img src={selectedAlbum.thumbnail} alt={selectedAlbum.title} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-muted">
+                        <FolderHeart className="w-8 h-8 text-accent/60" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex flex-col justify-center text-left">
+                    <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+                      Album Release
+                    </span>
+                    <h3 className="font-editorial text-xl sm:text-2xl text-text font-bold leading-tight mt-1 truncate">
+                      {selectedAlbum.title}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-muted mt-1 truncate">
+                      By {selectedAlbum.artist} {selectedAlbum.year ? `• ${selectedAlbum.year}` : ""}
+                    </p>
+                    <div className="flex gap-2.5 mt-3 flex-wrap">
+                      <button
+                        onClick={handlePlayAlbum}
+                        disabled={loadingAlbumTracks || albumTracks.length === 0}
+                        className="px-4 py-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer select-none"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        Play
+                      </button>
+                      <button
+                        onClick={handleShuffleAlbum}
+                        disabled={loadingAlbumTracks || albumTracks.length === 0}
+                        className="px-4 py-1.5 bg-surface-elevated hover:bg-surface-elevated/80 border border-border/40 disabled:opacity-50 text-text text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer select-none"
+                      >
+                        <Shuffle className="w-3.5 h-3.5" />
+                        Shuffle
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedAlbum(null)}
+                  className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-md transition cursor-pointer flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Tracks List */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-left min-h-[200px]">
+                {loadingAlbumTracks ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    <span className="text-xs uppercase tracking-widest">Retrieving tracklists...</span>
+                  </div>
+                ) : albumTracks.length === 0 ? (
+                  <p className="text-xs text-muted py-12 text-center italic">No songs found in this album.</p>
+                ) : (
+                  albumTracks.map((song, idx) => {
+                    const formatDuration = (sec: number) => {
+                      const m = Math.floor(sec / 60);
+                      const s = Math.floor(sec % 60);
+                      return `${m}:${s < 10 ? "0" : ""}${s}`;
+                    };
+                    return (
+                      <div
+                        key={song.videoId}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-surface-elevated/20 border border-border/20 hover:border-border/60 hover:bg-surface-elevated/40 transition group gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-xs font-mono text-muted w-5 text-center flex-shrink-0">{idx + 1}</span>
+                          <button
+                            onClick={() => playSong(song, albumTracks)}
+                            className="p-1.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary hover:text-white rounded-lg transition flex-shrink-0"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                          </button>
+                          <div className="min-w-0 text-left">
+                            <span className="text-xs sm:text-sm font-semibold text-text block truncate">{song.title}</span>
+                            <span className="text-[10px] text-muted block truncate mt-0.5">{song.artist}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span className="text-[11px] font-mono text-muted">{formatDuration(song.duration)}</span>
+                          <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                            <button
+                              onClick={() => handleLikeSong(song)}
+                              className="p-1 hover:bg-surface-elevated text-muted hover:text-primary rounded-md transition"
+                              title="Like track"
+                            >
+                              <Heart className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => addToQueue(song)}
+                              className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded-md transition"
+                              title="Add to queue"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAddingToPlaylistSong(song);
+                              }}
+                              className="p-1 hover:bg-surface-elevated text-muted hover:text-accent rounded-md transition"
+                              title="Add to playlist"
+                            >
+                              <FolderPlus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </motion.div>

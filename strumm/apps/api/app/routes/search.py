@@ -285,3 +285,78 @@ async def search_all(
             "success": False,
             "error": f"Search execution failed: {str(e)}"
         }
+
+async def get_yt_music_album_tracks(browse_id: str) -> Dict[str, Any]:
+    try:
+        yt = YTMusic()
+        album_details = await asyncio.to_thread(yt.get_album, browse_id)
+        if not album_details:
+            return {"success": False, "error": "Album not found"}
+            
+        album_title = album_details.get("title", "Untitled Album")
+        
+        # Get album artist name
+        artists_list = album_details.get("artists", [])
+        album_artist = ", ".join([a.get("name", "") for a in artists_list if a.get("name")]) if artists_list else "Unknown Artist"
+        
+        # Get album thumbnail
+        thumbnails = album_details.get("thumbnails", [])
+        album_thumb = thumbnails[-1].get("url", "") if thumbnails else ""
+        
+        tracks = []
+        raw_tracks = album_details.get("tracks", [])
+        for item in raw_tracks:
+            video_id = item.get("videoId")
+            if not video_id:
+                continue
+                
+            # Extract duration
+            duration_sec = item.get("duration_seconds")
+            if not duration_sec and item.get("duration"):
+                dur_str = item["duration"]
+                try:
+                    parts = list(map(int, dur_str.split(":")))
+                    if len(parts) == 2:
+                        duration_sec = parts[0] * 60 + parts[1]
+                    elif len(parts) == 3:
+                        duration_sec = parts[0] * 3600 + parts[1] * 60 + parts[2]
+                except Exception:
+                    duration_sec = 200
+            if not duration_sec:
+                duration_sec = 200
+                
+            # Track artist(s)
+            track_artists_list = item.get("artists", [])
+            track_artist = ", ".join([a.get("name", "") for a in track_artists_list if a.get("name")]) if track_artists_list else album_artist
+            
+            # Track thumbnail (fallback to album thumbnail)
+            track_thumbnails = item.get("thumbnails", [])
+            track_thumb = track_thumbnails[-1].get("url", "") if track_thumbnails else album_thumb
+            
+            tracks.append({
+                "videoId": video_id,
+                "title": item.get("title", "Untitled Track"),
+                "artist": track_artist,
+                "thumbnail": track_thumb,
+                "duration": duration_sec,
+                "metadata": {
+                    "album": album_title
+                }
+            })
+            
+        return {
+            "success": True,
+            "data": {
+                "title": album_title,
+                "artist": album_artist,
+                "thumbnail": album_thumb,
+                "tracks": tracks
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching YTMusic album details: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/albums/{browse_id}/tracks")
+async def get_album_tracks(browse_id: str):
+    return await get_yt_music_album_tracks(browse_id)
