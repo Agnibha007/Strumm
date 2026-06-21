@@ -355,8 +355,8 @@ async def delete_room(roomId: str, current_user: dict = Depends(get_current_user
     await database[ROOMS_COLLECTION].delete_one({"_id": oid})
     
     # Broadcast deletion event if possible
-    active_room_connections = manager.rooms.get(roomId, {})
-    for client_ws in list(active_room_connections.values()):
+    active_room_connections = ws_manager.active_connections.get(roomId, [])
+    for user_id, client_ws in active_room_connections:
         try:
             await client_ws.send_json({"type": "room_deleted"})
         except Exception:
@@ -599,6 +599,10 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
             elif event == "signal":
                 # WebRTC Signaling voice channel bypass
                 await ws_manager.broadcast_to_room(roomId, {"event": "signal", "data": event_data}, exclude_user_id=userId)
+                
+            elif event == "chat:message":
+                # Broadcast chat messages to other room members
+                await ws_manager.broadcast_to_room(roomId, {"event": "chat:message", "data": event_data}, exclude_user_id=userId)
                 
     except WebSocketDisconnect:
         ws_manager.disconnect(roomId, websocket)
