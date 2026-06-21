@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Depends, BackgroundTask
+from fastapi import APIRouter, Query, Depends, BackgroundTasks
 from typing import Optional, List, Dict, Any
 import os
 import asyncio
@@ -209,7 +209,7 @@ async def get_song_by_id(id: str):
 async def search_all(
     q: str = Query(..., min_length=1, description="Search query string"),
     category: Optional[str] = Query(None, description="Optional category filter: songs, playlists, podcasts, users, albums, artists"),
-    background_tasks: Optional[BackgroundTask] = None
+    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         q = sanitize_text(q, max_length=120)

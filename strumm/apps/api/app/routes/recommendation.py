@@ -1,7 +1,7 @@
 import os
 import json
 import random
-from fastapi import APIRouter, Depends, Query, Path, BackgroundTask
+from fastapi import APIRouter, Depends, Query, Path, BackgroundTasks
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from app.database import mongodb as db
@@ -129,7 +129,7 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
 async def get_flow(
     mood: str = Query("Chill", description="Mood state: Chill, Focus, Energetic, Sad, Creative"),
     current_user: dict = Depends(get_current_user),
-    background_tasks: Optional[BackgroundTask] = None
+    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         mood = sanitize_text(mood, max_length=80) or "Chill"
@@ -198,7 +198,7 @@ async def get_flow(
 @router.get("/explore-mix")
 async def get_discover(
     current_user: dict = Depends(get_current_user),
-    background_tasks: Optional[BackgroundTask] = None
+    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         database = db.get_db()

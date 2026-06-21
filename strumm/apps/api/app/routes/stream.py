@@ -7,7 +7,7 @@ import httpx
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from yt_dlp import YoutubeDL
-from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTask
+from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks, BackgroundTask
 from fastapi.responses import FileResponse, StreamingResponse
 from app.database import mongodb as db
 from app.services.security import assert_public_http_url, sanitize_enum, sanitize_youtube_id
@@ -538,7 +538,7 @@ async def stream_transcoded_audio(safe_url: str, bitrate: str):
 @router.get("/resolve/{id}")
 async def resolve_track(
     id: str = Path(..., description="The YouTube videoId to resolve"),
-    background_tasks: BackgroundTask = None
+    background_tasks: BackgroundTasks = None
 ):
     try:
         id = sanitize_youtube_id(id)

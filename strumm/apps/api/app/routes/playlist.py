@@ -66,15 +66,15 @@ async def get_playlists(
         logger.error(f"Error fetching user playlists: {str(e)}")
         return {"success": False, "error": str(e)}
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, BackgroundTask
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, BackgroundTasks
 
-# Note: We need to import BackgroundTask from fastapi. Let's do it locally inside get_playlist or update top imports.
+# Note: We need to import BackgroundTasks from fastapi. Let's do it locally inside get_playlist or update top imports.
 # We will do it inside the endpoint or import at top. Let's import at top first or locally.
 @router.get("/{id}")
 async def get_playlist(
     id: str = Path(...),
     current_user: Optional[dict] = Depends(get_current_user),
-    background_tasks: Optional[BackgroundTask] = None
+    background_tasks: Optional[BackgroundTasks] = None
 ):
     try:
         database = db.get_db()
