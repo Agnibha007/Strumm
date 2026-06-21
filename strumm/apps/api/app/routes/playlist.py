@@ -234,41 +234,11 @@ def get_yt_playlist_entries_with_proxies(url: str) -> list:
         pass
     return []
 
-def extract_spotify_playlist(url: str) -> list:
-    import httpx
-    from bs4 import BeautifulSoup
+def parse_spotify_embed_html(html_content: str) -> list:
     import json
-    
-    playlist_id = None
-    entity_type = "playlist"
-    
-    if "playlist/" in url:
-        playlist_id = url.split("playlist/")[-1].split("?")[0].split("/")[0]
-        entity_type = "playlist"
-    elif "album/" in url:
-        playlist_id = url.split("album/")[-1].split("?")[0].split("/")[0]
-        entity_type = "album"
-    elif "artist/" in url:
-        playlist_id = url.split("artist/")[-1].split("?")[0].split("/")[0]
-        entity_type = "artist"
-    elif "track/" in url:
-        playlist_id = url.split("track/")[-1].split("?")[0].split("/")[0]
-        entity_type = "track"
-        
-    if not playlist_id:
-        return []
-        
-    embed_url = f"https://open.spotify.com/embed/{entity_type}/{playlist_id}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    
+    from bs4 import BeautifulSoup
     try:
-        resp = httpx.get(embed_url, headers=headers, follow_redirects=True, timeout=10.0)
-        if resp.status_code != 200:
-            return []
-            
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(html_content, "html.parser")
         next_data = soup.find("script", id="__NEXT_DATA__")
         if not next_data:
             return []
@@ -310,8 +280,76 @@ def extract_spotify_playlist(url: str) -> list:
             })
         return parsed
     except Exception as e:
-        logger.error(f"Error scraping spotify embed: {str(e)}")
+        logger.error(f"Error parsing spotify embed HTML: {str(e)}")
         return []
+
+def extract_spotify_playlist(url: str) -> list:
+    import httpx
+    
+    playlist_id = None
+    entity_type = "playlist"
+    
+    if "playlist/" in url:
+        playlist_id = url.split("playlist/")[-1].split("?")[0].split("/")[0]
+        entity_type = "playlist"
+    elif "album/" in url:
+        playlist_id = url.split("album/")[-1].split("?")[0].split("/")[0]
+        entity_type = "album"
+    elif "artist/" in url:
+        playlist_id = url.split("artist/")[-1].split("?")[0].split("/")[0]
+        entity_type = "artist"
+    elif "track/" in url:
+        playlist_id = url.split("track/")[-1].split("?")[0].split("/")[0]
+        entity_type = "track"
+        
+    if not playlist_id:
+        return []
+        
+    embed_url = f"https://open.spotify.com/embed/{entity_type}/{playlist_id}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+    
+    # 1. Try direct fetch first (works locally / residential IPs)
+    try:
+        resp = httpx.get(embed_url, headers=headers, follow_redirects=True, timeout=8.0)
+        if resp.status_code == 200:
+            parsed = parse_spotify_embed_html(resp.text)
+            if parsed:
+                return parsed
+    except Exception as e:
+        logger.warning(f"Direct spotify embed fetch failed: {str(e)}")
+
+    # 2. Try with free proxies (for hosted cloud environments like Render where datacenter IPs are blocked)
+    try:
+        from app.routes.stream import get_free_proxies
+        import asyncio
+        try:
+            proxies = asyncio.run(get_free_proxies())
+        except Exception:
+            resp = httpx.get("https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all", timeout=5.0)
+            proxies = [p.strip() for p in resp.text.split("\n") if p.strip()]
+            
+        import random
+        random.shuffle(proxies)
+        
+        logger.info(f"Retrying Spotify scrape with {len(proxies)} proxies...")
+        for proxy in proxies[:15]:
+            try:
+                with httpx.Client(proxies=f"http://{proxy}", headers=headers, timeout=5.0) as client:
+                    resp = client.get(embed_url, follow_redirects=True)
+                    if resp.status_code == 200:
+                        parsed = parse_spotify_embed_html(resp.text)
+                        if parsed:
+                            logger.info(f"Successfully scraped Spotify playlist using proxy: {proxy}")
+                            return parsed
+            except Exception:
+                continue
+    except Exception as e:
+        logger.error(f"Error fetching/using spotify proxies: {str(e)}")
+        
+    return []
 
 def extract_ytmusic_playlist(url: str) -> list:
     from ytmusicapi import YTMusic
