@@ -1,6 +1,6 @@
 import os
 import time
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import mongodb as db
@@ -105,11 +105,11 @@ async def startup_db_client():
         logger.info("Successfully initialized database indexes and TTL.")
     except Exception as e:
         logger.error(f"Error establishing database indexes on startup: {str(e)}")
-
+ 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     db.close_db()
-
+ 
 # Register Routers
 app.include_router(auth.router)
 app.include_router(search.router)
@@ -124,12 +124,14 @@ app.include_router(social.router)
 
 # Health checks
 @app.api_route("/health", methods=["GET", "HEAD"])
-async def health_check():
+async def health_check(request: Request):
     try:
         # Check DB connectivity
         database = db.get_db()
         # Run a simple query to verify connection
         await database.list_collection_names()
+        if request.method == "HEAD":
+            return Response(status_code=200)
         return {
             "success": True,
             "data": {
@@ -139,10 +141,15 @@ async def health_check():
         }
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
-        return {
-            "success": False,
-            "error": f"Service unhealthy: {str(e)}"
-        }
+        if request.method == "HEAD":
+            return Response(status_code=503)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": f"Service unhealthy: {str(e)}"
+            }
+        )
 
 # Migration Trigger endpoint
 @app.post("/migration/run")

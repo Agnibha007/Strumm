@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { PlusCircle, Loader2, X } from "lucide-react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
@@ -19,8 +20,13 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
   const [open, setOpen] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const { show } = useNotificationStore();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchPlaylists = async () => {
     if (!token) return;
@@ -82,9 +88,10 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
         <PlusCircle className={iconClassName} />
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+      {mounted && typeof document !== "undefined" && createPortal(
+        <AnimatePresence>
+          {open && (
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -133,7 +140,9 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
-    </>
-  );
+      </AnimatePresence>,
+      document.body
+    )}
+  </>
+);
 }

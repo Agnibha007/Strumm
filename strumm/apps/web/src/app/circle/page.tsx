@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell } from "lucide-react";
+import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play } from "lucide-react";
 import Link from "next/link";
+import { usePlayerStore } from "web/store/usePlayerStore";
 
 interface Friend {
   id: string;
@@ -41,12 +42,14 @@ interface NotificationItem {
   senderName: string;
   senderAvatar?: string;
   message?: string;
+  song?: any;
   read: boolean;
   createdAt: string;
 }
 
 export default function CirclePage() {
   const { token, user } = useAuthStore();
+  const { playSong } = usePlayerStore();
   
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<RequestItem[]>([]);
@@ -377,11 +380,41 @@ export default function CirclePage() {
                     )}
                     <div className="min-w-0 flex-1">
                       <span className="font-semibold text-text block truncate">{notif.senderName}</span>
-                      <span className="block text-[10px] text-muted mt-0.5">
+                      <div className="block text-[10px] text-muted mt-0.5">
                         {notif.type === "friend_request" && "invited you into their Circle."}
                         {notif.type === "accepted" && "accepted your Circle invitation."}
                         {notif.type === "memory_shared" && (notif.message || "shared a memory.")}
-                      </span>
+                        {notif.type === "chat_message" && (notif.message || "sent you a message.")}
+                        {notif.type === "song_shared" && (
+                          <div className="space-y-1.5 mt-1">
+                            <span className="block">{notif.message}</span>
+                            {notif.song && (
+                              <div className="p-2 bg-surface border border-border/40 rounded-lg flex items-center gap-2 min-w-0">
+                                <img 
+                                  src={notif.song.thumbnail} 
+                                  alt="" 
+                                  className="w-8 h-8 rounded object-cover flex-shrink-0" 
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-[10px] text-text font-semibold block truncate leading-snug">
+                                    {notif.song.title}
+                                  </span>
+                                  <span className="text-[9px] text-muted block truncate">
+                                    {notif.song.artist}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => playSong(notif.song, [notif.song])}
+                                  className="p-1 bg-primary text-white rounded-full hover:scale-105 transition flex-shrink-0 cursor-pointer"
+                                  title="Play song"
+                                >
+                                  <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

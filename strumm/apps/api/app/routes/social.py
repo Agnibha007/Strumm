@@ -541,6 +541,62 @@ async def get_connection_status(userId: str, current_user: dict = Depends(get_cu
         "requestId": str(conn["_id"])
     }
 
+class DirectMessageRequest(BaseModel):
+    receiverId: str
+    message: Optional[str] = None
+    song: Optional[dict] = None
+
+@router.post("/message")
+async def send_direct_message(
+    payload: DirectMessageRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    database = db.get_db()
+    my_id = current_user["id"]
+    receiver_id = payload.receiverId
+    
+    # Verify that they are circle members (friends)
+    conn = await database[CONNECTIONS_COLLECTION].find_one({
+        "$or": [
+            {"requesterId": my_id, "receiverId": receiver_id},
+            {"requesterId": receiver_id, "receiverId": my_id}
+        ],
+        "status": "accepted"
+    })
+    if not conn:
+        raise HTTPException(status_code=403, detail="You can only send messages/songs to your Circle members.")
+        
+    notification_type = "chat_message"
+    message_text = sanitize_text(payload.message, max_length=500) if payload.message else "sent you a wave."
+    
+    song_data = None
+    if payload.song:
+        notification_type = "song_shared"
+        song_data = {
+            "videoId": sanitize_text(payload.song.get("videoId"), max_length=100),
+            "title": sanitize_text(payload.song.get("title"), max_length=200),
+            "artist": sanitize_text(payload.song.get("artist"), max_length=200),
+            "thumbnail": sanitize_text(payload.song.get("thumbnail"), max_length=1000)
+        }
+        if payload.message:
+            message_text = f"\"{sanitize_text(payload.message, max_length=300)}\" (shared track: '{song_data['title']}')"
+        else:
+            message_text = f"shared a song: '{song_data['title']}' by {song_data['artist']}"
+            
+    notification = {
+        "userId": receiver_id,
+        "type": notification_type,
+        "senderId": my_id,
+        "senderName": current_user.get("displayName", "Someone"),
+        "senderAvatar": current_user.get("avatar"),
+        "message": message_text,
+        "song": song_data,
+        "read": False,
+        "createdAt": datetime.utcnow()
+    }
+    await database[NOTIFICATIONS_COLLECTION].insert_one(notification)
+    return {"success": True, "message": "Song/Message sent successfully."}
+
 # Room WebSocket Signaling and Sync Endpoint
 @router.websocket("/rooms/{roomId}/ws")
 async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str):
