@@ -21,7 +21,7 @@ app = FastAPI(
 )
 
 def get_allowed_origins():
-    origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,https://strumm.pixelneststudios.tech")
     return [origin.strip() for origin in origins.split(",") if origin.strip()]
 
 # CORS Configuration
