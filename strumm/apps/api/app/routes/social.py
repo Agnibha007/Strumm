@@ -321,6 +321,7 @@ async def get_room(roomId: str, current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Strumm Room not found.")
         
     room["id"] = str(room["_id"])
+    del room["_id"]
     # Fetch member profile details
     members_profiles = []
     for mid in room.get("members", []):
