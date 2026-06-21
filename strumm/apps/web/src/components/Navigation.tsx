@@ -69,7 +69,7 @@ export default function Navigation() {
             <Link href="/" className="inline-flex items-center gap-3 hover:opacity-90 transition">
               <BrandLogo variant="mark" size="sm" priority />
               <span className="text-2xl font-editorial text-text tracking-tight font-bold leading-none">
-                Strumm
+                strumm~
               </span>
             </Link>
             <span className="text-[9px] tracking-widest uppercase font-semibold text-primary block mt-2 ml-12">
@@ -147,7 +147,7 @@ export default function Navigation() {
         </button>
         <Link href="/" className="inline-flex items-center gap-2 flex-shrink-0">
           <BrandLogo variant="mark" size="sm" priority />
-          <span className="font-editorial text-xl font-bold text-text leading-none">Strumm</span>
+          <span className="font-editorial text-xl font-bold text-text leading-none">strumm~</span>
         </Link>
       </header>
 

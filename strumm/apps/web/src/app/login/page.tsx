@@ -228,7 +228,7 @@ export default function LoginPage() {
                     </div>
                     <div>
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Endless Music</h4>
-                      <p className="text-[11px] text-muted mt-0.5">Listen without interruptions, wherever your taste takes you.</p>
+                      <p className="text-[11px] text-muted mt-0.5">Millions of songs. No interruptions. Just your music.</p>
                     </div>
                   </div>
 
@@ -238,7 +238,7 @@ export default function LoginPage() {
                     </div>
                     <div>
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Strumm Flow</h4>
-                      <p className="text-[11px] text-muted mt-0.5">Personal mixes created around your mood, memories, and sound.</p>
+                      <p className="text-[11px] text-muted mt-0.5">Discover playlists shaped around your mood, memories, and taste.</p>
                     </div>
                   </div>
 

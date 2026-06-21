@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { motion } from "framer-motion";
 
 interface BrandLogoProps {
   variant?: "full" | "mark";
@@ -9,14 +9,14 @@ interface BrandLogoProps {
 
 const sizeClasses = {
   full: {
-    sm: "w-32",
-    md: "w-44",
-    lg: "w-56",
+    sm: "text-lg",
+    md: "text-2xl",
+    lg: "text-3xl",
   },
   mark: {
-    sm: "w-9 h-9",
-    md: "w-12 h-12",
-    lg: "w-16 h-16",
+    sm: "w-6 h-6",
+    md: "w-9 h-9",
+    lg: "w-12 h-12",
   },
 };
 
@@ -24,18 +24,45 @@ export default function BrandLogo({
   variant = "full",
   size = "md",
   className = "",
-  priority = false,
 }: BrandLogoProps) {
   const isFull = variant === "full";
 
   return (
-    <Image
-      src={isFull ? "/strumm-logo.png" : "/strumm-icon.png"}
-      alt="Strumm"
-      width={isFull ? 800 : 512}
-      height={isFull ? 800 : 512}
-      priority={priority}
-      className={`${sizeClasses[variant][size]} object-contain ${className}`}
-    />
+    <div className={`flex items-center justify-center gap-2.5 select-none ${className}`}>
+      {/* Premium resonance wave icon representing string vibration */}
+      <svg 
+        className={`${isFull ? "w-5 h-5" : sizeClasses.mark[size]} text-primary flex-shrink-0`} 
+        viewBox="0 0 24 24" 
+        fill="none" 
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {/* String vibrations */}
+        <motion.path 
+          d="M3 12C6 9 8 15 12 12C16 9 18 15 21 12" 
+          stroke="currentColor" 
+          strokeWidth="2" 
+          strokeLinecap="round" 
+          animate={{
+            d: [
+              "M3 12C6 9 8 15 12 12C16 9 18 15 21 12",
+              "M3 12C6 15 8 9 12 12C16 15 18 9 21 12",
+              "M3 12C6 9 8 15 12 12C16 9 18 15 21 12"
+            ]
+          }}
+          transition={{
+            duration: 2.5,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+        />
+        <path d="M3 8C6 6 8 10 12 8C16 6 18 10 21 8" stroke="currentColor" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
+        <path d="M3 16C6 14 8 18 12 16C16 14 18 18 21 16" stroke="currentColor" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
+      </svg>
+      {isFull && (
+        <span className={`font-editorial ${sizeClasses.full[size]} font-bold tracking-tight text-text leading-none`}>
+          strumm<span className="text-primary font-light">~</span>
+        </span>
+      )}
+    </div>
   );
 }
