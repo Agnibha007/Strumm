@@ -97,7 +97,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       )}
       
       {/* Global Sidebar Navigation */}
-      <div className="relative z-10">
+      <div className="relative z-50 md:z-10">
         <Navigation />
       </div>
       
