@@ -134,7 +134,7 @@ async def get_flow(
     try:
         mood = sanitize_text(mood, max_length=80) or "Chill"
         database = db.get_db()
-        userId = current_user["id"]
+        userId = ObjectId(current_user["id"])
         
         # Load user history and likes
         likes_cursor = database[db.LIKED_SONGS].find({"userId": userId}).limit(10)

@@ -188,7 +188,7 @@ async def get_library(current_user: dict = Depends(get_current_user)):
     try:
         database = db.get_db()
         # 1. Playlists
-        playlists_cursor = database[db.PLAYLISTS].find({"userId": current_user["id"]})
+        playlists_cursor = database[db.PLAYLISTS].find({"userId": ObjectId(current_user["id"])})
         playlists = []
         async for doc in playlists_cursor:
             doc["id"] = str(doc["_id"])
@@ -196,7 +196,7 @@ async def get_library(current_user: dict = Depends(get_current_user)):
             playlists.append(doc)
             
         # 2. Liked Songs Count
-        liked_count = await database[db.LIKED_SONGS].count_documents({"userId": current_user["id"]})
+        liked_count = await database[db.LIKED_SONGS].count_documents({"userId": ObjectId(current_user["id"])})
         
         return {
             "success": True,
@@ -218,7 +218,7 @@ async def get_liked_songs(
 ):
     try:
         database = db.get_db()
-        cursor = database[db.LIKED_SONGS].find({"userId": current_user["id"]}).sort("likedAt", -1).skip(skip).limit(limit)
+        cursor = database[db.LIKED_SONGS].find({"userId": ObjectId(current_user["id"])}).sort("likedAt", -1).skip(skip).limit(limit)
         liked_songs = []
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
@@ -297,7 +297,7 @@ async def get_playback_history(
 ):
     try:
         database = db.get_db()
-        cursor = database[db.PLAYBACK_HISTORIES].find({"userId": current_user["id"]}).sort("playedAt", -1).limit(limit)
+        cursor = database[db.PLAYBACK_HISTORIES].find({"userId": ObjectId(current_user["id"])}).sort("playedAt", -1).limit(limit)
         history = []
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
@@ -350,7 +350,7 @@ async def register_play_event(
 ):
     try:
         database = db.get_db()
-        userId = current_user["id"]
+        userId = ObjectId(current_user["id"])
         song_dict = payload.song.model_dump()
         duration_delta = sanitize_positive_int(payload.listenDuration, minimum=1, maximum=300)
         
