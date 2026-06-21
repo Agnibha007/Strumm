@@ -80,7 +80,11 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (!token || !user?.id || !room) return;
 
-    const wsUrl = apiUrl("").replace(/^http/, "ws") + `/social/rooms/${id}/ws?userId=${user.id}`;
+    let baseWs = apiUrl("").replace(/^http/, "ws");
+    if (baseWs.endsWith("/")) {
+      baseWs = baseWs.slice(0, -1);
+    }
+    const wsUrl = baseWs + `/social/rooms/${id}/ws?userId=${user.id}`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 

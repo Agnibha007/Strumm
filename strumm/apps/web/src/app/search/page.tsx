@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { useNotificationStore } from "web/store/useNotificationStore";
+import Link from "next/link";
 
 export default function SearchPage() {
   const { token } = useAuthStore();
@@ -468,7 +469,7 @@ export default function SearchPage() {
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.playlists.map((playlist) => (
-                    <a
+                    <Link
                       key={playlist.id}
                       href={`/playlist/${playlist.id}`}
                       className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
@@ -482,7 +483,7 @@ export default function SearchPage() {
                       <div className="text-[10px] text-muted truncate mt-1">
                         {playlist.followers || 0} followers
                       </div>
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -496,7 +497,7 @@ export default function SearchPage() {
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.podcasts.map((podcast) => (
-                    <a
+                    <Link
                       key={podcast.id}
                       href={`/podcasts/show/${podcast.id}`}
                       className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
@@ -513,7 +514,7 @@ export default function SearchPage() {
                       <div className="text-[10px] text-muted truncate mt-1">
                         By {podcast.author}
                       </div>
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -527,7 +528,7 @@ export default function SearchPage() {
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.users.map((curator) => (
-                    <a
+                    <Link
                       key={curator.id}
                       href={`/profile?username=${curator.username}`}
                       className="p-4 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-center block"
@@ -545,7 +546,7 @@ export default function SearchPage() {
                       <div className="text-[9px] text-muted truncate mt-0.5">
                         @{curator.username}
                       </div>
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>

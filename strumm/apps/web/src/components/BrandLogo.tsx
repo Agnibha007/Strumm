@@ -37,24 +37,19 @@ export default function BrandLogo({
         xmlns="http://www.w3.org/2000/svg"
       >
         {/* String vibrations */}
-        <motion.path 
+        <path 
           d="M3 12C6 9 8 15 12 12C16 9 18 15 21 12" 
           stroke="currentColor" 
           strokeWidth="2" 
-          strokeLinecap="round" 
-          animate={{
-            d: [
-              "M3 12C6 9 8 15 12 12C16 9 18 15 21 12",
-              "M3 12C6 15 8 9 12 12C16 15 18 9 21 12",
-              "M3 12C6 9 8 15 12 12C16 9 18 15 21 12"
-            ]
-          }}
-          transition={{
-            duration: 2.5,
-            repeat: Infinity,
-            ease: "easeInOut"
-          }}
-        />
+          strokeLinecap="round"
+        >
+          <animate 
+            attributeName="d" 
+            dur="2.5s" 
+            repeatCount="indefinite" 
+            values="M3 12C6 9 8 15 12 12C16 9 18 15 21 12; M3 12C6 15 8 9 12 12C16 15 18 9 21 12; M3 12C6 9 8 15 12 12C16 9 18 15 21 12" 
+          />
+        </path>
         <path d="M3 8C6 6 8 10 12 8C16 6 18 10 21 8" stroke="currentColor" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
         <path d="M3 16C6 14 8 18 12 16C16 14 18 18 21 16" stroke="currentColor" strokeWidth="1" opacity="0.3" strokeLinecap="round" />
       </svg>
