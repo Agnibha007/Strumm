@@ -21,8 +21,13 @@ app = FastAPI(
 )
 
 def get_allowed_origins():
-    origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,https://strumm.pixelneststudios.tech")
-    return [origin.strip() for origin in origins.split(",") if origin.strip()]
+    origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+    always_allowed = ["https://strumm.pixelneststudios.tech", "http://localhost:5173", "http://localhost:3000"]
+    for origin in always_allowed:
+        if origin not in origins:
+            origins.append(origin)
+    return origins
 
 # CORS Configuration
 app.add_middleware(
@@ -39,7 +44,7 @@ request_times = {}
 @app.middleware("http")
 async def rate_limiting_middleware(request: Request, call_next):
     # Simple IP-based rate limiting
-    client_ip = request.client.host
+    client_ip = request.client.host if request.client else "127.0.0.1"
     current_time = time.time()
     if len(request_times) > 10000:
         stale_ips = [
