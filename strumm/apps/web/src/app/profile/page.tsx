@@ -83,7 +83,8 @@ function ProfilePageContent() {
 
         const publicData = json.data;
         setDisplayedUser(publicData);
-        setPlaylists(publicData.publicPlaylists || []);
+        // The API returns "playlists" field for public playlists
+        setPlaylists(publicData.playlists || []);
         setMemories(publicData.memories || []);
         setLikedCount(0); // public stats fallback
 
