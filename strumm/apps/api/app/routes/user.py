@@ -187,16 +187,19 @@ async def update_profile(
 async def get_library(current_user: dict = Depends(get_current_user)):
     try:
         database = db.get_db()
+        user_id_str = current_user["id"]
+        user_id_oid = ObjectId(user_id_str)
         # 1. Playlists
-        playlists_cursor = database[db.PLAYLISTS].find({"userId": ObjectId(current_user["id"])})
+        playlists_cursor = database[db.PLAYLISTS].find({"userId": {"$in": [user_id_str, user_id_oid]}})
         playlists = []
         async for doc in playlists_cursor:
             doc["id"] = str(doc["_id"])
+            doc["userId"] = str(doc["userId"])
             del doc["_id"]
             playlists.append(doc)
             
         # 2. Liked Songs Count
-        liked_count = await database[db.LIKED_SONGS].count_documents({"userId": ObjectId(current_user["id"])})
+        liked_count = await database[db.LIKED_SONGS].count_documents({"userId": {"$in": [user_id_str, user_id_oid]}})
         
         return {
             "success": True,
@@ -218,10 +221,13 @@ async def get_liked_songs(
 ):
     try:
         database = db.get_db()
-        cursor = database[db.LIKED_SONGS].find({"userId": ObjectId(current_user["id"])}).sort("likedAt", -1).skip(skip).limit(limit)
+        user_id_str = current_user["id"]
+        user_id_oid = ObjectId(user_id_str)
+        cursor = database[db.LIKED_SONGS].find({"userId": {"$in": [user_id_str, user_id_oid]}}).sort("likedAt", -1).skip(skip).limit(limit)
         liked_songs = []
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
+            doc["userId"] = str(doc["userId"])
             del doc["_id"]
             if "likedAt" in doc:
                 doc["likedAt"] = doc["likedAt"].isoformat()
@@ -242,8 +248,10 @@ async def check_if_liked(
 ):
     try:
         database = db.get_db()
+        user_id_str = current_user["id"]
+        user_id_oid = ObjectId(user_id_str)
         existing = await database[db.LIKED_SONGS].find_one({
-            "userId": current_user["id"],
+            "userId": {"$in": [user_id_str, user_id_oid]},
             "song.videoId": video_id
         })
         return {
@@ -260,9 +268,11 @@ async def toggle_like_song(
 ):
     try:
         database = db.get_db()
+        user_id_str = current_user["id"]
+        user_id_oid = ObjectId(user_id_str)
         # Check if already liked
         existing = await database[db.LIKED_SONGS].find_one({
-            "userId": current_user["id"],
+            "userId": {"$in": [user_id_str, user_id_oid]},
             "song.videoId": song.videoId
         })
         
@@ -276,7 +286,7 @@ async def toggle_like_song(
         else:
             # Like the song
             new_like = {
-                "userId": current_user["id"],
+                "userId": user_id_str,
                 "song": song.model_dump(),
                 "likedAt": datetime.utcnow()
             }
@@ -297,10 +307,13 @@ async def get_playback_history(
 ):
     try:
         database = db.get_db()
-        cursor = database[db.PLAYBACK_HISTORIES].find({"userId": ObjectId(current_user["id"])}).sort("playedAt", -1).limit(limit)
+        user_id_str = current_user["id"]
+        user_id_oid = ObjectId(user_id_str)
+        cursor = database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id_str, user_id_oid]}}).sort("playedAt", -1).limit(limit)
         history = []
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
+            doc["userId"] = str(doc["userId"])
             del doc["_id"]
             if "playedAt" in doc:
                 doc["playedAt"] = doc["playedAt"].isoformat()
@@ -318,7 +331,9 @@ async def get_playback_history(
 async def clear_playback_history(current_user: dict = Depends(get_current_user)):
     try:
         database = db.get_db()
-        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": current_user["id"]})
+        user_id_str = current_user["id"]
+        user_id_oid = ObjectId(user_id_str)
+        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": {"$in": [user_id_str, user_id_oid]}})
         return {
             "success": True,
             "data": {"message": "Listening history permanently deleted."}
@@ -849,17 +864,19 @@ async def get_public_profile(username: str):
         user_id = str(user["_id"])
         
         # Get public playlists
-        playlists = await database[db.PLAYLISTS].find({"userId": user_id, "visibility": "public"}).to_list(length=30)
+        playlists = await database[db.PLAYLISTS].find({"userId": {"$in": [user_id, ObjectId(user_id)]}, "visibility": "public"}).to_list(length=30)
         for p in playlists:
             p["id"] = str(p["_id"])
+            p["userId"] = str(p["userId"])
             del p["_id"]
             if "createdAt" in p:
                 p["createdAt"] = p["createdAt"].isoformat()
                 
         # Get public memories
-        memories = await database["songMemories"].find({"userId": user_id, "visibility": "public"}).sort("createdAt", -1).to_list(length=20)
+        memories = await database["songMemories"].find({"userId": {"$in": [user_id, ObjectId(user_id)]}, "visibility": "public"}).sort("createdAt", -1).to_list(length=20)
         for m in memories:
             m["id"] = str(m["_id"])
+            m["userId"] = str(m["userId"])
             del m["_id"]
             if "date" in m:
                 m["date"] = m["date"].isoformat()
@@ -867,7 +884,10 @@ async def get_public_profile(username: str):
                 m["createdAt"] = m["createdAt"].isoformat()
                 
         # Get stats
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": user_id}).to_list(length=1000)
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=1000)
+        for h in histories:
+            if "userId" in h:
+                h["userId"] = str(h["userId"])
         sound_dna = calculate_sound_dna(histories)
         
         total_seconds = sum(h.get("listenDuration", 30) for h in histories)
@@ -923,17 +943,19 @@ async def get_users_public_profile(username: str):
         user_id = str(user["_id"])
         
         # Get public playlists
-        playlists = await database[db.PLAYLISTS].find({"userId": user_id, "visibility": "public"}).to_list(length=30)
+        playlists = await database[db.PLAYLISTS].find({"userId": {"$in": [user_id, ObjectId(user_id)]}, "visibility": "public"}).to_list(length=30)
         for p in playlists:
             p["id"] = str(p["_id"])
+            p["userId"] = str(p["userId"])
             del p["_id"]
             if "createdAt" in p:
                 p["createdAt"] = p["createdAt"].isoformat()
                 
         # Get public memories
-        memories = await database["songMemories"].find({"userId": user_id, "visibility": "public"}).sort("createdAt", -1).to_list(length=20)
+        memories = await database["songMemories"].find({"userId": {"$in": [user_id, ObjectId(user_id)]}, "visibility": "public"}).sort("createdAt", -1).to_list(length=20)
         for m in memories:
             m["id"] = str(m["_id"])
+            m["userId"] = str(m["userId"])
             del m["_id"]
             if "date" in m:
                 m["date"] = m["date"].isoformat()
@@ -941,7 +963,10 @@ async def get_users_public_profile(username: str):
                 m["createdAt"] = m["createdAt"].isoformat()
                 
         # Get stats
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": user_id}).to_list(length=1000)
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=1000)
+        for h in histories:
+            if "userId" in h:
+                h["userId"] = str(h["userId"])
         sound_dna = calculate_sound_dna(histories)
         
         total_seconds = sum(h.get("listenDuration", 30) for h in histories)
