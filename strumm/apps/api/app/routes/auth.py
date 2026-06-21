@@ -23,14 +23,14 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 async def create_device_session(user_id: str, email: str, username: str, request: Request, database) -> tuple[str, str]:
-    # Short expiry access token: 15 mins
+    # Long expiry access token: 7 days
     access_token_payload = {
         "sub": user_id,
         "email": email,
         "username": username,
         "type": "access"
     }
-    access_token = create_access_token(access_token_payload, expires_delta=timedelta(minutes=15))
+    access_token = create_access_token(access_token_payload, expires_delta=timedelta(days=7))
     
     # Long expiry refresh token: 30 days
     refresh_token = secrets.token_hex(32)
@@ -57,7 +57,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         httponly=True,
         secure=True,
         samesite="none",
-        max_age=15 * 60,  # 15 minutes
+        max_age=7 * 24 * 60 * 60,  # 7 days
         path="/"
     )
     response.set_cookie(
@@ -535,7 +535,7 @@ async def refresh_session(
             "username": user.get("username"),
             "type": "access"
         }
-        new_access_token = create_access_token(new_access_token_payload, expires_delta=timedelta(minutes=15))
+        new_access_token = create_access_token(new_access_token_payload, expires_delta=timedelta(days=7))
         
         new_refresh_token = secrets.token_hex(32)
         new_refresh_token_hash = hash_refresh_token(new_refresh_token)
