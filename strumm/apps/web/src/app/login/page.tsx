@@ -30,9 +30,9 @@ export default function LoginPage() {
 
     // Audio node simulation
     const waves = [
-      { y: 0.5, length: 0.002, amplitude: 120, speed: 0.015, color: "rgba(168, 85, 247, 0.15)" },
-      { y: 0.5, length: 0.003, amplitude: 80, speed: 0.02, color: "rgba(236, 72, 153, 0.12)" },
-      { y: 0.5, length: 0.001, amplitude: 150, speed: 0.01, color: "rgba(59, 130, 246, 0.1)" },
+      { y: 0.5, length: 0.002, amplitude: 120, speed: 0.015, color: "rgba(249, 115, 22, 0.15)" },
+      { y: 0.5, length: 0.003, amplitude: 80, speed: 0.02, color: "rgba(251, 146, 60, 0.12)" },
+      { y: 0.5, length: 0.001, amplitude: 150, speed: 0.01, color: "rgba(255, 255, 255, 0.06)" },
     ];
 
     // Particles representing music beats
@@ -54,7 +54,7 @@ export default function LoginPage() {
         speedX: (Math.random() - 0.5) * 0.5,
         speedY: (Math.random() - 0.5) * 0.5,
         alpha: Math.random() * 0.5 + 0.2,
-        color: Math.random() > 0.5 ? "#a855f7" : "#3b82f6",
+        color: Math.random() > 0.5 ? "#f97316" : "#fb923c",
       });
     }
 
@@ -169,12 +169,13 @@ export default function LoginPage() {
             transition={{ duration: 0.6, delay: 0.1 }}
             className="space-y-4"
           >
-            <h1 className="text-4xl sm:text-6xl font-editorial font-bold tracking-tight leading-[1.1] text-transparent bg-clip-text bg-gradient-to-r from-white via-white/90 to-primary-hover">
-              Your Interactive <br />
-              <span className="text-primary-hover">Musical Universe.</span>
+            <h1 className="text-4xl sm:text-6xl font-editorial font-bold tracking-tight leading-[1.1] text-white">
+              Your music. <br />
+              Your memories. <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">Your world.</span>
             </h1>
             <p className="text-sm sm:text-base text-muted max-w-lg leading-relaxed">
-              Curate, sync play queues with friends, explore AI-curated discovery mixes, and listen in high fidelity. Strumm matches your rhythm.
+              Listen freely, discover your sound, and create a home for every song you love.
             </p>
           </motion.div>
 
@@ -226,18 +227,8 @@ export default function LoginPage() {
                       <Music className="w-4 h-4 text-primary" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Lossless Quality</h4>
-                      <p className="text-[11px] text-muted mt-0.5">High definition audio engine decoding for deep immersion.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3 group">
-                    <div className="p-2 bg-accent/10 border border-accent/20 rounded-lg group-hover:bg-accent/20 transition duration-300">
-                      <Users className="w-4 h-4 text-accent" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Co-Listening Queue</h4>
-                      <p className="text-[11px] text-muted mt-0.5">Interactive queue management with drag-n-drop sorting.</p>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Endless Music</h4>
+                      <p className="text-[11px] text-muted mt-0.5">Listen without interruptions, wherever your taste takes you.</p>
                     </div>
                   </div>
 
@@ -246,8 +237,18 @@ export default function LoginPage() {
                       <Sparkles className="w-4 h-4 text-emerald-400" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">AI Curated Mix</h4>
-                      <p className="text-[11px] text-muted mt-0.5">Discovery tracks aligned directly to your sonic patterns.</p>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Strumm Flow</h4>
+                      <p className="text-[11px] text-muted mt-0.5">Personal mixes created around your mood, memories, and sound.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 group">
+                    <div className="p-2 bg-accent/10 border border-accent/20 rounded-lg group-hover:bg-accent/20 transition duration-300">
+                      <Users className="w-4 h-4 text-accent" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Strumm Circle</h4>
+                      <p className="text-[11px] text-muted mt-0.5">Listen together, share your taste, and discover with friends.</p>
                     </div>
                   </div>
 
@@ -256,8 +257,8 @@ export default function LoginPage() {
                       <Heart className="w-4 h-4 text-rose-400" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Interactive Lyrics</h4>
-                      <p className="text-[11px] text-muted mt-0.5">Stunning timed karaokes and interactive translations.</p>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-text">Live Lyrics</h4>
+                      <p className="text-[11px] text-muted mt-0.5">Follow every moment with beautiful synced lyrics.</p>
                     </div>
                   </div>
                 </div>

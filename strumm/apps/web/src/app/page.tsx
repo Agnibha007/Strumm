@@ -153,7 +153,7 @@ export default function HomePage() {
                 <Sparkles className="w-5 h-5 text-primary" />
                 Discovery Mix
               </h3>
-              <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">AI Curated</span>
+              <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">Adaptive</span>
             </div>
             
             {recommendations.length === 0 ? (

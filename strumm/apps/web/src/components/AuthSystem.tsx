@@ -165,7 +165,7 @@ export default function AuthSystem() {
           >
             <div className="text-center mb-4">
               <h3 className="font-editorial text-xl text-text leading-tight font-bold">Welcome Back.</h3>
-              <p className="text-[11px] text-muted mt-1 leading-snug">Sign in to access your personal music universe.</p>
+              <p className="text-[11px] text-muted mt-1 leading-snug">Return to your music universe.</p>
             </div>
 
             <form onSubmit={handlePasswordLogin} className="space-y-4">
@@ -177,7 +177,7 @@ export default function AuthSystem() {
                   <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
                   <input
                     type="email"
-                    placeholder="e.g. music@strumm.com"
+                    placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -222,7 +222,7 @@ export default function AuthSystem() {
                 disabled={loading}
                 className="w-full py-2.5 bg-text text-background hover:bg-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
               >
-                {loading ? "Aligning..." : "Log In"}
+                {loading ? "Entering..." : "Enter Strumm"}
                 <ArrowRight className="w-4 h-4 text-background" />
               </button>
 
@@ -255,7 +255,7 @@ export default function AuthSystem() {
                   }}
                   className="text-primary hover:underline font-semibold cursor-pointer"
                 >
-                  Create an account
+                  Create your space
                 </button>
               </span>
             </div>
@@ -272,7 +272,7 @@ export default function AuthSystem() {
             className="space-y-5"
           >
             <div className="text-center mb-4">
-              <h3 className="font-editorial text-xl text-text leading-tight font-bold">Join the Curation.</h3>
+              <h3 className="font-editorial text-xl text-text leading-tight font-bold">Create your space.</h3>
               <p className="text-[11px] text-muted mt-1 leading-snug">Register your music passport to start listening.</p>
             </div>
 
@@ -364,7 +364,7 @@ export default function AuthSystem() {
                 disabled={loading}
                 className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
               >
-                {loading ? "Configuring..." : "Register & Send OTP"}
+                {loading ? "Preparing your space..." : "Start your journey"}
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
