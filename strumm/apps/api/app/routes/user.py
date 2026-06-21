@@ -119,18 +119,28 @@ def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, 
 async def get_profile(current_user: dict = Depends(get_current_user)):
     try:
         database = db.get_db()
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": current_user["id"]}).to_list(length=1000)
+        user_id_str = current_user["id"]
+        possible_ids = [user_id_str]
+        if ObjectId.is_valid(user_id_str):
+            possible_ids.append(ObjectId(user_id_str))
+            
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=1000)
         dna = calculate_sound_dna(histories)
         current_user["soundDNA"] = dna
+        return {
+            "success": True,
+            "data": current_user
+        }
     except Exception as e:
-        logger.error(f"Error calculating soundDNA for profile: {e}")
+        import traceback
+        logger.error(f"Error calculating soundDNA for profile: {e}\n{traceback.format_exc()}")
         current_user["soundDNA"] = {
             "energy": 5, "discovery": 5, "nostalgia": 5, "variety": 5, "repeatRate": 5
         }
-    return {
-        "success": True,
-        "data": current_user
-    }
+        return {
+            "success": True,
+            "data": current_user
+        }
 
 @router.patch("/profile")
 async def update_profile(
@@ -185,21 +195,34 @@ async def update_profile(
 # Library Aggregator
 @router.get("/library")
 async def get_library(current_user: dict = Depends(get_current_user)):
+    import traceback
+    user_id_str = current_user["id"]
+    print(f"[DEBUG /library] Authenticated User ID: {user_id_str}")
     try:
         database = db.get_db()
-        user_id_str = current_user["id"]
-        user_id_oid = ObjectId(user_id_str)
+        possible_ids = [user_id_str]
+        if ObjectId.is_valid(user_id_str):
+            possible_ids.append(ObjectId(user_id_str))
+            
+        mongo_query = {"userId": {"$in": possible_ids}}
+        print(f"[DEBUG /library] Mongo Query for Playlists: {mongo_query}")
+        
         # 1. Playlists
-        playlists_cursor = database[db.PLAYLISTS].find({"userId": {"$in": [user_id_str, user_id_oid]}})
+        playlists_cursor = database[db.PLAYLISTS].find(mongo_query)
         playlists = []
         async for doc in playlists_cursor:
+            doc["_id"] = str(doc["_id"])
             doc["id"] = str(doc["_id"])
             doc["userId"] = str(doc["userId"])
-            del doc["_id"]
             playlists.append(doc)
             
+        playlist_count = len(playlists)
+        print(f"[DEBUG /library] Playlist count: {playlist_count}")
+        
         # 2. Liked Songs Count
-        liked_count = await database[db.LIKED_SONGS].count_documents({"userId": {"$in": [user_id_str, user_id_oid]}})
+        liked_query = {"userId": {"$in": possible_ids}}
+        liked_count = await database[db.LIKED_SONGS].count_documents(liked_query)
+        print(f"[DEBUG /library] Liked songs count: {liked_count}")
         
         return {
             "success": True,
@@ -209,8 +232,10 @@ async def get_library(current_user: dict = Depends(get_current_user)):
             }
         }
     except Exception as e:
-        logger.error(f"Error fetching library: {str(e)}")
-        return {"success": False, "error": str(e)}
+        tb_str = traceback.format_exc()
+        print(f"[ERROR /library] Exception traceback:\n{tb_str}")
+        logger.error(f"Error fetching library: {str(e)}\n{tb_str}")
+        return {"success": False, "error": f"Failed to fetch library: {str(e)}", "traceback": tb_str}
 
 # Liked Songs CRUD
 @router.get("/liked")

@@ -51,13 +51,18 @@ async def get_playlists(
 ):
     try:
         database = db.get_db()
-        # Find user's playlists
-        cursor = database[db.PLAYLISTS].find({"userId": ObjectId(current_user["id"])})
+        user_id_str = current_user["id"]
+        possible_ids = [user_id_str]
+        if ObjectId.is_valid(user_id_str):
+            possible_ids.append(ObjectId(user_id_str))
+            
+        # Find user's playlists supporting both string and ObjectId userIds
+        cursor = database[db.PLAYLISTS].find({"userId": {"$in": possible_ids}})
         playlists = []
         async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
             doc["id"] = str(doc["_id"])
             doc["userId"] = str(doc["userId"])
-            del doc["_id"]
             playlists.append(doc)
             
         return {
@@ -65,7 +70,8 @@ async def get_playlists(
             "data": playlists
         }
     except Exception as e:
-        logger.error(f"Error fetching user playlists: {str(e)}")
+        import traceback
+        logger.error(f"Error fetching user playlists: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, BackgroundTasks
@@ -85,9 +91,9 @@ async def get_playlist(
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
             
-        playlist["id"] = str(playlist["_id"])
+        playlist["_id"] = str(playlist["_id"])
+        playlist["id"] = playlist["_id"]
         playlist["userId"] = str(playlist["userId"])
-        del playlist["_id"]
         
         # Check permissions
         if playlist["visibility"] == "private" and (not current_user or playlist["userId"] != current_user["id"]):
@@ -108,7 +114,8 @@ async def get_playlist(
             "data": playlist
         }
     except Exception as e:
-        logger.error(f"Error resolving playlist {id}: {str(e)}")
+        import traceback
+        logger.error(f"Error resolving playlist {id}: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
 @router.patch("/{id}")
