@@ -15,6 +15,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
+  const { customImage } = useThemeStore();
 
   // Sync NextAuth Google session
   useEffect(() => {
@@ -83,17 +84,32 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-background text-text">
+    <div
+      style={
+        customImage
+          ? { backgroundImage: `url(${customImage})`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed" }
+          : undefined
+      }
+      className="flex flex-col md:flex-row min-h-screen bg-background text-text relative"
+    >
+      {customImage && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-[20px] pointer-events-none z-0" />
+      )}
+      
       {/* Global Sidebar Navigation */}
-      <Navigation />
+      <div className="relative z-10">
+        <Navigation />
+      </div>
       
       {/* Main route contents */}
-      <main className="flex-1 overflow-y-auto min-h-[calc(100vh-65px)] md:min-h-screen md:ml-64 xl:mr-80 relative px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48">
+      <main className="flex-1 overflow-y-auto min-h-[calc(100vh-65px)] md:min-h-screen md:ml-64 xl:mr-80 relative z-10 px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48">
         {children}
       </main>
 
       {/* Circle activity sidebar */}
-      <FriendActivitySidebar />
+      <div className="relative z-10">
+        <FriendActivitySidebar />
+      </div>
     </div>
   );
 }
