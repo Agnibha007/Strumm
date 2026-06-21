@@ -450,6 +450,38 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
 
+          {/* Collaborative Queue List */}
+          <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
+            <h3 className="font-editorial text-lg text-text font-bold flex items-center gap-2">
+              <Radio className="w-5 h-5 text-primary animate-pulse" /> Collaborative Queue ({room.queue?.length || 0})
+            </h3>
+            {(!room.queue || room.queue.length === 0) ? (
+              <p className="text-xs text-muted italic pb-2">No songs in the queue yet. Suggest some below!</p>
+            ) : (
+              <div className="divide-y divide-border/20 font-sans max-h-60 overflow-y-auto pr-1">
+                {room.queue.map((song, index) => (
+                  <div key={`${song.videoId}-${index}`} className="flex justify-between items-center py-3 text-xs">
+                    <div className="min-w-0 flex-1 flex items-center gap-3">
+                      <SongArtwork song={song} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                      <div className="min-w-0">
+                        <span className="font-semibold text-text truncate block">{song.title}</span>
+                        <span className="text-[10px] text-muted truncate block">{song.artist}</span>
+                      </div>
+                    </div>
+                    {isHost && (
+                      <button
+                        onClick={() => playSong(song, [song])}
+                        className="px-3 py-1 bg-primary/20 hover:bg-primary/40 text-primary font-bold rounded text-[10px] transition cursor-pointer"
+                      >
+                        Play Now
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Collaborative Queue Song suggestion inputs */}
           <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
             <h3 className="font-editorial text-lg text-text font-bold">Suggest Songs</h3>
@@ -478,12 +510,22 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                       <span className="font-semibold text-text truncate block">{song.title}</span>
                       <span className="text-[10px] text-muted truncate block">{song.artist}</span>
                     </div>
-                    <button
-                      onClick={() => handleAddSuggestedSong(song)}
-                      className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] ml-4 transition cursor-pointer"
-                    >
-                      Suggest
-                    </button>
+                    <div className="flex gap-2 ml-4">
+                      <button
+                        onClick={() => handleAddSuggestedSong(song)}
+                        className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                      >
+                        Suggest
+                      </button>
+                      {isHost && (
+                        <button
+                          onClick={() => playSong(song, [song])}
+                          className="px-2.5 py-1 bg-primary/20 hover:bg-primary/40 text-primary font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                        >
+                          Play
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
