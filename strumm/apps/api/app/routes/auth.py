@@ -50,15 +50,14 @@ async def create_device_session(user_id: str, email: str, username: str, request
     await database[SESSIONS_COLLECTION].insert_one(session_doc)
     
     return access_token, refresh_token
-
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
         secure=True,
-        samesite="lax",
-        max_age=15 * 60, # 15 mins
+        samesite="none",
+        max_age=15 * 60,  # 15 minutes
         path="/"
     )
     response.set_cookie(
@@ -66,10 +65,13 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         value=refresh_token,
         httponly=True,
         secure=True,
-        samesite="lax",
-        max_age=30 * 24 * 60 * 60, # 30 days
+        samesite="none",
+        max_age=30 * 24 * 60 * 60,  # 30 days
         path="/"
     )
+
+
+
 
 class EmailLoginRequest(BaseModel):
     email: EmailStr

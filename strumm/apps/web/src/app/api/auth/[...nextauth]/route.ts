@@ -22,6 +22,7 @@ const handler = NextAuth({
             headers: {
               "Content-Type": "application/json",
             },
+            credentials: "include",
             body: JSON.stringify({
               idToken: account.id_token,
             }),
