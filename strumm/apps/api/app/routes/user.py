@@ -520,6 +520,27 @@ async def save_player_state(
             {"$set": state_doc},
             upsert=True
         )
+
+        # Update/delete direct listening activities to reflect real-time playing state
+        show_act = current_user.get("settings", {}).get("showListeningActivity", True)
+        if show_act:
+            if payload.isPlaying and payload.currentSong:
+                await database["activities"].update_one(
+                    {"userId": current_user["id"]},
+                    {"$set": {
+                        "userId": current_user["id"],
+                        "type": "listening",
+                        "song": payload.currentSong.model_dump(),
+                        "timestamp": datetime.utcnow(),
+                        "expiresAt": datetime.utcnow() + timedelta(minutes=2)
+                    }},
+                    upsert=True
+                )
+            else:
+                await database["activities"].delete_one({"userId": current_user["id"], "type": "listening"})
+        else:
+            await database["activities"].delete_one({"userId": current_user["id"], "type": "listening"})
+
         return {"success": True, "data": {"message": "Player state saved."}}
     except Exception as e:
         logger.error(f"Error saving player state: {str(e)}")

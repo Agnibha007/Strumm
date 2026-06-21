@@ -242,6 +242,13 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
         friend_id = conn["receiverId"] if conn["requesterId"] == my_id else conn["requesterId"]
         f_user = await database[db.USERS].find_one({"_id": parse_object_id(friend_id)})
         if f_user:
+            # Check online/presence status
+            last_active = f_user.get("lastActive")
+            is_online = False
+            if last_active:
+                # Online if active in the last 45 seconds
+                is_online = (datetime.utcnow() - last_active).total_seconds() < 45
+
             # Check current listening activity (respect settings)
             show_act = f_user.get("settings", {}).get("showListeningActivity", True)
             current_activity = None
@@ -255,6 +262,7 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
                         "song": act.get("song"),
                         "timestamp": act.get("timestamp").isoformat() if act.get("timestamp") else None
                     }
+                    is_online = True
                     
             friends.append({
                 "id": friend_id,
@@ -262,6 +270,7 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
                 "username": f_user.get("username"),
                 "avatar": f_user.get("avatar"),
                 "tasteMatch": conn.get("tasteMatch", 50),
+                "isOnline": is_online,
                 "currentActivity": current_activity
             })
             

@@ -1,12 +1,24 @@
-from fastapi import Depends, Header, HTTPException, status, Cookie
+from fastapi import Depends, Header, HTTPException, status, Cookie, BackgroundTasks
 from typing import Optional
+from datetime import datetime
 from app.database import mongodb as db
 from app.services.auth_utils import decode_access_token
 from app.services.security import parse_object_id
 from bson import ObjectId
 from pymongo.errors import PyMongoError
 
+async def update_last_active(user_id: str):
+    database = db.get_db()
+    try:
+        await database[db.USERS].update_one(
+            {"_id": parse_object_id(user_id)},
+            {"$set": {"lastActive": datetime.utcnow()}}
+        )
+    except Exception:
+        pass
+
 async def get_current_user(
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
     access_token: Optional[str] = Cookie(None)
 ):
@@ -41,6 +53,8 @@ async def get_current_user(
             detail="Invalid session token content"
         )
         
+    background_tasks.add_task(update_last_active, user_id)
+    
     database = db.get_db()
     try:
         user = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})

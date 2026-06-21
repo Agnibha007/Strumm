@@ -12,6 +12,7 @@ interface FriendActivity {
   displayName: string;
   username: string;
   avatar?: string;
+  isOnline?: boolean;
   currentActivity?: {
     song: {
       videoId: string;
@@ -81,8 +82,8 @@ export default function FriendActivitySidebar({
   useEffect(() => {
     if (token) {
       fetchActivity();
-      // Poll every 30 seconds to keep live listening activity updated
-      const interval = setInterval(fetchActivity, 30000);
+      // Poll every 8 seconds to keep live listening activity updated
+      const interval = setInterval(fetchActivity, 8000);
       return () => clearInterval(interval);
     }
   }, [token]);
@@ -148,10 +149,10 @@ export default function FriendActivitySidebar({
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-
           <div className="w-full flex flex-col items-center gap-4 overflow-y-auto scrollbar-none">
             {friends.map((friend) => {
               const hasSong = !!friend.currentActivity?.song;
+              const isOnline = friend.isOnline;
               return (
                 <div key={friend.id} className="relative group cursor-pointer">
                   {friend.avatar ? (
@@ -161,17 +162,25 @@ export default function FriendActivitySidebar({
                       loading="lazy" 
                       decoding="async" 
                       className={`w-9 h-9 rounded-full object-cover border transition ${
-                        hasSong ? "border-green-500 animate-pulse" : "border-border"
+                        hasSong 
+                          ? "border-green-500 animate-pulse" 
+                          : isOnline 
+                            ? "border-green-500/50" 
+                            : "border-border"
                       }`} 
                     />
                   ) : (
                     <div className={`w-9 h-9 rounded-full bg-surface-elevated flex items-center justify-center border transition ${
-                      hasSong ? "border-green-500 animate-pulse" : "border-border"
+                      hasSong 
+                        ? "border-green-500 animate-pulse" 
+                        : isOnline 
+                          ? "border-green-500/50" 
+                          : "border-border"
                     }`}>
                       <Music className="w-4 h-4 text-accent" />
                     </div>
                   )}
-                  {hasSong && (
+                  {(hasSong || isOnline) && (
                     <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border border-background rounded-full" />
                   )}
                   
@@ -205,6 +214,8 @@ export default function FriendActivitySidebar({
                           <div className="text-[8px] text-muted truncate">{friend.currentActivity!.song.artist}</div>
                         </div>
                       </div>
+                    ) : isOnline ? (
+                      <div className="text-[9px] text-green-500 font-semibold font-sans">Online</div>
                     ) : (
                       <div className="text-[9px] text-muted italic font-sans">Offline</div>
                     )}
@@ -367,9 +378,11 @@ export default function FriendActivitySidebar({
                       >
                         <Send className="w-3.5 h-3.5" />
                       </button>
-                      {hasSongActivity && (
+                      {hasSongActivity ? (
                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full flex-shrink-0 animate-pulse" />
-                      )}
+                      ) : friend.isOnline ? (
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full flex-shrink-0" />
+                      ) : null}
                     </div>
                   </div>
 
@@ -409,6 +422,8 @@ export default function FriendActivitySidebar({
                         </Link>
                       )}
                     </div>
+                  ) : friend.isOnline ? (
+                    <span className="text-[9px] text-green-500 font-semibold block px-1">Online</span>
                   ) : (
                     <span className="text-[9px] text-muted block italic px-1">Offline</span>
                   )}

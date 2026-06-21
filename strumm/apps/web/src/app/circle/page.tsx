@@ -13,6 +13,7 @@ interface Friend {
   username: string;
   avatar?: string;
   tasteMatch: number;
+  isOnline?: boolean;
   currentActivity?: {
     song: {
       videoId: string;
@@ -139,6 +140,8 @@ export default function CirclePage() {
   useEffect(() => {
     if (token) {
       loadCircleData();
+      const interval = setInterval(loadCircleData, 8000);
+      return () => clearInterval(interval);
     }
   }, [token]);
 
@@ -461,6 +464,11 @@ export default function CirclePage() {
                           <span className="text-xs font-semibold text-text truncate block mt-0.5">{friend.currentActivity.song.title}</span>
                           <span className="text-[10px] text-muted truncate block">{friend.currentActivity.song.artist}</span>
                         </div>
+                      </div>
+                    ) : friend.isOnline ? (
+                      <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg flex items-center gap-2.5 min-w-0">
+                        <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
+                        <span className="text-xs font-semibold text-text">Online</span>
                       </div>
                     ) : (
                       <div className="text-[10px] text-muted italic p-2 border border-border/10 rounded-lg bg-surface-elevated/20 truncate">
