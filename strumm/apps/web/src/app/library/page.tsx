@@ -181,7 +181,7 @@ export default function LibraryPage() {
                         <div className="text-xs text-muted truncate mt-0.5">{s.artist}</div>
                       </div>
                     </button>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition">
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                       <button
                         onClick={() => handlePlayLiked(s)}
                         className="p-1.5 hover:bg-surface text-primary rounded-lg transition"
@@ -258,7 +258,7 @@ export default function LibraryPage() {
                       <span className="text-[10px] text-muted mr-1">
                         {new Date(item.playedAt).toLocaleDateString()}
                       </span>
-                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                      <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                         <button
                           onClick={() => playSong(s)}
                           className="p-1.5 hover:bg-surface text-primary rounded-lg transition"

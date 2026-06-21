@@ -373,7 +373,7 @@ export default function SearchPage() {
                         <div className="text-sm font-semibold text-text truncate">{song.title}</div>
                         <div className="text-xs text-muted truncate mt-0.5">{song.artist}</div>
                       </div>
-                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                      <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                         <button
                           onClick={() => handleLikeSong(song)}
                           className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded-lg transition"

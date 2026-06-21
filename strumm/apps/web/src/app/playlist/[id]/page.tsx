@@ -461,7 +461,7 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
                       {Math.floor(song.duration / 60)}:{(song.duration % 60) < 10 ? "0" : ""}{song.duration % 60}
                     </td>
                     <td className="py-3.5 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <div className="flex items-center justify-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                         <button
                           onClick={() => playSong(song, playlist.songs)}
                           className="p-1.5 hover:bg-surface-elevated text-primary rounded transition"
