@@ -33,9 +33,9 @@ async def create_playlist(
         }
         
         result = await database[db.PLAYLISTS].insert_one(new_playlist)
+        new_playlist["_id"] = str(result.inserted_id)
         new_playlist["id"] = str(result.inserted_id)
         new_playlist["userId"] = str(new_playlist["userId"])
-        del new_playlist["_id"]
         
         return {
             "success": True,
@@ -148,8 +148,9 @@ async def update_playlist(
             await database[db.PLAYLISTS].update_one({"_id": parse_object_id(id)}, {"$set": update_data})
             
         updated_playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
-        updated_playlist["id"] = str(updated_playlist["_id"])
-        del updated_playlist["_id"]
+        updated_playlist["_id"] = str(updated_playlist["_id"])
+        updated_playlist["id"] = updated_playlist["_id"]
+        updated_playlist["userId"] = str(updated_playlist["userId"])
         
         return {
             "success": True,
@@ -580,8 +581,9 @@ async def add_song_to_playlist(
         )
         
         updated_playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
-        updated_playlist["id"] = str(updated_playlist["_id"])
-        del updated_playlist["_id"]
+        updated_playlist["_id"] = str(updated_playlist["_id"])
+        updated_playlist["id"] = updated_playlist["_id"]
+        updated_playlist["userId"] = str(updated_playlist["userId"])
         
         return {
             "success": True,
