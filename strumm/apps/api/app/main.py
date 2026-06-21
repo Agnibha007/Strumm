@@ -123,7 +123,7 @@ app.include_router(share.router)
 app.include_router(social.router)
 
 # Health checks
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     try:
         # Check DB connectivity
