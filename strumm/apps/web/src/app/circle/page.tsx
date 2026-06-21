@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play } from "lucide-react";
+import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
 
@@ -57,6 +57,53 @@ export default function CirclePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+ 
+  // Direct Message/Song Share Modal States
+  const [sharingTarget, setSharingTarget] = useState<Friend | null>(null);
+  const [shareMessage, setShareMessage] = useState("");
+  const [includeSong, setIncludeSong] = useState(true);
+  const [sendingShare, setSendingShare] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  const closeShareModal = () => {
+    setSharingTarget(null);
+    setShareMessage("");
+    setIncludeSong(true);
+    setSendingShare(false);
+    setShareError(null);
+  };
+
+  const handleSendShare = async () => {
+    if (!token || !sharingTarget) return;
+    setSendingShare(true);
+    setShareError(null);
+    try {
+      const currentSong = usePlayerStore.getState().currentSong;
+      const response = await fetch(apiUrl("/social/message"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          receiverId: sharingTarget.id,
+          message: shareMessage.trim() || undefined,
+          song: includeSong ? currentSong : undefined
+        })
+      });
+      const json = await response.json();
+      if (json.success) {
+        closeShareModal();
+        alert("Your wave has been sent!");
+      } else {
+        setShareError(json.error || "Failed to send wave.");
+      }
+    } catch (e) {
+      setShareError("Unable to connect to backend server.");
+    } finally {
+      setSendingShare(false);
+    }
+  };
 
   const loadCircleData = async () => {
     if (!token) return;
@@ -164,6 +211,98 @@ export default function CirclePage() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const renderShareModal = () => {
+    if (!sharingTarget) return null;
+    const currentSong = usePlayerStore.getState().currentSong;
+
+    return (
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-background/85 backdrop-blur-sm">
+        <div className="w-full max-w-sm bg-surface border border-border/80 rounded-2xl p-5 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-border/20 pb-3">
+            <div className="min-w-0">
+              <span className="text-[8px] uppercase tracking-widest text-primary font-bold block">Direct Wave</span>
+              <h3 className="font-editorial text-base text-text font-bold truncate leading-tight">
+                Send to {sharingTarget.displayName}
+              </h3>
+            </div>
+            <button
+              onClick={closeShareModal}
+              className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg transition cursor-pointer"
+              title="Cancel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="space-y-3.5">
+            <div className="space-y-1.5">
+              <label className="block text-[9px] uppercase tracking-wider text-muted font-bold">Your message</label>
+              <textarea
+                value={shareMessage}
+                onChange={(e) => setShareMessage(e.target.value)}
+                placeholder="Type a custom note (optional)..."
+                className="w-full bg-background/50 border border-border/80 focus:border-primary/50 rounded-xl px-3 py-2.5 text-xs text-text focus:outline-none transition resize-none"
+                rows={3}
+              />
+            </div>
+
+            {currentSong ? (
+              <div className="p-3 bg-surface-elevated/40 border border-border/40 rounded-xl space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="attach-song"
+                    checked={includeSong}
+                    onChange={(e) => setIncludeSong(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                  />
+                  <label htmlFor="attach-song" className="text-[10px] text-text font-semibold cursor-pointer select-none">
+                    Attach Currently Playing Track
+                  </label>
+                </div>
+                {includeSong && (
+                  <div className="p-2 bg-background/30 border border-border/20 rounded-lg flex items-center gap-2 min-w-0">
+                    <img src={currentSong.thumbnail} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] text-text font-semibold block truncate leading-snug">{currentSong.title}</span>
+                      <span className="text-[9px] text-muted block truncate">{currentSong.artist}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted italic">No track is currently playing in your player to attach.</p>
+            )}
+          </div>
+
+          {shareError && (
+            <div className="text-[10px] text-primary bg-primary/5 border border-primary/20 p-2.5 rounded-lg">
+              {shareError}
+            </div>
+          )}
+
+          <div className="flex gap-2 justify-end border-t border-border/20 pt-4">
+            <button
+              type="button"
+              onClick={closeShareModal}
+              className="px-3.5 py-1.5 border border-border text-text text-xs font-semibold rounded-lg hover:bg-surface-elevated transition cursor-pointer select-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={sendingShare}
+              onClick={handleSendShare}
+              className="px-4 py-1.5 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer select-none disabled:opacity-50"
+            >
+              {sendingShare ? "Sending..." : "Send Wave"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (!token) {
@@ -339,6 +478,13 @@ export default function CirclePage() {
                         Create Blend
                       </button>
                       <button
+                        onClick={() => setSharingTarget(friend)}
+                        className="px-3 py-1.5 border border-border hover:bg-surface-elevated text-muted hover:text-primary rounded-lg transition cursor-pointer"
+                        title="Send message/song"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                      <button
                         disabled={actionLoading === friend.id}
                         onClick={() => handleRemove(friend.id)}
                         className="px-3 py-1.5 border border-border hover:bg-red-500/10 hover:text-red-400 text-xs font-semibold rounded-lg transition cursor-pointer"
@@ -421,8 +567,9 @@ export default function CirclePage() {
               </div>
             )}
           </div>
-        </div>
       </div>
+      </div>
+      {sharingTarget && renderShareModal()}
     </div>
   );
 }

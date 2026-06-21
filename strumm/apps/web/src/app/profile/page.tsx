@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
-import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, X, Loader2, Play } from "lucide-react";
+import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, X, Loader2, Play, Compass, History, Zap, Disc } from "lucide-react";
 import { Playlist, User } from "@strumm/types";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiUrl } from "web/lib/api";
@@ -400,16 +400,58 @@ function ProfilePageContent() {
       earned: totalMinutes > 60 
     },
     { 
+      name: "Power Listener", 
+      desc: "Listened over 10 hours", 
+      icon: Clock, 
+      earned: totalMinutes >= 600 
+    },
+    { 
       name: "Tastemaker", 
       desc: "Liked 5+ records", 
       icon: Award, 
       earned: likedCount > 5 
     },
     { 
+      name: "Collector", 
+      desc: "Liked 10+ records", 
+      icon: Heart, 
+      earned: likedCount >= 10 
+    },
+    { 
       name: "Curation King", 
       desc: "Created 3+ playlists", 
       icon: FolderHeart, 
       earned: playlists.length > 2 
+    },
+    { 
+      name: "Vibe Architect", 
+      desc: "Created 5+ playlists", 
+      icon: Disc, 
+      earned: playlists.length >= 5 
+    },
+    { 
+      name: "Archivist", 
+      desc: "Created 3+ memories", 
+      icon: Library, 
+      earned: memories.length >= 3 
+    },
+    { 
+      name: "Sonic Explorer", 
+      desc: "Variety DNA 8+", 
+      icon: Compass, 
+      earned: soundDNA.variety >= 8 
+    },
+    { 
+      name: "Time Traveler", 
+      desc: "Nostalgia DNA 8+", 
+      icon: History, 
+      earned: soundDNA.nostalgia >= 8 
+    },
+    { 
+      name: "High Voltage", 
+      desc: "Energy DNA 8+", 
+      icon: Zap, 
+      earned: soundDNA.energy >= 8 
     }
   ];
 
@@ -493,7 +535,7 @@ function ProfilePageContent() {
                 Passport Stamp Archives
               </h4>
               <div className="grid grid-cols-2 gap-2">
-                {allBadges.map((badge, idx) => {
+                {allBadges.filter(badge => badge.earned).map((badge, idx) => {
                   const Icon = badge.icon;
                   return (
                     <div
