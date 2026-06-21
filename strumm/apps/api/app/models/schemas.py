@@ -72,6 +72,10 @@ class UserSettingsSchema(BaseModel):
     privacy: str = "public"
     theme: str = "Obsidian"
     customThemeImage: Optional[str] = None
+    showListeningActivity: bool = True
+    publicPassport: bool = True
+    showTopSongs: bool = True
+    allowRequests: bool = True
 
     @field_validator("audioQuality")
     @classmethod

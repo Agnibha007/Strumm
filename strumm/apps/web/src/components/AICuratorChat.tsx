@@ -22,7 +22,7 @@ export default function AICuratorChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       sender: "ai",
-      text: "Hello! I am Strumm AI, your personal music curator. I can recommend tracks based on your mood, answer music questions, or dynamically build smart playlists directly in your library (e.g., 'Make a playlist for rain'). What are you in the mood for?",
+      text: "Hello! I am Strumm Flow, your personal music curator. I can recommend tracks based on your mood, answer music questions, or dynamically build smart playlists directly in your library (e.g., 'Make a playlist for rain'). What are you in the mood for?",
     },
   ]);
   const [input, setInput] = useState("");
@@ -90,7 +90,7 @@ export default function AICuratorChat() {
     <div className="bg-surface/30 border border-border/40 rounded-xl p-4 flex flex-col h-[400px] mt-4 shadow-sm">
       <div className="flex items-center gap-2 border-b border-border/20 pb-2 mb-3">
         <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-        <h4 className="font-editorial text-sm font-bold text-text">Ask Strumm AI</h4>
+        <h4 className="font-editorial text-sm font-bold text-text">Ask Strumm Flow</h4>
       </div>
 
       {/* Messages list */}

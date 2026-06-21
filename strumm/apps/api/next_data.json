@@ -1,0 +1,1298 @@
+{
+  "props": {
+    "pageProps": {
+      "state": {
+        "data": {
+          "entity": {
+            "type": "playlist",
+            "name": "Hindi Songs",
+            "uri": "spotify:playlist:4waOjSLnItP6Y35LyvGufm",
+            "id": "4waOjSLnItP6Y35LyvGufm",
+            "title": "Hindi Songs",
+            "subtitle": "Agnibha Mukherjee",
+            "authors": null,
+            "coverArt": {
+              "sources": [
+                {
+                  "height": 640,
+                  "width": 640,
+                  "url": "https://mosaic.scdn.co/640/ab67616d00001e0202dde7bfff94df00c8b76eb4ab67616d00001e024c74beed966d2f38aa298c57ab67616d00001e026404721c1943d5069f0805f3ab67616d00001e02c7b8d39b1e113845906984ab"
+                },
+                {
+                  "height": 300,
+                  "width": 300,
+                  "url": "https://mosaic.scdn.co/300/ab67616d00001e0202dde7bfff94df00c8b76eb4ab67616d00001e024c74beed966d2f38aa298c57ab67616d00001e026404721c1943d5069f0805f3ab67616d00001e02c7b8d39b1e113845906984ab"
+                },
+                {
+                  "height": 60,
+                  "width": 60,
+                  "url": "https://mosaic.scdn.co/60/ab67616d00001e0202dde7bfff94df00c8b76eb4ab67616d00001e024c74beed966d2f38aa298c57ab67616d00001e026404721c1943d5069f0805f3ab67616d00001e02c7b8d39b1e113845906984ab"
+                }
+              ]
+            },
+            "releaseDate": null,
+            "duration": 0,
+            "isPlayable": true,
+            "playabilityReason": "UNKNOWN",
+            "isExplicit": false,
+            "hasVideo": false,
+            "relatedEntityUri": "spotify:playlist:4waOjSLnItP6Y35LyvGufm",
+            "trackList": [
+              {
+                "uri": "spotify:track:5PvwPy5eRO8BPwpRzCHK3D",
+                "uid": "a95b5c4f14c24270",
+                "title": "Sunn Raha Hai",
+                "subtitle": "Ankit Tiwari,\u00a0Sandeep Nath",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 390222,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/66bea517c537e37b3aa162213583403583551f08"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2MsGTWvf7dcjKbI0WTq6Pz",
+                "uid": "4ab1d045c048a346",
+                "title": "Judaai",
+                "subtitle": "Sachin-Jigar,\u00a0Rekha Bhardwaj,\u00a0Arijit Singh,\u00a0Priya Saraiya",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 272772,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/e77ae15e9c2753e11921ba627302408c86b8551f"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3V3QbgrOZKtFv5MXzAAdZr",
+                "uid": "ccd0feac076c0092",
+                "title": "Locha-E-Ulfat",
+                "subtitle": "Benny Dayal,\u00a0Shankar-Ehsaan-Loy,\u00a0Amitabh Bhattacharya",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 288462,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/568bddd44ad1c76b7ff812e7a759e901efe20f3c"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:0pWcUM0z72DhTW7j0fa0QM",
+                "uid": "b87bf8f683f1c04a",
+                "title": "Besabriyaan",
+                "subtitle": "Armaan Malik,\u00a0Amaal Mallik,\u00a0Manoj Muntashir",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 255738,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/0dd0289ed2d94cf17f6f182ed71431a2574ac0b2"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3uL1IBFhg52VcQqOwAG01E",
+                "uid": "d3e21311e8025b91",
+                "title": "Mast Magan",
+                "subtitle": "Arijit Singh,\u00a0Chinmayi,\u00a0Shankar-Ehsaan-Loy,\u00a0Amitabh Bhattacharya",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 280161,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/c05ff6e79e032b49e0975419a24ea2775c3aaaa6"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:22jbgc9BtV1uiV7hKYTyDx",
+                "uid": "1e2a9251150fa355",
+                "title": "Chaandaniya",
+                "subtitle": "Mohan Kannan,\u00a0Yashita Sharma,\u00a0Shankar-Ehsaan-Loy,\u00a0Amitabh Bhattacharya",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 247862,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/0348aacf3a6d30dda28b51e332ca5a74f1e0cc6d"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4uNxdQ1L4Xa52MWX864QhW",
+                "uid": "ae410838a0084177",
+                "title": "What Jhumka ? (From \"Rocky Aur Rani Kii Prem Kahaani\")",
+                "subtitle": "Pritam,\u00a0Arijit Singh,\u00a0Jonita Gandhi,\u00a0Ranveer Singh,\u00a0Amitabh Bhattacharya,\u00a0Madan Mohan",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 213611,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/ff3a54677840a85c4f8ceb66bc248b9915bf5430"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4ymPEyiXabTe1NO8q8EFxG",
+                "uid": "8344bb0116f162fa",
+                "title": "Chogada (From \"Loveyatri\")",
+                "subtitle": "Darshan Raval,\u00a0Asees Kaur,\u00a0Lijo George-Dj Chetas",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 249741,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/7603fcdacb23ad93af0fcc8ba58d7b390799ead6"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4bD9z9qa4qg9BhryvYWB7c",
+                "uid": "acbaf4af98e4a840",
+                "title": "Kabira",
+                "subtitle": "Pritam,\u00a0Tochi Raina,\u00a0Rekha Bhardwaj,\u00a0Amitabh Bhattacharya",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 223459,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/75e722cf78b98bd47c25a942da931e2e918b392b"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2g3o6I7YuKFEUn9OOfuAfP",
+                "uid": "1f28763809d773d0",
+                "title": "Naina Da Kya Kasoor",
+                "subtitle": "Amit Trivedi",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 210951,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/30ff9c7356cf1076ef6fb557d154c5dd7ca0ba04"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:0EwRpK9wY6lHfcJSt82w4x",
+                "uid": "efe1cfcc96f1c25c",
+                "title": "Aaj Se Teri",
+                "subtitle": "Amit Trivedi,\u00a0Arijit Singh",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 312240,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/19140828bec0f02914a3cf648e883773f84760f9"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4vHRQnzGcKEtqsLH70tAms",
+                "uid": "8bb6d16264e5d56a",
+                "title": "Raanjhan (From \"Do Patti\")",
+                "subtitle": "Sachet-Parampara,\u00a0Parampara Tandon,\u00a0Kausar Munir",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 240066,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/bba91ce591d403fc437cf896feb0fa80f94d20f4"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3HiobOOpSpMsi95WBKPBYk",
+                "uid": "283fc9ae5862aeac",
+                "title": "Hamari Adhuri Kahani (Title Track)",
+                "subtitle": "Jeet Gannguli,\u00a0Arijit Singh,\u00a0Rashmi Virag",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 398799,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/f45952a1fdd947b7a5caa44ab10ba7d612478413"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:1J9vyEntJ79CppvgUxJs75",
+                "uid": "d0e4cf7d7e31d159",
+                "title": "Zaalima",
+                "subtitle": "Arijit Singh,\u00a0Harshdeep Kaur",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 299333,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/cefe2eee1e53cfc0a28cfeabdd7b19268a60767e"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2cPUB8EOT6AfJ8oxhyoNXL",
+                "uid": "1760e9cc4da00e46",
+                "title": "Ye Tune Kya Kiya",
+                "subtitle": "Pritam,\u00a0Javed Bashir,\u00a0Rajat Arora",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 314239,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/15bae6265cd512ec4c182921afa158cd4b0b618e"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:47u58mTcdtIA3ijk26m51k",
+                "uid": "83aec96417625123",
+                "title": "Kajra Mohabbat Wala",
+                "subtitle": "Asha Bhosle,\u00a0Shamshad Begum",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 378346,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/c98d12800a144d18f190a3811d60d85789763dda"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6HyoNDIpx057slv9bwR75l",
+                "uid": "ea993e8b01c8ae4b",
+                "title": "Ajnabi Hawaayein",
+                "subtitle": "Shreya Ghoshal",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 281658,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/36a5ff6019dfb7cfbb30b3bc6663a040d73d6817"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:1ApfHqjOoBmJZ0SjdjzVyA",
+                "uid": "ea7be003a3d52c56",
+                "title": "Yeh Raaten Yeh Mausam",
+                "subtitle": "Sanam,\u00a0Simran Sehgal",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 208943,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/f16060bc9fbaa171ef35e6155365a3b9546d2a57"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4jk4CaqBMBbMZhf3PuR1ai",
+                "uid": "5b99f066e92f39f1",
+                "title": "Phir Kabhi",
+                "subtitle": "Arijit Singh,\u00a0Amaal Mallik,\u00a0Manoj Muntashir",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 287422,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/90f02e2f26c2652e7d442f23a695440c03be7ebe"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6UgcN95w7vQxkR8sEFmwHG",
+                "uid": "61cb733612a7e15a",
+                "title": "Chahun Main Ya Naa",
+                "subtitle": "Palak Muchhal,\u00a0Arijit Singh,\u00a0Jeet Gannguli,\u00a0Irshad Kamil",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 304899,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/c3f76a9328975e69d749e5004456cf3d5a81240a"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2Fv2injs4qAm8mJBGaxVKU",
+                "uid": "443d0f0d0e3d41f9",
+                "title": "Tujhe Kitna Chahne Lage (From \"Kabir Singh\")",
+                "subtitle": "Arijit Singh,\u00a0Mithoon",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 284779,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/092f63158ea9656db86c0d716dd834336c6d19e8"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2C6CJGFLbisteRuY6Plb7b",
+                "uid": "e6588a93f6daf072",
+                "title": "Ve Haaniyaan",
+                "subtitle": "Danny,\u00a0Avvy Sra,\u00a0Sagar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 240000,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/9e07cfcb72732030d54294ef07024f7d7cc8f1a7"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3yHyiUDJdz02FZ6jfUbsmY",
+                "uid": "bb8ed12500dba737",
+                "title": "Satranga (From \"ANIMAL\")",
+                "subtitle": "Arijit Singh,\u00a0Shreyas Puranik,\u00a0Siddharth - Garima",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 271169,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/7908c3512a17427dbb2747fda555aa84aedeef0d"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:60d8xZS908s2J5RwMMRhcT",
+                "uid": "204c0c6770f1a9c8",
+                "title": "O Ri Chiraiya",
+                "subtitle": "Ram Sampath,\u00a0Swanand Kirkire",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 253074,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/51740e02f450a8d4d2a180d3dd6a0a0cc06bec39"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:276OSoX4vez6UtPF8TGWav",
+                "uid": "08f2ff41bf20294b",
+                "title": "Ve Maahi",
+                "subtitle": "Arijit Singh,\u00a0Asees Kaur,\u00a0Tanishk Bagchi",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 223999,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/aedd8975c906080f6c14e98844c6d5775925db9d"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2GXXZFUxYg2LvG8SR0byOE",
+                "uid": "d2a8e9c75ff04263",
+                "title": "Jeena Jeena",
+                "subtitle": "Sachin-Jigar,\u00a0Atif Aslam,\u00a0Priya Saraiya",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 228969,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/83ff15debc89b5f652f0e2fd01fb2830957a055c"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:5FXMRdJjKq1BIX4e8Eg9mK",
+                "uid": "c8f127165126adcc",
+                "title": "Ajab Si",
+                "subtitle": "KK,\u00a0Vishal-Shekhar,\u00a0Vishal Dadlani",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 241668,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/5d635389a6a18b2fd08666d548164ad1b287a7b2"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3jf5303mzzJ96O8xFTcEn4",
+                "uid": "64964c9eefe7f38b",
+                "title": "Mann Bharryaa 2.0 (From \"Shershaah\")",
+                "subtitle": "B Praak,\u00a0Jaani",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 266005,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/67706e7237cebcd27f97fe669ac5b33d270e514a"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:7F8RNvTQlvbeBLeenycvN6",
+                "uid": "f81f586501cc39ce",
+                "title": "Kun Faya Kun",
+                "subtitle": "A.R. Rahman,\u00a0Javed Ali,\u00a0Mohit Chauhan",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 470500,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/b360644d52e45bc64340b5e3e7885a67c9801631"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:17JdfacVTmRANwgu2T8zBN",
+                "uid": "8b6236aed671fc7e",
+                "title": "Barsaat Bhi Aakar",
+                "subtitle": "Abhijeet",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 211826,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/04667e5765cbc1e313fdc60a7a6f8e1134983ba2"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:0IudGhdeJZwJ0Ps6ndtQDt",
+                "uid": "0cbb6e05b2d51d19",
+                "title": "Falak Tak",
+                "subtitle": "Vishal-Shekhar,\u00a0Udit Narayan,\u00a0Mahalakshmi Iyer,\u00a0Kausar Munir",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 356179,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/5114c34adb28eb4b4d82f5ed8a43420d7a30e527"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3LWvtwgEIzC1wdHiUBoG1v",
+                "uid": "05fd388b5d292222",
+                "title": "Breathless - Shankar Mahadevan",
+                "subtitle": "Shankar Mahadevan",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 177960,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/3a24058c138745a6e8db43c54e23d85340b86d6a"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:1YMLgvsQdE27r30q0fsLeV",
+                "uid": "ccf5e38fc7b09694",
+                "title": "Tera Fitoor",
+                "subtitle": "Arijit Singh,\u00a0Himesh Reshammiya,\u00a0Kumaar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 310000,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/2ae63ff017b8a88399d85eb66ae8493227eceb0c"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:0l6g8Z8mqGbGXFOjigYetD",
+                "uid": "e269b3d388cc8c95",
+                "title": "Hawayein",
+                "subtitle": "Pritam,\u00a0Arijit Singh",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 290000,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/c2ff0db2a571c69055c8380932e230f0ef24e46e"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:0bEGXuQwXNF61JDXP47h9i",
+                "uid": "0fb79c3f6ae0ac10",
+                "title": "O Shera - Teer Te Taj (Film Version) - From \"Kesari Chapter 2\"",
+                "subtitle": "Shashwat Sachdev,\u00a0Sangtar,\u00a0Manmohan Waris,\u00a0Kamal Heer,\u00a0Sukhwinder Amrit",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 152624,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/b66d075619fa44ebb294f175817e22b326531fa8"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6mkgbTsWDSgKkM6zF6Az71",
+                "uid": "b8bd5b201b8872c0",
+                "title": "Teri Mitti",
+                "subtitle": "B Praak,\u00a0Manoj Muntashir",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 313999,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/6262f38397680e17d2deb051b06e26b51ae21b40"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4ILc7H2NfGbzbrHBclNOtB",
+                "uid": "6e92d72d888b0136",
+                "title": "Dil Meri Na Sune",
+                "subtitle": "Atif Aslam,\u00a0Himesh Reshammiya,\u00a0Manoj Muntashir",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 236000,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/e5d5444492ecb2b55a18904852df25ebcdb91d8e"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:5ayTQo5gOcvPq44csmBODm",
+                "uid": "2b9bda71e17c1144",
+                "title": "Raj Karega Khalsa",
+                "subtitle": "Navraj Hans,\u00a0Daler Mehndi",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 327574,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/102fead5de894758be7ae5dd0465dca839419704"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:7EcRb9AkOSRXdTFAlKt5Vy",
+                "uid": "3afa705e3c8b40f0",
+                "title": "Falak Tak - LoFi Mix",
+                "subtitle": "Udit Narayan,\u00a0Mahalaxmi Iyer",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 229859,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/9bab4ad29244567358be1af7d9e96a2f3892ed5b"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2iZeKe5avjtKVmjfSFkpxd",
+                "uid": "15d7c9e5202cc72c",
+                "title": "Tum Jo Aaye",
+                "subtitle": "Pritam,\u00a0Tulsi Kumar,\u00a0Rahat Fateh Ali Khan,\u00a0Irshad Kamil",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 286443,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/16ecdd70022435665412c1290a4107506a22d375"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:5vGiuYFSGekGLgbxhV1rD5",
+                "uid": "2707084997ebd43b",
+                "title": "Tu Jaane Na",
+                "subtitle": "Pritam,\u00a0Atif Aslam",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 341933,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/4fecba71b93432f706c97d1d9055217e862320e1"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:48Ix6ReYdJf2H4mKb3TIpj",
+                "uid": "1c1209b51a7c7060",
+                "title": "Tera Hone Laga Hoon",
+                "subtitle": "Pritam,\u00a0Atif Aslam,\u00a0Alisha Chinai",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 299827,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/8283047bb2f8471103910e6ce4f42b3f79bc4a8c"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:7G5wpuR61ABrT7R1snos7C",
+                "uid": "59f16e59b18d11d8",
+                "title": "Kalank - Title Track",
+                "subtitle": "Pritam,\u00a0Arijit Singh",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 311186,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/e6715fc5e5e7d45b090c597db01b6303ca44edcc"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:2si0ZNx4yRbggTvrIom8A2",
+                "uid": "0ff8573cc0a5d280",
+                "title": "Paniyon Sa",
+                "subtitle": "Tulsi Kumar,\u00a0Atif Aslam,\u00a0Rochak Kohli,\u00a0Kumaar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 236239,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/4729687f5ca4202510a9217f1c926dc58e38ecbb"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:1hQia6rxgfM1ly2hE3StWp",
+                "uid": "46982fed3836be79",
+                "title": "Ishq Wala Love",
+                "subtitle": "Vishal-Shekhar,\u00a0Shekhar Ravjiani,\u00a0Salim Merchant,\u00a0Neeti Mohan",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 257972,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/8d534999bdad07dbd8159e533ef7ecf076b42246"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6YRbDkyTzsizAWFz8kwiI7",
+                "uid": "b38132c3384ba66d",
+                "title": "Hum Tum",
+                "subtitle": "Jatin-Lalit,\u00a0Alka Yagnik,\u00a0Babul Supriyo,\u00a0Prasoon Joshi",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 329221,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/a07c585a43301eb45b92f09fa000e0cfc2b26095"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6HIkXmOqrxiDeMoWW3Cdzo",
+                "uid": "4d9f92074ae415a2",
+                "title": "Itna Na Mujhse Tu Pyar Badha",
+                "subtitle": "Talat Mahmood,\u00a0Lata Mangeshkar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 235333,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/cbe8a47ced0e7f6ec63826d6a1d99a8ea53338d4"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6EivvaEepVTjmDde43eGiB",
+                "uid": "1ab9da45b63f03c4",
+                "title": "Ve Kamleya (From \"Rocky Aur Rani Kii Prem Kahaani\")",
+                "subtitle": "Pritam,\u00a0Arijit Singh,\u00a0Shreya Ghoshal,\u00a0Shadab Faridi,\u00a0Altamash Faridi,\u00a0Amitabh Bhattacharya",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 246988,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/b054f14100aea12d6aa66be44ef761ec2891cf95"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:1dJIMapce3U27ja5xbOVLw",
+                "uid": "d91195fb64a06830",
+                "title": "Ashq Na Ho",
+                "subtitle": "Pritam,\u00a0Arijit Singh",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 353103,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/faf5d43be8f54bed4a6b3a25316ccd83f41871f2"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4zqEKVkuMtLkzEOwnIYM7D",
+                "uid": "7f823f505ab76382",
+                "title": "Ae Watan - Male Version",
+                "subtitle": "Arijit Singh",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 223399,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/b372e1c74ebcf0c53ee1318a936f1c9e7b9a03da"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6duBhpTnuZX7PkMICVcUH0",
+                "uid": "03c03cde2bee1271",
+                "title": "Piyu Bole",
+                "subtitle": "Sonu Nigam,\u00a0Shreya Ghoshal",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 265038,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/3239520357153dc2195788ac98a5370db443a674"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:0FBQ4NrrHUbR9kus7rzrOj",
+                "uid": "d788cc81d458093b",
+                "title": "Dil Diyan Gallan",
+                "subtitle": "Atif Aslam",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 260536,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/4d7e50d55dbc4c1a8129492c1470568b66063d52"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3oWxFNsXstcancCR1wODR4",
+                "uid": "b682cd67793f5299",
+                "title": "Tera Ban Jaunga",
+                "subtitle": "Akhil Sachdeva,\u00a0Tulsi Kumar,\u00a0Kumaar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 236436,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/03920de78dbb2f97844ba91d7c65af4d13fed097"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:3HFjh7QljnUCBLsoTwMuTj",
+                "uid": "b778d533360d9749",
+                "title": "Kya Mujhe Pyar Hai",
+                "subtitle": "Pritam,\u00a0KK,\u00a0Neelesh Misra",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 266653,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/ab3198d66b06326c275b5aaaa43fed8c41f4e1cc"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:56zZ48jdyY2oDXHVnwg5Di",
+                "uid": "c3d79d9e02c1be38",
+                "title": "Tum Hi Ho",
+                "subtitle": "Arijit Singh,\u00a0Mithoon",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 261974,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/bce0f462dcd5e3b80dd21d28a0ed0dd25500cb59"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6mTvwBzWTGDOVeCNQEqtOE",
+                "uid": "497705a7a23d5323",
+                "title": "Soch Na Sake",
+                "subtitle": "Amaal Mallik,\u00a0Arijit Singh,\u00a0Tulsi Kumar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 281322,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/330e51578b83cabf38fdffb11d7308bc86bad29a"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:4vEjxuEWYUumjsHzLYRmBs",
+                "uid": "cb7c8e45f9297c07",
+                "title": "Papa Kahte Hain",
+                "subtitle": "Udit Narayan",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 353666,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/7fd21d128b2e73142e329f4ba4106ba55abf24ec"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:21kImg7AxLbl7rrciuAwoB",
+                "uid": "34deeedfe065575e",
+                "title": "Woh Lamhe Woh Baatein - From \"Zeher\"",
+                "subtitle": "Atif Aslam,\u00a0Roop Kumar Rathod,\u00a0Mithoon,\u00a0Naresh Sharma",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 320040,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/3a3a27c549ad7255da19a6e915f879b9696f2cb8"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6sF70gMVf9jg8QEogyVqBl",
+                "uid": "69d982ba09871533",
+                "title": "Pal Pal Dil Ke Paas - From \"Blackmail\"",
+                "subtitle": "Kishore Kumar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 328160,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/d63ba111ee00319c7b0b53620622599c11c42638"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:0M0ANKNzmM4Odd7FNKghzW",
+                "uid": "120833f1884d8fd4",
+                "title": "Akhiyaan Gulaab (From \"Teri Baaton Mein Aisa Uljha Jiya\")",
+                "subtitle": "Mitraz",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 171147,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/ea00af6baa942154c1a3e3d55a196ac463c7754e"
+                },
+                "entityType": "track"
+              },
+              {
+                "uri": "spotify:track:6egfWbtFFhMToV2DvmEzmo",
+                "uid": "03018dfa282d25d7",
+                "title": "Tu Hain Toh (From \"Mr. And Mrs. Mahi\")",
+                "subtitle": "Bunny,\u00a0Hunny,\u00a0Sagar",
+                "isExplicit": false,
+                "isNineteenPlus": false,
+                "contentRatings": {
+                  "labels": []
+                },
+                "duration": 283539,
+                "isPlayable": true,
+                "playabilityReason": "PLAYABLE",
+                "audioPreview": {
+                  "format": "MP3_96",
+                  "url": "https://p.scdn.co/mp3-preview/c9a59a1bf773652594fb785c56dc739cd1f0e95a"
+                },
+                "entityType": "track"
+              }
+            ],
+            "visualIdentity": {
+              "backgroundBase": {
+                "alpha": 255,
+                "blue": 80,
+                "green": 72,
+                "red": 72
+              },
+              "backgroundTintedBase": {
+                "alpha": 255,
+                "blue": 40,
+                "green": 33,
+                "red": 33
+              },
+              "textBase": {
+                "alpha": 255,
+                "blue": 255,
+                "green": 255,
+                "red": 255
+              },
+              "textBrightAccent": {
+                "alpha": 255,
+                "blue": 255,
+                "green": 255,
+                "red": 255
+              },
+              "textSubdued": {
+                "alpha": 255,
+                "blue": 214,
+                "green": 205,
+                "red": 205
+              },
+              "image": [
+                {
+                  "url": "https://mosaic.scdn.co/300/ab67616d00001e0202dde7bfff94df00c8b76eb4ab67616d00001e024c74beed966d2f38aa298c57ab67616d00001e026404721c1943d5069f0805f3ab67616d00001e02c7b8d39b1e113845906984ab",
+                  "maxHeight": 0,
+                  "maxWidth": 0
+                }
+              ]
+            },
+            "attributes": [],
+            "format": ""
+          },
+          "embeded_entity_uri": "spotify:playlist:4waOjSLnItP6Y35LyvGufm",
+          "defaultAudioFileObject": {
+            "passthrough": "NONE"
+          }
+        },
+        "settings": {
+          "rtl": false,
+          "session": {
+            "accessToken": "BQCUVi5wMuF2-zWV-hcn2GcBWBNCz7IpV7pVTWJjOEQNtgjcKJGrAs1nDj18gcEDM493dm990KihTh9p_SwfHs0FWkXC2urlHiNrpk9hUAH792MB4XhKO4hSzqWI4-B6usb1smQJm2x2",
+            "accessTokenExpirationTimestampMs": 1781970779020,
+            "isAnonymous": true
+          },
+          "entityContext": "playlist",
+          "clientId": "ab9ad0d96a624805a7d51e8868df1f97",
+          "isMobile": false,
+          "isSafari": false,
+          "isIOS": false,
+          "isTablet": false,
+          "isDarkMode": false,
+          "isAudiobookLaunchedInGeoMarket": false
+        },
+        "machineState": {
+          "initialized": false,
+          "showOverflowMenu": false,
+          "playbackMode": "unknown",
+          "currentPreviewTrackIndex": 0,
+          "platformSupportsEncryptedContent": false
+        }
+      },
+      "config": {
+        "correlationId": "3e102fae23180de2fcc13d8187f19e92",
+        "strings": {
+          "en": {
+            "translation": {}
+          }
+        },
+        "locale": "en",
+        "clientId": "ab9ad0d96a624805a7d51e8868df1f97",
+        "restrictionId": ""
+      },
+      "_sentryTraceData": "c2d18fbb779b04eb5d01d1d0bba41f22-9113a8b8f5c658cd-0",
+      "_sentryBaggage": "sentry-environment=production,sentry-release=c4195091fd2bed4d0d9be0b589bcfb11af642db5,sentry-public_key=4cc707ab12ea4779b417479c0550a5cb,sentry-trace_id=c2d18fbb779b04eb5d01d1d0bba41f22,sentry-org_id=22381,sentry-sampled=false,sentry-sample_rand=0.7090112358064229,sentry-sample_rate=0"
+    },
+    "__N_SSP": true
+  },
+  "page": "/playlist/[id]",
+  "query": {
+    "id": "4waOjSLnItP6Y35LyvGufm"
+  },
+  "buildId": "a2ecbc16-c046-4e15-87fc-78d67f55f177",
+  "assetPrefix": "https://embed-cdn.spotifycdn.com",
+  "isFallback": false,
+  "isExperimentalCompile": false,
+  "gssp": true,
+  "scriptLoader": []
+}

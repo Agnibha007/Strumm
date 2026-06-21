@@ -93,6 +93,35 @@ export default function ProfilePage() {
     signOut();
   };
 
+  const handleUpdateSetting = async (key: string, value: any) => {
+    if (!token || !profileUser) return;
+    const updatedSettings = {
+      ...profileUser.settings,
+      [key]: value
+    };
+    
+    setProfileUser({
+      ...profileUser,
+      settings: updatedSettings
+    });
+
+    try {
+      await fetch(apiUrl("/profile"), {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          settings: updatedSettings
+        })
+      });
+      await fetchProfile();
+    } catch (e) {
+      console.error("Failed to update user setting:", e);
+    }
+  };
+
   const triggerDeleteAccount = async () => {
     if (deleteConfirmationInput.trim().toUpperCase() !== "DELETE") {
       setAccountError("Please type DELETE to confirm account deletion.");
@@ -211,6 +240,62 @@ export default function ProfilePage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            <div className="border-t border-border/20 pt-5 space-y-3">
+              <h4 className="text-[10px] tracking-wider uppercase text-muted font-bold text-left select-none">
+                Privacy Controls
+              </h4>
+              <div className="space-y-3.5 text-left border border-border/40 p-4 rounded-xl bg-surface/30">
+                <div className="flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-semibold text-text block">Broadcast Listening Activity</span>
+                    <span className="text-[10px] text-muted block mt-0.5">Let Circle members see what song you are playing now.</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={profileUser.settings?.showListeningActivity ?? true}
+                    onChange={(e) => handleUpdateSetting("showListeningActivity", e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
+                  <div>
+                    <span className="font-semibold text-text block">Public Passport Visibility</span>
+                    <span className="text-[10px] text-muted block mt-0.5">Allow non-Circle users to view your Strumm Passport.</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={profileUser.settings?.publicPassport ?? true}
+                    onChange={(e) => handleUpdateSetting("publicPassport", e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
+                  <div>
+                    <span className="font-semibold text-text block">Show Top Tracks & Artists</span>
+                    <span className="text-[10px] text-muted block mt-0.5">Display listening statistics in your public passport.</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={profileUser.settings?.showTopSongs ?? true}
+                    onChange={(e) => handleUpdateSetting("showTopSongs", e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs border-t border-border/20 pt-3">
+                  <div>
+                    <span className="font-semibold text-text block">Allow Incoming Circle Requests</span>
+                    <span className="text-[10px] text-muted block mt-0.5">Let others invite you into their music circle.</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={profileUser.settings?.allowRequests ?? true}
+                    onChange={(e) => handleUpdateSetting("allowRequests", e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary border-border focus:ring-primary focus:ring-offset-background cursor-pointer"
+                  />
+                </div>
               </div>
             </div>
 

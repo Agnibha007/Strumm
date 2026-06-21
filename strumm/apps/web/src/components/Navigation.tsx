@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "web/store/useAuthStore";
 import { signOut } from "next-auth/react";
-import { Home, Library, ListMusic, Settings, LogOut, User as UserIcon, Search, Radio, Menu, X, Sparkles } from "lucide-react";
+import { Home, Library, ListMusic, Settings, LogOut, User as UserIcon, Search, Radio, Menu, X, Sparkles, Users, Tv } from "lucide-react";
 import BrandLogo from "web/components/BrandLogo";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -20,6 +20,8 @@ export default function Navigation() {
     { label: "Library", href: "/library", icon: Library },
     { label: "Playlists", href: "/playlists", icon: ListMusic },
     { label: "Podcasts", href: "/podcasts", icon: Radio },
+    { label: "Circle", href: "/circle", icon: Users },
+    { label: "Rooms", href: "/rooms", icon: Tv },
     { label: "Replay", href: "/replay", icon: Sparkles },
     { label: "Profile", href: "/profile", icon: UserIcon },
     { label: "Settings", href: "/settings", icon: Settings },

@@ -275,7 +275,7 @@ async def explore_chat(
             playlist_summary = "None (No playlists created yet)"
             
         system_prompt = (
-            "You are 'Strumm AI', a premium, intelligent music curator assistant. Your goal is to help the user discover music, answer music-related questions, suggest tracks, and build custom playlists.\n"
+            "You are 'Strumm Flow', a premium, intelligent music curator assistant. Your goal is to help the user discover music, answer music-related questions, suggest tracks, and build custom playlists.\n"
             "You are provided with details about the user's music taste:\n"
             f"1. Liked songs: {likes_summary}\n"
             f"2. Listening history: {history_summary}\n"
@@ -285,7 +285,7 @@ async def explore_chat(
             "- 'songs': (array of objects) If recommending songs (either matching their prompt or based on their history), include a list of up to 6 recommended songs. Each object must have keys 'title' and 'artist'. Otherwise, return an empty array [].\n"
             "- 'create_playlist': (boolean) Set to true ONLY if the user explicitly asked to create, save, build, or make a playlist. Otherwise, set to false.\n"
             "- 'playlist_name': (string) If create_playlist is true, specify a creative name for the playlist (e.g., 'Late Night Drive' or 'Lofi Focus Mix'). Otherwise, null.\n"
-            "- 'playlist_description': (string) If create_playlist is true, specify a short description (e.g., 'Curated by Strumm AI based on your preference for Chill Lofi.'). Otherwise, null.\n\n"
+            "- 'playlist_description': (string) If create_playlist is true, specify a short description (e.g., 'Curated by Strumm Flow based on your preference for Chill Lofi.'). Otherwise, null.\n\n"
             "Rules:\n"
             "1. Suggest ONLY real, existing songs and artists.\n"
             "2. Return ONLY the JSON object. Do not include markdown code block wrappers (like ```json), introductory text, or concluding notes. Just raw JSON."
@@ -323,8 +323,8 @@ async def explore_chat(
         message = result_data.get("message", "Here are your tracks:")
         songs_suggestions = result_data.get("songs", [])
         create_playlist = result_data.get("create_playlist", False)
-        playlist_name = result_data.get("playlist_name", "AI Curated Playlist")
-        playlist_description = result_data.get("playlist_description", "Generated dynamically by Strumm AI.")
+        playlist_name = result_data.get("playlist_name", "Flow Curated Playlist")
+        playlist_description = result_data.get("playlist_description", "Generated dynamically by Strumm Flow.")
         
         resolved_songs = []
         if songs_suggestions:

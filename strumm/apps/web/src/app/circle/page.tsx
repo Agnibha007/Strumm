@@ -1,0 +1,418 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useAuthStore } from "web/store/useAuthStore";
+import { apiUrl } from "web/lib/api";
+import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell } from "lucide-react";
+import Link from "next/link";
+
+interface Friend {
+  id: string;
+  displayName: string;
+  username: string;
+  avatar?: string;
+  tasteMatch: number;
+  currentActivity?: {
+    song: {
+      videoId: string;
+      title: string;
+      artist: string;
+      thumbnail: string;
+    };
+    timestamp: string;
+  } | null;
+}
+
+interface RequestItem {
+  id: string;
+  requesterId: string;
+  tasteMatch: number;
+  sender?: {
+    id: string;
+    displayName: string;
+    username: string;
+    avatar?: string;
+  };
+}
+
+interface NotificationItem {
+  id: string;
+  type: string;
+  senderName: string;
+  senderAvatar?: string;
+  message?: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export default function CirclePage() {
+  const { token, user } = useAuthStore();
+  
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<RequestItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const loadCircleData = async () => {
+    if (!token) return;
+    try {
+      // 1. Fetch circle
+      const fResp = await fetch(apiUrl("/social/circle"), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const fJson = await fResp.json();
+      if (fJson.success) setFriends(fJson.data || []);
+
+      // 2. Fetch requests
+      const rResp = await fetch(apiUrl("/social/requests"), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const rJson = await rResp.json();
+      if (rJson.success) setIncomingRequests(rJson.data || []);
+
+      // 3. Fetch notifications
+      const nResp = await fetch(apiUrl("/social/notifications"), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const nJson = await nResp.json();
+      if (nJson.success) setNotifications(nJson.data || []);
+      
+    } catch (e) {
+      setError("Failed to fetch Strumm Circle data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      loadCircleData();
+    }
+  }, [token]);
+
+  const handleAccept = async (requestId: string) => {
+    if (!token) return;
+    setActionLoading(requestId);
+    try {
+      const res = await fetch(apiUrl(`/social/accept/${requestId}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setIncomingRequests(prev => prev.filter(r => r.id !== requestId));
+        loadCircleData();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRemove = async (friendId: string) => {
+    if (!token) return;
+    setActionLoading(friendId);
+    try {
+      const res = await fetch(apiUrl(`/social/remove/${friendId}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setFriends(prev => prev.filter(f => f.id !== friendId));
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCreateBlend = async (friendId: string) => {
+    if (!token) return;
+    setActionLoading(friendId + "-blend");
+    try {
+      const res = await fetch(apiUrl(`/social/blend/${friendId}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success && json.data?.id) {
+        window.location.href = `/playlist/${json.data.id}`;
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleClearNotifications = async () => {
+    if (!token) return;
+    try {
+      await fetch(apiUrl("/social/notifications/clear"), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (!token) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 gap-4">
+        <Users className="w-12 h-12 text-primary opacity-50" />
+        <h3 className="font-editorial text-2xl text-text font-bold">Circle Locked</h3>
+        <p className="text-sm text-muted">Please log in to manage your Strumm Circle.</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="text-xs uppercase tracking-widest">Opening Circle Gates...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
+      {/* Header */}
+      <div className="flex justify-between items-start min-w-0">
+        <div className="min-w-0">
+          <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+            Strumm Social
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-editorial text-text tracking-tight font-bold mt-1">
+            Your Circle
+          </h2>
+          <p className="text-sm text-muted mt-2 max-w-xl line-clamp-2">
+            Social space strictly built around music identity, shared memories, and joint listening.
+          </p>
+        </div>
+        {notifications.some(n => !n.read) && (
+          <button
+            onClick={handleClearNotifications}
+            className="p-2.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition rounded-xl flex items-center gap-2 text-xs font-semibold"
+          >
+            <Bell className="w-4 h-4 animate-bounce" />
+            Clear Alerts
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start min-w-0">
+        {/* Left column: Connections, Invitations */}
+        <div className="lg:col-span-8 space-y-8 min-w-0">
+          
+          {/* Incoming invitations */}
+          {incomingRequests.length > 0 && (
+            <div className="space-y-4 min-w-0">
+              <h3 className="font-editorial text-xl text-text font-bold border-b border-border/20 pb-2">
+                Incoming Invitations ({incomingRequests.length})
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {incomingRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="p-4 bg-surface/50 border border-border/60 rounded-xl flex items-center justify-between min-w-0 gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {req.sender?.avatar ? (
+                        <img src={req.sender.avatar} alt="" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-surface-elevated border border-border flex items-center justify-center flex-shrink-0">
+                          <Users className="w-5 h-5 text-accent" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <Link href={`/@${req.sender?.username}`}>
+                          <span className="font-bold text-text text-sm hover:underline cursor-pointer block truncate">
+                            {req.sender?.displayName}
+                          </span>
+                        </Link>
+                        <span className="text-[10px] text-primary font-bold block mt-0.5">
+                          {req.tasteMatch}% Taste Match
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        disabled={actionLoading === req.id}
+                        onClick={() => handleAccept(req.id)}
+                        className="p-1.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition rounded-lg"
+                        title="Accept into Circle"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        disabled={actionLoading === req.id}
+                        onClick={() => handleRemove(req.sender?.id || "")}
+                        className="p-1.5 border border-border hover:bg-surface-elevated text-muted rounded-lg transition"
+                        title="Decline invitation"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Circle connections list */}
+          <div className="space-y-4 min-w-0">
+            <h3 className="font-editorial text-xl text-text font-bold border-b border-border/20 pb-2">
+              Circle Members ({friends.length})
+            </h3>
+            {friends.length === 0 ? (
+              <div className="p-8 border border-dashed border-border/60 rounded-2xl text-center bg-surface/20 space-y-2">
+                <Users className="w-8 h-8 text-muted mx-auto opacity-70" />
+                <h4 className="font-editorial text-base text-text font-bold">Your Circle is quiet</h4>
+                <p className="text-xs text-muted max-w-sm mx-auto">
+                  Find user passports via Search directory or share your passport handle to build your music connection circle.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {friends.map((friend) => (
+                  <div
+                    key={friend.id}
+                    className="p-4 bg-surface/50 border border-border/60 hover:border-primary/20 transition rounded-xl flex flex-col justify-between min-w-0 gap-4"
+                  >
+                    <div className="flex items-start justify-between min-w-0 gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {friend.avatar ? (
+                          <img src={friend.avatar} alt="" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-surface-elevated border border-border flex items-center justify-center flex-shrink-0">
+                            <Users className="w-5 h-5 text-accent" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <Link href={`/@${friend.username}`}>
+                            <span className="font-bold text-text text-sm hover:underline cursor-pointer block truncate">
+                              {friend.displayName}
+                            </span>
+                          </Link>
+                          <span className="text-[10px] text-muted block mt-0.5">@{friend.username}</span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold rounded flex-shrink-0">
+                        {friend.tasteMatch}% Match
+                      </span>
+                    </div>
+
+                    {/* Active listening status */}
+                    {friend.currentActivity ? (
+                      <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg flex items-center gap-3 min-w-0">
+                        <span className="w-2 h-2 bg-green-500 rounded-full animate-ping flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[9px] uppercase tracking-wider text-primary font-bold block">Listening Now</span>
+                          <span className="text-xs font-semibold text-text truncate block mt-0.5">{friend.currentActivity.song.title}</span>
+                          <span className="text-[10px] text-muted truncate block">{friend.currentActivity.song.artist}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-muted italic p-2 border border-border/10 rounded-lg bg-surface-elevated/20 truncate">
+                        Currently offline
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 border-t border-border/20 pt-3">
+                      <button
+                        disabled={actionLoading === friend.id + "-blend"}
+                        onClick={() => handleCreateBlend(friend.id)}
+                        className="flex-1 py-1.5 bg-accent hover:bg-accent/80 text-text text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                        Create Blend
+                      </button>
+                      <button
+                        disabled={actionLoading === friend.id}
+                        onClick={() => handleRemove(friend.id)}
+                        className="px-3 py-1.5 border border-border hover:bg-red-500/10 hover:text-red-400 text-xs font-semibold rounded-lg transition cursor-pointer"
+                        title="Remove member"
+                      >
+                        <UserMinus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right column: Notification History */}
+        <div className="lg:col-span-4 space-y-6 min-w-0">
+          <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
+            <h3 className="font-editorial text-lg text-text font-bold border-b border-border/20 pb-2">
+              Circle Alerts
+            </h3>
+            {notifications.length === 0 ? (
+              <p className="text-xs text-muted italic">No notifications logs recorded.</p>
+            ) : (
+              <div className="space-y-3.5 max-h-[400px] overflow-y-auto pr-1">
+                {notifications.map((notif) => (
+                  <div
+                    key={notif.id}
+                    className={`flex items-start gap-3 text-xs leading-relaxed p-2.5 rounded-xl border transition ${
+                      notif.read ? "bg-transparent border-transparent text-muted" : "bg-primary/5 border-primary/10 text-text"
+                    }`}
+                  >
+                    {notif.senderAvatar ? (
+                      <img src={notif.senderAvatar} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-surface border border-border flex items-center justify-center flex-shrink-0">
+                        <Users className="w-3.5 h-3.5 text-accent" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <span className="font-semibold text-text block truncate">{notif.senderName}</span>
+                      <span className="block text-[10px] text-muted mt-0.5">
+                        {notif.type === "friend_request" && "invited you into their Circle."}
+                        {notif.type === "accepted" && "accepted your Circle invitation."}
+                        {notif.type === "memory_shared" && (notif.message || "shared a memory.")}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const Loader2 = ({ className }: { className?: string }) => (
+  <svg
+    className={`animate-spin ${className}`}
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+  >
+    <circle
+      className="opacity-25"
+      cx="12"
+      cy="12"
+      r="10"
+      stroke="currentColor"
+      strokeWidth="4"
+    />
+    <path
+      className="opacity-75"
+      fill="currentColor"
+      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+    />
+  </svg>
+);

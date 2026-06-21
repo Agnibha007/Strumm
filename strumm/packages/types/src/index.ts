@@ -6,6 +6,10 @@ export interface UserSettings {
   privacy: 'public' | 'private';
   theme: ThemeType;
   customThemeImage?: string;
+  showListeningActivity?: boolean;
+  publicPassport?: boolean;
+  showTopSongs?: boolean;
+  allowRequests?: boolean;
 }
 
 export interface UserStatistics {

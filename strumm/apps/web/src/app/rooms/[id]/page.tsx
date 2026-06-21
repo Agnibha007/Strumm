@@ -1,0 +1,514 @@
+"use client";
+
+import { useEffect, useRef, useState, use } from "react";
+import { useAuthStore } from "web/store/useAuthStore";
+import { usePlayerStore } from "web/store/usePlayerStore";
+import { apiUrl } from "web/lib/api";
+import { Users, Radio, Play, Pause, SkipForward, Send, Mic, MicOff, Loader2, Sparkles } from "lucide-react";
+import SongArtwork from "web/components/SongArtwork";
+import { useRouter } from "next/navigation";
+
+interface RoomDetails {
+  id: string;
+  name: string;
+  hostId: string;
+  members: string[];
+  membersProfiles: Array<{
+    id: string;
+    displayName: string;
+    avatar?: string;
+  }>;
+  currentTrack?: any;
+  playbackState?: {
+    playing: boolean;
+    timestamp: number;
+    updatedAt: string;
+  };
+  queue: any[];
+  visibility: string;
+}
+
+export default function RoomDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const router = useRouter();
+  
+  const { token, user } = useAuthStore();
+  const { currentSong, isPlaying, currentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
+  
+  const [room, setRoom] = useState<RoomDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  // WebSocket and WebRTC Refs
+  const socketRef = useRef<WebSocket | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
+  
+  // UI states
+  const [messages, setMessages] = useState<Array<{ sender: string; text: string }>>([]);
+  const [inputText, setInputText] = useState("");
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [isHost, setIsHost] = useState(false);
+  const [suggestQuery, setSuggestQuery] = useState("");
+  const [suggestResults, setSuggestResults] = useState<any[]>([]);
+
+  // Fetch Room Info
+  const fetchRoomInfo = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(apiUrl(`/social/rooms/${id}`), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success) {
+        setRoom(json.data);
+        setIsHost(json.data.hostId === user?.id);
+      }
+    } catch (e) {
+      console.error("Failed to load room details:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchRoomInfo();
+    }
+  }, [token, id]);
+
+  // Connect WebSocket
+  useEffect(() => {
+    if (!token || !user?.id || !room) return;
+
+    const wsUrl = apiUrl("").replace(/^http/, "ws") + `/social/rooms/${id}/ws?userId=${user.id}`;
+    const ws = new WebSocket(wsUrl);
+    socketRef.current = ws;
+
+    ws.onmessage = async (event) => {
+      const payload = JSON.parse(event.data);
+      const { event: wsEvent, data: eventData } = payload;
+
+      if (wsEvent === "room:join") {
+        setMessages(prev => [...prev, { sender: "System", text: `A listener joined the room.` }]);
+        fetchRoomInfo();
+        if (isHost && currentSong) {
+          // Sync new member with host's current track state
+          ws.send(JSON.stringify({
+            event: "track:update",
+            data: { song: currentSong }
+          }));
+          ws.send(JSON.stringify({
+            event: isPlaying ? "play" : "pause",
+            data: { timestamp: currentTime }
+          }));
+        }
+      } 
+      
+      else if (wsEvent === "room:leave") {
+        setMessages(prev => [...prev, { sender: "System", text: `A listener left the room.` }]);
+        fetchRoomInfo();
+        // Remove WebRTC peer connection
+        const peerId = eventData.userId;
+        if (peerConnectionsRef.current[peerId]) {
+          peerConnectionsRef.current[peerId].close();
+          delete peerConnectionsRef.current[peerId];
+        }
+      } 
+      
+      else if (wsEvent === "chat:message") {
+        setMessages(prev => [...prev, { sender: eventData.senderName, text: eventData.text }]);
+      } 
+      
+      else if (wsEvent === "track:update") {
+        if (!isHost) {
+          playSong(eventData.song, [eventData.song]);
+        }
+        setRoom(prev => prev ? { ...prev, currentTrack: eventData.song } : null);
+      } 
+      
+      else if (wsEvent === "play") {
+        if (!isHost) {
+          setPlaying(true);
+          if (playerRef?.seekTo) {
+            playerRef.seekTo(eventData.timestamp);
+          }
+        }
+      } 
+      
+      else if (wsEvent === "pause") {
+        if (!isHost) {
+          setPlaying(false);
+        }
+      } 
+      
+      else if (wsEvent === "seek") {
+        if (!isHost && playerRef?.seekTo) {
+          playerRef.seekTo(eventData.timestamp);
+        }
+      } 
+      
+      else if (wsEvent === "queue:add") {
+        addToQueue(eventData.song);
+        setRoom(prev => prev ? { ...prev, queue: [...(prev.queue || []), eventData.song] } : null);
+      } 
+      
+      else if (wsEvent === "signal") {
+        const { from, signal } = eventData;
+        // WebRTC Signaling Answer/Offer/Candidate Processing
+        if (eventData.to === user.id) {
+          await handleReceiveSignal(from, signal);
+        }
+      }
+    };
+
+    return () => {
+      ws.close();
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+      Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+    };
+  }, [token, room?.id]);
+
+  // Host Action Broadcasters
+  useEffect(() => {
+    if (!isHost || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    
+    // Broadcast track update
+    if (currentSong) {
+      socketRef.current.send(JSON.stringify({
+        event: "track:update",
+        data: { song: currentSong }
+      }));
+    }
+  }, [currentSong?.videoId, isHost]);
+
+  const sendPlaybackState = (event: "play" | "pause" | "seek") => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({
+      event,
+      data: { timestamp: currentTime }
+    }));
+  };
+
+  const handleSuggestSearch = async () => {
+    if (!suggestQuery.trim()) return;
+    try {
+      const response = await fetch(apiUrl(`/search?q=${encodeURIComponent(suggestQuery)}&category=songs`));
+      const json = await response.json();
+      if (json.success && json.data?.results?.songs) {
+        setSuggestResults(json.data.results.songs);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddSuggestedSong = (song: any) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({
+      event: "queue:add",
+      data: { song }
+    }));
+    setSuggestQuery("");
+    setSuggestResults([]);
+  };
+
+  // WebRTC Signal Exchanger
+  const sendSignal = (toUserId: string, signalData: any) => {
+    if (!socketRef.current) return;
+    socketRef.current.send(JSON.stringify({
+      event: "signal",
+      data: {
+        to: toUserId,
+        from: user?.id,
+        signal: signalData
+      }
+    }));
+  };
+
+  const handleReceiveSignal = async (fromPeerId: string, signal: any) => {
+    let pc = peerConnectionsRef.current[fromPeerId];
+    if (!pc) {
+      pc = createPeerConnection(fromPeerId);
+    }
+
+    if (signal.sdp) {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      if (signal.sdp.type === "offer") {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignal(fromPeerId, { sdp: answer });
+      }
+    } else if (signal.candidate) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      } catch (e) {
+        console.warn("Error adding Ice Candidate", e);
+      }
+    }
+  };
+
+  const createPeerConnection = (peerId: string) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
+
+    peerConnectionsRef.current[peerId] = pc;
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        sendSignal(peerId, { candidate: event.candidate });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      // Create element to output audio stream
+      let audioEl = document.getElementById(`audio-peer-${peerId}`) as HTMLAudioElement;
+      if (!audioEl) {
+        audioEl = document.createElement("audio");
+        audioEl.id = `audio-peer-${peerId}`;
+        audioEl.autoplay = true;
+        document.body.appendChild(audioEl);
+      }
+      audioEl.srcObject = event.streams[0];
+    };
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current!);
+      });
+    }
+
+    return pc;
+  };
+
+  // Toggle Voice Chat
+  const toggleVoiceChat = async () => {
+    if (voiceActive) {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+      peerConnectionsRef.current = {};
+      setVoiceActive(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStreamRef.current = stream;
+        setVoiceActive(true);
+
+        // Initiate WebRTC to all existing members in Room details
+        if (room) {
+          room.membersProfiles.forEach(m => {
+            if (m.id !== user?.id) {
+              const pc = createPeerConnection(m.id);
+              pc.createOffer().then(offer => {
+                pc.setLocalDescription(offer);
+                sendSignal(m.id, { sdp: offer });
+              });
+            }
+          });
+        }
+      } catch (err) {
+        alert("Microphone permission requested to activate Voice Channel.");
+      }
+    }
+  };
+
+  const handleSendChatMessage = () => {
+    if (!inputText.trim() || !socketRef.current) return;
+    socketRef.current.send(JSON.stringify({
+      event: "chat:message",
+      data: {
+        senderName: user?.displayName || "Someone",
+        text: inputText
+      }
+    }));
+    setMessages(prev => [...prev, { sender: "You", text: inputText }]);
+    setInputText("");
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="text-xs uppercase tracking-widest">Entering Strumm Room...</span>
+      </div>
+    );
+  }
+
+  if (!room) return null;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-8 pb-12 w-full px-4 md:px-0 min-w-0">
+      {/* Title */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 min-w-0 border-b border-border/20 pb-4">
+        <div className="min-w-0">
+          <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+            Strumm Room
+          </span>
+          <h2 className="text-2xl font-editorial font-bold text-text truncate max-w-full">
+            {room.name}
+          </h2>
+        </div>
+        <button
+          onClick={toggleVoiceChat}
+          className={`py-2 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition ${
+            voiceActive 
+              ? "bg-green-500/10 border border-green-500/30 text-green-400" 
+              : "bg-surface border border-border/60 hover:bg-surface-elevated text-text"
+          }`}
+        >
+          {voiceActive ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+          {voiceActive ? "Voice Connected" : "Voice Channel"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start min-w-0">
+        
+        {/* Left pane: Playback state + suggestions */}
+        <div className="lg:col-span-8 space-y-6 min-w-0">
+          
+          {/* Synchronized Song Display */}
+          <div className="bg-surface/40 border border-border/60 p-6 rounded-2xl flex flex-col md:flex-row items-center gap-6 min-w-0">
+            <SongArtwork song={room.currentTrack} className="w-32 h-32 rounded shadow-2xl flex-shrink-0" />
+            <div className="min-w-0 flex-1 text-center md:text-left">
+              {room.currentTrack ? (
+                <>
+                  <span className="text-[9px] uppercase tracking-wider text-primary font-bold">Now Synced</span>
+                  <h3 className="font-editorial text-2xl font-bold text-text mt-1 truncate max-w-full">
+                    {room.currentTrack.title}
+                  </h3>
+                  <p className="text-sm text-muted truncate mt-0.5 max-w-full">
+                    {room.currentTrack.artist}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-muted italic">Waiting for host to load a song...</p>
+              )}
+
+              {/* Host Control Actions */}
+              {isHost && room.currentTrack && (
+                <div className="flex items-center justify-center md:justify-start gap-4 mt-4">
+                  <button
+                    onClick={() => {
+                      setPlaying(!isPlaying);
+                      sendPlaybackState(isPlaying ? "pause" : "play");
+                    }}
+                    className="p-3 bg-primary text-white rounded-full transition shadow hover:scale-105"
+                  >
+                    {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                  </button>
+                  <button
+                    onClick={() => sendPlaybackState("seek")}
+                    className="px-3 py-1.5 border border-border hover:bg-surface-elevated text-xs font-semibold rounded-lg transition"
+                  >
+                    Sync Seek Timestamps
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Collaborative Queue Song suggestion inputs */}
+          <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
+            <h3 className="font-editorial text-lg text-text font-bold">Suggest Songs</h3>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Search song titles..."
+                value={suggestQuery}
+                onChange={(e) => setSuggestQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSuggestSearch()}
+                className="flex-1 bg-background border border-border/60 rounded-xl px-4 py-2 text-xs text-text focus:outline-none focus:border-primary/50"
+              />
+              <button
+                onClick={handleSuggestSearch}
+                className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-hover transition cursor-pointer"
+              >
+                Search
+              </button>
+            </div>
+
+            {suggestResults.length > 0 && (
+              <div className="divide-y divide-border/20 font-sans max-h-40 overflow-y-auto pr-1">
+                {suggestResults.map((song) => (
+                  <div key={song.videoId} className="flex justify-between items-center py-2 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-semibold text-text truncate block">{song.title}</span>
+                      <span className="text-[10px] text-muted truncate block">{song.artist}</span>
+                    </div>
+                    <button
+                      onClick={() => handleAddSuggestedSong(song)}
+                      className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] ml-4 transition cursor-pointer"
+                    >
+                      Suggest
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right pane: Room members, Chatbox */}
+        <div className="lg:col-span-4 space-y-6 min-w-0">
+          
+          {/* Active Members */}
+          <div className="bg-surface/30 border border-border/60 rounded-2xl p-5 space-y-4 min-w-0">
+            <h3 className="font-editorial text-base text-text font-bold border-b border-border/20 pb-2">
+              Lobby Members ({room.membersProfiles.length})
+            </h3>
+            <div className="flex flex-wrap gap-2.5 max-h-40 overflow-y-auto">
+              {room.membersProfiles.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 p-1.5 bg-surface-elevated/40 border border-border/40 rounded-xl max-w-full">
+                  {m.avatar ? (
+                    <img src={m.avatar} alt="" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-surface border border-border flex items-center justify-center flex-shrink-0">
+                      <Users className="w-3.5 h-3.5 text-accent" />
+                    </div>
+                  )}
+                  <span className="text-[10px] font-bold text-text truncate">{m.displayName}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Simple text ChatBox */}
+          <div className="bg-surface/35 border border-border/60 rounded-2xl p-5 flex flex-col justify-between h-[360px] min-w-0">
+            <div className="overflow-y-auto space-y-2 flex-1 pr-1 pb-3 text-xs">
+              {messages.map((m, idx) => (
+                <div key={idx} className="leading-relaxed">
+                  <span className={`font-bold ${m.sender === "System" ? "text-primary" : m.sender === "You" ? "text-accent" : "text-text"}`}>
+                    {m.sender}:{" "}
+                  </span>
+                  <span className="text-muted/95">{m.text}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2 border-t border-border/20 pt-3">
+              <input
+                type="text"
+                placeholder="Say hello..."
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendChatMessage()}
+                className="flex-1 bg-background border border-border/60 rounded-xl px-3 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+              />
+              <button
+                onClick={handleSendChatMessage}
+                className="p-2 bg-primary text-white rounded-xl hover:bg-primary-hover transition cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}

@@ -40,6 +40,9 @@ interface PublicProfileData {
     song: any;
     note: string;
     date: string;
+    reactions?: {
+      [key: string]: string[];
+    };
   }>;
   createdAt?: string;
 }
@@ -58,6 +61,11 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
     commonSongs: string[];
     sharedMoods: string[];
   } | null>(null);
+
+  const [circleStatus, setCircleStatus] = useState<"none" | "pending" | "accepted" | "blocked">("none");
+  const [isRequester, setIsRequester] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [socialLoading, setSocialLoading] = useState(false);
 
   // Decode the URL encoded @ sign if NextJS leaves it
   const cleanUsername = typeof username === "string" ? decodeURIComponent(username).replace(/^@/, "") : "";
@@ -95,6 +103,142 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
     fetchProfile();
   }, [cleanUsername, token, currentUser]);
 
+  useEffect(() => {
+    if (!token || !data?.id) return;
+    
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch(apiUrl(`/social/status/${data.id}`), {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const json = await response.json();
+        if (json.success) {
+          setCircleStatus(json.status);
+          setIsRequester(json.isRequester);
+          setRequestId(json.requestId);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    
+    fetchStatus();
+  }, [token, data?.id]);
+
+  const handleSendRequest = async () => {
+    if (!token || !data?.id) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/request/${data.id}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCircleStatus("pending");
+        setIsRequester(true);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handleAcceptRequest = async () => {
+    if (!token || !requestId) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/accept/${requestId}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCircleStatus("accepted");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handleRemoveCircle = async () => {
+    if (!token || !data?.id) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/remove/${data.id}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCircleStatus("none");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handleCreateBlend = async () => {
+    if (!token || !data?.id) return;
+    setSocialLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/social/blend/${data.id}`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (json.success && json.data?.id) {
+        window.location.href = `/playlist/${json.data.id}`;
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSocialLoading(false);
+    }
+  };
+
+  const handleReact = async (memoryId: string, reactionType: string) => {
+    if (!token || !currentUser) return;
+    try {
+      const res = await fetch(apiUrl(`/social/memories/${memoryId}/react`), {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ reactionType })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setData(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            memories: prev.memories.map(m => {
+              if (m.id === memoryId) {
+                const reactions = { ...(m.reactions || {}) };
+                const list = reactions[reactionType] ? [...reactions[reactionType]] : [];
+                if (!list.includes(currentUser.id)) {
+                  list.push(currentUser.id);
+                }
+                reactions[reactionType] = list;
+                return { ...m, reactions };
+              }
+              return m;
+            })
+          };
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
@@ -109,7 +253,7 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-center max-w-md mx-auto p-6 gap-4">
         <ShieldAlert className="w-12 h-12 text-primary opacity-50" />
         <h3 className="font-editorial text-2xl text-text font-bold">Passport Not Found</h3>
-        <p className="text-sm text-muted">{error || "The requested user handle does not exist on Strumm."}</p>
+        <p className="text-sm text-muted">{error || "The requested user handle does not exist on Strumm or is set to private."}</p>
       </div>
     );
   }
@@ -153,6 +297,57 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
             <p className="text-xs text-muted/65 mt-2">
               Listening Passport • Active since {data.createdAt ? new Date(data.createdAt).toLocaleDateString() : "2026"}
             </p>
+            
+            {/* Circle Action Buttons */}
+            {token && currentUser && currentUser.username !== cleanUsername && (
+              <div className="flex flex-wrap items-center gap-2 mt-4 justify-center md:justify-start">
+                {circleStatus === "none" && (
+                  <button
+                    disabled={socialLoading}
+                    onClick={handleSendRequest}
+                    className="px-4 py-1.5 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg transition cursor-pointer"
+                  >
+                    Add to Circle
+                  </button>
+                )}
+                {circleStatus === "pending" && isRequester && (
+                  <span className="px-4 py-1.5 bg-surface-elevated text-muted text-xs font-semibold rounded-lg border border-border/40 select-none">
+                    Pending Acceptance
+                  </span>
+                )}
+                {circleStatus === "pending" && !isRequester && (
+                  <button
+                    disabled={socialLoading}
+                    onClick={handleAcceptRequest}
+                    className="px-4 py-1.5 bg-accent hover:bg-accent/80 text-text text-xs font-semibold rounded-lg transition cursor-pointer"
+                  >
+                    Accept Invitation
+                  </button>
+                )}
+                {circleStatus === "accepted" && (
+                  <>
+                    <span className="px-4 py-1.5 bg-primary/10 border border-primary/20 text-primary text-xs font-semibold rounded-lg select-none">
+                      In your Circle
+                    </span>
+                    <button
+                      disabled={socialLoading}
+                      onClick={handleCreateBlend}
+                      className="px-4 py-1.5 bg-accent hover:bg-accent/80 text-text text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Create Blend Mix
+                    </button>
+                    <button
+                      disabled={socialLoading}
+                      onClick={handleRemoveCircle}
+                      className="px-3 py-1.5 border border-border hover:bg-red-500/10 hover:text-red-400 text-xs font-semibold rounded-lg transition cursor-pointer"
+                    >
+                      Leave Circle
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -303,6 +498,36 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
                 <div className="p-4 bg-surface-elevated/40 border-l-2 border-primary rounded-r-xl italic text-sm text-text font-serif leading-relaxed">
                   &ldquo;{memory.note}&rdquo;
                 </div>
+                
+                {/* Reactions list & interaction */}
+                {token && currentUser && (
+                  <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-border/20">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-muted mr-1">React:</span>
+                    {[
+                      { type: "heart", emoji: "❤️" },
+                      { type: "sparkles", emoji: "✨" },
+                      { type: "thumbsup", emoji: "👍" }
+                    ].map(({ type, emoji }) => {
+                      const users = memory.reactions?.[type] || [];
+                      const hasReacted = users.includes(currentUser.id);
+                      const count = users.length;
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => handleReact(memory.id, type)}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs transition cursor-pointer select-none border ${
+                            hasReacted
+                              ? "bg-primary/10 border-primary/30 text-primary"
+                              : "bg-surface-elevated/40 border-border/40 hover:border-primary/30 text-muted hover:text-text"
+                          }`}
+                        >
+                          <span>{emoji}</span>
+                          {count > 0 && <span className="font-semibold font-mono">{count}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>

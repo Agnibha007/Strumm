@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import mongodb as db
-from app.routes import auth, search, stream, lyrics, playlist, user, podcast, recommendation, share
+from app.routes import auth, search, stream, lyrics, playlist, user, podcast, recommendation, share, social
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 import logging
@@ -88,6 +88,15 @@ async def startup_db_client():
         
         # Create shares TTL index: expiry
         await database[db.SHARES].create_index("expiry", expireAfterSeconds=0)
+        
+        # Create social collection indexes
+        await database["connections"].create_index("requesterId")
+        await database["connections"].create_index("receiverId")
+        await database["connections"].create_index([("requesterId", 1), ("receiverId", 1)])
+        await database["activities"].create_index("expiresAt", expireAfterSeconds=0)
+        await database["activities"].create_index("userId")
+        await database["notifications"].create_index("userId")
+        
         logger.info("Successfully initialized database indexes and TTL.")
     except Exception as e:
         logger.error(f"Error establishing database indexes on startup: {str(e)}")
@@ -106,6 +115,7 @@ app.include_router(user.router)
 app.include_router(podcast.router)
 app.include_router(recommendation.router)
 app.include_router(share.router)
+app.include_router(social.router)
 
 # Health checks
 @app.get("/health")
