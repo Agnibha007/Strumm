@@ -111,6 +111,7 @@ class UserSchema(BaseModel):
     customThemeImage: Optional[str] = None
     settings: UserSettingsSchema = Field(default_factory=UserSettingsSchema)
     statistics: UserStatisticsSchema = Field(default_factory=UserStatisticsSchema)
+    badges: List[Dict[str, Any]] = []
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
 # --- Playlists ---

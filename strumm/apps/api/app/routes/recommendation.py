@@ -260,8 +260,17 @@ async def get_discover(
 
 from pydantic import BaseModel
 
+class ChatMessageSchema(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
 class ChatRequest(BaseModel):
     prompt: str
+    history: Optional[List[ChatMessageSchema]] = []
+    confirm_edit: Optional[bool] = False
+    playlist_id: Optional[str] = None
+    songs_to_add: Optional[List[dict]] = []
+    songs_to_remove: Optional[List[dict]] = []
 
 @router.post("/explore-chat")
 async def explore_chat(
@@ -272,6 +281,64 @@ async def explore_chat(
         from datetime import datetime
         database = db.get_db()
         userId = current_user["id"]
+        
+        # Check if confirming an edit action directly
+        if payload.confirm_edit:
+            playlist_id = payload.playlist_id
+            if not playlist_id:
+                return {"success": False, "error": "Playlist ID is required for editing."}
+                
+            playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(playlist_id)})
+            if not playlist:
+                return {"success": False, "error": "Playlist not found."}
+                
+            if playlist.get("userId") != userId:
+                return {"success": False, "error": "Unauthorized to edit this playlist."}
+                
+            updated_songs = list(playlist.get("songs", []))
+            
+            # Resolve songs to add
+            if payload.songs_to_add:
+                resolved_add = await resolve_suggestions(payload.songs_to_add)
+                # Avoid adding duplicates (by videoId)
+                existing_vids = {s.get("videoId") for s in updated_songs if s.get("videoId")}
+                for rs in resolved_add:
+                    if rs.get("videoId") not in existing_vids:
+                        updated_songs.append(rs)
+                        
+            # Resolve songs to remove
+            if payload.songs_to_remove:
+                # Find matching songs in updated_songs by title / artist or videoId
+                remove_titles = {s["title"].lower().strip() for s in payload.songs_to_remove}
+                remove_artists = {s["artist"].lower().strip() for s in payload.songs_to_remove}
+                
+                new_songs = []
+                for s in updated_songs:
+                    title_match = s.get("title", "").lower().strip() in remove_titles
+                    artist_match = s.get("artist", "").lower().strip() in remove_artists
+                    if title_match and artist_match:
+                        continue
+                    new_songs.append(s)
+                updated_songs = new_songs
+                
+            await database[db.PLAYLISTS].update_one(
+                {"_id": parse_object_id(playlist_id)},
+                {"$set": {"songs": updated_songs}}
+            )
+            
+            return {
+                "success": True,
+                "data": {
+                    "message": f"Playlist '{playlist.get('name')}' updated successfully!",
+                    "songs": [],
+                    "playlist": {
+                        "id": playlist_id,
+                        "name": playlist.get("name"),
+                        "songs_count": len(updated_songs)
+                    }
+                }
+            }
+
         user_prompt = sanitize_text(payload.prompt, max_length=1000)
         
         # 1. Fetch user likes
@@ -284,10 +351,10 @@ async def explore_chat(
         history = [h async for h in history_cursor]
         history_summary = ", ".join([f"'{s['song']['title']}' by {s['song']['artist']}" for s in history])
         
-        # 3. Fetch user playlist names
-        playlists_cursor = database[db.PLAYLISTS].find({"userId": userId}, {"name": 1})
+        # 3. Fetch user playlist details
+        playlists_cursor = database[db.PLAYLISTS].find({"userId": userId})
         playlists = [p async for p in playlists_cursor]
-        playlist_summary = ", ".join([p["name"] for p in playlists])
+        playlist_summary = ", ".join([f"'{p['name']}' (ID: {str(p['_id'])})" for p in playlists])
         
         if not likes_summary:
             likes_summary = "None (New user)"
@@ -297,17 +364,22 @@ async def explore_chat(
             playlist_summary = "None (No playlists created yet)"
             
         system_prompt = (
-            "You are 'Strumm Flow', a premium, intelligent music curator assistant. Your goal is to help the user discover music, answer music-related questions, suggest tracks, and build custom playlists.\n"
+            "You are 'Strumm Flow', a premium, intelligent music curator assistant. Your goal is to help the user discover music, answer music-related questions, suggest tracks, build custom playlists, or edit existing playlists.\n"
             "You are provided with details about the user's music taste:\n"
             f"1. Liked songs: {likes_summary}\n"
             f"2. Listening history: {history_summary}\n"
-            f"3. User's existing playlist names: {playlist_summary}\n\n"
+            f"3. User's existing playlists with their database IDs: {playlist_summary}\n\n"
             "Your response MUST be a valid JSON object containing exactly the following keys:\n"
             "- 'message': (string) Your text response to the user's message. Be conversational, polite, and explain your recommendations or actions. Keep it brief (2-4 sentences).\n"
             "- 'songs': (array of objects) If recommending songs (either matching their prompt or based on their history), include a list of up to 6 recommended songs. Each object must have keys 'title' and 'artist'. Otherwise, return an empty array [].\n"
             "- 'create_playlist': (boolean) Set to true ONLY if the user explicitly asked to create, save, build, or make a playlist. Otherwise, set to false.\n"
-            "- 'playlist_name': (string) If create_playlist is true, specify a creative name for the playlist (e.g., 'Late Night Drive' or 'Lofi Focus Mix'). Otherwise, null.\n"
-            "- 'playlist_description': (string) If create_playlist is true, specify a short description (e.g., 'Curated by Strumm Flow based on your preference for Chill Lofi.'). Otherwise, null.\n\n"
+            "- 'playlist_name': (string) If create_playlist is true, specify a creative name for the playlist. Otherwise, null.\n"
+            "- 'playlist_description': (string) If create_playlist is true, specify a short description. Otherwise, null.\n"
+            "- 'edit_playlist': (boolean) Set to true ONLY if the user explicitly asked to edit, modify, add tracks to, or remove tracks from an existing playlist. Otherwise, set to false.\n"
+            "- 'playlist_id': (string) If edit_playlist is true, specify the exact ID of the playlist to be edited (from the provided list of existing playlists). Otherwise, null.\n"
+            "- 'songs_to_add': (array of objects) If editing a playlist, list the songs to be added. Each object must have keys 'title' and 'artist'. Otherwise, an empty array [].\n"
+            "- 'songs_to_remove': (array of objects) If editing a playlist, list the songs to be removed. Each object must have keys 'title' and 'artist'. Otherwise, an empty array [].\n"
+            "- 'requires_confirmation': (boolean) Set to true if the user wants to edit/overwrite pre-made content (so the system can ask for a second confirmation). Otherwise, set to false.\n\n"
             "Rules:\n"
             "1. Suggest ONLY real, existing songs and artists.\n"
             "2. Return ONLY the JSON object. Do not include markdown code block wrappers (like ```json), introductory text, or concluding notes. Just raw JSON."
@@ -316,6 +388,11 @@ async def explore_chat(
         if not GROQ_API_KEY:
             return {"success": False, "error": "Groq API key not configured on server."}
             
+        messages_payload = [{"role": "system", "content": system_prompt}]
+        for hist_msg in payload.history or []:
+            messages_payload.append({"role": hist_msg.role, "content": hist_msg.content})
+        messages_payload.append({"role": "user", "content": user_prompt})
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -325,10 +402,7 @@ async def explore_chat(
                 },
                 json={
                     "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                    "messages": messages_payload,
                     "temperature": 0.7
                 },
                 timeout=15.0
@@ -342,12 +416,18 @@ async def explore_chat(
             content = content.replace("```json", "").replace("```", "").strip()
             
         result_data = json.loads(content)
-        message = result_data.get("message", "Here are your tracks:")
+        message = result_data.get("message", "Here is your update:")
         songs_suggestions = result_data.get("songs", [])
         create_playlist = result_data.get("create_playlist", False)
         playlist_name = result_data.get("playlist_name", "Flow Curated Playlist")
         playlist_description = result_data.get("playlist_description", "Generated dynamically by Strumm Flow.")
         
+        edit_playlist = result_data.get("edit_playlist", False)
+        playlist_id = result_data.get("playlist_id", None)
+        songs_to_add = result_data.get("songs_to_add", [])
+        songs_to_remove = result_data.get("songs_to_remove", [])
+        requires_confirmation = result_data.get("requires_confirmation", False)
+
         resolved_songs = []
         if songs_suggestions:
             resolved_songs = await resolve_suggestions(songs_suggestions)
@@ -375,7 +455,12 @@ async def explore_chat(
             "data": {
                 "message": message,
                 "songs": resolved_songs,
-                "playlist": created_playlist_info
+                "playlist": created_playlist_info,
+                "edit_playlist": edit_playlist,
+                "playlist_id": playlist_id,
+                "songs_to_add": songs_to_add,
+                "songs_to_remove": songs_to_remove,
+                "requires_confirmation": requires_confirmation
             }
         }
     except Exception as e:

@@ -195,9 +195,12 @@ export default function CirclePage() {
       const json = await res.json();
       if (json.success && json.data?.id) {
         window.location.href = `/playlist/${json.data.id}`;
+      } else {
+        alert(json.error || json.detail || "Not enough music compatibility between you to generate a Blend playlist.");
       }
     } catch (e) {
       console.error(e);
+      alert("Failed to connect to the blend generation server.");
     } finally {
       setActionLoading(null);
     }

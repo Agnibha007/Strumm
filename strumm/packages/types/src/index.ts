@@ -31,6 +31,13 @@ export interface User {
   createdAt: string;
   settings: UserSettings;
   statistics: UserStatistics;
+  badges?: Array<{
+    id: string;
+    title: string;
+    description: string;
+    icon?: string;
+    earnedAt?: string;
+  }>;
 }
 
 export interface SongMetadata {

@@ -22,7 +22,7 @@ logger = logging.getLogger("strumm-podcast")
 router = APIRouter(prefix="/podcasts", tags=["podcast"])
 
 class ImportRSSRequest(BaseModel):
-    rss_url: HttpUrl
+    rss_url: str
 
 @router.post("/import-rss")
 async def import_podcast_rss(
@@ -30,7 +30,11 @@ async def import_podcast_rss(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        url = assert_public_http_url(str(payload.rss_url))
+        rss_url_str = payload.rss_url.strip()
+        if not rss_url_str.startswith("http://") and not rss_url_str.startswith("https://"):
+            rss_url_str = "https://" + rss_url_str
+            
+        url = assert_public_http_url(rss_url_str)
         database = db.get_db()
         
         # Check if already imported
@@ -40,8 +44,8 @@ async def import_podcast_rss(
             del existing["_id"]
             return {"success": True, "data": existing, "message": "Podcast show already imported."}
             
-        # Parse RSS Feed asynchronously using httpx
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        # Parse RSS Feed asynchronously using httpx (disable verification to prevent local SSL errors)
+        async with httpx.AsyncClient(follow_redirects=True, verify=False) as client:
             resp = await client.get(url, timeout=12.0)
             if resp.status_code != 200:
                 return {"success": False, "error": f"Failed to download RSS feed. Status code: {resp.status_code}"}

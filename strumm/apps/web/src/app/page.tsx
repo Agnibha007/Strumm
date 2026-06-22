@@ -187,7 +187,24 @@ export default function HomePage() {
                 ))}
               </div>
             )}
-            <AICuratorChat />
+            {/* Strumm Flow Promo Card */}
+            <div className="bg-surface/30 border border-border/40 rounded-2xl p-6 flex flex-col items-center text-center shadow-sm backdrop-blur-md mt-4 space-y-4">
+              <div className="p-3.5 bg-primary/10 rounded-full text-primary">
+                <Sparkles className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-editorial text-lg font-bold text-text">Strumm Flow Assistant</h4>
+                <p className="text-xs text-muted max-w-sm leading-relaxed">
+                  Meet your personal music curator. Strumm Flow can search, recommend, and build customized smart playlists dynamically in your library.
+                </p>
+              </div>
+              <Link
+                href="/flow"
+                className="px-5 py-2.5 bg-text hover:bg-white text-background font-editorial text-xs font-semibold rounded-xl hover:opacity-90 transition shadow-md flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Start Curation Flow
+              </Link>
+            </div>
           </div>
 
           {/* Liked Songs */}

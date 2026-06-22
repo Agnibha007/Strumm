@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl } from "web/lib/api";
 
@@ -12,6 +13,7 @@ declare global {
 }
 
 export default function AudioEngine() {
+  const pathname = usePathname();
   const {
     currentSong,
     isPlaying,
@@ -182,7 +184,7 @@ export default function AudioEngine() {
         document.title = "Strumm - Where your music lives.";
       }
     }
-  }, [currentSong, isPlaying]);
+  }, [currentSong, isPlaying, pathname]);
 
   // 2. Lazy Load YouTube API
   const loadYouTubeAPI = () => {

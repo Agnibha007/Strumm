@@ -383,47 +383,65 @@ async def generate_blend(targetUserId: str, current_user: dict = Depends(get_cur
     if not target_user:
         raise HTTPException(status_code=404, detail="Target user not found.")
         
+    # Support both string and ObjectId user queries to avoid data type mismatches
+    possible_my_ids = [my_id]
+    if ObjectId.is_valid(my_id):
+        possible_my_ids.append(ObjectId(my_id))
+        
+    possible_target_ids = [targetUserId]
+    if ObjectId.is_valid(targetUserId):
+        possible_target_ids.append(ObjectId(targetUserId))
+
     # Collect songs from both users (Liked songs + Playback history)
-    my_likes = await database[db.LIKED_SONGS].find({"userId": my_id}).to_list(length=100)
-    target_likes = await database[db.LIKED_SONGS].find({"userId": targetUserId}).to_list(length=100)
+    my_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_my_ids}}).to_list(length=200)
+    target_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_target_ids}}).to_list(length=200)
     
-    my_history = await database[db.PLAYBACK_HISTORIES].find({"userId": my_id}).to_list(length=100)
-    target_history = await database[db.PLAYBACK_HISTORIES].find({"userId": targetUserId}).to_list(length=100)
+    my_history = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_my_ids}}).to_list(length=200)
+    target_history = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_target_ids}}).to_list(length=200)
     
-    # Extract unique song structures
-    song_pool = {}
-    
-    # Add target likes and history
-    for doc in my_likes + target_likes:
+    # Map song data by videoId for both users to find overlapping songs
+    my_songs_map = {}
+    for doc in my_likes + my_history:
         song = doc.get("song", {})
         vid = song.get("videoId")
-        if vid and vid not in song_pool:
-            song_pool[vid] = song
-            
-    for doc in my_history + target_history:
+        if vid:
+            my_songs_map[vid] = song
+
+    target_songs_map = {}
+    for doc in target_likes + target_history:
         song = doc.get("song", {})
         vid = song.get("videoId")
-        if vid and vid not in song_pool:
-            song_pool[vid] = song
+        if vid:
+            target_songs_map[vid] = song
 
-    songs_list = list(song_pool.values())
+    my_vids = set(my_songs_map.keys())
+    target_vids = set(target_songs_map.keys())
+    overlapping_vids = my_vids.intersection(target_vids)
     
-    # Fallback to general songs if pool is empty
-    if len(songs_list) < 5:
-        cursor = database[db.SONGS].find().limit(50)
-        async for song_doc in cursor:
-            vid = song_doc.get("videoId")
-            if vid and vid not in song_pool:
-                songs_list.append({
-                    "videoId": vid,
-                    "title": song_doc.get("title", "Track"),
-                    "artist": song_doc.get("artist", "Artist"),
-                    "thumbnail": song_doc.get("thumbnail", ""),
-                    "duration": song_doc.get("duration", 180)
-                })
-
-    # Pick 50 songs (or cap at available length)
-    blend_songs = songs_list[:50]
+    # If 0 overlapping songs, block blend creation and inform the user
+    if not overlapping_vids:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough music compatibility between you to generate a Blend playlist. Listen to more overlapping tracks first!"
+        )
+        
+    # Create the Blend playlist using overlapping songs first, and then build up to 50 songs
+    blend_songs = []
+    for vid in overlapping_vids:
+        blend_songs.append(my_songs_map[vid])
+        
+    # Alternating unique songs from both users
+    my_unique = [my_songs_map[vid] for vid in my_vids if vid not in overlapping_vids]
+    target_unique = [target_songs_map[vid] for vid in target_vids if vid not in overlapping_vids]
+    
+    max_len = 50
+    i = 0
+    while len(blend_songs) < max_len and (i < len(my_unique) or i < len(target_unique)):
+        if i < len(my_unique) and len(blend_songs) < max_len:
+            blend_songs.append(my_unique[i])
+        if i < len(target_unique) and len(blend_songs) < max_len:
+            blend_songs.append(target_unique[i])
+        i += 1
     
     name = f"{current_user.get('displayName', 'User')} × {target_user.get('displayName', 'User')} Mix"
     
@@ -504,8 +522,10 @@ async def react_to_memory(
 @router.get("/notifications")
 async def get_notifications(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
+    user_id_str = current_user["id"]
+    user_id_oid = parse_object_id(user_id_str)
     cursor = database[NOTIFICATIONS_COLLECTION].find({
-        "userId": current_user["id"]
+        "userId": {"$in": [user_id_str, user_id_oid]}
     }).sort("createdAt", -1).limit(40)
     
     notifs = []
@@ -522,8 +542,10 @@ async def get_notifications(current_user: dict = Depends(get_current_user)):
 @router.post("/notifications/clear")
 async def clear_notifications(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
+    user_id_str = current_user["id"]
+    user_id_oid = parse_object_id(user_id_str)
     await database[NOTIFICATIONS_COLLECTION].update_many(
-        {"userId": current_user["id"], "read": False},
+        {"userId": {"$in": [user_id_str, user_id_oid]}, "read": False},
         {"$set": {"read": True}}
     )
     return {"success": True}
@@ -564,11 +586,13 @@ async def send_direct_message(
     my_id = current_user["id"]
     receiver_id = payload.receiverId
     
+    my_id_oid = parse_object_id(my_id)
+    receiver_id_oid = parse_object_id(receiver_id)
     # Verify that they are circle members (friends)
     conn = await database[CONNECTIONS_COLLECTION].find_one({
         "$or": [
-            {"requesterId": my_id, "receiverId": receiver_id},
-            {"requesterId": receiver_id, "receiverId": my_id}
+            {"requesterId": {"$in": [my_id, my_id_oid]}, "receiverId": {"$in": [receiver_id, receiver_id_oid]}},
+            {"requesterId": {"$in": [receiver_id, receiver_id_oid]}, "receiverId": {"$in": [my_id, my_id_oid]}}
         ],
         "status": "accepted"
     })

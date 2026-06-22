@@ -145,6 +145,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
 @router.patch("/profile")
 async def update_profile(
     displayName: Optional[str] = Body(None),
+    username: Optional[str] = Body(None),
     avatar: Optional[str] = Body(None),
     theme: Optional[str] = Body(None),
     settings: Optional[UserSettingsSchema] = Body(None),
@@ -153,6 +154,21 @@ async def update_profile(
     try:
         database = db.get_db()
         update_data = {}
+        if username is not None:
+            cleaned_username = sanitize_text(username, max_length=50).strip().lower()
+            if not cleaned_username:
+                return {"success": False, "error": "Username cannot be empty."}
+            import re
+            if not re.match(r"^[a-z0-9_-]+$", cleaned_username):
+                return {"success": False, "error": "Username can only contain lowercase letters, numbers, underscores, and dashes."}
+            existing = await database[db.USERS].find_one({
+                "username": cleaned_username,
+                "_id": {"$ne": parse_object_id(current_user["id"])}
+            })
+            if existing:
+                return {"success": False, "error": "Username is already taken by another user."}
+            update_data["username"] = cleaned_username
+
         if displayName is not None:
             cleaned_display_name = sanitize_text(displayName, max_length=120)
             if not cleaned_display_name:
@@ -334,7 +350,26 @@ async def get_playback_history(
         database = db.get_db()
         user_id_str = current_user["id"]
         user_id_oid = ObjectId(user_id_str)
-        cursor = database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id_str, user_id_oid]}}).sort("playedAt", -1).limit(limit)
+        pipeline = [
+            {"$match": {"userId": {"$in": [user_id_str, user_id_oid]}}},
+            {"$sort": {"playedAt": -1}},
+            {
+                "$group": {
+                    "_id": {
+                        "$cond": [
+                            {"$and": [{"$ne": ["$song.videoId", None]}, {"$ne": ["$song.videoId", ""]}]},
+                            "$song.videoId",
+                            {"$concat": ["$song.title", " - ", "$song.artist"]}
+                        ]
+                    },
+                    "latest_doc": {"$first": "$$ROOT"}
+                }
+            },
+            {"$replaceRoot": {"newRoot": "$latest_doc"}},
+            {"$sort": {"playedAt": -1}},
+            {"$limit": limit}
+        ]
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
         history = []
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
@@ -459,6 +494,83 @@ async def register_play_event(
                 {"_id": parse_object_id(userId)},
                 {"$set": {"statistics.topArtists": top_artists}}
             )
+
+        # 3. Handle podcast listening badges
+        is_podcast = song_dict.get("videoId", "").startswith("podcast-")
+        if is_podcast:
+            episode_id = song_dict["videoId"].replace("podcast-", "")
+            
+            # Fetch episode details from DB to find showId
+            episode_doc = None
+            if ObjectId.is_valid(episode_id):
+                episode_doc = await database[db.PODCAST_EPISODES].find_one({"_id": ObjectId(episode_id)})
+            
+            if episode_doc:
+                show_id = episode_doc.get("showId")
+                
+                # Fetch all histories for this user that are podcasts
+                possible_ids = [str(userId), userId]
+                user_histories = await database[db.PLAYBACK_HISTORIES].find({
+                    "userId": {"$in": possible_ids},
+                    "song.videoId": {"$regex": "^podcast-"}
+                }).to_list(length=1000)
+                
+                # Count unique episodes listened to
+                unique_episode_vids = {h["song"]["videoId"] for h in user_histories if h.get("song", {}).get("videoId")}
+                # Make sure current videoId is counted
+                unique_episode_vids.add(song_dict["videoId"])
+                
+                # Check user document for existing badges list
+                user_doc = await database[db.USERS].find_one({"_id": parse_object_id(userId)})
+                existing_badges = user_doc.get("badges", []) if user_doc else []
+                existing_badge_ids = {b["id"] for b in existing_badges}
+                
+                new_badges = []
+                
+                # First podcast episode: "Podcast Pioneer"
+                if len(unique_episode_vids) >= 1 and "podcast-first" not in existing_badge_ids:
+                    new_badges.append({
+                        "id": "podcast-first",
+                        "title": "Podcast Pioneer",
+                        "description": "Listened to your first podcast episode.",
+                        "icon": "🎙️",
+                        "earnedAt": datetime.utcnow().isoformat()
+                    })
+                
+                # Fifth podcast episode: "Podcast Devotee"
+                if len(unique_episode_vids) >= 5 and "podcast-fifth" not in existing_badge_ids:
+                    new_badges.append({
+                        "id": "podcast-fifth",
+                        "title": "Podcast Devotee",
+                        "description": "Listened to 5 podcast episodes.",
+                        "icon": "🎧",
+                        "earnedAt": datetime.utcnow().isoformat()
+                    })
+                
+                # Every episode of a podcast: "Completist"
+                if show_id:
+                    show_episodes = await database[db.PODCAST_EPISODES].find({"showId": show_id}).to_list(length=1000)
+                    show_episode_vids = {f"podcast-{str(ep['_id'])}" for ep in show_episodes}
+                    
+                    if show_episode_vids:
+                        show_doc = await database[db.PODCAST_SHOWS].find_one({"_id": parse_object_id(show_id)})
+                        show_title = show_doc.get("title", "this podcast") if show_doc else "this podcast"
+                        completist_badge_id = f"podcast-completist-{show_id}"
+                        
+                        if show_episode_vids.issubset(unique_episode_vids) and completist_badge_id not in existing_badge_ids:
+                            new_badges.append({
+                                "id": completist_badge_id,
+                                "title": f"{show_title} Completist",
+                                "description": f"Listened to every episode of '{show_title}'.",
+                                "icon": "🏆",
+                                "earnedAt": datetime.utcnow().isoformat()
+                            })
+                            
+                if new_badges:
+                    await database[db.USERS].update_one(
+                        {"_id": parse_object_id(userId)},
+                        {"$push": {"badges": {"$each": new_badges}}}
+                    )
 
         return {
             "success": True,
@@ -700,8 +812,8 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         # Calculate discovery score
         discovery_score = sound_dna["discovery"] * 10
         
-        # Insufficient history flag (e.g. less than 5 records)
-        insufficient_history = len(histories) < 5
+        # Insufficient history flag (e.g. less than 1 record)
+        insufficient_history = len(histories) < 1
         
         # Simulated/mapped top genres
         genres = {}
@@ -760,38 +872,80 @@ async def get_taste_match(user_id: str, current_user: dict = Depends(get_current
         if not target_user:
             return {"success": False, "error": "Target user not found"}
             
-        # Get histories
-        my_histories = await database[db.PLAYBACK_HISTORIES].find({"userId": my_id}).to_list(length=1000)
-        their_histories = await database[db.PLAYBACK_HISTORIES].find({"userId": user_id}).to_list(length=1000)
+        # Get histories and likes using both string and ObjectId to avoid type mismatches
+        possible_my_ids = [my_id]
+        if ObjectId.is_valid(my_id):
+            possible_my_ids.append(ObjectId(my_id))
+            
+        possible_their_ids = [user_id]
+        if ObjectId.is_valid(user_id):
+            possible_their_ids.append(ObjectId(user_id))
+            
+        my_histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_my_ids}}).to_list(length=1000)
+        their_histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_their_ids}}).to_list(length=1000)
         
-        my_artists = {str(h.get("song", {}).get("artist", "")).strip() for h in my_histories if h.get("song", {}).get("artist")}
-        their_artists = {str(h.get("song", {}).get("artist", "")).strip() for h in their_histories if h.get("song", {}).get("artist")}
+        my_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_my_ids}}).to_list(length=1000)
+        their_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_their_ids}}).to_list(length=1000)
         
-        my_songs = {str(h.get("song", {}).get("videoId", "")) for h in my_histories if h.get("song", {}).get("videoId")}
-        their_songs = {str(h.get("song", {}).get("videoId", "")) for h in their_histories if h.get("song", {}).get("videoId")}
+        # Populate artists (case-insensitive) and song videoIds
+        my_artists = set()
+        my_songs = set()
+        for h in my_histories:
+            s = h.get("song", {})
+            if s.get("artist"):
+                my_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                my_songs.add(str(s["videoId"]))
+        for l in my_likes:
+            s = l.get("song", {})
+            if s.get("artist"):
+                my_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                my_songs.add(str(s["videoId"]))
+                
+        their_artists = set()
+        their_songs = set()
+        for h in their_histories:
+            s = h.get("song", {})
+            if s.get("artist"):
+                their_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                their_songs.add(str(s["videoId"]))
+        for l in their_likes:
+            s = l.get("song", {})
+            if s.get("artist"):
+                their_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                their_songs.add(str(s["videoId"]))
         
         common_artists = list(my_artists.intersection(their_artists))
         common_songs_ids = my_songs.intersection(their_songs)
         
-        # Get common song details
+        # Get common song details for display
         common_songs = []
-        for vid in common_songs_ids:
-            # find first song matching in histories
-            for h in my_histories:
-                if h.get("song", {}).get("videoId") == vid:
-                    common_songs.append(h.get("song", {}).get("title"))
+        found_song_vids = set()
+        for item in (my_histories + my_likes):
+            s = item.get("song", {})
+            vid = s.get("videoId")
+            if vid in common_songs_ids and vid not in found_song_vids:
+                common_songs.append(s.get("title"))
+                found_song_vids.add(vid)
+                if len(common_songs) >= 5:
                     break
-            if len(common_songs) >= 5:
-                break
                 
-        # Calculate matching percentage
-        artists_union = my_artists.union(their_artists)
-        artist_match_score = (len(common_artists) / max(1, len(artists_union))) * 100
-        
-        songs_union = my_songs.union(their_songs)
-        song_match_score = (len(common_songs_ids) / max(1, len(songs_union))) * 100
-        
-        match_percentage = int(round(max(15, min(95, 20 + artist_match_score * 0.5 + song_match_score * 0.5 + (15 if common_artists else 0)))))
+        # Calculate matching percentage using overlap coefficient
+        if not my_songs and not their_songs:
+            match_percentage = 50  # Neutral default for no data
+        else:
+            min_artist_len = min(len(my_artists), len(their_artists))
+            artist_similarity = len(common_artists) / max(1, min_artist_len) if min_artist_len > 0 else 0
+            
+            min_song_len = min(len(my_songs), len(their_songs))
+            song_similarity = len(common_songs_ids) / max(1, min_song_len) if min_song_len > 0 else 0
+            
+            # Scale compatibility percentage between 35% and 98%
+            match_percentage = int(round(35 + 35 * artist_similarity + 28 * song_similarity))
+            match_percentage = max(15, min(98, match_percentage))
         
         shared_moods = []
         if match_percentage > 70:

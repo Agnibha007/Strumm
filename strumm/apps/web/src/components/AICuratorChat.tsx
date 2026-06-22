@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Sparkles, Loader2, Music, CheckCircle2, ListMusic } from "lucide-react";
+import { Send, Sparkles, Loader2, Music, CheckCircle2, ListMusic, X } from "lucide-react";
 import { apiUrl } from "web/lib/api";
 import { Song } from "@strumm/types";
 import { usePlayerStore } from "web/store/usePlayerStore";
@@ -16,9 +16,16 @@ interface ChatMessage {
     name: string;
     songs_count: number;
   } | null;
+  edit_playlist?: boolean;
+  playlist_id?: string;
+  songs_to_add?: any[];
+  songs_to_remove?: any[];
+  requires_confirmation?: boolean;
+  action_confirmed?: boolean;
+  action_cancelled?: boolean;
 }
 
-export default function AICuratorChat() {
+export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       sender: "ai",
@@ -27,6 +34,7 @@ export default function AICuratorChat() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [secondConfirmIdx, setSecondConfirmIdx] = useState<number | null>(null);
   const { playSong } = usePlayerStore();
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -44,13 +52,22 @@ export default function AICuratorChat() {
     setLoading(true);
 
     try {
+      // Map history excluding the first assistant greeting
+      const historyPayload = messages.slice(1).map(m => ({
+        role: m.sender === "user" ? "user" : "assistant",
+        content: m.text
+      }));
+
       const response = await fetch(apiUrl("/explore-chat"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem("strumm-token") || ""}`,
         },
-        body: JSON.stringify({ prompt: userText }),
+        body: JSON.stringify({
+          prompt: userText,
+          history: historyPayload
+        }),
       });
 
       const json = await response.json();
@@ -62,6 +79,11 @@ export default function AICuratorChat() {
             text: json.data.message,
             songs: json.data.songs,
             playlist: json.data.playlist,
+            edit_playlist: json.data.edit_playlist,
+            playlist_id: json.data.playlist_id,
+            songs_to_add: json.data.songs_to_add,
+            songs_to_remove: json.data.songs_to_remove,
+            requires_confirmation: json.data.requires_confirmation
           },
         ]);
       } else {
@@ -86,11 +108,58 @@ export default function AICuratorChat() {
     }
   };
 
+  const handleConfirmEdit = async (msgIdx: number) => {
+    const msg = messages[msgIdx];
+    if (!msg || loading) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(apiUrl("/explore-chat"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("strumm-token") || ""}`,
+        },
+        body: JSON.stringify({
+          prompt: "Confirm edit playlist",
+          confirm_edit: true,
+          playlist_id: msg.playlist_id,
+          songs_to_add: msg.songs_to_add,
+          songs_to_remove: msg.songs_to_remove
+        }),
+      });
+
+      const json = await response.json();
+      if (json.success && json.data) {
+        // Mark as confirmed in state
+        setMessages(prev => prev.map((m, idx) => idx === msgIdx ? {
+          ...m,
+          action_confirmed: true,
+          text: json.data.message
+        } : m));
+      } else {
+        alert(json.error || "Failed to update playlist.");
+      }
+    } catch (err) {
+      alert("Failed to connect to backend server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelEdit = (msgIdx: number) => {
+    setMessages(prev => prev.map((m, idx) => idx === msgIdx ? { ...m, action_cancelled: true } : m));
+  };
+
   return (
-    <div className="bg-surface/30 border border-border/40 rounded-xl p-4 flex flex-col h-[400px] mt-4 shadow-sm">
-      <div className="flex items-center gap-2 border-b border-border/20 pb-2 mb-3">
+    <div className={`bg-surface/30 border border-border/40 rounded-2xl p-5 flex flex-col shadow-sm backdrop-blur-md ${
+      fullPage ? "h-[70vh] w-full max-w-4xl mx-auto" : "h-[400px] mt-4"
+    }`}>
+      <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-3">
         <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-        <h4 className="font-editorial text-sm font-bold text-text">Ask Strumm Flow</h4>
+        <h4 className="font-editorial text-sm font-bold text-text">
+          {fullPage ? "Strumm Flow Assistant" : "Ask Strumm Flow"}
+        </h4>
       </div>
 
       {/* Messages list */}
@@ -144,6 +213,86 @@ export default function AICuratorChat() {
                   <div className="font-bold text-[11px] text-emerald-300">Smart Playlist Created</div>
                   <div className="mt-0.5 text-[10px] text-muted">
                     &quot;{msg.playlist.name}&quot; was saved into your library with {msg.playlist.songs_count} tracks.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* If playlist edit requires confirmation */}
+            {msg.edit_playlist && !msg.action_confirmed && !msg.action_cancelled && (
+              <div className="mt-2.5 w-full bg-primary/10 border border-primary/20 rounded-xl p-3 space-y-2 text-xs">
+                {secondConfirmIdx === idx ? (
+                  <>
+                    <div className="font-bold text-[11px] text-red-400 flex items-center gap-1.5 animate-pulse">
+                      <ListMusic className="w-3.5 h-3.5" /> Second Confirmation Required
+                    </div>
+                    <p className="text-[10px] text-muted leading-relaxed font-semibold">
+                      ⚠️ Warning: You are about to edit/overwrite pre-made playlist content. This will alter your previously created playlist. Are you absolutely sure?
+                    </p>
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button
+                        onClick={() => {
+                          setSecondConfirmIdx(null);
+                          handleConfirmEdit(idx);
+                        }}
+                        disabled={loading}
+                        className="px-2.5 py-1 bg-red-500 text-white font-editorial font-bold text-[10px] rounded hover:bg-red-600 transition cursor-pointer disabled:opacity-50"
+                      >
+                        Yes, Modify Pre-made Playlist
+                      </button>
+                      <button
+                        onClick={() => setSecondConfirmIdx(null)}
+                        disabled={loading}
+                        className="px-2.5 py-1 border border-border text-muted text-[10px] rounded hover:bg-surface transition cursor-pointer"
+                      >
+                        Go Back
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-bold text-[11px] text-primary flex items-center gap-1.5">
+                      <ListMusic className="w-3.5 h-3.5" /> Action Confirmation Required
+                    </div>
+                    <p className="text-[10px] text-muted leading-relaxed">
+                      Strumm Flow requests permission to edit your playlist.
+                      {msg.songs_to_add && msg.songs_to_add.length > 0 && ` Will add ${msg.songs_to_add.length} tracks.`}
+                      {msg.songs_to_remove && msg.songs_to_remove.length > 0 && ` Will remove ${msg.songs_to_remove.length} tracks.`}
+                    </p>
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button
+                        onClick={() => {
+                          if (msg.requires_confirmation) {
+                            setSecondConfirmIdx(idx);
+                          } else {
+                            handleConfirmEdit(idx);
+                          }
+                        }}
+                        disabled={loading}
+                        className="px-2.5 py-1 bg-primary text-background font-editorial font-bold text-[10px] rounded hover:opacity-95 transition cursor-pointer disabled:opacity-50"
+                      >
+                        Confirm Edit
+                      </button>
+                      <button
+                        onClick={() => handleCancelEdit(idx)}
+                        disabled={loading}
+                        className="px-2.5 py-1 border border-border text-muted text-[10px] rounded hover:bg-surface transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            
+            {msg.edit_playlist && msg.action_confirmed && (
+              <div className="mt-2 w-full bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2.5 flex items-start gap-2.5 text-xs text-emerald-400">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-[11px] text-emerald-300">Playlist Updated</div>
+                  <div className="mt-0.5 text-[10px] text-muted">
+                    Playlist was modified successfully.
                   </div>
                 </div>
               </div>

@@ -283,10 +283,29 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
       <div className="flex flex-col md:flex-row items-center md:items-end gap-8 pb-4">
         {/* Cover Art */}
         <div className="w-48 h-48 md:w-56 md:h-56 rounded-xl bg-surface-elevated flex items-center justify-center border border-border/80 relative shadow-2xl overflow-hidden flex-shrink-0">
-          {playlist.songs.length > 0 ? (
+          {playlist.songs.length === 1 ? (
+            <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority={true} />
+          ) : playlist.songs.length === 2 ? (
+            <div className="grid grid-cols-2 w-full h-full">
+              <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority={true} />
+              <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority={true} />
+            </div>
+          ) : playlist.songs.length === 3 ? (
+            <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
+              <div className="col-span-2 row-span-1 w-full h-full overflow-hidden">
+                <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority={true} />
+              </div>
+              <div className="col-span-1 w-full h-full overflow-hidden">
+                <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority={true} />
+              </div>
+              <div className="col-span-1 w-full h-full overflow-hidden">
+                <SongArtwork song={playlist.songs[2]} className="w-full h-full object-cover" priority={true} />
+              </div>
+            </div>
+          ) : playlist.songs.length >= 4 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               {playlist.songs.slice(0, 4).map((s, idx) => (
-                <SongArtwork key={idx} song={s} className="w-full h-full" priority={true} />
+                <SongArtwork key={idx} song={s} className="w-full h-full object-cover" priority={true} />
               ))}
             </div>
           ) : (

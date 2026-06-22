@@ -16,6 +16,7 @@ export default function Navigation() {
 
   const navItems = [
     { label: "Home", href: "/", icon: Home },
+    { label: "Strumm Flow", href: "/flow", icon: Sparkles },
     { label: "Search", href: "/search", icon: Search },
     { label: "Library", href: "/library", icon: Library },
     { label: "Playlists", href: "/playlists", icon: ListMusic },

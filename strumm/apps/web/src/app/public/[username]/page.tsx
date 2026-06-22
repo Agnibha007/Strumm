@@ -44,6 +44,13 @@ interface PublicProfileData {
       [key: string]: string[];
     };
   }>;
+  badges?: Array<{
+    id: string;
+    title: string;
+    description: string;
+    icon?: string;
+    earnedAt?: string;
+  }>;
   createdAt?: string;
 }
 
@@ -194,9 +201,12 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
       const json = await res.json();
       if (json.success && json.data?.id) {
         window.location.href = `/playlist/${json.data.id}`;
+      } else {
+        alert(json.error || json.detail || "Not enough music compatibility between you to generate a Blend playlist.");
       }
     } catch (e) {
       console.error(e);
+      alert("Failed to connect to the blend generation server.");
     } finally {
       setSocialLoading(false);
     }
@@ -399,8 +409,41 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
           </div>
         </div>
       )}
+      {data.badges && data.badges.length > 0 && (
+        <div className="bg-surface/30 border border-border/60 rounded-xl p-6 space-y-4 mb-8">
+          <div>
+            <h3 className="font-editorial text-xl text-text font-bold">Unlocked Badges</h3>
+            <p className="text-xs text-muted">Special milestones earned through their listening journey.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+            {data.badges.map((badge: any) => (
+              <div
+                key={badge.id}
+                className="flex items-center gap-3.5 p-3.5 bg-surface-elevated/40 border border-border/30 rounded-xl shadow-sm"
+              >
+                <div className="text-3xl p-2 bg-background border border-border/40 rounded-xl shadow-inner select-none">
+                  {badge.icon || "🏆"}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-text truncate">
+                    {badge.title}
+                  </div>
+                  <div className="text-[11px] text-muted leading-relaxed mt-0.5">
+                    {badge.description}
+                  </div>
+                  {badge.earnedAt && (
+                    <div className="text-[9px] text-primary/70 font-mono mt-1">
+                      Earned {new Date(badge.earnedAt).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 font-sans">
         {/* Sound DNA */}
         <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-6">
           <div>

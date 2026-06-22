@@ -33,7 +33,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   
   const { token, user } = useAuthStore();
-  const { currentSong, isPlaying, currentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
+  const { currentSong, isPlaying, currentTime, setCurrentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
   
   const [room, setRoom] = useState<RoomDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +50,12 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const [isHost, setIsHost] = useState(false);
   const [suggestQuery, setSuggestQuery] = useState("");
   const [suggestResults, setSuggestResults] = useState<any[]>([]);
+
+  const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
+  const voiceActiveRef = useRef(voiceActive);
+  useEffect(() => {
+    voiceActiveRef.current = voiceActive;
+  }, [voiceActive]);
 
   // Fetch Room Info
   const fetchRoomInfo = async () => {
@@ -106,6 +112,16 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             data: { timestamp: currentTime }
           }));
         }
+        
+        // If voice is active, initiate WebRTC offer to the newly joined member
+        const newMemberId = eventData.userId;
+        if (voiceActiveRef.current && newMemberId !== user?.id) {
+          const pc = createPeerConnection(newMemberId);
+          pc.createOffer().then(offer => {
+            pc.setLocalDescription(offer);
+            sendSignal(newMemberId, { sdp: offer });
+          });
+        }
       } 
       
       else if (wsEvent === "room:leave") {
@@ -133,6 +149,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       else if (wsEvent === "play") {
         if (!isHost) {
           setPlaying(true);
+          setCurrentTime(eventData.timestamp);
           if (playerRef?.seekTo) {
             playerRef.seekTo(eventData.timestamp);
           }
@@ -146,8 +163,11 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       } 
       
       else if (wsEvent === "seek") {
-        if (!isHost && playerRef?.seekTo) {
-          playerRef.seekTo(eventData.timestamp);
+        if (!isHost) {
+          setCurrentTime(eventData.timestamp);
+          if (playerRef?.seekTo) {
+            playerRef.seekTo(eventData.timestamp);
+          }
         }
       } 
       
@@ -191,6 +211,35 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }));
     }
   }, [currentSong?.videoId, isHost]);
+
+  // Host Playback Sync Broadcaster
+  const lastTimeRef = useRef(currentTime);
+  const lastPlayingRef = useRef(isPlaying);
+
+  useEffect(() => {
+    if (!isHost || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+
+    // 1. Play/Pause State Transition
+    if (isPlaying !== lastPlayingRef.current) {
+      socketRef.current.send(JSON.stringify({
+        event: isPlaying ? "play" : "pause",
+        data: { timestamp: currentTime }
+      }));
+      lastPlayingRef.current = isPlaying;
+      lastTimeRef.current = currentTime;
+      return;
+    }
+
+    // 2. Manual Seek detection
+    const diff = Math.abs(currentTime - lastTimeRef.current);
+    if (diff > 2.5) {
+      socketRef.current.send(JSON.stringify({
+        event: "seek",
+        data: { timestamp: currentTime }
+      }));
+    }
+    lastTimeRef.current = currentTime;
+  }, [isPlaying, currentTime, isHost]);
 
   const sendPlaybackState = (event: "play" | "pause" | "seek") => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
@@ -268,11 +317,28 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         await pc.setLocalDescription(answer);
         sendSignal(fromPeerId, { sdp: answer });
       }
+      
+      // Process any queued candidates for this peer
+      const queued = pendingCandidatesRef.current[fromPeerId] || [];
+      for (const cand of queued) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {}
+      }
+      delete pendingCandidatesRef.current[fromPeerId];
+      
     } else if (signal.candidate) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-      } catch (e) {
-        console.warn("Error adding Ice Candidate", e);
+      if (pc.remoteDescription) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } catch (e) {
+          console.warn("Error adding Ice Candidate", e);
+        }
+      } else {
+        if (!pendingCandidatesRef.current[fromPeerId]) {
+          pendingCandidatesRef.current[fromPeerId] = [];
+        }
+        pendingCandidatesRef.current[fromPeerId].push(signal.candidate);
       }
     }
   };
@@ -300,6 +366,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         document.body.appendChild(audioEl);
       }
       audioEl.srcObject = event.streams[0];
+      // Explicitly trigger play to handle autoplay browser restrictions
+      audioEl.play().catch(err => console.warn("Failed to autoplay peer audio:", err));
     };
 
     if (localStreamRef.current) {
@@ -330,7 +398,15 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         if (room) {
           room.membersProfiles.forEach(m => {
             if (m.id !== user?.id) {
-              const pc = createPeerConnection(m.id);
+              let pc = peerConnectionsRef.current[m.id];
+              if (!pc) {
+                pc = createPeerConnection(m.id);
+              } else {
+                // If peer connection already exists, add tracks to it
+                stream.getTracks().forEach(track => {
+                  pc.addTrack(track, stream);
+                });
+              }
               pc.createOffer().then(offer => {
                 pc.setLocalDescription(offer);
                 sendSignal(m.id, { sdp: offer });

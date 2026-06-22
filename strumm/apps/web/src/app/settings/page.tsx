@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const { user, token, setUser } = useAuthStore();
   const { audioQuality, setAudioQuality } = usePlayerStore();
   const [displayName, setDisplayName] = useState(user?.displayName || "");
+  const [username, setUsername] = useState(user?.username || "");
   const [avatar, setAvatar] = useState(user?.avatar || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +72,7 @@ export default function SettingsPage() {
         },
         body: JSON.stringify({
           displayName: cleanText(displayName, 120),
+          username: cleanText(username, 50).trim().toLowerCase(),
           avatar: avatar.startsWith("data:image/") ? avatar : cleanText(avatar, 1500)
         })
       });
@@ -115,6 +117,23 @@ export default function SettingsPage() {
           <form onSubmit={handleSaveProfile} className="space-y-4">
             <div>
               <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
+                Username
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-2.5 w-4 h-4 text-muted text-sm font-semibold select-none">@</span>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="username"
+                  className="w-full bg-background border border-border rounded-lg pl-8 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition font-mono"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
                 Display Name
               </label>
               <div className="relative">
@@ -123,7 +142,7 @@ export default function SettingsPage() {
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Your display username"
+                  placeholder="Your display name"
                   className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition"
                   required
                 />

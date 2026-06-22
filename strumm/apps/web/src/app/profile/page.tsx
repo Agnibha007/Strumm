@@ -345,9 +345,12 @@ function ProfilePageContent() {
       const json = await res.json();
       if (json.success && json.data?.id) {
         router.push(`/playlist/${json.data.id}`);
+      } else {
+        alert(json.error || json.detail || "Not enough music compatibility between you to generate a Blend playlist.");
       }
     } catch (e) {
       console.error(e);
+      alert("Failed to connect to the blend generation server.");
     } finally {
       setSocialLoading(false);
     }
@@ -798,6 +801,41 @@ function ProfilePageContent() {
               </div>
             </div>
           </div>
+
+          {/* Custom Badges / Achievements Section */}
+          {displayedUser.badges && displayedUser.badges.length > 0 && (
+            <div className="bg-surface/30 border border-border/60 rounded-xl p-6 space-y-4">
+              <div>
+                <h3 className="font-editorial text-xl text-text font-bold">Unlocked Badges</h3>
+                <p className="text-xs text-muted">Special milestones earned through your listening journey.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+                {displayedUser.badges.map((badge: any) => (
+                  <div
+                    key={badge.id}
+                    className="flex items-center gap-3.5 p-3.5 bg-surface-elevated/40 border border-border/30 rounded-xl hover:border-primary/30 transition duration-300 shadow-sm"
+                  >
+                    <div className="text-3xl p-2 bg-background border border-border/40 rounded-xl shadow-inner select-none">
+                      {badge.icon || "🏆"}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-text truncate">
+                        {badge.title}
+                      </div>
+                      <div className="text-[11px] text-muted leading-relaxed mt-0.5">
+                        {badge.description}
+                      </div>
+                      {badge.earnedAt && (
+                        <div className="text-[9px] text-primary/70 font-mono mt-1">
+                          Earned {new Date(badge.earnedAt).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Sound DNA component */}
           <div className="bg-surface/30 border border-border/60 rounded-xl p-6 space-y-6">
