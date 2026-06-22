@@ -74,17 +74,52 @@ ws_manager = ConnectionManager()
 async def compute_taste_match_score(user_a_id: str, user_b_id: str) -> int:
     try:
         database = db.get_db()
-        a_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": user_a_id}).to_list(length=500)
-        b_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": user_b_id}).to_list(length=500)
-        if not a_hist or not b_hist:
-            return 50  # baseline
-        a_artists = {str(h.get("song", {}).get("artist", "")).strip().lower() for h in a_hist if h.get("song", {}).get("artist")}
-        b_artists = {str(h.get("song", {}).get("artist", "")).strip().lower() for h in b_hist if h.get("song", {}).get("artist")}
-        common = a_artists.intersection(b_artists)
-        union = a_artists.union(b_artists)
-        if not union:
-            return 50
-        return int(round((len(common) / len(union)) * 100))
+        possible_a_ids = [user_a_id]
+        if ObjectId.is_valid(user_a_id):
+            possible_a_ids.append(ObjectId(user_a_id))
+            
+        possible_b_ids = [user_b_id]
+        if ObjectId.is_valid(user_b_id):
+            possible_b_ids.append(ObjectId(user_b_id))
+            
+        a_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_a_ids}}).to_list(length=500)
+        b_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_b_ids}}).to_list(length=500)
+        
+        a_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_a_ids}}).to_list(length=500)
+        b_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_b_ids}}).to_list(length=500)
+        
+        a_artists = set()
+        a_songs = set()
+        for h in a_hist + a_likes:
+            s = h.get("song", {})
+            if s.get("artist"):
+                a_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                a_songs.add(str(s["videoId"]))
+                
+        b_artists = set()
+        b_songs = set()
+        for h in b_hist + b_likes:
+            s = h.get("song", {})
+            if s.get("artist"):
+                b_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                b_songs.add(str(s["videoId"]))
+                
+        if not a_songs and not b_songs:
+            return 50  # Neutral default for no data
+            
+        common_artists = a_artists.intersection(b_artists)
+        common_songs_ids = a_songs.intersection(b_songs)
+        
+        min_artist_len = min(len(a_artists), len(b_artists))
+        artist_similarity = len(common_artists) / max(1, min_artist_len) if min_artist_len > 0 else 0
+        
+        min_song_len = min(len(a_songs), len(b_songs))
+        song_similarity = len(common_songs_ids) / max(1, min_song_len) if min_song_len > 0 else 0
+        
+        match_percentage = int(round(35 + 35 * artist_similarity + 28 * song_similarity))
+        return max(15, min(98, match_percentage))
     except Exception:
         return 50
 
@@ -222,6 +257,8 @@ async def get_friend_requests(current_user: dict = Depends(get_current_user)):
                 "username": sender.get("username"),
                 "avatar": sender.get("avatar")
             }
+            # Compute real-time taste compatibility dynamically
+            doc["tasteMatch"] = await compute_taste_match_score(my_id, doc["requesterId"])
         requests_list.append(doc)
         
     return {"success": True, "data": requests_list}
@@ -264,12 +301,14 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
                     }
                     is_online = True
                     
+            # Compute real-time taste compatibility dynamically
+            taste_match_score = await compute_taste_match_score(my_id, friend_id)
             friends.append({
                 "id": friend_id,
                 "displayName": f_user.get("displayName"),
                 "username": f_user.get("username"),
                 "avatar": f_user.get("avatar"),
-                "tasteMatch": conn.get("tasteMatch", 50),
+                "tasteMatch": taste_match_score,
                 "isOnline": is_online,
                 "currentActivity": current_activity
             })
