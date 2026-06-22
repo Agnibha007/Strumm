@@ -73,14 +73,17 @@ ws_manager = ConnectionManager()
 # Helper: calculate taste match score dynamically
 async def compute_taste_match_score(user_a_id: str, user_b_id: str) -> int:
     try:
+        user_a_str = str(user_a_id)
+        user_b_str = str(user_b_id)
+        
         database = db.get_db()
-        possible_a_ids = [user_a_id]
-        if ObjectId.is_valid(user_a_id):
-            possible_a_ids.append(ObjectId(user_a_id))
+        possible_a_ids = [user_a_str]
+        if ObjectId.is_valid(user_a_str):
+            possible_a_ids.append(ObjectId(user_a_str))
             
-        possible_b_ids = [user_b_id]
-        if ObjectId.is_valid(user_b_id):
-            possible_b_ids.append(ObjectId(user_b_id))
+        possible_b_ids = [user_b_str]
+        if ObjectId.is_valid(user_b_str):
+            possible_b_ids.append(ObjectId(user_b_str))
             
         a_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_a_ids}}).to_list(length=500)
         b_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_b_ids}}).to_list(length=500)
