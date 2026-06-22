@@ -57,6 +57,26 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     voiceActiveRef.current = voiceActive;
   }, [voiceActive]);
 
+  const isHostRef = useRef(isHost);
+  useEffect(() => {
+    isHostRef.current = isHost;
+  }, [isHost]);
+
+  const currentSongRef = useRef(currentSong);
+  useEffect(() => {
+    currentSongRef.current = currentSong;
+  }, [currentSong]);
+
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  const currentTimeRef = useRef(currentTime);
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
+
   // Fetch Room Info
   const fetchRoomInfo = async () => {
     if (!token) return;
@@ -101,15 +121,15 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       if (wsEvent === "room:join") {
         setMessages(prev => [...prev, { sender: "System", text: `A listener joined the room.` }]);
         fetchRoomInfo();
-        if (isHost && currentSong) {
+        if (isHostRef.current && currentSongRef.current) {
           // Sync new member with host's current track state
           ws.send(JSON.stringify({
             event: "track:update",
-            data: { song: currentSong }
+            data: { song: currentSongRef.current }
           }));
           ws.send(JSON.stringify({
-            event: isPlaying ? "play" : "pause",
-            data: { timestamp: currentTime }
+            event: isPlayingRef.current ? "play" : "pause",
+            data: { timestamp: currentTimeRef.current }
           }));
         }
         
@@ -197,7 +217,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
     };
-  }, [token, room?.id]);
+  }, [token, room?.id, user?.id]);
 
   // Host Action Broadcasters
   useEffect(() => {
