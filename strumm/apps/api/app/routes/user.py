@@ -118,6 +118,108 @@ def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, 
         
     return "Melody Harmonizer"
 
+# Helper to calculate user stats dynamically
+def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    # 1. Total & Monthly seconds
+    total_seconds_hist = sum(h.get("listenDuration", 0) for h in histories)
+    
+    # Use max with user's stored statistics (in case of legacy/seeded stats)
+    user_stats = current_user_statistics or {}
+    total_seconds_user = user_stats.get("totalListeningTime", 0) or 0
+    total_seconds = max(total_seconds_user, total_seconds_hist)
+    total_minutes = int(round(total_seconds / 60))
+    
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    monthly_seconds_hist = sum(h.get("listenDuration", 0) for h in histories if h.get("playedAt", datetime.utcnow()) >= thirty_days_ago)
+    monthly_seconds_user = user_stats.get("monthlyListeningTime", 0) or 0
+    monthly_seconds = max(monthly_seconds_user, monthly_seconds_hist)
+    monthly_minutes = int(round(monthly_seconds / 60))
+    
+    # 2. Top Songs
+    song_counts = {}
+    for h in histories:
+        song = h.get("song", {})
+        vid = song.get("videoId")
+        duration = song.get("duration", 180) or 180
+        if vid:
+            if vid not in song_counts:
+                song_counts[vid] = {
+                    "title": song.get("title", "Unknown Track"),
+                    "artist": song.get("artist", "Unknown Artist"),
+                    "thumbnail": song.get("thumbnail", ""),
+                    "image": song.get("thumbnail", ""),
+                    "videoId": vid,
+                    "plays": 0,
+                    "minutes": 0,
+                    "totalSeconds": 0,
+                    "duration": duration
+                }
+            song_counts[vid]["totalSeconds"] += h.get("listenDuration", 0)
+            
+    # Post-calculate song plays
+    for vid, sc in song_counts.items():
+        sc["plays"] = max(1, int(round(sc["totalSeconds"] / max(1, sc["duration"]))))
+        sc["count"] = sc["plays"]
+        sc["minutes"] = int(round(sc["totalSeconds"] / 60))
+        sc["totalMinutes"] = sc["minutes"]
+        if "totalSeconds" in sc:
+            del sc["totalSeconds"]
+            
+    sorted_songs = sorted(song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+    
+    # 3. Top Artists
+    artist_counts = {}
+    for h in histories:
+        artist = h.get("song", {}).get("artist", "Unknown Artist")
+        thumbnail = h.get("song", {}).get("thumbnail", "")
+        if artist:
+            import re
+            processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
+            artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
+            for single_art in artists_list:
+                if single_art not in artist_counts:
+                    artist_counts[single_art] = {
+                        "artist": single_art,
+                        "thumbnail": thumbnail,
+                        "image": thumbnail,
+                        "count": 0,
+                        "plays": 0,
+                        "minutes": 0,
+                        "totalSeconds": 0
+                    }
+                artist_counts[single_art]["totalSeconds"] += h.get("listenDuration", 0)
+                
+    # Sum up artist plays based on their songs' calculated plays
+    for artist, ac in artist_counts.items():
+        import re
+        artist_plays = 0
+        for s in song_counts.values():
+            song_artist = s.get("artist", "")
+            if song_artist:
+                song_artists_list = [sa.strip().lower() for sa in re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', song_artist).split(',') if sa.strip()]
+                if artist.lower() in song_artists_list:
+                    artist_plays += s["plays"]
+        ac["plays"] = max(1, artist_plays)
+        ac["count"] = ac["plays"]
+        ac["minutes"] = int(round(ac["totalSeconds"] / 60))
+        if "totalSeconds" in ac:
+            del ac["totalSeconds"]
+            
+    sorted_artists = sorted(artist_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+    
+    # 4. Sound DNA
+    sound_dna = calculate_sound_dna(histories)
+    
+    return {
+        "totalListeningTime": total_seconds,
+        "monthlyListeningTime": monthly_seconds,
+        "totalMinutes": total_minutes,
+        "monthlyMinutes": monthly_minutes,
+        "topSongs": sorted_songs,
+        "topArtists": sorted_artists,
+        "soundDNA": sound_dna
+    }
+
 # User Profile
 @router.get("/profile")
 async def get_profile(current_user: dict = Depends(get_current_user)):
@@ -128,9 +230,15 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         if ObjectId.is_valid(user_id_str):
             possible_ids.append(ObjectId(user_id_str))
             
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=1000)
-        dna = calculate_sound_dna(histories)
-        current_user["soundDNA"] = dna
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
+        stats = compute_user_stats(histories, current_user.get("statistics"))
+        current_user["soundDNA"] = stats["soundDNA"]
+        current_user["statistics"] = {
+            "totalListeningTime": stats["totalListeningTime"],
+            "monthlyListeningTime": stats["monthlyListeningTime"],
+            "topArtists": stats["topArtists"],
+            "topSongs": stats["topSongs"]
+        }
         return {
             "success": True,
             "data": current_user
@@ -398,6 +506,22 @@ async def clear_playback_history(current_user: dict = Depends(get_current_user))
         user_id_str = current_user["id"]
         user_id_oid = ObjectId(user_id_str)
         await database[db.PLAYBACK_HISTORIES].delete_many({"userId": {"$in": [user_id_str, user_id_oid]}})
+        await database[db.USERS].update_one(
+            {"_id": user_id_oid},
+            {"$set": {
+                "statistics.totalListeningTime": 0,
+                "statistics.monthlyListeningTime": 0,
+                "statistics.topArtists": [],
+                "statistics.topSongs": [],
+                "soundDNA": {
+                    "energy": 5,
+                    "discovery": 5,
+                    "nostalgia": 5,
+                    "variety": 5,
+                    "repeatRate": 5
+                }
+            }}
+        )
         return {
             "success": True,
             "data": {"message": "Listening history permanently deleted."}
@@ -717,124 +841,12 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         possible_ids = [user_id, parse_object_id(user_id)]
         histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
         
-        # Listening minutes: sum(listenDuration) / 60
-        total_seconds = sum(h.get("listenDuration", 0) for h in histories)
-        total_minutes = int(total_seconds // 60)
-        
-        # Top Songs / Artists / Time of Day
-        song_groups = {}
-        artist_groups = {}
-        time_slots = {"Morning (6AM-12PM)": 0, "Afternoon (12PM-6PM)": 0, "Evening (6PM-12AM)": 0, "Midnight (12AM-6AM)": 0}
-        
-        for h in histories:
-            song = h.get("song", {})
-            vid = song.get("videoId")
-            title = song.get("title", "Unknown Track")
-            artist = song.get("artist", "Unknown Artist")
-            thumbnail = song.get("thumbnail", "")
-            duration = song.get("duration", 180)
-            listen_dur = h.get("listenDuration", 0)
-            
-            played_at = h.get("playedAt")
-            played_at_str = played_at.isoformat() if isinstance(played_at, datetime) else str(played_at) if played_at else ""
-            
-            if vid:
-                if vid not in song_groups:
-                    song_groups[vid] = {
-                        "videoId": vid,
-                        "title": title,
-                        "artist": artist,
-                        "thumbnail": thumbnail,
-                        "image": thumbnail,
-                        "duration": duration,
-                        "plays": 0,
-                        "count": 0, # backward compatibility
-                        "totalSeconds": 0,
-                        "lastPlayed": played_at_str,
-                        "playedAtDateTime": played_at
-                    }
-                g = song_groups[vid]
-                g["totalSeconds"] += listen_dur
-                # Count plays as: (Total listened time / Song duration), but at least 1 if there's any active listening history entry
-                calculated_plays = max(1, int(round(g["totalSeconds"] / max(1, duration))))
-                g["plays"] = calculated_plays
-                g["count"] = calculated_plays
-                if played_at and (not g["playedAtDateTime"] or played_at > g["playedAtDateTime"]):
-                    g["playedAtDateTime"] = played_at
-                    g["lastPlayed"] = played_at_str
-
-            if artist:
-                import re
-                processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
-                artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
-                for single_art in artists_list:
-                    if single_art not in artist_groups:
-                        artist_groups[single_art] = {
-                            "artist": single_art,
-                            "thumbnail": thumbnail,
-                            "image": thumbnail,
-                            "plays": 0,
-                            "count": 0, # backward compatibility
-                            "totalSeconds": 0,
-                            "uniqueSongsSet": set()
-                        }
-                    ag = artist_groups[single_art]
-                    ag["totalSeconds"] += listen_dur
-                    if vid:
-                        ag["uniqueSongsSet"].add(vid)
-                
-            if isinstance(played_at, datetime):
-                hour = played_at.hour
-                if 6 <= hour < 12:
-                    time_slots["Morning (6AM-12PM)"] += 1
-                elif 12 <= hour < 18:
-                    time_slots["Afternoon (12PM-6PM)"] += 1
-                elif 18 <= hour < 24:
-                    time_slots["Evening (6PM-12AM)"] += 1
-                else:
-                    time_slots["Midnight (12AM-6AM)"] += 1
-
-        # Post-process songs
-        for vid, g in song_groups.items():
-            g["minutes"] = round(g["totalSeconds"] / 60)
-            g["totalMinutes"] = g["minutes"]
-            if "playedAtDateTime" in g:
-                del g["playedAtDateTime"]
-            del g["totalSeconds"]
-
-        # Post-process artists
-        for name, ag in artist_groups.items():
-            ag["minutes"] = round(ag["totalSeconds"] / 60)
-            ag["uniqueSongs"] = len(ag["uniqueSongsSet"])
-            # Sum up actual calculated song plays for this artist
-            import re
-            artist_plays = 0
-            for g in song_groups.values():
-                song_artist = g.get("artist", "")
-                if song_artist:
-                    song_artists_list = [sa.strip().lower() for sa in re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', song_artist).split(',') if sa.strip()]
-                    if name.lower() in song_artists_list:
-                        artist_plays += g["plays"]
-            ag["plays"] = max(1, artist_plays)
-            ag["count"] = ag["plays"]
-            del ag["uniqueSongsSet"]
-            del ag["totalSeconds"]
-            
-        sorted_songs = sorted(song_groups.values(), key=lambda x: x["plays"], reverse=True)[:5]
-        sorted_artists = sorted(artist_groups.values(), key=lambda x: x["plays"], reverse=True)[:5]
-        favorite_time = max(time_slots, key=time_slots.get) if histories else "Evening (6PM-12AM)"
-        
-        # Sound DNA & Personality
-        sound_dna = calculate_sound_dna(histories)
-        personality = get_music_personality(histories, sound_dna)
-        
-        # Calculate discovery score
-        discovery_score = sound_dna["discovery"] * 10
-        
-        # Insufficient history flag (e.g. less than 1 record)
+        stats = compute_user_stats(histories, current_user.get("statistics"))
+        personality = get_music_personality(histories, stats["soundDNA"])
+        discovery_score = stats["soundDNA"]["discovery"] * 10
         insufficient_history = len(histories) < 1
         
-        # Simulated/mapped top genres
+        # Mapped top genres
         genres = {}
         for h in histories:
             title = str(h.get("song", {}).get("title", "")).lower()
@@ -852,17 +864,33 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         sorted_genres = sorted(genres.items(), key=lambda x: x[1], reverse=True)[:3]
         top_genres = [g[0] for g in sorted_genres] if sorted_genres else ["Pop / Indie"]
         
+        # Favorite Time
+        time_slots = {"Morning (6AM-12PM)": 0, "Afternoon (12PM-6PM)": 0, "Evening (6PM-12AM)": 0, "Midnight (12AM-6AM)": 0}
+        for h in histories:
+            played_at = h.get("playedAt")
+            if isinstance(played_at, datetime):
+                hour = played_at.hour
+                if 6 <= hour < 12:
+                    time_slots["Morning (6AM-12PM)"] += 1
+                elif 12 <= hour < 18:
+                    time_slots["Afternoon (12PM-6PM)"] += 1
+                elif 18 <= hour < 24:
+                    time_slots["Evening (6PM-12AM)"] += 1
+                else:
+                    time_slots["Midnight (12AM-6AM)"] += 1
+        favorite_time = max(time_slots, key=time_slots.get) if histories else "Evening (6PM-12AM)"
+        
         return {
             "success": True,
             "data": {
-                "totalMinutes": total_minutes,
-                "topSongs": sorted_songs,
-                "topArtists": sorted_artists,
+                "totalMinutes": stats["totalMinutes"],
+                "topSongs": stats["topSongs"],
+                "topArtists": stats["topArtists"],
                 "topGenres": top_genres,
                 "favoriteTime": favorite_time,
                 "discoveryScore": discovery_score,
                 "personality": personality,
-                "soundDNA": sound_dna,
+                "soundDNA": stats["soundDNA"],
                 "insufficientHistory": insufficient_history
             }
         }
@@ -1103,28 +1131,16 @@ async def get_public_profile(username: str):
                 m["createdAt"] = m["createdAt"].isoformat()
                 
         # Get stats
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=1000)
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=2000)
         for h in histories:
             if "userId" in h:
                 h["userId"] = str(h["userId"])
-        sound_dna = calculate_sound_dna(histories)
-        
-        total_seconds = sum(h.get("listenDuration", 30) for h in histories)
-        total_minutes = round(total_seconds / 60)
+                
+        stats = compute_user_stats(histories, user.get("statistics"))
         
         # Respect showTopSongs privacy setting
         show_top = user.get("settings", {}).get("showTopSongs", True)
-        sorted_artists = []
-        if show_top:
-            # Top Artists
-            artist_counts = {}
-            for h in histories:
-                artist = h.get("song", {}).get("artist", "Unknown Artist")
-                thumbnail = h.get("song", {}).get("thumbnail", "")
-                if artist:
-                    artist_counts[artist] = artist_counts.get(artist, {"count": 0, "artist": artist, "thumbnail": thumbnail})
-                    artist_counts[artist]["count"] += 1
-            sorted_artists = sorted(artist_counts.values(), key=lambda x: x["count"], reverse=True)[:5]
+        sorted_artists = stats["topArtists"] if show_top else []
         
         # Clean private user fields for security
         public_data = {
@@ -1133,8 +1149,8 @@ async def get_public_profile(username: str):
             "displayName": user["displayName"],
             "avatar": user.get("avatar"),
             "theme": user.get("theme", "Obsidian"),
-            "soundDNA": sound_dna,
-            "totalMinutes": total_minutes,
+            "soundDNA": stats["soundDNA"],
+            "totalMinutes": stats["totalMinutes"],
             "topArtists": sorted_artists,
             "playlists": playlists,
             "memories": memories,
@@ -1182,89 +1198,20 @@ async def get_users_public_profile(username: str):
                 m["createdAt"] = m["createdAt"].isoformat()
                 
         # Get stats
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=1000)
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=2000)
         for h in histories:
             if "userId" in h:
                 h["userId"] = str(h["userId"])
-        sound_dna = calculate_sound_dna(histories)
-        
-        total_seconds = sum(h.get("listenDuration", 30) for h in histories)
-        total_minutes = round(total_seconds / 60)
-        
-        # Calculate monthly seconds/minutes
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        monthly_seconds = sum(h.get("listenDuration", 30) for h in histories if h.get("playedAt", datetime.utcnow()) >= thirty_days_ago)
-        monthly_minutes = round(monthly_seconds / 60)
+                
+        stats = compute_user_stats(histories, user.get("statistics"))
         
         # Get liked count
         liked_count = await database[db.LIKED_SONGS].count_documents({"userId": {"$in": [user_id, ObjectId(user_id)]}})
         
         # Respect showTopSongs privacy setting
         show_top = user.get("settings", {}).get("showTopSongs", True)
-        sorted_artists = []
-        sorted_songs = []
-        if show_top:
-            # Top Songs
-            song_counts = {}
-            for h in histories:
-                song = h.get("song", {})
-                vid = song.get("videoId")
-                duration = song.get("duration", 180)
-                if vid:
-                    if vid not in song_counts:
-                        song_counts[vid] = {
-                            "title": song.get("title"),
-                            "artist": song.get("artist"),
-                            "image": song.get("thumbnail"),
-                            "videoId": vid,
-                            "plays": 0,
-                            "minutes": 0,
-                            "totalSeconds": 0,
-                            "duration": duration
-                        }
-                    song_counts[vid]["totalSeconds"] += h.get("listenDuration", 0)
-                    song_counts[vid]["minutes"] = round(song_counts[vid]["totalSeconds"] / 60)
-            
-            # Post-calculate song plays
-            for vid, sc in song_counts.items():
-                sc["plays"] = max(1, int(round(sc["totalSeconds"] / max(1, sc["duration"]))))
-                # cleanup temp fields
-                del sc["totalSeconds"]
-                del sc["duration"]
-
-            sorted_songs = sorted(song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
-
-            # Top Artists
-            artist_counts = {}
-            for h in histories:
-                artist = h.get("song", {}).get("artist", "Unknown Artist")
-                thumbnail = h.get("song", {}).get("thumbnail", "")
-                if artist:
-                    import re
-                    processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
-                    artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
-                    for single_art in artists_list:
-                        if single_art not in artist_counts:
-                            artist_counts[single_art] = {
-                                "artist": single_art,
-                                "thumbnail": thumbnail,
-                                "count": 0,
-                                "plays": 0
-                            }
-            # Sum up artist plays based on their songs' calculated plays
-            for artist, ac in artist_counts.items():
-                import re
-                artist_plays = 0
-                for s in song_counts.values():
-                    song_artist = s.get("artist", "")
-                    if song_artist:
-                        song_artists_list = [sa.strip().lower() for sa in re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', song_artist).split(',') if sa.strip()]
-                        if artist.lower() in song_artists_list:
-                            artist_plays += s["plays"]
-                ac["plays"] = max(1, artist_plays)
-                ac["count"] = ac["plays"]
-
-            sorted_artists = sorted(artist_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+        sorted_artists = stats["topArtists"] if show_top else []
+        sorted_songs = stats["topSongs"] if show_top else []
         
         public_data = {
             "id": user_id,
@@ -1276,10 +1223,10 @@ async def get_users_public_profile(username: str):
                 "createdAt": user["createdAt"].isoformat() if "createdAt" in user else None,
                 "theme": user.get("theme", "Obsidian"),
             },
-            "soundDNA": sound_dna,
+            "soundDNA": stats["soundDNA"],
             "replayHighlights": {
-                "totalMinutes": total_minutes,
-                "monthlyMinutes": monthly_minutes,
+                "totalMinutes": stats["totalMinutes"],
+                "monthlyMinutes": stats["monthlyMinutes"],
             },
             "likedCount": liked_count,
             "topArtists": sorted_artists,
