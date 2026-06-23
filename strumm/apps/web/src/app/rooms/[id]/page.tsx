@@ -47,7 +47,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const [messages, setMessages] = useState<Array<{ sender: string; text: string }>>([]);
   const [inputText, setInputText] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
-  const [isHost, setIsHost] = useState(false);
+  const isHost = room && user ? room.hostId === user.id : false;
   const [suggestQuery, setSuggestQuery] = useState("");
   const [suggestResults, setSuggestResults] = useState<any[]>([]);
 
@@ -87,7 +87,6 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       const json = await response.json();
       if (json.success) {
         setRoom(json.data);
-        setIsHost(json.data.hostId === user?.id);
       }
     } catch (e) {
       console.error("Failed to load room details:", e);
@@ -160,14 +159,14 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       } 
       
       else if (wsEvent === "track:update") {
-        if (!isHost) {
+        if (!isHostRef.current) {
           playSong(eventData.song, [eventData.song]);
         }
         setRoom(prev => prev ? { ...prev, currentTrack: eventData.song } : null);
       } 
       
       else if (wsEvent === "play") {
-        if (!isHost) {
+        if (!isHostRef.current) {
           setPlaying(true);
           setCurrentTime(eventData.timestamp);
           if (playerRef?.seekTo) {
@@ -177,13 +176,13 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       } 
       
       else if (wsEvent === "pause") {
-        if (!isHost) {
+        if (!isHostRef.current) {
           setPlaying(false);
         }
       } 
       
       else if (wsEvent === "seek") {
-        if (!isHost) {
+        if (!isHostRef.current) {
           setCurrentTime(eventData.timestamp);
           if (playerRef?.seekTo) {
             playerRef.seekTo(eventData.timestamp);
@@ -580,7 +579,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
 
           {/* Collaborative Queue Song suggestion inputs */}
           <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
-            <h3 className="font-editorial text-lg text-text font-bold">Suggest Songs</h3>
+            <h3 className="font-editorial text-lg text-text font-bold">
+              {isHost ? "Search & Control Music" : "Suggest Songs"}
+            </h3>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -607,18 +608,34 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                       <span className="text-[10px] text-muted truncate block">{song.artist}</span>
                     </div>
                     <div className="flex gap-2 ml-4">
-                      <button
-                        onClick={() => handleAddSuggestedSong(song)}
-                        className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
-                      >
-                        Suggest
-                      </button>
-                      {isHost && (
+                      {isHost ? (
+                        <>
+                          <button
+                            onClick={() => playSong(song, [song])}
+                            className="px-2.5 py-1 bg-primary/20 hover:bg-primary/40 text-primary font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                          >
+                            Play Now
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+                                socketRef.current.send(JSON.stringify({
+                                  event: "queue:add",
+                                  data: { song }
+                                }));
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                          >
+                            Add to Queue
+                          </button>
+                        </>
+                      ) : (
                         <button
-                          onClick={() => playSong(song, [song])}
-                          className="px-2.5 py-1 bg-primary/20 hover:bg-primary/40 text-primary font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                          onClick={() => handleAddSuggestedSong(song)}
+                          className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
                         >
-                          Play
+                          Suggest
                         </button>
                       )}
                     </div>

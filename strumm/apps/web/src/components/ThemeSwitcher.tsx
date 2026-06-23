@@ -72,7 +72,7 @@ export default function ThemeSwitcher() {
         Select an editorial palette to dress your universe.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-3.5">
         {themes.map((t) => (
           <button
             key={t.name}

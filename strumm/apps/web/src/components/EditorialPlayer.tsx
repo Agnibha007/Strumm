@@ -41,6 +41,8 @@ export default function EditorialPlayer() {
     setRepeatMode,
     currentIndex,
     podcastMode,
+    playerError,
+    isPlayerLoading,
   } = usePlayerStore();
   const { token, fetchProfile } = useAuthStore();
 
@@ -262,7 +264,17 @@ export default function EditorialPlayer() {
               <h4 className="font-editorial text-text text-base leading-tight truncate font-bold w-full">
                 {currentSong.title}
               </h4>
-              <p className="text-xs text-muted leading-tight truncate mt-0.5 w-full">{currentSong.artist}</p>
+              {playerError ? (
+                <p className="text-xs text-red-500 font-semibold animate-pulse leading-tight truncate mt-0.5 w-full">
+                  {playerError}
+                </p>
+              ) : isPlayerLoading ? (
+                <p className="text-xs text-primary leading-tight truncate mt-0.5 w-full flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Loading...
+                </p>
+              ) : (
+                <p className="text-xs text-muted leading-tight truncate mt-0.5 w-full">{currentSong.artist}</p>
+              )}
             </div>
           </div>
 
@@ -272,7 +284,7 @@ export default function EditorialPlayer() {
               <button
                 onClick={() => setShuffle(!isShuffle)}
                 title={isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
-                className={`hidden md:block p-1.5 cursor-pointer transition ${isShuffle ? "text-primary text-glow" : "text-muted hover:text-text"}`}
+                className={`hidden md:block p-1.5 rounded-lg cursor-pointer transition ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
               >
                 <Shuffle className="w-3.5 h-3.5" />
               </button>
@@ -312,10 +324,10 @@ export default function EditorialPlayer() {
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}
                 title={`Repeat Mode: ${repeatMode === "none" ? "Off" : repeatMode === "all" ? "Repeat All" : "Repeat One"}`}
-                className={`hidden md:block p-1.5 cursor-pointer transition ${repeatMode !== "none" ? "text-primary text-glow" : "text-muted hover:text-text"}`}
+                className={`hidden md:block p-1.5 rounded-lg cursor-pointer transition relative ${repeatMode !== "none" ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
               >
                 <Repeat className="w-3.5 h-3.5" />
-                {repeatMode === "one" && <span className="absolute text-[8px] font-bold text-primary translate-x-2 -translate-y-2">1</span>}
+                {repeatMode === "one" && <span className="absolute text-[8px] font-bold text-primary-hover translate-x-2 -translate-y-2">1</span>}
               </button>
             </div>
 

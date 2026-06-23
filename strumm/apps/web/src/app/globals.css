@@ -173,6 +173,14 @@ h1, h2, h3, h4, .font-editorial {
   background: var(--primary);
 }
 
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Custom Glassmorphism styles */
 .glass {
   background: rgba(18, 18, 18, 0.6);

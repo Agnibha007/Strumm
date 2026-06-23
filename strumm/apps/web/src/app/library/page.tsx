@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Clock, Heart, Play, User as UserIcon, Trash2, Plus } from "lucide-react";
+import { Clock, Heart, Play, User as UserIcon, Trash2, Plus, Check } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 
 export default function LibraryPage() {
   const { user, token } = useAuthStore();
-  const { playSong, addToQueue } = usePlayerStore();
+  const { playSong, addToQueue, queue } = usePlayerStore();
   const [likedSongs, setLikedSongs] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -266,13 +266,18 @@ export default function LibraryPage() {
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                         </button>
-                        <button
-                          onClick={() => addToQueue(s)}
-                          className="p-1.5 hover:bg-surface text-muted hover:text-text rounded-lg transition"
-                          title="Add to queue"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
+                        {(() => {
+                          const isInQueue = queue.some((item) => item.videoId === s.videoId);
+                          return (
+                            <button
+                              onClick={() => !isInQueue && addToQueue(s)}
+                              className={`p-1.5 rounded-lg transition ${isInQueue ? "text-muted/40 cursor-default" : "hover:bg-surface text-muted hover:text-text cursor-pointer"}`}
+                              title={isInQueue ? "Added to queue" : "Add to queue"}
+                            >
+                              {isInQueue ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

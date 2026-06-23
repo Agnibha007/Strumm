@@ -64,6 +64,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     currentIndex,
     podcastMode,
     setPodcastMode,
+    playerError,
+    isPlayerLoading,
   } = usePlayerStore();
   const { token } = useAuthStore();
 
@@ -509,9 +511,19 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 <h2 className="text-xl md:text-2xl font-editorial font-bold text-text truncate">
                   {currentSong.title}
                 </h2>
-                <p className="text-xs text-muted truncate">
-                  {currentSong.artist}
-                </p>
+                {playerError ? (
+                  <p className="text-xs text-red-500 font-semibold animate-pulse truncate">
+                    {playerError}
+                  </p>
+                ) : isPlayerLoading ? (
+                  <p className="text-xs text-primary truncate flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Loading...
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted truncate">
+                    {currentSong.artist}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -697,9 +709,19 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <h2 className={`font-editorial font-bold text-text leading-tight tracking-tight mb-1 w-full truncate transition-all ${effectiveShowLyrics ? "text-xl md:text-3xl lg:text-5xl" : "text-2xl md:text-4xl lg:text-5xl"}`}>
                 {currentSong.title}
               </h2>
-              <p className={`text-muted font-medium w-full truncate transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
-                {currentSong.artist}
-              </p>
+              {playerError ? (
+                <p className={`text-red-500 font-semibold animate-pulse w-full truncate transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
+                  {playerError}
+                </p>
+              ) : isPlayerLoading ? (
+                <p className={`text-primary font-medium w-full truncate transition-all flex items-center gap-1 ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
+                  <Loader2 className="w-4.5 h-4.5 animate-spin" /> Loading...
+                </p>
+              ) : (
+                <p className={`text-muted font-medium w-full truncate transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
+                  {currentSong.artist}
+                </p>
+              )}
             </div>
 
             {/* Playback speed selector */}
@@ -758,7 +780,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             }`}>
               <button
                 onClick={() => setShuffle(!isShuffle)}
-                className={`p-2 cursor-pointer transition hover:scale-105 ${isShuffle ? "text-primary text-glow" : "text-muted hover:text-text"}`}
+                className={`p-2 rounded-lg cursor-pointer transition hover:scale-105 ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
                 title="Shuffle"
               >
                 <Shuffle className="w-4 h-4" />
@@ -794,12 +816,12 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}
-                className={`p-2 cursor-pointer relative transition hover:scale-105 ${repeatMode !== "none" ? "text-primary text-glow" : "text-muted hover:text-text"}`}
+                className={`p-2 rounded-lg cursor-pointer relative transition hover:scale-105 ${repeatMode !== "none" ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
                 title="Repeat Mode"
               >
                 <Repeat className="w-4 h-4" />
                 {repeatMode === "one" && (
-                  <span className="absolute text-[7px] font-extrabold text-primary translate-x-1.5 -translate-y-2">1</span>
+                  <span className="absolute text-[7px] font-extrabold text-primary-hover translate-x-1.5 -translate-y-2">1</span>
                 )}
               </button>
             </div>

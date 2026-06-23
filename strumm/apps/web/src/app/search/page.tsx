@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus, Shuffle } from "lucide-react";
+import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus, Shuffle, Check } from "lucide-react";
 import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -13,7 +13,7 @@ import Link from "next/link";
 
 export default function SearchPage() {
   const { token } = useAuthStore();
-  const { playSong, addToQueue } = usePlayerStore();
+  const { playSong, addToQueue, queue } = usePlayerStore();
   const { show } = useNotificationStore();
   
   const [query, setQuery] = useState("");
@@ -422,13 +422,18 @@ export default function SearchPage() {
                         >
                           <Heart className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => addToQueue(song)}
-                          className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg transition"
-                          title="Add to queue"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
+                        {(() => {
+                          const isInQueue = queue.some((item) => item.videoId === song.videoId);
+                          return (
+                            <button
+                              onClick={() => !isInQueue && addToQueue(song)}
+                              className={`p-1.5 rounded-lg transition ${isInQueue ? "text-muted/40 cursor-default" : "hover:bg-surface-elevated text-muted hover:text-text cursor-pointer"}`}
+                              title={isInQueue ? "Added to queue" : "Add to queue"}
+                            >
+                              {isInQueue ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                            </button>
+                          );
+                        })()}
                         <button
                           onClick={() => setAddingToPlaylistSong(song)}
                           className="p-1.5 hover:bg-surface-elevated text-muted hover:text-accent rounded-lg transition"
@@ -742,13 +747,18 @@ export default function SearchPage() {
                             >
                               <Heart className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              onClick={() => addToQueue(song)}
-                              className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded-md transition"
-                              title="Add to queue"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
+                            {(() => {
+                              const isInQueue = queue.some((item) => item.videoId === song.videoId);
+                              return (
+                                <button
+                                  onClick={() => !isInQueue && addToQueue(song)}
+                                  className={`p-1 rounded-md transition ${isInQueue ? "text-muted/40 cursor-default" : "hover:bg-surface-elevated text-muted hover:text-text cursor-pointer"}`}
+                                  title={isInQueue ? "Added to queue" : "Add to queue"}
+                                >
+                                  {isInQueue ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                                </button>
+                              );
+                            })()}
                             <button
                               onClick={() => {
                                 setAddingToPlaylistSong(song);

@@ -155,7 +155,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
       <button
         onClick={handleImport}
         disabled={loading}
-        className="w-full py-2.5 bg-accent hover:opacity-90 text-background font-editorial text-sm font-semibold rounded cursor-pointer transition flex items-center justify-center gap-2"
+        className="w-full py-2.5 bg-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-background font-editorial text-sm font-semibold rounded cursor-pointer transition flex items-center justify-center gap-2"
       >
         {loading ? "Resolving catalog..." : "Begin Alignment Process"}
         <ArrowRight className="w-4 h-4" />

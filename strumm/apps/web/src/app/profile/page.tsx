@@ -201,7 +201,7 @@ function ProfilePageContent() {
         avatar: cachedUser.avatar,
         bio: (cachedUser as any).bio || "",
         createdAt: cachedUser.createdAt,
-        soundDNA: (cachedUser as any).soundDNA || { energy: 5, discovery: 5, nostalgia: 5, variety: 5, repeatRate: 5 },
+        soundDNA: (cachedUser as any).soundDNA || null,
         replayHighlights: {
           totalMinutes: Math.round((cachedUser.statistics?.totalListeningTime || 0) / 60),
           monthlyMinutes: Math.round((cachedUser.statistics?.monthlyListeningTime || 0) / 60)
@@ -380,7 +380,8 @@ function ProfilePageContent() {
   const monthlyMinutes = displayedUser.replayHighlights?.monthlyMinutes || 0;
   const topArtists = displayedUser.topArtists || [];
   const topSongs = displayedUser.topSongs || [];
-  const soundDNA = displayedUser.soundDNA || { energy: 5, discovery: 5, nostalgia: 5, variety: 5, repeatRate: 5 };
+  const soundDNA = displayedUser.soundDNA;
+  const isDNALoading = loading || !displayedUser || !soundDNA;
   
   // Define all available badges/passport stamps
   const allBadges = [
@@ -442,19 +443,19 @@ function ProfilePageContent() {
       name: "Sonic Explorer", 
       desc: "Variety DNA 8+", 
       icon: Compass, 
-      earned: soundDNA.variety >= 8 
+      earned: soundDNA ? soundDNA.variety >= 8 : false 
     },
     { 
       name: "Time Traveler", 
       desc: "Nostalgia DNA 8+", 
       icon: History, 
-      earned: soundDNA.nostalgia >= 8 
+      earned: soundDNA ? soundDNA.nostalgia >= 8 : false 
     },
     { 
       name: "High Voltage", 
       desc: "Energy DNA 8+", 
       icon: Zap, 
-      earned: soundDNA.energy >= 8 
+      earned: soundDNA ? soundDNA.energy >= 8 : false 
     }
   ];
 
@@ -843,13 +844,24 @@ function ProfilePageContent() {
               <h3 className="font-editorial text-xl text-text font-bold">Sound DNA</h3>
               <p className="text-xs text-muted">Acoustic blueprints calculated from history.</p>
             </div>
-            <div className="space-y-4">
-              {renderDNABar(soundDNA.energy, "Energy")}
-              {renderDNABar(soundDNA.discovery, "Discovery")}
-              {renderDNABar(soundDNA.nostalgia, "Nostalgia")}
-              {renderDNABar(soundDNA.variety, "Variety")}
-              {renderDNABar(soundDNA.repeatRate, "Repeat Rate")}
-            </div>
+            {isDNALoading ? (
+              <div className="flex flex-col items-center justify-center py-10 text-muted gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <span className="text-[10px] uppercase tracking-wider">Calculating DNA...</span>
+              </div>
+            ) : totalMinutes === 0 ? (
+              <div className="text-center py-10 text-xs text-muted italic">
+                No listening history logged yet. Play tracks to generate your Sound DNA.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {renderDNABar(soundDNA.energy, "Energy")}
+                {renderDNABar(soundDNA.discovery, "Discovery")}
+                {renderDNABar(soundDNA.nostalgia, "Nostalgia")}
+                {renderDNABar(soundDNA.variety, "Variety")}
+                {renderDNABar(soundDNA.repeatRate, "Repeat Rate")}
+              </div>
+            )}
           </div>
 
           {/* Top Artists section */}

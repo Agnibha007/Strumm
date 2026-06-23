@@ -117,6 +117,35 @@ export default function RootLayout({
             `
           }}
         />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              "name": "Strumm",
+              "url": "https://strumm.pixelneststudios.tech",
+              "description": "Strumm is a premium, handcrafted music ecosystem. Where your music lives, custom playlists, dynamic theme engine, and smart listening stats.",
+              "potentialAction": {
+                "@type": "SearchAction",
+                "target": "https://strumm.pixelneststudios.tech/search?q={search_term_string}",
+                "query-input": "required name=search_term_string"
+              }
+            })
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              "name": "Strumm",
+              "url": "https://strumm.pixelneststudios.tech",
+              "logo": "https://strumm.pixelneststudios.tech/strumm-logo.png"
+            })
+          }}
+        />
       </head>
       <body
         className={`${outfit.variable} ${playfair.variable} antialiased selection:bg-primary selection:text-white relative`}

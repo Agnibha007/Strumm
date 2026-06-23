@@ -50,7 +50,11 @@ def calculate_sound_dna(histories: List[Dict[str, Any]]) -> Dict[str, int]:
             unique_songs.add(vid)
             song_counts[vid] = song_counts.get(vid, 0) + 1
         if artist:
-            unique_artists.add(artist)
+            import re
+            processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
+            artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
+            for single_art in artists_list:
+                unique_artists.add(single_art)
             
         if any(kw in title or kw in artist for kw in high_energy_keywords):
             high_energy_count += 1
@@ -668,20 +672,22 @@ async def delete_user_account(current_user: dict = Depends(get_current_user)):
         # Delete User document
         await database[db.USERS].delete_one({"_id": oid})
         
+        possible_ids = [user_id, oid]
+        
         # Delete user playlists
-        await database[db.PLAYLISTS].delete_many({"userId": user_id})
+        await database[db.PLAYLISTS].delete_many({"userId": {"$in": possible_ids}})
         
         # Delete user liked songs
-        await database[db.LIKED_SONGS].delete_many({"userId": user_id})
+        await database[db.LIKED_SONGS].delete_many({"userId": {"$in": possible_ids}})
         
         # Delete user history
-        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": user_id})
+        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": {"$in": possible_ids}})
         
         # Delete user player state
-        await database[db.PLAYER_STATES].delete_many({"userId": user_id})
+        await database[db.PLAYER_STATES].delete_many({"userId": {"$in": possible_ids}})
         
         # Delete user share tokens
-        await database[db.SHARES].delete_many({"userId": user_id})
+        await database[db.SHARES].delete_many({"userId": {"$in": possible_ids}})
         
         # Delete user follows
         await database["follows"].delete_many({"userId": user_id})
@@ -707,7 +713,9 @@ class MemoryCreateRequest(BaseModel):
 async def get_replay(current_user: dict = Depends(get_current_user)):
     try:
         database = db.get_db()
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": current_user["id"]}).to_list(length=2000)
+        user_id = current_user["id"]
+        possible_ids = [user_id, parse_object_id(user_id)]
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
         
         # Listening minutes: sum(listenDuration) / 60
         total_seconds = sum(h.get("listenDuration", 0) for h in histories)
@@ -756,20 +764,24 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
                     g["lastPlayed"] = played_at_str
 
             if artist:
-                if artist not in artist_groups:
-                    artist_groups[artist] = {
-                        "artist": artist,
-                        "thumbnail": thumbnail,
-                        "image": thumbnail,
-                        "plays": 0,
-                        "count": 0, # backward compatibility
-                        "totalSeconds": 0,
-                        "uniqueSongsSet": set()
-                    }
-                ag = artist_groups[artist]
-                ag["totalSeconds"] += listen_dur
-                if vid:
-                    ag["uniqueSongsSet"].add(vid)
+                import re
+                processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
+                artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
+                for single_art in artists_list:
+                    if single_art not in artist_groups:
+                        artist_groups[single_art] = {
+                            "artist": single_art,
+                            "thumbnail": thumbnail,
+                            "image": thumbnail,
+                            "plays": 0,
+                            "count": 0, # backward compatibility
+                            "totalSeconds": 0,
+                            "uniqueSongsSet": set()
+                        }
+                    ag = artist_groups[single_art]
+                    ag["totalSeconds"] += listen_dur
+                    if vid:
+                        ag["uniqueSongsSet"].add(vid)
                 
             if isinstance(played_at, datetime):
                 hour = played_at.hour
@@ -795,7 +807,14 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
             ag["minutes"] = round(ag["totalSeconds"] / 60)
             ag["uniqueSongs"] = len(ag["uniqueSongsSet"])
             # Sum up actual calculated song plays for this artist
-            artist_plays = sum(g["plays"] for g in song_groups.values() if g.get("artist", "").lower() == name.lower())
+            import re
+            artist_plays = 0
+            for g in song_groups.values():
+                song_artist = g.get("artist", "")
+                if song_artist:
+                    song_artists_list = [sa.strip().lower() for sa in re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', song_artist).split(',') if sa.strip()]
+                    if name.lower() in song_artists_list:
+                        artist_plays += g["plays"]
             ag["plays"] = max(1, artist_plays)
             ag["count"] = ag["plays"]
             del ag["uniqueSongsSet"]
@@ -1221,16 +1240,27 @@ async def get_users_public_profile(username: str):
                 artist = h.get("song", {}).get("artist", "Unknown Artist")
                 thumbnail = h.get("song", {}).get("thumbnail", "")
                 if artist:
-                    if artist not in artist_counts:
-                        artist_counts[artist] = {
-                            "artist": artist,
-                            "thumbnail": thumbnail,
-                            "count": 0,
-                            "plays": 0
-                        }
+                    import re
+                    processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
+                    artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
+                    for single_art in artists_list:
+                        if single_art not in artist_counts:
+                            artist_counts[single_art] = {
+                                "artist": single_art,
+                                "thumbnail": thumbnail,
+                                "count": 0,
+                                "plays": 0
+                            }
             # Sum up artist plays based on their songs' calculated plays
             for artist, ac in artist_counts.items():
-                artist_plays = sum(s["plays"] for s in song_counts.values() if s.get("artist", "").lower() == artist.lower())
+                import re
+                artist_plays = 0
+                for s in song_counts.values():
+                    song_artist = s.get("artist", "")
+                    if song_artist:
+                        song_artists_list = [sa.strip().lower() for sa in re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', song_artist).split(',') if sa.strip()]
+                        if artist.lower() in song_artists_list:
+                            artist_plays += s["plays"]
                 ac["plays"] = max(1, artist_plays)
                 ac["count"] = ac["plays"]
 

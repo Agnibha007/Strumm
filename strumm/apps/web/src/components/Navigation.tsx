@@ -64,7 +64,7 @@ export default function Navigation() {
 
   const navContent = (
     <>
-      <div className="p-6">
+      <div className="p-6 flex-grow overflow-y-auto min-h-0 scrollbar-none">
         <div className="mb-8 flex items-start justify-between gap-3">
           <div>
             <Link href="/" className="inline-flex items-center gap-3 hover:opacity-90 transition">

@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search } from "lucide-react";
+import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search, Check } from "lucide-react";
 import { Playlist, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -16,7 +16,7 @@ interface PlaylistDetailPageProps {
 export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) {
   const { id } = use(params);
   const { token, user } = useAuthStore();
-  const { playSong, setQueue, addToQueue } = usePlayerStore();
+  const { playSong, setQueue, addToQueue, queue } = usePlayerStore();
   const router = useRouter();
 
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -499,82 +499,154 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
             <p className="text-xs text-muted">Try typing a different song title or artist query.</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border/60 bg-surface/20">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-border/40 text-[10px] uppercase tracking-wider text-muted font-semibold bg-surface/30">
-                  <th className="py-3 px-4 w-12 text-center">#</th>
-                  <th className="py-3 px-4">Title</th>
-                  <th className="py-3 px-4">Artist</th>
-                  <th className="py-3 px-4 w-16 text-center">
-                    <Clock className="w-3.5 h-3.5 mx-auto" />
-                  </th>
-                  <th className="py-3 px-4 w-28 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/20">
-                {filteredSongs.map((song, index) => {
-                  const originalIndex = playlist.songs.indexOf(song);
-                  return (
-                    <tr key={index} className="hover:bg-surface/50 group transition">
-                      <td className="py-3.5 px-4 text-center text-muted font-medium font-sans">
-                        {index + 1}
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-text">
-                        <div className="flex items-center gap-3">
-                          <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" priority={index < 5} />
-                          <span className="truncate max-w-[240px]">{song.title}</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-muted font-medium truncate max-w-[180px]">
-                        {song.artist}
-                      </td>
-                      <td className="py-3.5 px-4 text-center text-muted font-mono">
-                        {Math.floor(song.duration / 60)}:{(song.duration % 60) < 10 ? "0" : ""}{song.duration % 60}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-                          <button
-                            onClick={() => playSong(song, filteredSongs)}
-                            className="p-1.5 hover:bg-surface-elevated text-primary rounded transition"
-                            title="Play song"
-                          >
-                            <Play className="w-3.5 h-3.5 fill-current" />
-                          </button>
-                          <button
-                            onClick={() => handleLikeSong(song)}
-                            className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded transition"
-                            title="Like track"
-                          >
-                            <Heart className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => addToQueue(song)}
-                            className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded transition"
-                            title="Add to queue"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                          {isOwner && (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-hidden rounded-xl border border-border/60 bg-surface/20">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-border/40 text-[10px] uppercase tracking-wider text-muted font-semibold bg-surface/30">
+                    <th className="py-3 px-4 w-12 text-center">#</th>
+                    <th className="py-3 px-4">Title</th>
+                    <th className="py-3 px-4">Artist</th>
+                    <th className="py-3 px-4 w-16 text-center">
+                      <Clock className="w-3.5 h-3.5 mx-auto" />
+                    </th>
+                    <th className="py-3 px-4 w-28 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/20">
+                  {filteredSongs.map((song, index) => {
+                    const originalIndex = playlist.songs.indexOf(song);
+                    return (
+                      <tr key={index} className="hover:bg-surface/50 group transition">
+                        <td className="py-3.5 px-4 text-center text-muted font-medium font-sans">
+                          {index + 1}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-text">
+                          <div className="flex items-center gap-3">
+                            <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" priority={index < 5} />
+                            <span className="truncate max-w-[240px]">{song.title}</span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-muted font-medium truncate max-w-[180px]">
+                          {song.artist}
+                        </td>
+                        <td className="py-3.5 px-4 text-center text-muted font-mono">
+                          {Math.floor(song.duration / 60)}:{(song.duration % 60) < 10 ? "0" : ""}{song.duration % 60}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                             <button
-                              onClick={() => handleRemoveTrack(originalIndex)}
-                              className="p-1.5 hover:bg-primary/10 text-muted hover:text-primary rounded transition"
-                              title="Remove track"
+                              onClick={() => playSong(song, filteredSongs)}
+                              className="p-1.5 hover:bg-surface-elevated text-primary rounded transition cursor-pointer"
+                              title="Play song"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Play className="w-3.5 h-3.5 fill-current" />
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            <button
+                              onClick={() => handleLikeSong(song)}
+                              className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded transition cursor-pointer"
+                              title="Like track"
+                            >
+                              <Heart className="w-3.5 h-3.5" />
+                            </button>
+                             {(() => {
+                               const isInQueue = queue.some((item) => item.videoId === song.videoId);
+                               return (
+                                 <button
+                                   onClick={() => !isInQueue && addToQueue(song)}
+                                   className={`p-1.5 rounded transition ${isInQueue ? "text-muted/40 cursor-default" : "hover:bg-surface-elevated text-muted hover:text-text cursor-pointer"}`}
+                                   title={isInQueue ? "Added to queue" : "Add to queue"}
+                                 >
+                                   {isInQueue ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                                 </button>
+                               );
+                             })()}
+                            {isOwner && (
+                              <button
+                                onClick={() => handleRemoveTrack(originalIndex)}
+                                className="p-1.5 hover:bg-primary/10 text-muted hover:text-primary rounded transition cursor-pointer"
+                                title="Remove track"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile List View */}
+            <div className="md:hidden space-y-2.5">
+              {filteredSongs.map((song, index) => {
+                const originalIndex = playlist.songs.indexOf(song);
+                return (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 rounded-xl border border-border/40 bg-surface/20 hover:bg-surface/30 active:bg-surface-elevated/40 transition select-none"
+                  >
+                    {/* Tappable Area to Play Song */}
+                    <div
+                      onClick={() => playSong(song, filteredSongs)}
+                      className="flex items-center gap-3 min-w-0 flex-grow cursor-pointer"
+                    >
+                      <div className="text-muted font-medium text-[11px] w-4 text-center">
+                        {index + 1}
+                      </div>
+                      <SongArtwork song={song} className="w-10 h-10 rounded-lg shadow-md flex-shrink-0" priority={index < 5} />
+                      <div className="min-w-0 flex-grow">
+                        <div className="text-xs font-semibold text-text truncate pr-2">{song.title}</div>
+                        <div className="text-[11px] text-muted truncate mt-0.5">{song.artist}</div>
+                      </div>
+                    </div>
+
+                    {/* Right-aligned Actions & Duration */}
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      <span className="text-[10px] text-muted font-mono hidden sm:inline mr-1">
+                        {Math.floor(song.duration / 60)}:{(song.duration % 60) < 10 ? "0" : ""}{song.duration % 60}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleLikeSong(song)}
+                          className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded-lg transition active:scale-95 cursor-pointer"
+                          title="Like track"
+                        >
+                          <Heart className="w-4 h-4" />
+                        </button>
+                        {(() => {
+                          const isInQueue = queue.some((item) => item.videoId === song.videoId);
+                          return (
+                            <button
+                              onClick={() => !isInQueue && addToQueue(song)}
+                              className={`p-1.5 rounded-lg transition active:scale-95 ${isInQueue ? "text-muted/40 cursor-default" : "hover:bg-surface-elevated text-muted hover:text-text cursor-pointer"}`}
+                              title={isInQueue ? "Added to queue" : "Add to queue"}
+                            >
+                              {isInQueue ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                            </button>
+                          );
+                        })()}
+                        {isOwner && (
+                          <button
+                            onClick={() => handleRemoveTrack(originalIndex)}
+                            className="p-1.5 hover:bg-primary/10 text-muted hover:text-primary rounded-lg transition active:scale-95 cursor-pointer"
+                            title="Remove track"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>
   );
 }
-

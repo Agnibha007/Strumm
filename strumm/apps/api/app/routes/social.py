@@ -725,7 +725,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
                     {"_id": parse_object_id(roomId)},
                     {"$push": {"queue": event_data.get("song")}}
                 )
-                await ws_manager.broadcast_to_room(roomId, {"event": "queue:add", "data": event_data}, exclude_user_id=userId)
+                await ws_manager.broadcast_to_room(roomId, {"event": "queue:add", "data": event_data})
                 
             elif event == "signal":
                 # WebRTC Signaling voice channel bypass

@@ -348,7 +348,7 @@ export default function AudioEngine() {
             try {
               playerInstanceRef.current.loadVideoById({
                 videoId: activeVideoId,
-                startSeconds: 0,
+                startSeconds: usePlayerStore.getState().currentTime || 0,
               });
               setPlaying(true);
             } catch (e) {
@@ -520,15 +520,16 @@ export default function AudioEngine() {
               if (currentSong?.videoId) {
                 currentVideoIdRef.current = currentSong.videoId;
                 console.log("AudioEngine: onReady loading/cueing videoId:", currentSong.videoId);
+                const targetStart = usePlayerStore.getState().currentTime || 0;
                 if (isPlaying) {
-                  ytPlayer.loadVideoById({
-                    videoId: currentSong.videoId,
-                    startSeconds: 0,
-                  });
+                  ytPlayer.playVideo();
+                  if (targetStart > 0) {
+                    ytPlayer.seekTo(targetStart, true);
+                  }
                 } else {
                   ytPlayer.cueVideoById({
                     videoId: currentSong.videoId,
-                    startSeconds: 0,
+                    startSeconds: targetStart,
                   });
                 }
               }

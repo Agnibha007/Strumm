@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
-from app.services.security import escaped_regex, sanitize_text
+from app.services.security import escaped_regex, sanitize_text, parse_object_id
 import httpx
 import logging
 
@@ -123,7 +123,16 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
 
     tasks = [resolve_single(s) for s in suggestions]
     results = await asyncio.gather(*tasks)
-    return [r for r in results if r is not None]
+    
+    seen_vids = set()
+    unique_results = []
+    for r in results:
+        if r is not None:
+            vid = r.get("videoId")
+            if vid and vid not in seen_vids:
+                seen_vids.add(vid)
+                unique_results.append(r)
+    return unique_results
 
 @router.get("/flow")
 async def get_flow(
