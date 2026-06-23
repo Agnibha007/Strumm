@@ -118,13 +118,104 @@ def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, 
         
     return "Melody Harmonizer"
 
+# Helper to classify genre based on artist and title
+def classify_genre(artist: str, title: str) -> str:
+    artist_lower = artist.lower()
+    title_lower = title.lower()
+    
+    # Alternative & Rock
+    if any(a in artist_lower for a in ["radiohead", "neighbourhood", "djo", "lrb", "rock", "metal", "pink floyd", "linkin park", "coldplay"]):
+        return "Alternative & Rock"
+        
+    # Rabindra Sangeet / Bengali Classic
+    if any(a in artist_lower for a in ["hemanta", "hemant", "sandhya", "manna", "kishore kumar", "lata mangeshkar", "mukherjee", "roy", "nachiketa", "anupam"]):
+        if any(w in title_lower for w in ["tumi", "ke", "chhabi", "gaan", "robindra", "rabindra"]):
+            return "Rabindra Sangeet"
+        return "Bengali Classic"
+        
+    # Bollywood & Romantic
+    if any(a in artist_lower for a in ["arijit", "pritam", "mithoon", "shaan", "udit narayan", "sujatha", "himesh", "rdb", "lata", "asha", "rafi", "mishra", "nehawal", "aditya rikhari", "anuv jain"]):
+        return "Bollywood & Romantic"
+        
+    # Ambient & Lo-Fi
+    if any(w in title_lower or w in artist_lower for w in ["lo-fi", "sleep", "binaural", "serenity", "delta", "theta", "relax", "meditation", "waves", "ambient"]):
+        return "Ambient & Lo-Fi"
+        
+    # Pop & Indie
+    if any(a in artist_lower for a in ["shawn mendes", "taylor swift", "direction", "sheeran", "bieber", "perri", "kid laroi", "maddie zahm", "yung kai", "pop", "indie"]):
+        return "Pop & Indie"
+        
+    return "Pop & Indie"
+
+# Helper to get effective histories (merging actual playback history with seeded stats)
+def get_effective_histories(histories: List[Dict[str, Any]], user_stats: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    effective = list(histories)
+    if not user_stats:
+        return effective
+        
+    top_artists = user_stats.get("topArtists") or []
+    if not top_artists:
+        return effective
+        
+    # Count plays per artist in actual histories
+    actual_artist_counts = {}
+    for h in histories:
+        artist = h.get("song", {}).get("artist", "Unknown Artist")
+        if artist:
+            import re
+            processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
+            artists_list = [a.strip().lower() for a in processed_artist.split(',') if a.strip()]
+            for single_art in artists_list:
+                actual_artist_counts[single_art] = actual_artist_counts.get(single_art, 0) + 1
+                
+    # Check each seeded artist
+    for art in top_artists:
+        artist_name = art.get("name") or art.get("artist") or ""
+        if not artist_name:
+            continue
+        seeded_plays = art.get("playCount") or art.get("plays") or 0
+        if seeded_plays <= 0:
+            continue
+            
+        actual_plays = actual_artist_counts.get(artist_name.lower(), 0)
+        missing_plays = seeded_plays - actual_plays
+        
+        if missing_plays > 0:
+            # Generate simulated entries to match the seeded play count
+            loops = min(150, missing_plays)
+            for i in range(loops):
+                title = "Classic Melody"
+                top_songs = user_stats.get("topSongs") or []
+                matching_songs = [s for s in top_songs if s.get("artist", "").lower() == artist_name.lower()]
+                if matching_songs:
+                    title = matching_songs[i % len(matching_songs)].get("title", "Classic Melody")
+                else:
+                    if any(x in artist_name.lower() for x in ["hemant", "mukherjee", "kishore", "lata"]):
+                        title = "Classic Melody"
+                    else:
+                        title = "Hit Song"
+                
+                effective.append({
+                    "song": {
+                        "title": title,
+                        "artist": artist_name,
+                        "videoId": f"simulated-{artist_name}-{i}"
+                    },
+                    "listenDuration": 180,
+                    "playedAt": datetime.utcnow().replace(hour=20, minute=0)
+                })
+                
+    return effective
+
 # Helper to calculate user stats dynamically
 def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    user_stats = current_user_statistics or {}
+    effective_histories = get_effective_histories(histories, user_stats)
+
     # 1. Total & Monthly seconds
     total_seconds_hist = sum(h.get("listenDuration", 0) for h in histories)
     
     # Use max with user's stored statistics (in case of legacy/seeded stats)
-    user_stats = current_user_statistics or {}
     total_seconds_user = user_stats.get("totalListeningTime", 0) or 0
     total_seconds = max(total_seconds_user, total_seconds_hist)
     total_minutes = int(round(total_seconds / 60))
@@ -137,7 +228,7 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
     
     # 2. Top Songs
     song_counts = {}
-    for h in histories:
+    for h in effective_histories:
         song = h.get("song", {})
         vid = song.get("videoId")
         duration = song.get("duration", 180) or 180
@@ -165,11 +256,15 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
         if "totalSeconds" in sc:
             del sc["totalSeconds"]
             
-    sorted_songs = sorted(song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+    # Ignore simulated songs from sorted_songs list
+    real_song_counts = {vid: sc for vid, sc in song_counts.items() if not vid.startswith("simulated-")}
+    sorted_songs = sorted(real_song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+    if not sorted_songs and user_stats.get("topSongs"):
+        sorted_songs = user_stats.get("topSongs")
     
     # 3. Top Artists
     artist_counts = {}
-    for h in histories:
+    for h in effective_histories:
         artist = h.get("song", {}).get("artist", "Unknown Artist")
         thumbnail = h.get("song", {}).get("thumbnail", "")
         if artist:
@@ -206,9 +301,19 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
             del ac["totalSeconds"]
             
     sorted_artists = sorted(artist_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
-    
+    if not sorted_artists and user_stats.get("topArtists"):
+        sorted_artists = []
+        for art in user_stats.get("topArtists"):
+            sorted_artists.append({
+                "artist": art.get("name", "Unknown Artist"),
+                "plays": art.get("playCount", 0),
+                "count": art.get("playCount", 0),
+                "thumbnail": "",
+                "image": ""
+            })
+            
     # 4. Sound DNA
-    sound_dna = calculate_sound_dna(histories)
+    sound_dna = calculate_sound_dna(effective_histories)
     
     return {
         "totalListeningTime": total_seconds,
@@ -232,8 +337,9 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             
         histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
         stats = compute_user_stats(histories, current_user.get("statistics"))
-        current_user["soundDNA"] = stats["soundDNA"]
-        current_user["statistics"] = {
+        user_data = dict(current_user)
+        user_data["soundDNA"] = stats["soundDNA"]
+        user_data["statistics"] = {
             "totalListeningTime": stats["totalListeningTime"],
             "monthlyListeningTime": stats["monthlyListeningTime"],
             "topArtists": stats["topArtists"],
@@ -241,7 +347,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         }
         return {
             "success": True,
-            "data": current_user
+            "data": user_data
         }
     except Exception as e:
         import traceback
@@ -842,31 +948,26 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
         
         stats = compute_user_stats(histories, current_user.get("statistics"))
-        personality = get_music_personality(histories, stats["soundDNA"])
+        effective_histories = get_effective_histories(histories, current_user.get("statistics"))
+        
+        personality = get_music_personality(effective_histories, stats["soundDNA"])
         discovery_score = stats["soundDNA"]["discovery"] * 10
-        insufficient_history = len(histories) < 1
+        insufficient_history = stats["totalMinutes"] < 1
         
         # Mapped top genres
         genres = {}
-        for h in histories:
+        for h in effective_histories:
             title = str(h.get("song", {}).get("title", "")).lower()
             artist = str(h.get("song", {}).get("artist", "")).lower()
-            if "funk" in title or "camino" in title:
-                genres["Funk"] = genres.get("Funk", 0) + 1
-            elif "serenity" in title or "waves" in title or "lo-fi" in title:
-                genres["Ambient"] = genres.get("Ambient", 0) + 1
-            elif "singh" in artist or "pritam" in artist:
-                genres["Romantic Bollywood"] = genres.get("Romantic Bollywood", 0) + 1
-            elif "mukherjee" in artist:
-                genres["Bengali Classic"] = genres.get("Bengali Classic", 0) + 1
-            else:
-                genres["Pop / Indie"] = genres.get("Pop / Indie", 0) + 1
+            genre = classify_genre(artist, title)
+            genres[genre] = genres.get(genre, 0) + 1
+            
         sorted_genres = sorted(genres.items(), key=lambda x: x[1], reverse=True)[:3]
-        top_genres = [g[0] for g in sorted_genres] if sorted_genres else ["Pop / Indie"]
+        top_genres = [g[0] for g in sorted_genres] if sorted_genres else ["Pop & Indie"]
         
         # Favorite Time
         time_slots = {"Morning (6AM-12PM)": 0, "Afternoon (12PM-6PM)": 0, "Evening (6PM-12AM)": 0, "Midnight (12AM-6AM)": 0}
-        for h in histories:
+        for h in effective_histories:
             played_at = h.get("playedAt")
             if isinstance(played_at, datetime):
                 hour = played_at.hour
@@ -878,7 +979,7 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
                     time_slots["Evening (6PM-12AM)"] += 1
                 else:
                     time_slots["Midnight (12AM-6AM)"] += 1
-        favorite_time = max(time_slots, key=time_slots.get) if histories else "Evening (6PM-12AM)"
+        favorite_time = max(time_slots, key=time_slots.get) if effective_histories else "Evening (6PM-12AM)"
         
         return {
             "success": True,
