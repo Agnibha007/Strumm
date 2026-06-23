@@ -147,7 +147,7 @@ async def get_episodes(feed_id: str, *, max_results: int = 30) -> List[Dict[str,
     sanitized_id = sanitize_positive_int(int(feed_id), minimum=1, maximum=10_000_000_000)
     data = await _get(
         "/episodes/byfeedid",
-        {"id": sanitized_id, "max": max(1, min(max_results, 100)), "fulltext": 1},
+        {"id": sanitized_id, "max": max(1, min(max_results, 1000)), "fulltext": 1},
     )
     episodes = []
     for episode in data.get("items", []):

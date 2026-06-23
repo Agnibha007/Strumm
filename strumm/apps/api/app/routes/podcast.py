@@ -224,7 +224,7 @@ async def get_show_details(id: str = Path(...)):
             show = await get_podcast_index_show(cleaned_id)
             if not show:
                 return {"success": False, "error": "Show not found"}
-            episodes = await get_podcast_index_episodes(cleaned_id, max_results=50)
+            episodes = await get_podcast_index_episodes(cleaned_id, max_results=1000)
             return {
                 "success": True,
                 "data": {
