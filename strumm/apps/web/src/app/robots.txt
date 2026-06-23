@@ -1,9 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /_next/
-Disallow: /static/
-Disallow: /settings/
-Disallow: /profile/
-
-Sitemap: https://strumm.pixelneststudios.tech/sitemap.xml

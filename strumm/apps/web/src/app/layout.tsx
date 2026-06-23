@@ -18,13 +18,15 @@ const playfair = Playfair_Display({
   weight: ["400", "500", "600", "700", "800"],
 });
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://strumm.pixelneststudios.tech";
+
 export const metadata: Metadata = {
   title: {
     default: "Strumm - Where your music lives.",
     template: "%s | Strumm",
   },
   description: "Strumm is a premium, handcrafted music ecosystem. Where your music lives, custom playlists, dynamic theme engine, and smart listening stats.",
-  metadataBase: new URL("https://strumm.pixelneststudios.tech"),
+  metadataBase: new URL(appUrl),
   applicationName: "Strumm",
   manifest: "/manifest.webmanifest",
   alternates: {
@@ -45,7 +47,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Strumm - Where your music lives.",
     description: "Experience music in a premium, editorial design. High-fidelity audio, listening history, custom themes, and smart music flow.",
-    url: "https://strumm.pixelneststudios.tech",
+    url: appUrl,
     siteName: "Strumm",
     images: [
       {
@@ -124,11 +126,11 @@ export default function RootLayout({
               "@context": "https://schema.org",
               "@type": "WebSite",
               "name": "Strumm",
-              "url": "https://strumm.pixelneststudios.tech",
+              "url": appUrl,
               "description": "Strumm is a premium, handcrafted music ecosystem. Where your music lives, custom playlists, dynamic theme engine, and smart listening stats.",
               "potentialAction": {
                 "@type": "SearchAction",
-                "target": "https://strumm.pixelneststudios.tech/search?q={search_term_string}",
+                "target": `${appUrl}/search?q={search_term_string}`,
                 "query-input": "required name=search_term_string"
               }
             })
@@ -141,8 +143,8 @@ export default function RootLayout({
               "@context": "https://schema.org",
               "@type": "Organization",
               "name": "Strumm",
-              "url": "https://strumm.pixelneststudios.tech",
-              "logo": "https://strumm.pixelneststudios.tech/strumm-logo.png"
+              "url": appUrl,
+              "logo": `${appUrl}/strumm-logo.png`
             })
           }}
         />

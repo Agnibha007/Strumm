@@ -1,7 +1,7 @@
 import { MetadataRoute } from "next";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = "https://strumm.pixelneststudios.tech";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://strumm.pixelneststudios.tech";
   const staticRoutes: Array<{
     path: string;
     changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"];
