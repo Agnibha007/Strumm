@@ -592,6 +592,18 @@ async def clear_notifications(current_user: dict = Depends(get_current_user)):
     )
     return {"success": True}
 
+# Permanently delete all notifications
+@router.delete("/notifications")
+async def delete_all_notifications(current_user: dict = Depends(get_current_user)):
+    database = db.get_db()
+    user_id_str = current_user["id"]
+    user_id_oid = parse_object_id(user_id_str)
+    await database[NOTIFICATIONS_COLLECTION].delete_many(
+        {"userId": {"$in": [user_id_str, user_id_oid]}}
+    )
+    return {"success": True, "message": "All notifications permanently deleted."}
+
+
 @router.get("/status/{userId}")
 async def get_connection_status(userId: str, current_user: dict = Depends(get_current_user)):
     database = db.get_db()

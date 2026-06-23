@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send } from "lucide-react";
+import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
 
@@ -214,6 +214,20 @@ export default function CirclePage() {
         headers: { "Authorization": `Bearer ${token}` }
       });
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteAllNotifications = async () => {
+    if (!token) return;
+    if (!confirm("Are you sure you want to permanently delete all notifications?")) return;
+    try {
+      await fetch(apiUrl("/social/notifications"), {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      setNotifications([]);
     } catch (e) {
       console.error(e);
     }
@@ -514,9 +528,21 @@ export default function CirclePage() {
         {/* Right column: Notification History */}
         <div className="lg:col-span-4 space-y-6 min-w-0">
           <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
-            <h3 className="font-editorial text-lg text-text font-bold border-b border-border/20 pb-2">
-              Circle Alerts
-            </h3>
+            <div className="flex items-center justify-between border-b border-border/20 pb-2">
+              <h3 className="font-editorial text-lg text-text font-bold">
+                Circle Alerts
+              </h3>
+              {notifications.length > 0 && (
+                <button
+                  onClick={handleDeleteAllNotifications}
+                  className="px-2 py-1 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold cursor-pointer"
+                  title="Permanently Delete All Alerts"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete All
+                </button>
+              )}
+            </div>
             {notifications.length === 0 ? (
               <p className="text-xs text-muted italic">No notifications logs recorded.</p>
             ) : (
