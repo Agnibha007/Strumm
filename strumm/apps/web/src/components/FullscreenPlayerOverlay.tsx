@@ -28,7 +28,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
-import { apiUrl, cleanText } from "web/lib/api";
+import { apiUrl, cleanText, decodeHtml } from "web/lib/api";
 import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
@@ -535,9 +535,14 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             {/* Episode details / Description */}
             <div className="bg-surface-elevated/20 border border-border/30 rounded-2xl p-5 space-y-3">
               <h3 className="text-sm font-semibold tracking-wide uppercase text-muted">Episode Description</h3>
-              <p className="text-sm text-text/80 leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto scrollbar-thin">
-                {currentSong.metadata?.description ? currentSong.metadata.description.replace(/<[^>]*>/g, "") : "No description available."}
-              </p>
+              <div 
+                className="text-sm text-text/80 leading-relaxed max-h-48 overflow-y-auto scrollbar-thin podcast-description break-words"
+                dangerouslySetInnerHTML={{ 
+                  __html: currentSong.metadata?.description 
+                    ? decodeHtml(currentSong.metadata.description) 
+                    : "No description available." 
+                }}
+              />
             </div>
             
             {/* Scrubber timeline & Main Controls for video */}

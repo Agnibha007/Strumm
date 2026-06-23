@@ -6,7 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { Radio, Plus, Check, Play, Clock, ArrowLeft, Loader2, Library } from "lucide-react";
 import { PodcastShow, PodcastEpisode, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
-import { apiUrl } from "web/lib/api";
+import { apiUrl, stripHtml } from "web/lib/api";
 
 interface PodcastShowPageProps {
   params: Promise<{ id: string }>;
@@ -66,6 +66,16 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [followError, setFollowError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const EPISODES_PER_PAGE = 5;
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    const episodesSection = document.getElementById("episodes-section");
+    if (episodesSection) {
+      episodesSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const loadShowDetails = async () => {
     setLoading(true);
@@ -92,6 +102,7 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
   useEffect(() => {
     if (id) {
       loadShowDetails();
+      setCurrentPage(1);
     }
   }, [id]);
 
@@ -253,7 +264,7 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
 
       {/* Episode list */}
       <div className="space-y-4">
-        <h3 className="font-editorial text-2xl text-text border-b border-border/20 pb-2">
+        <h3 id="episodes-section" className="font-editorial text-2xl text-text border-b border-border/20 pb-2">
           Episodes
         </h3>
         
@@ -262,49 +273,77 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
             <Radio className="w-8 h-8 text-muted mx-auto mb-2" />
             <p className="text-xs text-muted">No episodes found inside this podcast feed.</p>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {episodes.map((episode) => (
-              <div
-                key={episode.id}
-                className="bg-surface/30 border border-border/40 hover:border-border/80 rounded-xl p-5 text-left flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition group"
-              >
-                <div className="space-y-2 flex-grow min-w-0">
-                  <h4 className="font-editorial text-lg text-text font-bold truncate break-words w-full group-hover:text-primary transition leading-snug">
-                    {episode.title}
-                  </h4>
-                  <p className="text-xs text-muted max-w-3xl line-clamp-2 break-words w-full leading-relaxed">
-                    {episode.description.replace(/<[^>]*>/g, "")}
-                  </p>
-                  <div className="flex items-center gap-3 text-[10px] text-muted font-bold uppercase tracking-wider">
-                    <Clock className="w-3.5 h-3.5 text-primary" />
-                    <span>{formatEpisodeDuration(episode.duration)}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => handlePlayEpisode(episode, false)}
-                    className="px-4 py-2 bg-surface-elevated hover:bg-primary text-text hover:text-white border border-border/80 hover:border-primary/20 text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition select-none"
+        ) : (() => {
+          const totalPages = Math.ceil(episodes.length / EPISODES_PER_PAGE);
+          const paginatedEpisodes = episodes.slice((currentPage - 1) * EPISODES_PER_PAGE, currentPage * EPISODES_PER_PAGE);
+          return (
+            <div className="space-y-6">
+              <div className="space-y-4">
+                {paginatedEpisodes.map((episode) => (
+                  <div
+                    key={episode.id}
+                    className="bg-surface/30 border border-border/40 hover:border-border/80 rounded-xl p-5 text-left flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition group"
                   >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    Stream Episode
-                  </button>
+                    <div className="space-y-2 flex-grow min-w-0">
+                      <h4 className="font-editorial text-lg text-text font-bold truncate break-words w-full group-hover:text-primary transition leading-snug">
+                        {episode.title}
+                      </h4>
+                      <p className="text-xs text-muted max-w-3xl line-clamp-2 break-words w-full leading-relaxed">
+                        {stripHtml(episode.description)}
+                      </p>
+                      <div className="flex items-center gap-3 text-[10px] text-muted font-bold uppercase tracking-wider">
+                        <Clock className="w-3.5 h-3.5 text-primary" />
+                        <span>{formatEpisodeDuration(episode.duration)}</span>
+                      </div>
+                    </div>
 
-                  {episode.videoAvailable && (
-                    <button
-                      onClick={() => handlePlayEpisode(episode, true)}
-                      className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition select-none"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      Watch Video
-                    </button>
-                  )}
-                </div>
+                    <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => handlePlayEpisode(episode, false)}
+                        className="px-4 py-2 bg-surface-elevated hover:bg-primary text-text hover:text-white border border-border/80 hover:border-primary/20 text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition select-none"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        Stream Episode
+                      </button>
+
+                      {episode.videoAvailable && (
+                        <button
+                          onClick={() => handlePlayEpisode(episode, true)}
+                          className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer transition select-none"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          Watch Video
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-3 pt-6 border-t border-border/20 select-none">
+                  <button
+                    onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 bg-surface-elevated hover:bg-surface border border-border/80 text-xs font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer text-text"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-muted font-medium">
+                    Page <span className="text-text font-bold">{currentPage}</span> of <span className="text-text font-bold">{totalPages}</span>
+                  </span>
+                  <button
+                    onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-4 py-2 bg-surface-elevated hover:bg-surface border border-border/80 text-xs font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer text-text"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

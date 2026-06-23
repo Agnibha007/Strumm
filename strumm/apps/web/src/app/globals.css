@@ -217,3 +217,18 @@ h1, h2, h3, h4, .font-editorial {
     animation: none;
   }
 }
+
+.podcast-description a {
+  color: var(--primary);
+  text-decoration: underline;
+  transition: opacity 0.2s ease;
+}
+.podcast-description a:hover {
+  opacity: 0.8;
+}
+.podcast-description p {
+  margin-bottom: 0.75rem;
+}
+.podcast-description p:last-child {
+  margin-bottom: 0;
+}
