@@ -132,7 +132,7 @@ export default function EditorialPlayer() {
             title: cleanText(song.title || "", 160),
             artist: cleanText(song.artist || "", 160),
             thumbnail: cleanText(song.thumbnail || "", 500),
-            duration: Math.round(song.duration)
+            duration: Math.round(song.duration) || 180
           },
           listenDuration: durationSec
         })

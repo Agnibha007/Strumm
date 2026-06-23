@@ -95,7 +95,7 @@ export default function ReplayPage() {
   }
 
   // Empty state handling
-  if (error || !data || data.topSongs.length === 0 || data.totalMinutes === 0) {
+  if (error || !data || data.insufficientHistory) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-center max-w-md mx-auto p-6 gap-4">
         <Trophy className="w-12 h-12 text-primary opacity-50" />
