@@ -168,7 +168,8 @@ def get_effective_histories(histories: List[Dict[str, Any]], user_stats: Optiona
             for single_art in artists_list:
                 actual_artist_counts[single_art] = actual_artist_counts.get(single_art, 0) + 1
                 
-    # Check each seeded artist
+    # Check each seeded artist, splitting multi-artist entries
+    expanded_seeded_artists = {}
     for art in top_artists:
         artist_name = art.get("name") or art.get("artist") or ""
         if not artist_name:
@@ -177,7 +178,23 @@ def get_effective_histories(histories: List[Dict[str, Any]], user_stats: Optiona
         if seeded_plays <= 0:
             continue
             
-        actual_plays = actual_artist_counts.get(artist_name.lower(), 0)
+        import re
+        name_clean = artist_name.replace("&amp;", ",")
+        split_names = [a.strip() for a in re.split(r'\s*(?:,|&|\bfeat\.?|\bft\.?|\band\b)\s*', name_clean, flags=re.IGNORECASE) if a.strip()]
+        for split_name in split_names:
+            key = split_name.lower()
+            if key not in expanded_seeded_artists:
+                expanded_seeded_artists[key] = {
+                    "name": split_name,
+                    "playCount": 0
+                }
+            expanded_seeded_artists[key]["playCount"] += seeded_plays
+
+    for key, art_data in expanded_seeded_artists.items():
+        artist_name = art_data["name"]
+        seeded_plays = art_data["playCount"]
+        
+        actual_plays = actual_artist_counts.get(key, 0)
         missing_plays = seeded_plays - actual_plays
         
         if missing_plays > 0:
@@ -703,23 +720,28 @@ async def register_play_event(
             {"$inc": stats_inc}
         )
         
-        # Async updates of top artists
+        # Async updates of top artists (splitting multiple artists)
         artist_name = song_dict.get("artist", "")
         if artist_name:
             # Check if artist is already tracked in user statistics
             user_doc = await database[db.USERS].find_one({"_id": parse_object_id(userId)})
             top_artists = user_doc.get("statistics", {}).get("topArtists", [])
             
-            # Find and update
-            found = False
-            for art in top_artists:
-                if art.get("name", "").lower() == artist_name.lower():
-                    art["playCount"] = art.get("playCount", 0) + 1
-                    found = True
-                    break
+            # Clean and split multiple artists
+            import re
+            name_clean = artist_name.replace("&amp;", ",")
+            split_names = [a.strip() for a in re.split(r'\s*(?:,|&|\bfeat\.?|\bft\.?|\band\b)\s*', name_clean, flags=re.IGNORECASE) if a.strip()]
             
-            if not found:
-                top_artists.append({"name": artist_name, "playCount": 1})
+            # Update play counts for each artist separately
+            for single_art in split_names:
+                found = False
+                for art in top_artists:
+                    if art.get("name", "").lower() == single_art.lower():
+                        art["playCount"] = art.get("playCount", 0) + 1
+                        found = True
+                        break
+                if not found:
+                    top_artists.append({"name": single_art, "playCount": 1})
                 
             # Limit top artists to top 10 sorted by playCount
             top_artists = sorted(top_artists, key=lambda x: x.get("playCount", 0), reverse=True)[:10]
