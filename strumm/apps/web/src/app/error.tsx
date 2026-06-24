@@ -30,7 +30,7 @@ export default function Error({
             Something went wrong
           </h2>
           <p className="text-muted/90 text-sm leading-relaxed">
-            We encountered an unexpected glitch while rendering this space. Don't worry, your music is safe.
+            We encountered an unexpected glitch while rendering this space. Don&apos;t worry, your music is safe.
           </p>
         </div>
 
