@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
@@ -58,32 +58,55 @@ export default function ReplayPage() {
   const [data, setData] = useState<ReplayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
+
+  const fetchReplay = useCallback(async () => {
+    try {
+      const response = await fetch(apiUrl("/replay"), {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const json = await response.json();
+      if (json.success && json.data) {
+        setData(json.data);
+      } else {
+        setError(json.error || "Failed to load Replay statistics.");
+      }
+    } catch (e) {
+      setError("Network error. Unable to fetch your Replay.");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
-
-    const fetchReplay = async () => {
-      try {
-        const response = await fetch(apiUrl("/replay"), {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-        const json = await response.json();
-        if (json.success && json.data) {
-          setData(json.data);
-        } else {
-          setError(json.error || "Failed to load Replay statistics.");
-        }
-      } catch (e) {
-        setError("Network error. Unable to fetch your Replay.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchReplay();
-  }, [token]);
+  }, [token, fetchReplay]);
+
+  const handleRecalculateLive = async () => {
+    if (!token) return;
+    setRecalculating(true);
+    try {
+      const response = await fetch(apiUrl("/profile/recalculate"), {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const json = await response.json();
+      if (json.success) {
+        await fetchReplay();
+      } else {
+        alert(json.error || "Failed to recalculate statistics.");
+      }
+    } catch (e) {
+      alert("Network error. Unable to recalculate live.");
+    } finally {
+      setRecalculating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -101,6 +124,23 @@ export default function ReplayPage() {
         <Trophy className="w-12 h-12 text-primary opacity-50" />
         <h3 className="font-editorial text-2xl text-text font-bold">Your Replay is warming up</h3>
         <p className="text-sm text-muted">{error || "Listen to songs to discover your Sound DNA"}</p>
+        <button
+          onClick={handleRecalculateLive}
+          disabled={recalculating}
+          className="flex items-center justify-center gap-2 px-6 py-2.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary text-xs uppercase tracking-widest font-semibold rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed mt-2 shadow-[0_0_15px_rgba(var(--color-primary),0.05)]"
+        >
+          {recalculating ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Recalculating...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Recalculate Live</span>
+            </>
+          )}
+        </button>
       </div>
     );
   }
@@ -142,16 +182,35 @@ export default function ReplayPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
       {/* Editorial Header */}
-      <div className="min-w-0">
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-          Strumm Replay
-        </span>
-        <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1 truncate max-w-full">
-          Your Music DNA. Always On.
-        </h2>
-        <p className="text-sm text-muted mt-2 max-w-2xl line-clamp-2 overflow-hidden">
-          An evolutionary analysis of your listening habits, mood fluctuations, and acoustic preference compiled in real-time.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 min-w-0">
+        <div className="min-w-0 flex-1">
+          <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+            Strumm Replay
+          </span>
+          <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1 truncate max-w-full">
+            Your Music DNA. Always On.
+          </h2>
+          <p className="text-sm text-muted mt-2 max-w-2xl line-clamp-2 overflow-hidden">
+            An evolutionary analysis of your listening habits, mood fluctuations, and acoustic preference compiled in real-time.
+          </p>
+        </div>
+        <button
+          onClick={handleRecalculateLive}
+          disabled={recalculating}
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary text-xs uppercase tracking-widest font-semibold rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed h-9 w-full sm:w-auto shadow-[0_0_15px_rgba(var(--color-primary),0.05)]"
+        >
+          {recalculating ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Recalculating...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Recalculate Live</span>
+            </>
+          )}
+        </button>
       </div>
 
       <motion.div {...animatedProps} className="grid grid-cols-1 md:grid-cols-3 gap-6 min-w-0">

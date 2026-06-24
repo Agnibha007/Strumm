@@ -41,6 +41,8 @@ export default function AudioEngine() {
     const updatePositionState = () => {
       if ("mediaSession" in navigator && typeof navigator.mediaSession.setPositionState === "function") {
         try {
+          // Only sync position state from HTML audio if it's not the silent track
+          if (audio.src && audio.src.startsWith("data:audio")) return;
           const duration = audio.duration;
           const position = audio.currentTime;
           if (isFinite(duration) && isFinite(position) && duration > 0) {
@@ -55,26 +57,31 @@ export default function AudioEngine() {
     };
 
     const onPlay = () => {
+      if (audio.src && audio.src.startsWith("data:audio")) return;
       setPlaying(true);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
       }
     };
     const onPause = () => {
+      if (audio.src && audio.src.startsWith("data:audio")) return;
       setPlaying(false);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "paused";
       }
     };
     const onTimeUpdate = () => {
+      if (audio.src && audio.src.startsWith("data:audio")) return;
       setCurrentTime(audio.currentTime);
       updatePositionState();
     };
     const onDurationChange = () => {
+      if (audio.src && audio.src.startsWith("data:audio")) return;
       setDuration(audio.duration || 0);
       updatePositionState();
     };
     const onEnded = () => {
+      if (audio.src && audio.src.startsWith("data:audio")) return;
       handleTrackEnded();
     };
 
@@ -93,6 +100,26 @@ export default function AudioEngine() {
       audio.pause();
     };
   }, [handleTrackEnded, setCurrentTime, setDuration, setPlaying]);
+
+  // Global Spacebar Play/Pause Listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        usePlayerStore.getState().togglePlay();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Media Session API for Lock-Screen Controls
   useEffect(() => {
@@ -334,10 +361,18 @@ export default function AudioEngine() {
       });
     } else {
       // B. YouTube song
-      // Pause HTML Audio player
-      try {
+      // Play a silent audio track so the host page retains the OS MediaSession keys.
+      // This prevents the YouTube iframe from hijacking media hardware buttons.
+      const silentAudioSrc = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+      if (htmlAudioRef.current.src !== silentAudioSrc) {
+        htmlAudioRef.current.src = silentAudioSrc;
+        htmlAudioRef.current.loop = true;
+      }
+      if (isPlaying) {
+        htmlAudioRef.current.play().catch(() => {});
+      } else {
         htmlAudioRef.current.pause();
-      } catch (e) {}
+      }
 
       if (playerInstanceRef.current && currentSong?.videoId) {
         const activeVideoId = currentSong.videoId;
@@ -411,6 +446,15 @@ export default function AudioEngine() {
         }
       }
     } else {
+      // Keep silent audio track in sync with UI play/pause for YouTube songs
+      if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
+        if (isPlaying) {
+          htmlAudioRef.current.play().catch(() => {});
+        } else {
+          htmlAudioRef.current.pause();
+        }
+      }
+
       if (playerInstanceRef.current) {
         try {
           const state = typeof playerInstanceRef.current.getPlayerState === "function"

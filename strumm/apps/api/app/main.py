@@ -103,6 +103,11 @@ async def startup_db_client():
         await database["notifications"].create_index("userId")
         
         logger.info("Successfully initialized database indexes and TTL.")
+        
+        # Launch daily statistics & sound DNA refresher loop
+        import asyncio
+        asyncio.create_task(user.daily_stats_refresher())
+        logger.info("Daily Sound DNA & statistics refresher background task launched.")
     except Exception as e:
         logger.error(f"Error establishing database indexes on startup: {str(e)}")
  

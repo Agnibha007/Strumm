@@ -961,6 +961,84 @@ class MemoryCreateRequest(BaseModel):
     note: str
     visibility: str = "private" # public, private
 
+async def daily_stats_refresher():
+    import asyncio
+    # Wait 10 seconds on startup before running
+    await asyncio.sleep(10)
+    while True:
+        try:
+            logger.info("Starting daily Sound DNA and statistics refresh for all users.")
+            database = db.get_db()
+            users_cursor = database[db.USERS].find({})
+            async for user in users_cursor:
+                try:
+                    user_id = str(user["_id"])
+                    possible_ids = [user_id, user["_id"]]
+                    histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
+                    stats = compute_user_stats(histories, user.get("statistics"))
+                    
+                    await database[db.USERS].update_one(
+                        {"_id": user["_id"]},
+                        {"$set": {
+                            "soundDNA": stats["soundDNA"],
+                            "statistics.totalListeningTime": stats["totalListeningTime"],
+                            "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
+                            "statistics.topArtists": stats["topArtists"],
+                            "statistics.topSongs": stats["topSongs"]
+                        }}
+                    )
+                except Exception as user_ex:
+                    logger.error(f"Failed to refresh daily stats for user {user.get('username')}: {user_ex}")
+            logger.info("Completed daily Sound DNA and statistics refresh.")
+        except Exception as ex:
+            logger.error(f"Error in daily stats refresher loop: {ex}")
+        
+        # Sleep for 24 hours (86400 seconds)
+        await asyncio.sleep(86400)
+
+@router.post("/profile/recalculate")
+async def recalculate_user_stats(current_user: dict = Depends(get_current_user)):
+    try:
+        database = db.get_db()
+        user_id_str = current_user["id"]
+        possible_ids = [user_id_str]
+        if ObjectId.is_valid(user_id_str):
+            possible_ids.append(ObjectId(user_id_str))
+            
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
+        stats = compute_user_stats(histories, current_user.get("statistics"))
+        
+        # Save to database
+        await database[db.USERS].update_one(
+            {"_id": parse_object_id(user_id_str)},
+            {"$set": {
+                "soundDNA": stats["soundDNA"],
+                "statistics.totalListeningTime": stats["totalListeningTime"],
+                "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
+                "statistics.topArtists": stats["topArtists"],
+                "statistics.topSongs": stats["topSongs"]
+            }}
+        )
+        
+        # Also return updated profile representation
+        user_data = dict(current_user)
+        user_data["soundDNA"] = stats["soundDNA"]
+        user_data["statistics"] = {
+            "totalListeningTime": stats["totalListeningTime"],
+            "monthlyListeningTime": stats["monthlyListeningTime"],
+            "topArtists": stats["topArtists"],
+            "topSongs": stats["topSongs"]
+        }
+        
+        return {
+            "success": True,
+            "message": "Sound DNA and statistics recalculated and synced successfully.",
+            "data": user_data
+        }
+    except Exception as e:
+        logger.error(f"Error recalculating user statistics live: {str(e)}")
+        return {"success": False, "error": str(e)}
+
 @router.get("/replay")
 async def get_replay(current_user: dict = Depends(get_current_user)):
     try:
