@@ -1,12 +1,11 @@
-from fastapi import APIRouter, Query, Depends, BackgroundTasks
+from fastapi import APIRouter, Query
 from typing import Optional, List, Dict, Any
-import os
 import asyncio
-import httpx
 from ytmusicapi import YTMusic
 from app.database import mongodb as db
 from app.services.podcast_index import PodcastIndexNotConfigured, search_podcasts
 from app.services.security import escaped_regex, sanitize_enum, sanitize_text
+from app.services.cache import cache_search, get_cached_search
 import logging
 
 logger = logging.getLogger("strumm-search")
@@ -207,7 +206,6 @@ async def get_song_by_id(id: str):
 
 @router.get("")
 async def search_all(
-    background_tasks: BackgroundTasks,
     q: str = Query(..., min_length=1, description="Search query string"),
     category: Optional[str] = Query(None, description="Optional category filter: songs, playlists, podcasts, users, albums, artists"),
 ):
@@ -217,6 +215,13 @@ async def search_all(
             return {"success": False, "error": "Search query is required."}
         if category is not None:
             category = sanitize_enum(category, {"songs", "playlists", "podcasts", "users", "albums", "artists"}, "songs")
+
+        # Check cache for full search results
+        cache_key_str = f"{q}:{category or 'all'}"
+        cached = get_cached_search(cache_key_str)
+        if cached:
+            return {"success": True, "data": cached}
+
         tasks = []
         categories_to_run = []
 
@@ -259,24 +264,19 @@ async def search_all(
         for cat, data in zip(categories_to_run, completed_results):
             results[cat] = data
 
-        # Background Cache Warming: pre-resolve top search results
-        if results["songs"] and background_tasks:
-            try:
-                from app.routes.stream import pre_resolve_tracks
-                song_ids = [s["videoId"] for s in results["songs"] if s.get("videoId")]
-                if song_ids:
-                    background_tasks.add_task(pre_resolve_tracks, song_ids)
-            except Exception as e:
-                logger.warning(f"Failed to schedule background cache warming for search: {str(e)}")
-
         trending = ["Lofi Beats", "Indian Classical", "Rain Ambient", "Electronic Focus", "Jazz Cafe"]
+        
+        response_data = {
+            "results": results,
+            "trending": trending
+        }
+
+        # Cache the response
+        cache_search(cache_key_str, response_data)
         
         return {
             "success": True,
-            "data": {
-                "results": results,
-                "trending": trending
-            }
+            "data": response_data
         }
         
     except Exception as e:

@@ -7,6 +7,7 @@ import httpx
 from ytmusicapi import YTMusic
 from app.database import mongodb as db
 from app.services.security import sanitize_multiline_text, sanitize_text, sanitize_youtube_id
+from app.services.cache import cache_lyrics, get_cached_lyrics
 import logging
 import re
 
@@ -60,7 +61,7 @@ async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = No
         params["duration"] = str(duration)
 
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": HTTP_USER_AGENT}, timeout=30.0) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": HTTP_USER_AGENT}, timeout=5.0) as client:
             response = await client.get(
                 f"{LRCLIB_BASE_URL}/search",
                 params={"track_name": params["track_name"], "artist_name": params["artist_name"]},
@@ -130,14 +131,18 @@ async def get_lyrics(
         title = sanitize_text(title, max_length=160) if title else None
         artist = sanitize_text(artist, max_length=160) if artist else None
         database = db.get_db()
+
+        # 1. Check in-memory cache first
+        cache_key_str = f"lyrics:{id}"
+        cached = get_cached_lyrics(cache_key_str)
+        if cached:
+            return {"success": True, "data": cached}
         
-        # 1. Search DB cache first
-        # Look inside playlists or history for song title/artist if not supplied
+        # 2. Look inside playlists or history for song title/artist if not supplied
         song_title = title
         song_artist = artist
         
         if not song_title or not song_artist:
-            # Look up song in play history or playlists
             song_doc = await database[db.PLAYLISTS].find_one(
                 {"songs.videoId": id},
                 {"songs.$": 1}
@@ -156,27 +161,36 @@ async def get_lyrics(
         if not song_artist:
             song_artist = "Unknown Artist"
 
-        # Check if lyrics are already cached in an active collection
+        # 3. Check MongoDB lyrics cache
         lyrics_cache = await database["lyrics_cache"].find_one({"videoId": id})
         if lyrics_cache and lyrics_cache.get("source") in {"lrclib", "ytmusic"}:
-            return {
-                "success": True,
-                "data": {
-                        "videoId": id,
-                        "plain": lyrics_cache.get("plain"),
-                        "synced": lyrics_cache.get("synced"),
-                        "source": lyrics_cache.get("source", "cache"),
-                        "isSynced": bool(lyrics_cache.get("isSynced", has_lrc_timestamps(lyrics_cache.get("synced"))))
-                    }
-                }
+            result = {
+                "videoId": id,
+                "plain": lyrics_cache.get("plain"),
+                "synced": lyrics_cache.get("synced"),
+                "source": lyrics_cache.get("source", "cache"),
+                "isSynced": bool(lyrics_cache.get("isSynced", has_lrc_timestamps(lyrics_cache.get("synced"))))
+            }
+            cache_lyrics(cache_key_str, result)
+            return {"success": True, "data": result}
 
+        # 4. Fetch from external APIs
         lyrics = await fetch_lrclib_lyrics(song_title, song_artist)
         if not lyrics or not lyrics.get("plain") and not lyrics.get("synced"):
             lyrics = await fetch_ytmusic_lyrics(id)
         if not lyrics:
             lyrics = unavailable_lyrics(song_title, song_artist)
         
-        # Cache lyrics
+        # 5. Cache to both in-memory and MongoDB
+        result = {
+            "videoId": id,
+            "plain": lyrics["plain"],
+            "synced": lyrics["synced"],
+            "source": lyrics["source"],
+            "isSynced": lyrics["isSynced"]
+        }
+        cache_lyrics(cache_key_str, result)
+
         await database["lyrics_cache"].update_one(
             {"videoId": id},
             {
@@ -194,19 +208,7 @@ async def get_lyrics(
             upsert=True
         )
 
-        return {
-            "success": True,
-            "data": {
-                "videoId": id,
-                "plain": lyrics["plain"],
-                "synced": lyrics["synced"],
-                "source": lyrics["source"],
-                "isSynced": lyrics["isSynced"]
-            }
-        }
+        return {"success": True, "data": result}
     except Exception as e:
         logger.error(f"Error in lyrics resolution for {id}: {str(e)}")
-        return {
-            "success": False,
-            "error": f"Failed to retrieve lyrics: {str(e)}"
-        }
+        return {"success": False, "error": f"Failed to retrieve lyrics: {str(e)}"}

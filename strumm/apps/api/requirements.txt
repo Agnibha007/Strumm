@@ -10,7 +10,5 @@ python-multipart>=0.0.9
 cryptography>=42.0.0
 email-validator>=2.0.0
 ytmusicapi>=1.7.0
-yt-dlp>=2025.1.15
 beautifulsoup4>=4.12.0
 websockets>=12.0
-

@@ -318,13 +318,11 @@ export default function AudioEngine() {
       }
       stopProgressTimer();
 
-      const selectedAudioUrl =
+      const audioUrl =
         currentSong.metadata.audioVariants?.[audioQuality] ||
         currentSong.metadata.audioVariants?.high ||
-        currentSong.metadata.audioUrl;
-      const audioUrl = currentSong.videoId.startsWith("podcast-")
-        ? apiUrl(`/podcast-audio?url=${encodeURIComponent(selectedAudioUrl || "")}&quality=${encodeURIComponent(audioQuality)}`)
-        : selectedAudioUrl || "";
+        currentSong.metadata.audioUrl ||
+        "";
       const isSrcChanged = htmlAudioRef.current.src !== audioUrl;
       htmlAudioRef.current.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
       if (isSrcChanged) {

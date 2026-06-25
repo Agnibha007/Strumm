@@ -1,7 +1,6 @@
 import os
 import json
-import random
-from fastapi import APIRouter, Depends, Query, Path, BackgroundTasks
+from fastapi import APIRouter, Depends, Query
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from app.database import mongodb as db
@@ -48,7 +47,7 @@ async def get_curated_mix_from_groq(mood: str, user_likes: List[dict], user_hist
                     ],
                     "temperature": 0.6
                 },
-                timeout=12.0
+                timeout=5.0
             )
             
             if response.status_code == 200:
@@ -136,7 +135,6 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
 
 @router.get("/flow")
 async def get_flow(
-    background_tasks: BackgroundTasks,
     mood: str = Query("Chill", description="Mood state: Chill, Focus, Energetic, Sad, Creative"),
     current_user: dict = Depends(get_current_user),
 ):
@@ -182,16 +180,6 @@ async def get_flow(
         else:
             resolved = await resolve_suggestions(suggestions)
 
-        # Warm stream resolver cache in background
-        if resolved and background_tasks:
-            try:
-                from app.routes.stream import pre_resolve_tracks
-                song_ids = [s["videoId"] for s in resolved if s.get("videoId")]
-                if song_ids:
-                    background_tasks.add_task(pre_resolve_tracks, song_ids)
-            except Exception as e:
-                logger.warning(f"Failed to queue background flow resolve: {str(e)}")
-            
         return {
             "success": True,
             "data": {
@@ -206,7 +194,6 @@ async def get_flow(
 
 @router.get("/explore-mix")
 async def get_discover(
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
     try:
@@ -245,16 +232,6 @@ async def get_discover(
         else:
             resolved = await resolve_suggestions(suggestions)
 
-        # Warm stream resolver cache in background
-        if resolved and background_tasks:
-            try:
-                from app.routes.stream import pre_resolve_tracks
-                song_ids = [s["videoId"] for s in resolved if s.get("videoId")]
-                if song_ids:
-                    background_tasks.add_task(pre_resolve_tracks, song_ids)
-            except Exception as e:
-                logger.warning(f"Failed to queue background discover resolve: {str(e)}")
-            
         return {
             "success": True,
             "data": {
@@ -414,7 +391,7 @@ async def explore_chat(
                     "messages": messages_payload,
                     "temperature": 0.7
                 },
-                timeout=15.0
+                timeout=5.0
             )
             
         if response.status_code != 200:

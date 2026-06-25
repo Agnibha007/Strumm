@@ -17,7 +17,6 @@ import {
   Loader2,
   Share2,
   Check,
-  Download,
   Heart,
   ListMusic,
   Trash2,
@@ -203,8 +202,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     };
   }, [currentSong?.videoId, onClose]);
   const [copied, setCopied] = useState(false);
-  const [downloadState, setDownloadState] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const handleShare = async () => {
     if (typeof window === "undefined" || !currentSong) return;
@@ -236,58 +233,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("Failed to copy link:", err);
-    }
-  };
-
-  const safeFileName = (value: string) => {
-    return cleanText(value, 120).replace(/[\\/:*?"<>|]+/g, "-") || "strumm-track";
-  };
-
-  const handleDownload = async () => {
-    if (!currentSong || typeof window === "undefined" || downloadState === "loading") return;
-
-    const directAudioUrl = currentSong.metadata?.audioUrl;
-    setDownloadError(null);
-    setDownloadState("loading");
-
-    const filename = `${safeFileName(`${currentSong.title} - ${currentSong.artist}`)}.mp3`;
-    const downloadUrl = directAudioUrl
-      ? apiUrl(`/download-audio?url=${encodeURIComponent(directAudioUrl)}&filename=${encodeURIComponent(filename)}`)
-      : apiUrl(`/download/${encodeURIComponent(currentSong.videoId)}?title=${encodeURIComponent(safeFileName(`${currentSong.title} - ${currentSong.artist}`))}`);
-
-    try {
-      let res;
-      let succeeded = false;
-      try {
-        res = await fetch(downloadUrl);
-        if (!res.ok) {
-          throw new Error("Backend failed");
-        }
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        
-        const link = document.createElement("a");
-        link.rel = "noopener noreferrer";
-        link.href = blobUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(blobUrl);
-        succeeded = true;
-      } catch (backendErr) {
-        throw new Error("Download failed. Track might be unavailable.");
-      }
-      
-      setDownloadState("success");
-      setTimeout(() => setDownloadState("idle"), 2000);
-    } catch (err: any) {
-      setDownloadError(err.message || "Failed to download track");
-      setDownloadState("error");
-      setTimeout(() => {
-        setDownloadState("idle");
-        setDownloadError(null);
-      }, 4000);
     }
   };
 
@@ -808,23 +753,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
               <AddToPlaylistMenu song={currentSong} className="!p-0 !bg-transparent hover:!bg-transparent hover:scale-105" />
 
-              <button
-                onClick={handleDownload}
-                disabled={downloadState === "loading"}
-                className={`p-2 cursor-pointer transition hover:scale-105 ${
-                  downloadState === "success"
-                    ? "text-primary text-glow animate-pulse"
-                    : downloadState === "error"
-                    ? "text-red-400 animate-pulse"
-                    : downloadState === "loading"
-                    ? "text-muted opacity-50 cursor-not-allowed animate-pulse"
-                    : "text-muted hover:text-text"
-                }`}
-                title="Download MP3"
-              >
-                {downloadState === "success" ? <Check className="w-4 h-4" /> : downloadState === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              </button>
-
               {isPodcast && (
                 <button
                   disabled={!currentSong.metadata?.videoAvailable}
@@ -854,12 +782,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 <ListMusic className="w-4 h-4" />
               </button>
             </div>
-
-            {downloadError && (
-              <p className="text-[10px] text-red-300/80 font-semibold tracking-wide text-center lg:text-left">
-                {downloadError}
-              </p>
-            )}
 
             {/* Volume control */}
             <div className={`flex items-center gap-3 w-full max-w-[200px] mt-1 justify-center transition-all ${

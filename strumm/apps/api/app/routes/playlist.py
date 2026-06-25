@@ -9,7 +9,6 @@ from app.routes.dependencies import get_current_user
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from pydantic import BaseModel
-from yt_dlp import YoutubeDL
 import logging
 
 logger = logging.getLogger("strumm-playlist")
@@ -74,13 +73,8 @@ async def get_playlists(
         logger.error(f"Error fetching user playlists: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, BackgroundTasks
-
-# Note: We need to import BackgroundTasks from fastapi. Let's do it locally inside get_playlist or update top imports.
-# We will do it inside the endpoint or import at top. Let's import at top first or locally.
 @router.get("/{id}")
 async def get_playlist(
-    background_tasks: BackgroundTasks,
     id: str = Path(...),
     current_user: Optional[dict] = Depends(get_current_user),
 ):
@@ -99,16 +93,6 @@ async def get_playlist(
         if playlist["visibility"] == "private" and (not current_user or playlist["userId"] != current_user["id"]):
             return {"success": False, "error": "Access denied to private playlist"}
             
-        # Warm stream resolver cache in background for top songs in playlist
-        if playlist.get("songs") and background_tasks:
-            try:
-                from app.routes.stream import pre_resolve_tracks
-                song_ids = [s["videoId"] for s in playlist["songs"] if s.get("videoId")]
-                if song_ids:
-                    background_tasks.add_task(pre_resolve_tracks, song_ids)
-            except Exception as e:
-                logger.warning(f"Failed to queue background playlist resolve: {str(e)}")
-
         return {
             "success": True,
             "data": playlist
@@ -190,49 +174,6 @@ class ImportRequest(BaseModel):
     source: str # spotify, youtube, csv
     name: str
     data: str # URL or raw CSV string
-
-class DummyLogger:
-    def debug(self, msg):
-        pass
-    def warning(self, msg):
-        pass
-    def error(self, msg):
-        pass
-
-def get_yt_playlist_entries_with_proxies(url: str) -> list:
-    opts = {
-        "extract_flat": True,
-        "quiet": True,
-        "no_warnings": True,
-        "logger": DummyLogger(),
-        "ignoreerrors": True
-    }
-    try:
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if "entries" in info:
-                return info["entries"]
-    except Exception:
-        pass
-
-    try:
-        from app.routes.stream import get_free_proxies
-        proxies = get_free_proxies()
-        import random
-        random.shuffle(proxies)
-        for proxy in proxies[:10]:
-            try:
-                proxy_opts = dict(opts)
-                proxy_opts["proxy"] = f"http://{proxy}"
-                with YoutubeDL(proxy_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    if "entries" in info:
-                        return info["entries"]
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return []
 
 def parse_spotify_embed_html(html_content: str) -> list:
     import json
@@ -321,33 +262,29 @@ def extract_spotify_playlist(url: str) -> list:
     except Exception as e:
         logger.warning(f"Direct spotify embed fetch failed: {str(e)}")
 
-    # 2. Try with free proxies (for hosted cloud environments like Render where datacenter IPs are blocked)
+    # 2. Try alternative fetch methods
     try:
-        from app.routes.stream import get_free_proxies
-        import asyncio
-        try:
-            proxies = asyncio.run(get_free_proxies())
-        except Exception:
-            resp = httpx.get("https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all", timeout=5.0)
-            proxies = [p.strip() for p in resp.text.split("\n") if p.strip()]
-            
         import random
-        random.shuffle(proxies)
+        proxies_list = [
+            "https://corsproxy.io/?",
+        ]
+        random.shuffle(proxies_list)
         
-        logger.info(f"Retrying Spotify scrape with {len(proxies)} proxies...")
-        for proxy in proxies[:15]:
+        logger.info(f"Retrying Spotify scrape with alternative methods...")
+        for proxy_url in proxies_list[:3]:
             try:
-                with httpx.Client(proxies=f"http://{proxy}", headers=headers, timeout=5.0) as client:
-                    resp = client.get(embed_url, follow_redirects=True)
+                proxied_url = f"{proxy_url}{embed_url}"
+                with httpx.Client(headers=headers, timeout=8.0) as client:
+                    resp = client.get(proxied_url, follow_redirects=True)
                     if resp.status_code == 200:
                         parsed = parse_spotify_embed_html(resp.text)
                         if parsed:
-                            logger.info(f"Successfully scraped Spotify playlist using proxy: {proxy}")
+                            logger.info(f"Successfully scraped Spotify playlist via proxy")
                             return parsed
             except Exception:
                 continue
     except Exception as e:
-        logger.error(f"Error fetching/using spotify proxies: {str(e)}")
+        logger.error(f"Error fetching spotify via proxies: {str(e)}")
         
     return []
 
@@ -438,22 +375,6 @@ async def import_playlist(
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
             parsed_rows = extract_ytmusic_playlist(import_data)
-            if not parsed_rows:
-                # Fallback to yt-dlp flat extraction with proxy
-                entries = get_yt_playlist_entries_with_proxies(import_data)
-                for entry in entries:
-                    title = entry.get("title")
-                    if title:
-                        video_id = entry.get("id") or entry.get("url")
-                        if video_id:
-                            parsed_rows.append({
-                                "title": title,
-                                "artist": entry.get("uploader") or "Various Artists",
-                                "album": "",
-                                "videoId": video_id,
-                                "thumbnail": entry.get("thumbnail") or f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
-                                "duration": entry.get("duration") or 200
-                            })
         
         # If no tracks resolved but they input standard text rows, try line-by-line parsing
         if not parsed_rows and source in ["spotify", "youtube"]:

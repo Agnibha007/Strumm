@@ -25,7 +25,7 @@ async def send_otp_email(receiver_email: str, otp_code: str) -> bool:
         msg["To"] = receiver_email
         msg["Subject"] = f"Your Strumm verification code: {otp_code}"
         
-        # HTML body with editorial style matching the Obsidian theme
+        # HTML body
         html_body = f"""
         <html>
             <body style="background-color: #080808; color: #FFFFFF; font-family: sans-serif; padding: 24px; text-align: center;">
@@ -44,12 +44,16 @@ async def send_otp_email(receiver_email: str, otp_code: str) -> bool:
         """
         msg.attach(MIMEText(html_body, "html"))
         
-        # Dispatch SMTP call
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls() # Secure STARTTLS handshake
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
-        server.quit()
+        # Dispatch SMTP call in thread pool to avoid blocking event loop
+        import asyncio
+        def _send():
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=8)
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
+            server.quit()
+        
+        await asyncio.to_thread(_send)
         
         logger.info(f"Successfully dispatched verification code mail to {receiver_email}")
         return True
@@ -82,7 +86,7 @@ async def send_resend_otp_email(receiver_email: str, otp_code: str) -> bool:
             </body>
         </html>
         """
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.post(
                 "https://api.resend.com/emails",
                 headers={

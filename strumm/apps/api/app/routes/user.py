@@ -352,7 +352,10 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         if ObjectId.is_valid(user_id_str):
             possible_ids.append(ObjectId(user_id_str))
             
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
+        histories = await database[db.PLAYBACK_HISTORIES].find(
+            {"userId": {"$in": possible_ids}},
+            {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
+        ).to_list(length=2000)
         stats = compute_user_stats(histories, current_user.get("statistics"))
         user_data = dict(current_user)
         user_data["soundDNA"] = stats["soundDNA"]
@@ -973,20 +976,22 @@ async def daily_stats_refresher():
             async for user in users_cursor:
                 try:
                     user_id = str(user["_id"])
-                    possible_ids = [user_id, user["_id"]]
-                    histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
-                    stats = compute_user_stats(histories, user.get("statistics"))
+                    possible_ids = [user_id, user["_id"]]            histories = await database[db.PLAYBACK_HISTORIES].find(
+                {"userId": {"$in": possible_ids}},
+                {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
+            ).to_list(length=2000)
+            stats = compute_user_stats(histories, user.get("statistics"))
                     
-                    await database[db.USERS].update_one(
-                        {"_id": user["_id"]},
-                        {"$set": {
-                            "soundDNA": stats["soundDNA"],
-                            "statistics.totalListeningTime": stats["totalListeningTime"],
-                            "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
-                            "statistics.topArtists": stats["topArtists"],
-                            "statistics.topSongs": stats["topSongs"]
-                        }}
-                    )
+            await database[db.USERS].update_one(
+                {"_id": user["_id"]},
+                {"$set": {
+                    "soundDNA": stats["soundDNA"],
+                    "statistics.totalListeningTime": stats["totalListeningTime"],
+                    "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
+                    "statistics.topArtists": stats["topArtists"],
+                    "statistics.topSongs": stats["topSongs"]
+                }}
+            )
                 except Exception as user_ex:
                     logger.error(f"Failed to refresh daily stats for user {user.get('username')}: {user_ex}")
             logger.info("Completed daily Sound DNA and statistics refresh.")
@@ -1005,7 +1010,10 @@ async def recalculate_user_stats(current_user: dict = Depends(get_current_user))
         if ObjectId.is_valid(user_id_str):
             possible_ids.append(ObjectId(user_id_str))
             
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
+        histories = await database[db.PLAYBACK_HISTORIES].find(
+            {"userId": {"$in": possible_ids}},
+            {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
+        ).to_list(length=2000)
         stats = compute_user_stats(histories, current_user.get("statistics"))
         
         # Save to database
@@ -1045,7 +1053,10 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         database = db.get_db()
         user_id = current_user["id"]
         possible_ids = [user_id, parse_object_id(user_id)]
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).to_list(length=2000)
+        histories = await database[db.PLAYBACK_HISTORIES].find(
+            {"userId": {"$in": possible_ids}},
+            {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
+        ).to_list(length=2000)
         
         stats = compute_user_stats(histories, current_user.get("statistics"))
         effective_histories = get_effective_histories(histories, current_user.get("statistics"))
