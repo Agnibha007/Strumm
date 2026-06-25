@@ -976,22 +976,23 @@ async def daily_stats_refresher():
             async for user in users_cursor:
                 try:
                     user_id = str(user["_id"])
-                    possible_ids = [user_id, user["_id"]]            histories = await database[db.PLAYBACK_HISTORIES].find(
-                {"userId": {"$in": possible_ids}},
-                {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
-            ).to_list(length=2000)
-            stats = compute_user_stats(histories, user.get("statistics"))
-                    
-            await database[db.USERS].update_one(
-                {"_id": user["_id"]},
-                {"$set": {
-                    "soundDNA": stats["soundDNA"],
-                    "statistics.totalListeningTime": stats["totalListeningTime"],
-                    "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
-                    "statistics.topArtists": stats["topArtists"],
-                    "statistics.topSongs": stats["topSongs"]
-                }}
-            )
+                    possible_ids = [user_id, user["_id"]]
+                    histories = await database[db.PLAYBACK_HISTORIES].find(
+                        {"userId": {"$in": possible_ids}},
+                        {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
+                    ).to_list(length=2000)
+                    stats = compute_user_stats(histories, user.get("statistics"))
+                            
+                    await database[db.USERS].update_one(
+                        {"_id": user["_id"]},
+                        {"$set": {
+                            "soundDNA": stats["soundDNA"],
+                            "statistics.totalListeningTime": stats["totalListeningTime"],
+                            "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
+                            "statistics.topArtists": stats["topArtists"],
+                            "statistics.topSongs": stats["topSongs"]
+                        }}
+                    )
                 except Exception as user_ex:
                     logger.error(f"Failed to refresh daily stats for user {user.get('username')}: {user_ex}")
             logger.info("Completed daily Sound DNA and statistics refresh.")
