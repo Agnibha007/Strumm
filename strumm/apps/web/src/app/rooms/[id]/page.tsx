@@ -221,13 +221,16 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   // Host Action Broadcasters
   useEffect(() => {
     if (!isHost || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    
-    // Broadcast track update
+
+    // Broadcast track update and update local room state for host
     if (currentSong) {
+      const song = currentSong;
       socketRef.current.send(JSON.stringify({
         event: "track:update",
-        data: { song: currentSong }
+        data: { song }
       }));
+      // Immediately reflect change in UI for host
+      setRoom(prev => prev ? { ...prev, currentTrack: song } : null);
     }
   }, [currentSong?.videoId, isHost]);
 
@@ -290,7 +293,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const handleSuggestSearch = async () => {
     if (!suggestQuery.trim()) return;
     try {
-      const response = await fetch(apiUrl(`/search?q=${encodeURIComponent(suggestQuery)}&category=songs`));
+      const response = await fetch(apiUrl(`/search?q=${encodeURIComponent(suggestQuery)}&category=songs`), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const json = await response.json();
       if (json.success && json.data?.results?.songs) {
         setSuggestResults(json.data.results.songs);
@@ -565,7 +570,10 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                     </div>
                     {isHost && (
                       <button
-                        onClick={() => playSong(song, [song])}
+                        onClick={() => {
+                          playSong(song, [song]);
+                          setRoom(prev => prev ? { ...prev, currentTrack: song } : null);
+                        }}
                         className="px-3 py-1 bg-primary/20 hover:bg-primary/40 text-primary font-bold rounded text-[10px] transition cursor-pointer"
                       >
                         Play Now

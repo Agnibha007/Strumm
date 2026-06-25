@@ -1,5 +1,32 @@
 export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk';
 
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface SoundDNA {
+  energy: number;
+  discovery: number;
+  nostalgia: number;
+  variety: number;
+  repeatRate: number;
+}
+
+export interface PublicProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar?: string;
+  bio?: string;
+  soundDNA?: SoundDNA;
+  role?: string;
+  badges?: User['badges'];
+  statistics?: UserStatistics;
+  createdAt?: string;
+}
+
 export interface UserSettings {
   audioQuality: 'data-saver' | 'balanced' | 'high';
   animations: boolean;
@@ -25,12 +52,15 @@ export interface User {
   username: string;
   displayName: string;
   avatar?: string;
+  bio?: string;
+  role?: string;
   providers: string[];
   theme: ThemeType;
   customThemeImage?: string;
   createdAt: string;
   settings: UserSettings;
   statistics: UserStatistics;
+  soundDNA?: SoundDNA;
   badges?: Array<{
     id: string;
     title: string;

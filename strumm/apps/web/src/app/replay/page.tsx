@@ -6,6 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import SoundDNAChart from "web/components/SoundDNAChart";
 import { Loader2, Music, Sparkles, Trophy, Calendar, Compass, User, Play, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -144,20 +145,6 @@ export default function ReplayPage() {
       </div>
     );
   }
-
-  // Helper to draw DNA bar
-  const renderDNABar = (value: number, label: string) => {
-    const bars = "█".repeat(value) + "░".repeat(Math.max(0, 10 - value));
-    return (
-      <div className="space-y-1 min-w-0">
-        <div className="flex justify-between text-xs font-semibold">
-          <span className="text-text truncate">{label}</span>
-          <span className="text-primary flex-shrink-0 ml-2">{value * 10}%</span>
-        </div>
-        <div className="font-mono text-primary text-sm tracking-widest select-none truncate">{bars}</div>
-      </div>
-    );
-  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -305,13 +292,7 @@ export default function ReplayPage() {
               <p className="text-sm font-medium truncate max-w-full">Keep listening to build your DNA</p>
             </div>
           ) : (
-            <div className="space-y-4 min-w-0">
-              {renderDNABar(data.soundDNA.energy, "Energy")}
-              {renderDNABar(data.soundDNA.discovery, "Discovery")}
-              {renderDNABar(data.soundDNA.nostalgia, "Nostalgia")}
-              {renderDNABar(data.soundDNA.variety, "Variety")}
-              {renderDNABar(data.soundDNA.repeatRate, "Repeat Rate")}
-            </div>
+            <SoundDNAChart soundDNA={data.soundDNA} />
           )}
         </div>
 

@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { apiUrl, cleanText, decodeHtml } from "web/lib/api";
+import { formatTime } from "web/lib/format";
+import { useLikeSong } from "web/hooks/useLikeSong";
 import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
@@ -68,6 +70,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     isPlayerLoading,
   } = usePlayerStore();
   const { token } = useAuthStore();
+  const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
 
   const { isAnimated } = useThemeStore();
   const router = useRouter();
@@ -116,7 +119,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [lyricsSource, setLyricsSource] = useState<string | null>(null);
-  const [isLiked, setIsLiked] = useState(false);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
   const [memoryNote, setMemoryNote] = useState("");
   const [memoryVisibility, setMemoryVisibility] = useState<"public" | "private">("private");
@@ -152,38 +154,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       console.error(e);
     } finally {
       setMemorySaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!currentSong?.videoId || !token) return;
-    fetch(apiUrl(`/liked/${currentSong.videoId}`), {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(json => {
-        if (json.success) setIsLiked(json.data.liked);
-      })
-      .catch(() => {});
-  }, [currentSong?.videoId, token]);
-
-  const handleLikeToggle = async () => {
-    if (!currentSong || !token) return;
-    try {
-      const response = await fetch(apiUrl("/liked"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify(currentSong)
-      });
-      const json = await response.json();
-      if (json.success) {
-        setIsLiked(json.data.liked);
-      }
-    } catch (e) {
-      console.error(e);
     }
   };
 
@@ -324,14 +294,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const activeLineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // 1. Format seconds to MM:SS
-  const formatTime = (seconds: number) => {
-    if (seconds === null || seconds === undefined || isNaN(seconds) || !isFinite(seconds)) return "0:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
-
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   // 2. Fetch Lyrics on song load
@@ -469,7 +431,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           )}
           
           <button
-            onClick={handleLikeToggle}
+            onClick={() => currentSong && toggleLike(currentSong).catch(console.error)}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
               isLiked
                 ? "bg-primary/20 border-primary text-primary shadow-md box-glow"

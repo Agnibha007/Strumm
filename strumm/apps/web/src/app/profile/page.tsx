@@ -10,6 +10,7 @@ import { signOut } from "next-auth/react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import SongArtwork from "web/components/SongArtwork";
+import SoundDNAChart from "web/components/SoundDNAChart";
 
 function ProfilePageContent() {
   const { token, user: cachedUser, fetchProfile, logout } = useAuthStore();
@@ -459,20 +460,6 @@ function ProfilePageContent() {
     }
   ];
 
-  const renderDNABar = (value: number, label: string) => {
-    const filled = "█".repeat(value);
-    const empty = "░".repeat(Math.max(0, 10 - value));
-    return (
-      <div className="space-y-1">
-        <div className="flex justify-between text-[11px] font-semibold">
-          <span className="text-text/90">{label}</span>
-          <span className="text-primary">{value * 10}%</span>
-        </div>
-        <div className="font-mono text-primary text-xs tracking-wider select-none">{filled}{empty}</div>
-      </div>
-    );
-  };
-
   const issuedDate = displayedUser.createdAt 
     ? new Date(displayedUser.createdAt).toLocaleDateString() 
     : displayedUser.passport?.createdAt 
@@ -854,13 +841,7 @@ function ProfilePageContent() {
                 No listening history logged yet. Play tracks to generate your Sound DNA.
               </div>
             ) : (
-              <div className="space-y-4">
-                {renderDNABar(soundDNA.energy, "Energy")}
-                {renderDNABar(soundDNA.discovery, "Discovery")}
-                {renderDNABar(soundDNA.nostalgia, "Nostalgia")}
-                {renderDNABar(soundDNA.variety, "Variety")}
-                {renderDNABar(soundDNA.repeatRate, "Repeat Rate")}
-              </div>
+              <SoundDNAChart soundDNA={soundDNA} />
             )}
           </div>
 

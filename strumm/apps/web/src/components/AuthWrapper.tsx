@@ -8,6 +8,7 @@ import { useThemeStore } from "web/store/useThemeStore";
 import { usePathname, useRouter } from "next/navigation";
 import BrandLogo from "web/components/BrandLogo";
 import FriendActivitySidebar from "web/components/FriendActivitySidebar";
+import { isPublicRoute } from "web/lib/routes";
 
 export default function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
@@ -56,7 +57,8 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!loading) {
       const isAuthenticated = !!(user && token);
-      if (!isAuthenticated && pathname !== "/login" && pathname !== "/") {
+      const isPublic = isPublicRoute(pathname);
+      if (!isAuthenticated && pathname !== "/login" && pathname !== "/" && !isPublic) {
         const currentSearch = window.location.search;
         router.replace(`/login?redirect=${encodeURIComponent(pathname + currentSearch)}`);
       } else if (isAuthenticated && pathname === "/login") {
@@ -79,7 +81,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   const isAuthenticated = !!(user && token);
 
   if (!isAuthenticated) {
-    if (pathname === "/login" || pathname === "/") {
+    if (pathname === "/login" || pathname === "/" || isPublicRoute(pathname)) {
       return <>{children}</>;
     }
     

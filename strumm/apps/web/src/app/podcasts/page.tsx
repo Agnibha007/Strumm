@@ -6,48 +6,7 @@ import { Radio, Plus, Rss, ArrowRight, Library, User, Loader2, Info, Search } fr
 import { PodcastShow } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
-
-const SafePodcastImage = ({
-  src,
-  alt,
-  className,
-  ...props
-}: {
-  src?: string;
-  alt?: string;
-  className?: string;
-  [key: string]: any;
-}) => {
-  const [currentSrc, setCurrentSrc] = useState(src || "/strumm-icon.png");
-  const [errorCount, setErrorCount] = useState(0);
-
-  useEffect(() => {
-    setCurrentSrc(src || "/strumm-icon.png");
-    setErrorCount(0);
-  }, [src]);
-
-  const handleError = () => {
-    if (errorCount === 0 && src) {
-      setErrorCount(1);
-      setCurrentSrc(apiUrl(`/image-proxy?url=${encodeURIComponent(src)}`));
-    } else if (errorCount === 1) {
-      setErrorCount(2);
-      setCurrentSrc("/strumm-icon.png");
-    }
-  };
-
-  return (
-    <img
-      src={currentSrc}
-      alt={alt || ""}
-      onError={handleError}
-      className={className}
-      loading="lazy"
-      decoding="async"
-      {...props}
-    />
-  );
-};
+import SafePodcastImage from "web/components/SafePodcastImage";
 
 export default function PodcastHomePage() {
   const { token } = useAuthStore();

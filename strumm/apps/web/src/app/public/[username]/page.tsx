@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-export const dynamic = "force-dynamic";
 import { apiUrl } from "web/lib/api";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import SongArtwork from "web/components/SongArtwork";
+import SoundDNAChart from "web/components/SoundDNAChart";
 import { Loader2, Music, Sparkles, Heart, ShieldAlert, Play, ArrowRight, Share2, Award } from "lucide-react";
 import Link from "next/link";
 
@@ -268,20 +268,6 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
     );
   }
 
-  const renderDNABar = (value: number, label: string) => {
-    const filled = "█".repeat(value);
-    const empty = "░".repeat(Math.max(0, 10 - value));
-    return (
-      <div className="space-y-1">
-        <div className="flex justify-between text-[11px] font-semibold">
-          <span className="text-text/90">{label}</span>
-          <span className="text-primary">{value * 10}%</span>
-        </div>
-        <div className="font-mono text-primary text-xs tracking-wider select-none">{filled}{empty}</div>
-      </div>
-    );
-  };
-
   return (
     <div className="max-w-6xl mx-auto space-y-12 pb-12">
       {/* Profile Passport Header */}
@@ -450,13 +436,7 @@ export default function PublicProfilePage({ params }: { params: Promise<{ userna
             <h3 className="font-editorial text-xl text-text font-bold">Sound DNA</h3>
             <p className="text-xs text-muted">Acoustic blueprints calculated from history.</p>
           </div>
-          <div className="space-y-4">
-            {renderDNABar(data.soundDNA.energy, "Energy")}
-            {renderDNABar(data.soundDNA.discovery, "Discovery")}
-            {renderDNABar(data.soundDNA.nostalgia, "Nostalgia")}
-            {renderDNABar(data.soundDNA.variety, "Variety")}
-            {renderDNABar(data.soundDNA.repeatRate, "Repeat Rate")}
-          </div>
+          <SoundDNAChart soundDNA={data.soundDNA} />
         </div>
 
         {/* Top Artists */}

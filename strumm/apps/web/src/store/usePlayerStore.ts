@@ -3,6 +3,52 @@ import { persist } from "zustand/middleware";
 import { Song } from "@strumm/types";
 import { getBestArtwork } from "web/lib/media";
 
+type RepeatMode = "none" | "all" | "one";
+
+function resolveNextTrackIndex(
+  queue: Song[],
+  currentIndex: number,
+  repeatMode: RepeatMode,
+  isShuffle: boolean,
+  onTrackEnd: boolean
+): number | null {
+  if (queue.length === 0) return null;
+
+  if (isShuffle) {
+    if (queue.length === 1) {
+      return onTrackEnd && repeatMode !== "all" ? null : 0;
+    }
+    let nextIdx = currentIndex;
+    do {
+      nextIdx = Math.floor(Math.random() * queue.length);
+    } while (nextIdx === currentIndex);
+    return nextIdx;
+  }
+
+  const nextIdx = currentIndex + 1;
+  if (nextIdx >= queue.length) {
+    if (repeatMode === "all") return 0;
+    return onTrackEnd ? null : queue.length - 1;
+  }
+  return nextIdx;
+}
+
+function playTrackAtIndex(
+  queue: Song[],
+  index: number,
+  set: (partial: Partial<PlayerState>) => void,
+  get: () => PlayerState
+) {
+  const song = queue[index];
+  set({
+    currentSong: song,
+    currentIndex: index,
+    isPlaying: true,
+    currentTime: 0,
+  });
+  get().updateMediaSession(song);
+}
+
 interface PlayerState {
   currentSong: Song | null;
   queue: Song[];
@@ -135,54 +181,23 @@ export const usePlayerStore = create<PlayerState>()(
 
       next: () => {
         const { queue, currentIndex, repeatMode, isShuffle } = get();
-        if (queue.length === 0) return;
-
-        let nextIdx = currentIndex;
-
-        if (isShuffle) {
-          if (queue.length === 1) {
-            nextIdx = 0;
-          } else {
-            do {
-              nextIdx = Math.floor(Math.random() * queue.length);
-            } while (nextIdx === currentIndex);
-          }
-        } else {
-          nextIdx = currentIndex + 1;
-          if (nextIdx >= queue.length) {
-            nextIdx = repeatMode === "all" ? 0 : queue.length - 1;
-          }
-        }
-
-        if (nextIdx >= 0 && nextIdx < queue.length) {
-          const nextSong = queue[nextIdx];
-          set({
-            currentSong: nextSong,
-            currentIndex: nextIdx,
-            isPlaying: true,
-            currentTime: 0,
-          });
-          get().updateMediaSession(nextSong);
-        }
+        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, false);
+        if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) return;
+        playTrackAtIndex(queue, nextIdx, set, get);
       },
 
       prev: () => {
-        const { queue, currentIndex, playerRef } = get();
+        const { queue, currentIndex, currentTime, playerRef } = get();
         if (queue.length === 0) return;
 
-        let prevIdx = currentIndex - 1;
-        if (prevIdx < 0) {
-          prevIdx = 0; // standard behavior: restart first track
+        if (currentTime > 5) {
+          playerRef?.seekTo(0);
+          set({ currentTime: 0, isPlaying: true });
+          return;
         }
 
-        const prevSong = queue[prevIdx];
-        set({
-          currentSong: prevSong,
-          currentIndex: prevIdx,
-          isPlaying: true,
-          currentTime: 0,
-        });
-        get().updateMediaSession(prevSong);
+        const prevIdx = Math.max(0, currentIndex - 1);
+        playTrackAtIndex(queue, prevIdx, set, get);
       },
 
       setVolume: (volume) => {
@@ -240,40 +255,13 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        let nextIdx = currentIndex;
-        if (isShuffle) {
-          if (queue.length === 1) {
-            if (repeatMode === "all") {
-              nextIdx = 0;
-            } else {
-              set({ isPlaying: false, currentTime: 0 });
-              return;
-            }
-          } else {
-            do {
-              nextIdx = Math.floor(Math.random() * queue.length);
-            } while (nextIdx === currentIndex);
-          }
-        } else {
-          nextIdx = currentIndex + 1;
-          if (nextIdx >= queue.length) {
-            if (repeatMode === "all") {
-              nextIdx = 0;
-            } else {
-              set({ isPlaying: false, currentTime: 0 });
-              return;
-            }
-          }
+        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, true);
+        if (nextIdx === null) {
+          set({ isPlaying: false, currentTime: 0 });
+          return;
         }
 
-        const nextSong = queue[nextIdx];
-        set({
-          currentSong: nextSong,
-          currentIndex: nextIdx,
-          isPlaying: true,
-          currentTime: 0,
-        });
-        get().updateMediaSession(nextSong);
+        playTrackAtIndex(queue, nextIdx, set, get);
       },
 
       restorePlayerState: (state) => {

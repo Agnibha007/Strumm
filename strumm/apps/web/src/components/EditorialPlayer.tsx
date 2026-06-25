@@ -8,6 +8,8 @@ import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import dynamic from "next/dynamic";
 import { apiUrl, cleanText } from "web/lib/api";
+import { formatTime } from "web/lib/format";
+import { useLikeSong } from "web/hooks/useLikeSong";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
@@ -52,7 +54,7 @@ export default function EditorialPlayer() {
   const [listenSeconds, setListenSeconds] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFullscreenMenu, setShowFullscreenMenu] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
+  const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
   const lastAutoOpenedVideoId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -66,38 +68,6 @@ export default function EditorialPlayer() {
       setShowFullscreenMenu(true);
     }
   }, [currentSong?.videoId, currentSong?.metadata?.videoAvailable, podcastMode]);
-
-  useEffect(() => {
-    if (!currentSong?.videoId || !token) return;
-    fetch(apiUrl(`/liked/${currentSong.videoId}`), {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(json => {
-        if (json.success) setIsLiked(json.data.liked);
-      })
-      .catch(() => {});
-  }, [currentSong?.videoId, token]);
-
-  const handleLikeToggle = async () => {
-    if (!currentSong || !token) return;
-    try {
-      const response = await fetch(apiUrl("/liked"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify(currentSong)
-      });
-      const json = await response.json();
-      if (json.success) {
-        setIsLiked(json.data.liked);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -167,14 +137,6 @@ export default function EditorialPlayer() {
   }, [isPlaying, currentSong?.videoId]);
 
   if (!currentSong) return null;
-
-  // Format seconds to MM:SS
-  const formatTime = (seconds: number) => {
-    if (seconds === null || seconds === undefined || isNaN(seconds) || !isFinite(seconds)) return "0:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
 
   const removeSong = (idxToRemove: number) => {
     const newQueue = queue.filter((_, idx) => idx !== idxToRemove);
@@ -363,7 +325,10 @@ export default function EditorialPlayer() {
             </div>
             
             <button
-              onClick={(e) => { e.stopPropagation(); handleLikeToggle(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (currentSong) toggleLike(currentSong).catch(console.error);
+              }}
               className={`p-2 rounded hover:bg-surface-elevated cursor-pointer transition ${isLiked ? "text-primary text-glow" : "text-muted hover:text-text"}`}
               title={isLiked ? "Unlike" : "Like"}
             >
