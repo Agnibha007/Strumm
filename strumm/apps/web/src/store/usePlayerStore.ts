@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Song } from "@strumm/types";
 import { getBestArtwork } from "web/lib/media";
+import { apiUrl } from "web/lib/api";
 
 type RepeatMode = "none" | "all" | "one";
 
@@ -66,6 +67,15 @@ interface PlayerState {
   isPlayerLoading: boolean;
   playerError: string | null;
   
+  // Radio Mode
+  isRadio: boolean;
+  radioSeed: string | null;
+  radioSession: string | null;
+  startRadio: (seedVideoId: string, initialSongs: Song[]) => void;
+  stopRadio: () => void;
+  fetchMoreRadio: () => Promise<void>;
+  setRadioSession: (session: string | null) => void;
+  
   // Actions
   setCurrentSong: (song: Song | null) => void;
   setQueue: (queue: Song[]) => void;
@@ -121,6 +131,55 @@ export const usePlayerStore = create<PlayerState>()(
       playerRef: null,
       isPlayerLoading: false,
       playerError: null,
+      isRadio: false,
+      radioSeed: null,
+      radioSession: null,
+      
+      startRadio: (seedVideoId, initialSongs) => {
+        set({
+          queue: initialSongs,
+          currentIndex: 0,
+          isRadio: true,
+          radioSeed: seedVideoId,
+          radioSession: `radio_${seedVideoId}_${Date.now()}`,
+          isShuffle: false,
+          repeatMode: "none",
+        });
+        if (initialSongs.length > 0) {
+          const song = initialSongs[0];
+          set({ currentSong: song, isPlaying: true, currentTime: 0 });
+          get().updateMediaSession(song);
+        }
+      },
+
+      stopRadio: () => {
+        set({ isRadio: false, radioSeed: null, radioSession: null });
+      },
+
+      setRadioSession: (session) => {
+        set({ radioSession: session });
+      },
+
+      fetchMoreRadio: async () => {
+        const { radioSeed, queue, isRadio } = get();
+        if (!isRadio || !radioSeed) return;
+
+        try {
+          const res = await fetch(apiUrl(`/radio/${radioSeed}?limit=20`));
+          const json = await res.json();
+          if (json.success && json.data?.songs) {
+            const existingVids = new Set(queue.map(s => s.videoId));
+            const newSongs = json.data.songs.filter((s: any) => !existingVids.has(s.videoId));
+            if (newSongs.length > 0) {
+              set({ queue: [...queue, ...newSongs] });
+            } else {
+              console.warn("Radio: No new tracks available");
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch more radio tracks:", e);
+        }
+      },
       setPlayerLoading: (loading) => set({ isPlayerLoading: loading }),
       setPlayerError: (error) => set({ playerError: error }),
 

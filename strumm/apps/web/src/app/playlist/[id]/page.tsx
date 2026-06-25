@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search, Check } from "lucide-react";
+import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search, Check, Users, UserPlus, UserMinus } from "lucide-react";
 import { Playlist, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -28,6 +28,11 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editVisibility, setEditVisibility] = useState<"public" | "private">("private");
+
+  // Collaborator management
+  const [showCollabModal, setShowCollabModal] = useState(false);
+  const [collabUserId, setCollabUserId] = useState("");
+  const [collabAction, setCollabAction] = useState<"add" | "remove">("add");
 
   // Search filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -152,17 +157,12 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
     const confirmed = confirm("Remove this track from the playlist?");
     if (!confirmed) return;
 
-    const updatedSongs = playlist.songs.filter((_, idx) => idx !== songIndex);
     try {
-      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
-        method: "PATCH",
+      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}/songs/${songIndex}`), {
+        method: "DELETE",
         headers: {
-          "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          songs: updatedSongs
-        })
+        }
       });
       const json = await response.json();
       if (json.success && json.data) {
@@ -172,6 +172,33 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
       }
     } catch (e) {
       alert("Failed to connect to backend server.");
+    }
+  };
+
+  const handleManageCollab = async () => {
+    if (!token || !collabUserId.trim()) return;
+    try {
+      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}/collaborators`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          collaboratorId: collabUserId.trim(),
+          action: collabAction
+        })
+      });
+      const json = await response.json();
+      if (json.success) {
+        setShowCollabModal(false);
+        setCollabUserId("");
+        loadPlaylist();
+      } else {
+        alert(json.error || "Failed to manage collaborator.");
+      }
+    } catch (e) {
+      alert("Failed to connect to backend.");
     }
   };
 
@@ -435,6 +462,13 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
                 <Edit3 className="w-4.5 h-4.5" />
               </button>
               <button
+                onClick={() => { setCollabAction("add"); setCollabUserId(""); setShowCollabModal(true); }}
+                className="p-2 hover:bg-accent/10 text-muted hover:text-accent rounded-lg border border-transparent hover:border-accent/20 transition"
+                title="Manage Collaborators"
+              >
+                <Users className="w-4.5 h-4.5" />
+              </button>
+              <button
                 onClick={handleDeletePlaylist}
                 className="p-2 hover:bg-primary/10 text-muted hover:text-primary rounded-lg border border-transparent hover:border-primary/20 transition"
                 title="Delete playlist"
@@ -647,6 +681,68 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
           </>
         )}
       </div>
+
+      {/* Collaborator Management Modal */}
+      {showCollabModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-surface border border-border/80 rounded-2xl p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-border/20 pb-3">
+              <h3 className="font-editorial text-base text-text font-bold">Manage Collaborators</h3>
+              <button onClick={() => setShowCollabModal(false)} className="p-1 text-muted hover:text-text cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Current collaborators */}
+            {(playlist as any).collaborators_profiles?.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase tracking-wider text-muted font-semibold">Current Collaborators</span>
+                {(playlist as any).collaborators_profiles.map((c: any) => (
+                  <div key={c.id} className="flex items-center justify-between p-2 bg-surface-elevated/30 rounded-lg">
+                    <span className="text-xs text-text font-medium truncate">{c.displayName} (@{c.username})</span>
+                    <button
+                      onClick={async () => {
+                        const res = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}/collaborators`), {
+                          method: "POST",
+                          headers: {"Content-Type": "application/json", "Authorization": `Bearer ${token}`},
+                          body: JSON.stringify({ collaboratorId: c.id, action: "remove" })
+                        });
+                        if ((await res.json()).success) loadPlaylist();
+                      }}
+                      className="p-1 text-red-400 hover:text-red-300 cursor-pointer"
+                      title="Remove collaborator"
+                    >
+                      <UserMinus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add collaborator */}
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-wider text-muted font-semibold">Add Collaborator</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter user ID..."
+                  value={collabUserId}
+                  onChange={(e) => setCollabUserId(e.target.value)}
+                  className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-xs text-text focus:outline-none focus:border-primary/50"
+                />
+                <button
+                  onClick={handleManageCollab}
+                  disabled={!collabUserId.trim()}
+                  className="px-3 py-2 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary-hover transition cursor-pointer disabled:opacity-50"
+                >
+                  <UserPlus className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-[9px] text-muted italic">Enter the user's database ID to add them as a collaborator. They can add/remove songs.</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

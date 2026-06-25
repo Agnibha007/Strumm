@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Path
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from app.database import mongodb as db
@@ -243,6 +243,74 @@ async def get_discover(
     except Exception as e:
         logger.error(f"Error creating discovery recommendation: {str(e)}")
         return {"success": False, "error": str(e)}
+
+# --- RADIO MODE ---
+
+@router.get("/radio/{video_id}")
+async def get_radio(
+    video_id: str = Path(..., description="Seed videoId to generate radio from"),
+    limit: int = Query(20, ge=5, le=50, description="Number of radio tracks to return"),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    """Generate an infinite radio stream based on a seed song.
+    Uses ytmusicapi's get_watch_playlist which returns related tracks.
+    """
+    try:
+        from ytmusicapi import YTMusic
+        import asyncio
+        yt = YTMusic()
+
+        watch = await asyncio.to_thread(
+            yt.get_watch_playlist,
+            videoId=video_id,
+            limit=limit
+        )
+
+        if not watch or not watch.get("tracks"):
+            return {"success": False, "error": "No related tracks found for this song."}
+
+        tracks = watch["tracks"]
+        radio_songs = []
+        for track in tracks:
+            vid = track.get("videoId")
+            if not vid or vid == video_id:
+                continue
+
+            title = track.get("title", "Unknown")
+            artists_list = track.get("artists", [])
+            artist = ", ".join(
+                [a.get("name", "") for a in artists_list if a.get("name")]
+            ) if artists_list else "Unknown Artist"
+            duration = track.get("length") or 200
+            thumbnails = track.get("thumbnail", [])
+            thumbnail = thumbnails[-1].get("url", "") if thumbnails else (
+                f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"
+            )
+
+            radio_songs.append({
+                "videoId": vid,
+                "title": title,
+                "artist": artist,
+                "thumbnail": thumbnail,
+                "duration": duration
+            })
+
+        if not radio_songs:
+            return {"success": False, "error": "No related tracks found."}
+
+        return {
+            "success": True,
+            "data": {
+                "seed": video_id,
+                "songs": radio_songs,
+                "total": len(radio_songs),
+                "radio_session": f"radio_{video_id}"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error generating radio for {video_id}: {str(e)}")
+        return {"success": False, "error": f"Failed to generate radio: {str(e)}"}
+
 
 from pydantic import BaseModel
 

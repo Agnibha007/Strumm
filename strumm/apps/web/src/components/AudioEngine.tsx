@@ -25,6 +25,10 @@ export default function AudioEngine() {
     setPlayerRef,
     podcastMode,
     audioQuality,
+    isRadio,
+    queue,
+    currentIndex,
+    fetchMoreRadio,
   } = usePlayerStore();
 
   const playerInstanceRef = useRef<any>(null);
@@ -32,6 +36,15 @@ export default function AudioEngine() {
   const currentVideoIdRef = useRef<string | null>(null);
   const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-fetch more radio tracks when near end of queue
+  useEffect(() => {
+    if (!isRadio || queue.length === 0) return;
+    const remaining = queue.length - currentIndex - 1;
+    if (remaining <= 3) {
+      fetchMoreRadio();
+    }
+  }, [currentIndex, isRadio, queue.length, fetchMoreRadio]);
 
   // 1. Setup HTML Audio elements and events
   useEffect(() => {

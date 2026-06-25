@@ -14,6 +14,15 @@ import logging
 logger = logging.getLogger("strumm-playlist")
 router = APIRouter(prefix="/playlists", tags=["playlist"])
 
+
+def is_owner_or_collaborator(playlist: dict, user_id: str) -> bool:
+    """Check if user is the owner or a collaborator of the playlist."""
+    if str(playlist.get("userId", "")) == user_id:
+        return True
+    collaborators = playlist.get("collaborators", []) or []
+    return user_id in collaborators
+
+
 @router.post("")
 async def create_playlist(
     payload: PlaylistCreateSchema,
@@ -28,14 +37,15 @@ async def create_playlist(
             "songs": [],
             "visibility": payload.visibility or "private",
             "followers": 0,
+            "collaborators": [],
             "createdAt": datetime.utcnow()
         }
-        
+
         result = await database[db.PLAYLISTS].insert_one(new_playlist)
         new_playlist["_id"] = str(result.inserted_id)
         new_playlist["id"] = str(result.inserted_id)
         new_playlist["userId"] = str(new_playlist["userId"])
-        
+
         return {
             "success": True,
             "data": new_playlist
@@ -43,6 +53,7 @@ async def create_playlist(
     except Exception as e:
         logger.error(f"Error creating playlist: {str(e)}")
         return {"success": False, "error": f"Playlist creation failed: {str(e)}"}
+
 
 @router.get("")
 async def get_playlists(
@@ -54,16 +65,41 @@ async def get_playlists(
         possible_ids = [user_id_str]
         if ObjectId.is_valid(user_id_str):
             possible_ids.append(ObjectId(user_id_str))
-            
-        # Find user's playlists supporting both string and ObjectId userIds
-        cursor = database[db.PLAYLISTS].find({"userId": {"$in": possible_ids}})
+
+        # Find user's playlists (owned OR collaborated)
+        cursor = database[db.PLAYLISTS].find({
+            "$or": [
+                {"userId": {"$in": possible_ids}},
+                {"collaborators": user_id_str}
+            ]
+        })
         playlists = []
         async for doc in cursor:
             doc["_id"] = str(doc["_id"])
             doc["id"] = str(doc["_id"])
             doc["userId"] = str(doc["userId"])
+
+            # Resolve collaborator display names
+            collab_ids = doc.get("collaborators", []) or []
+            if collab_ids:
+                collab_users = await database[db.USERS].find(
+                    {"_id": {"$in": [parse_object_id(cid) for cid in collab_ids if ObjectId.is_valid(cid)]}},
+                    {"displayName": 1, "username": 1, "avatar": 1}
+                ).to_list(length=50)
+                doc["collaborators_profiles"] = [
+                    {
+                        "id": str(u["_id"]),
+                        "displayName": u.get("displayName"),
+                        "username": u.get("username"),
+                        "avatar": u.get("avatar")
+                    }
+                    for u in collab_users
+                ]
+            else:
+                doc["collaborators_profiles"] = []
+
             playlists.append(doc)
-            
+
         return {
             "success": True,
             "data": playlists
@@ -73,6 +109,7 @@ async def get_playlists(
         logger.error(f"Error fetching user playlists: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
+
 @router.get("/{id}")
 async def get_playlist(
     id: str = Path(...),
@@ -81,18 +118,38 @@ async def get_playlist(
     try:
         database = db.get_db()
         playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
-        
+
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
-            
+
         playlist["_id"] = str(playlist["_id"])
         playlist["id"] = playlist["_id"]
         playlist["userId"] = str(playlist["userId"])
-        
+
         # Check permissions
-        if playlist["visibility"] == "private" and (not current_user or playlist["userId"] != current_user["id"]):
+        user_id = current_user["id"] if current_user else None
+        if playlist["visibility"] == "private" and (not user_id or (playlist["userId"] != user_id and not is_owner_or_collaborator(playlist, user_id))):
             return {"success": False, "error": "Access denied to private playlist"}
-            
+
+        # Resolve collaborator display names
+        collab_ids = playlist.get("collaborators", []) or []
+        if collab_ids:
+            collab_users = await database[db.USERS].find(
+                {"_id": {"$in": [parse_object_id(cid) for cid in collab_ids if ObjectId.is_valid(cid)]}},
+                {"displayName": 1, "username": 1, "avatar": 1}
+            ).to_list(length=50)
+            playlist["collaborators_profiles"] = [
+                {
+                    "id": str(u["_id"]),
+                    "displayName": u.get("displayName"),
+                    "username": u.get("username"),
+                    "avatar": u.get("avatar")
+                }
+                for u in collab_users
+            ]
+        else:
+            playlist["collaborators_profiles"] = []
+
         return {
             "success": True,
             "data": playlist
@@ -101,6 +158,7 @@ async def get_playlist(
         import traceback
         logger.error(f"Error resolving playlist {id}: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": str(e)}
+
 
 @router.patch("/{id}")
 async def update_playlist(
@@ -111,31 +169,39 @@ async def update_playlist(
     try:
         database = db.get_db()
         playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
-        
+
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
-            
-        if str(playlist["userId"]) != current_user["id"]:
+
+        user_id = current_user["id"]
+        is_owner = str(playlist["userId"]) == user_id
+        is_collaborator = is_owner_or_collaborator(playlist, user_id)
+
+        if not is_owner and not is_collaborator:
             return {"success": False, "error": "Unauthorized to modify this playlist"}
-            
+
         update_data = {}
-        if payload.name is not None:
-            update_data["name"] = payload.name
-        if payload.description is not None:
-            update_data["description"] = payload.description
-        if payload.visibility is not None:
-            update_data["visibility"] = payload.visibility
+
+        # Owner can change everything; collaborators can only change songs
+        if is_owner:
+            if payload.name is not None:
+                update_data["name"] = payload.name
+            if payload.description is not None:
+                update_data["description"] = payload.description
+            if payload.visibility is not None:
+                update_data["visibility"] = payload.visibility
+
         if payload.songs is not None:
             update_data["songs"] = [s.model_dump() for s in payload.songs]
-            
+
         if update_data:
             await database[db.PLAYLISTS].update_one({"_id": parse_object_id(id)}, {"$set": update_data})
-            
+
         updated_playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
         updated_playlist["_id"] = str(updated_playlist["_id"])
         updated_playlist["id"] = updated_playlist["_id"]
         updated_playlist["userId"] = str(updated_playlist["userId"])
-        
+
         return {
             "success": True,
             "data": updated_playlist
@@ -143,6 +209,7 @@ async def update_playlist(
     except Exception as e:
         logger.error(f"Error updating playlist {id}: {str(e)}")
         return {"success": False, "error": str(e)}
+
 
 @router.delete("/{id}")
 async def delete_playlist(
@@ -152,15 +219,15 @@ async def delete_playlist(
     try:
         database = db.get_db()
         playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
-        
+
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
-            
+
         if str(playlist["userId"]) != current_user["id"]:
             return {"success": False, "error": "Unauthorized to delete this playlist"}
-            
+
         await database[db.PLAYLISTS].delete_one({"_id": parse_object_id(id)})
-        
+
         return {
             "success": True,
             "data": {"message": "Playlist deleted successfully"}
@@ -169,11 +236,74 @@ async def delete_playlist(
         logger.error(f"Error deleting playlist {id}: {str(e)}")
         return {"success": False, "error": str(e)}
 
+
+# --- COLLABORATOR MANAGEMENT ---
+
+class CollaboratorRequest(BaseModel):
+    collaboratorId: str
+    action: str  # "add" or "remove"
+
+
+@router.post("/{id}/collaborators")
+async def manage_collaborator(
+    payload: CollaboratorRequest,
+    id: str = Path(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Add or remove a collaborator from a playlist (owner only)."""
+    try:
+        database = db.get_db()
+        playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
+
+        if not playlist:
+            return {"success": False, "error": "Playlist not found"}
+
+        if str(playlist["userId"]) != current_user["id"]:
+            return {"success": False, "error": "Only the playlist owner can manage collaborators"}
+
+        collab_id = payload.collaboratorId
+        current_collabs = playlist.get("collaborators", []) or []
+
+        if payload.action == "add":
+            # Verify the target user exists
+            target_user = await database[db.USERS].find_one({"_id": parse_object_id(collab_id)})
+            if not target_user:
+                return {"success": False, "error": "User not found"}
+
+            if collab_id not in current_collabs:
+                current_collabs.append(collab_id)
+            await database[db.PLAYLISTS].update_one(
+                {"_id": parse_object_id(id)},
+                {"$set": {"collaborators": current_collabs}}
+            )
+
+        elif payload.action == "remove":
+            if collab_id in current_collabs:
+                current_collabs.remove(collab_id)
+            await database[db.PLAYLISTS].update_one(
+                {"_id": parse_object_id(id)},
+                {"$set": {"collaborators": current_collabs}}
+            )
+
+        else:
+            return {"success": False, "error": "Invalid action. Use 'add' or 'remove'."}
+
+        return {
+            "success": True,
+            "data": {"collaborators": current_collabs}
+        }
+    except Exception as e:
+        logger.error(f"Error managing collaborator for playlist {id}: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+
 # --- PLAYLIST IMPORT ---
+
 class ImportRequest(BaseModel):
-    source: str # spotify, youtube, csv
+    source: str  # spotify, youtube, csv
     name: str
-    data: str # URL or raw CSV string
+    data: str  # URL or raw CSV string
+
 
 def parse_spotify_embed_html(html_content: str) -> list:
     import json
@@ -183,9 +313,9 @@ def parse_spotify_embed_html(html_content: str) -> list:
         next_data = soup.find("script", id="__NEXT_DATA__")
         if not next_data:
             return []
-            
+
         data = json.loads(next_data.string)
-        
+
         def find_tracklist(obj):
             if isinstance(obj, dict):
                 if "trackList" in obj and isinstance(obj["trackList"], list):
@@ -200,11 +330,11 @@ def parse_spotify_embed_html(html_content: str) -> list:
                     if res:
                         return res
             return None
-            
+
         tracklist = find_tracklist(data)
         if not tracklist:
             return []
-            
+
         parsed = []
         for t in tracklist:
             title = t.get("title")
@@ -212,7 +342,7 @@ def parse_spotify_embed_html(html_content: str) -> list:
             artists = artists.replace("\xa0", " ").strip()
             duration_ms = t.get("duration", 0)
             duration_sec = int(duration_ms / 1000) if duration_ms else 200
-            
+
             parsed.append({
                 "title": title,
                 "artist": artists,
@@ -224,12 +354,13 @@ def parse_spotify_embed_html(html_content: str) -> list:
         logger.error(f"Error parsing spotify embed HTML: {str(e)}")
         return []
 
+
 def extract_spotify_playlist(url: str) -> list:
     import httpx
-    
+
     playlist_id = None
     entity_type = "playlist"
-    
+
     if "playlist/" in url:
         playlist_id = url.split("playlist/")[-1].split("?")[0].split("/")[0]
         entity_type = "playlist"
@@ -242,17 +373,17 @@ def extract_spotify_playlist(url: str) -> list:
     elif "track/" in url:
         playlist_id = url.split("track/")[-1].split("?")[0].split("/")[0]
         entity_type = "track"
-        
+
     if not playlist_id:
         return []
-        
+
     embed_url = f"https://open.spotify.com/embed/{entity_type}/{playlist_id}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9"
     }
-    
-    # 1. Try direct fetch first (works locally / residential IPs)
+
+    # 1. Try direct fetch first
     try:
         resp = httpx.get(embed_url, headers=headers, follow_redirects=True, timeout=8.0)
         if resp.status_code == 200:
@@ -265,12 +396,10 @@ def extract_spotify_playlist(url: str) -> list:
     # 2. Try alternative fetch methods
     try:
         import random
-        proxies_list = [
-            "https://corsproxy.io/?",
-        ]
+        proxies_list = ["https://corsproxy.io/?"]
         random.shuffle(proxies_list)
-        
-        logger.info(f"Retrying Spotify scrape with alternative methods...")
+
+        logger.info("Retrying Spotify scrape with alternative methods...")
         for proxy_url in proxies_list[:3]:
             try:
                 proxied_url = f"{proxy_url}{embed_url}"
@@ -279,25 +408,26 @@ def extract_spotify_playlist(url: str) -> list:
                     if resp.status_code == 200:
                         parsed = parse_spotify_embed_html(resp.text)
                         if parsed:
-                            logger.info(f"Successfully scraped Spotify playlist via proxy")
+                            logger.info("Successfully scraped Spotify playlist via proxy")
                             return parsed
             except Exception:
                 continue
     except Exception as e:
         logger.error(f"Error fetching spotify via proxies: {str(e)}")
-        
+
     return []
+
 
 def extract_ytmusic_playlist(url: str) -> list:
     from ytmusicapi import YTMusic
-    
+
     playlist_id = None
     if "list=" in url:
         playlist_id = url.split("list=")[-1].split("&")[0]
-        
+
     if not playlist_id:
         return []
-        
+
     try:
         yt = YTMusic()
         playlist = yt.get_playlist(playlist_id, limit=None)
@@ -310,7 +440,7 @@ def extract_ytmusic_playlist(url: str) -> list:
             video_id = t.get("videoId")
             duration_sec = t.get("duration_seconds") or 200
             thumbnail = t.get("thumbnails", [{}])[-1].get("url") if t.get("thumbnails") else ""
-            
+
             item = {
                 "title": title,
                 "artist": artists,
@@ -321,12 +451,13 @@ def extract_ytmusic_playlist(url: str) -> list:
                 item["videoId"] = video_id
             if thumbnail:
                 item["thumbnail"] = thumbnail
-                
+
             parsed.append(item)
         return parsed
     except Exception as e:
         logger.error(f"Error fetching YTMusic playlist: {str(e)}")
         return []
+
 
 @router.post("/import")
 async def import_playlist(
@@ -339,18 +470,16 @@ async def import_playlist(
         source = sanitize_enum(payload.source, {"csv", "spotify", "youtube"}, "csv")
         import_name = sanitize_text(payload.name, max_length=120)
         import_data = sanitize_multiline_text(payload.data, max_length=200000)
-        
+
         parsed_rows = []
         matched = []
         not_found = []
         duplicates = []
-        
+
         if source == "csv":
-            # Parse CSV content from string
             f = StringIO(import_data)
             reader = csv.DictReader(f)
-            
-            # If no header was recognized, try basic reader
+
             if not reader.fieldnames or not any(k in [x.lower() for x in reader.fieldnames] for k in ["title", "name", "song"]):
                 f.seek(0)
                 csv_rows = list(csv.reader(StringIO(import_data)))
@@ -362,7 +491,6 @@ async def import_playlist(
                             "album": row[2].strip() if len(row) > 2 else ""
                         })
             else:
-                # Normalize keys
                 for row in reader:
                     normalized_row = {k.lower(): v for k, v in row.items()}
                     title = normalized_row.get("title") or normalized_row.get("name") or normalized_row.get("song", "")
@@ -375,8 +503,7 @@ async def import_playlist(
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
             parsed_rows = extract_ytmusic_playlist(import_data)
-        
-        # If no tracks resolved but they input standard text rows, try line-by-line parsing
+
         if not parsed_rows and source in ["spotify", "youtube"]:
             for line in import_data.split("\n"):
                 line = line.strip()
@@ -410,8 +537,7 @@ async def import_playlist(
             artist = track.get("artist", "")
             if not title:
                 continue
-                
-            # If track already has video details resolved (e.g. from YouTube playlist)
+
             if "videoId" in track:
                 song_item = {
                     "videoId": track["videoId"],
@@ -426,21 +552,20 @@ async def import_playlist(
                     matched.append(song_item)
                 continue
 
-            # 1. Search local database to see if we can resolve the song quickly
             regex_title = escaped_regex(title)
             regex_artist = escaped_regex(artist) if artist else None
-            
+
             query = {"song.title": regex_title}
             if regex_artist:
                 query["song.artist"] = regex_artist
-                
+
             match_doc = await database[db.LIKED_SONGS].find_one(query)
             if not match_doc:
                 query = {"songs.title": regex_title}
                 if regex_artist:
                     query["songs.artist"] = regex_artist
                 match_doc = await database[db.PLAYLISTS].find_one(query, {"songs.$": 1})
-                
+
             if match_doc:
                 song = match_doc["song"] if "song" in match_doc else match_doc["songs"][0]
                 song_item = {
@@ -455,7 +580,6 @@ async def import_playlist(
                 else:
                     matched.append(song_item)
             else:
-                # 2. Local cache miss: Search YouTube Music catalog directly!
                 search_query = f"{title} {artist}".strip()
                 search_matches = await search_yt_music_songs(search_query)
                 if search_matches:
@@ -477,8 +601,7 @@ async def import_playlist(
                         "artist": artist,
                         "album": track.get("album", "")
                     })
-                    
-        # If any matches, let's create a new playlist for the user!
+
         if matched:
             new_playlist = {
                 "userId": ObjectId(current_user["id"]),
@@ -487,10 +610,11 @@ async def import_playlist(
                 "songs": matched,
                 "visibility": "private",
                 "followers": 0,
+                "collaborators": [],
                 "createdAt": datetime.utcnow()
             }
             await database[db.PLAYLISTS].insert_one(new_playlist)
-            
+
         return {
             "success": True,
             "data": {
@@ -505,8 +629,10 @@ async def import_playlist(
         logger.error(f"Error importing playlist: {str(e)}")
         return {"success": False, "error": f"Import failed: {str(e)}"}
 
+
 class AddSongRequest(BaseModel):
     song: SongSchema
+
 
 @router.post("/{id}/songs")
 async def add_song_to_playlist(
@@ -517,33 +643,32 @@ async def add_song_to_playlist(
     try:
         database = db.get_db()
         playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
-        
+
         if not playlist:
             return {"success": False, "error": "Playlist not found"}
-            
-        if str(playlist["userId"]) != current_user["id"]:
+
+        if not is_owner_or_collaborator(playlist, current_user["id"]):
             return {"success": False, "error": "Unauthorized to modify this playlist"}
-            
+
         song_dict = payload.song.model_dump()
         songs = playlist.get("songs", [])
-        
-        # Check duplicate
+
         if any(s.get("videoId") == song_dict.get("videoId") for s in songs):
             return {
                 "success": False,
                 "error": "Song is already in this playlist."
             }
-            
+
         await database[db.PLAYLISTS].update_one(
             {"_id": parse_object_id(id)},
             {"$push": {"songs": song_dict}}
         )
-        
+
         updated_playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
         updated_playlist["_id"] = str(updated_playlist["_id"])
         updated_playlist["id"] = updated_playlist["_id"]
         updated_playlist["userId"] = str(updated_playlist["userId"])
-        
+
         return {
             "success": True,
             "data": updated_playlist
@@ -551,3 +676,44 @@ async def add_song_to_playlist(
     except Exception as e:
         logger.error(f"Error adding song to playlist {id}: {str(e)}")
         return {"success": False, "error": f"Failed to add song to playlist: {str(e)}"}
+
+
+@router.delete("/{id}/songs/{song_index}")
+async def remove_song_from_playlist(
+    id: str = Path(...),
+    song_index: int = Path(..., description="Index of the song to remove"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Remove a song by its index in the playlist. Allows both owner and collaborators."""
+    try:
+        database = db.get_db()
+        playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
+
+        if not playlist:
+            return {"success": False, "error": "Playlist not found"}
+
+        if not is_owner_or_collaborator(playlist, current_user["id"]):
+            return {"success": False, "error": "Unauthorized to modify this playlist"}
+
+        songs = playlist.get("songs", [])
+        if song_index < 0 or song_index >= len(songs):
+            return {"success": False, "error": "Invalid song index"}
+
+        songs.pop(song_index)
+        await database[db.PLAYLISTS].update_one(
+            {"_id": parse_object_id(id)},
+            {"$set": {"songs": songs}}
+        )
+
+        updated_playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
+        updated_playlist["_id"] = str(updated_playlist["_id"])
+        updated_playlist["id"] = updated_playlist["_id"]
+        updated_playlist["userId"] = str(updated_playlist["userId"])
+
+        return {
+            "success": True,
+            "data": updated_playlist
+        }
+    except Exception as e:
+        logger.error(f"Error removing song from playlist {id}: {str(e)}")
+        return {"success": False, "error": str(e)}
