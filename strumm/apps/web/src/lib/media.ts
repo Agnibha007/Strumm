@@ -27,25 +27,38 @@ export function getArtworkCandidates(
   const videoId = getSongVideoId(song);
   const candidates: string[] = [];
 
-  // Priority order: most reliable YouTube thumbnails first
+  // Priority order: 16:9 thumbnails first (no letterboxing), then fallbacks
   if (videoId && !videoId.startsWith("podcast-")) {
-    const directUrls = [
-      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    // 16:9 thumbnails - no letterboxing, match video aspect ratio
+    const hdUrls16_9 = [
+      `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,  // 1280x720 (16:9)
+      `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,      // 320x180 (16:9)
+      `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+      `https://img.youtube.com/vi/${videoId}/0.jpg`,          // 1280x720 (16:9)
+      `https://img.youtube.com/vi/${videoId}/1.jpg`,          // 1280x720 (16:9)
+      `https://img.youtube.com/vi/${videoId}/2.jpg`,
+      `https://img.youtube.com/vi/${videoId}/3.jpg`,
+    ];
+
+    // 4:3 thumbnails - often have baked-in letterboxing (use as fallback)
+    const hdUrls4_3 = [
+      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,      // 480x360 (4:3)
       `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-      `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
-      `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+      `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,      // 640x480 (4:3)
     ];
 
     // For hero (large) images, add optimized proxy URLs first (WebP, resized)
     if (hero) {
       candidates.push(
-        ...directUrls.slice(0, 2).map((u) => getOptimizedArtworkUrl(u, 320)),
-      );
+        ...hdUrls16_9.slice(0, 2).map((u) => getOptimizedArtworkUrl(u, 320)),
+      )
     }
 
-    // Always add direct URLs as fallback
-    candidates.push(...directUrls);
+    // Prioritize 16:9 thumbnails (no letterboxing)
+    candidates.push(...hdUrls16_9);
+    // Then 4:3 as fallback
+    candidates.push(...hdUrls4_3);
   }
 
   // Fallback to API-provided thumbnail if available
@@ -54,14 +67,6 @@ export function getArtworkCandidates(
       ? song.thumbnail.replace("http://", "https://")
       : song.thumbnail;
     candidates.push(thumb);
-  }
-
-  // Additional fallbacks as a last resort
-  if (videoId && !videoId.startsWith("podcast-")) {
-    candidates.push(
-      `https://img.youtube.com/vi/${videoId}/0.jpg`,
-      `https://img.youtube.com/vi/${videoId}/1.jpg`,
-    );
   }
 
   return [...new Set(candidates.filter(Boolean))];
