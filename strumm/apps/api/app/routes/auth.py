@@ -9,7 +9,7 @@ from pydantic import BaseModel, EmailStr
 from bson import ObjectId
 from app.database import mongodb as db
 from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password
-from app.services.email_service import send_otp_email, send_resend_otp_email
+from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_email
 from app.services.security import sanitize_text, sanitize_username, parse_object_id
 import httpx
 import logging
@@ -633,18 +633,18 @@ async def forgot_password(request: ForgotPasswordRequest):
         
         logger.info(f"Generated password reset token for {email}")
         
-        # TODO: Send actual email with reset link
-        # For now, just log it for development
         reset_link = f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/reset-password?token={reset_token}&email={email}"
-        logger.info(f"Password reset link for {email}: {reset_link}")
         
-        # In production, send email with reset_link
-        # email_sent = await send_password_reset_email(email, reset_link)
+        # Send actual email with reset link
+        email_sent = await send_password_reset_email(email, reset_link)
+        if not email_sent:
+            logger.warning(f"Failed to send password reset email to {email}, but continuing (dev mode fallback)")
         
         return {
             "success": True,
             "message": "If an account exists with this email, a password reset link has been sent.",
-            "dev_reset_link": reset_link if os.getenv("ENVIRONMENT", "development").lower() == "development" else None
+            "dev_reset_link": reset_link if os.getenv("ENVIRONMENT", "development").lower() == "development" else None,
+            "email_sent": email_sent
         }
     except Exception as e:
         logger.error(f"Error generating password reset: {str(e)}")

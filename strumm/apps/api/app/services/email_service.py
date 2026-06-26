@@ -113,3 +113,55 @@ async def send_resend_otp_email(receiver_email: str, otp_code: str) -> bool:
     except Exception as e:
         logger.error(f"Failed sending OTP via Resend: {str(e)}. Trying SMTP fallback.")
         return await send_otp_email(receiver_email, otp_code)
+
+
+async def send_password_reset_email(receiver_email: str, reset_link: str) -> bool:
+    # If credentials are not set up, skip and log to console (development fallback)
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        logger.warning("SMTP credentials not fully configured. Skipping real email dispatch.")
+        return False
+        
+    try:
+        # Create message envelope
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = receiver_email
+        msg["Subject"] = "Reset your Strumm password"
+        
+        # HTML body
+        html_body = f"""
+        <html>
+            <body style="background-color: #080808; color: #FFFFFF; font-family: sans-serif; padding: 24px; text-align: center;">
+                <div style="max-width: 450px; margin: 0 auto; background-color: #121212; border: 1px solid #222222; border-radius: 12px; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+                    <h1 style="font-family: serif; color: #FF5500; font-size: 32px; margin-bottom: 8px;">Strumm</h1>
+                    <p style="text-transform: uppercase; font-size: 10px; tracking: 2px; color: #C6A15B; font-weight: bold; margin-top: 0;">Where your music lives.</p>
+                    <hr style="border-color: #222222; margin: 24px 0;" />
+                    <p style="font-size: 14px; color: #8E8E93;">You requested to reset your password. Click the button below to create a new password:</p>
+                    <div style="margin: 32px 0;">
+                        <a href="{reset_link}" style="display: inline-block; background-color: #FF5500; color: #FFFFFF; font-family: serif; font-size: 16px; font-weight: bold; padding: 16px 32px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 12px rgba(255, 85, 0, 0.4);">
+                            Reset Password
+                        </a>
+                    </div>
+                    <p style="font-size: 11px; color: #8E8E93;">This reset link expires in 1 hour. If you did not request this, you can safely ignore this mail.</p>
+                </div>
+            </body>
+        </html>
+        """
+        msg.attach(MIMEText(html_body, "html"))
+        
+        # Dispatch SMTP call in thread pool to avoid blocking event loop
+        import asyncio
+        def _send():
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=8)
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
+            server.quit()
+        
+        await asyncio.to_thread(_send)
+        
+        logger.info(f"Successfully dispatched password reset mail to {receiver_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to dispatch password reset email to {receiver_email}: {str(e)}")
+        return False
