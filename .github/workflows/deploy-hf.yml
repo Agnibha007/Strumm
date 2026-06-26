@@ -17,53 +17,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Configure Git
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-      - name: Check Secret
+      - name: Configure Hugging Face Credentials
         env:
-          HF_SSH_KEY: ${{ secrets.HF_SSH_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          if [ -z "$HF_SSH_KEY" ]; then
-            echo "EMPTY"
-            exit 1
-          else
-            echo "FOUND"
-            echo "Length: ${#HF_SSH_KEY}"
-          fi
-      - name: Configure SSH
-        env:
-          HF_SSH_KEY: ${{ secrets.HF_SSH_KEY }}
-        run: |
-          set -x
-        
-          mkdir -p ~/.ssh
-        
-          printf "%s" "$HF_SSH_KEY" > ~/.ssh/id_ed25519
-        
-          ls -la ~/.ssh
-        
-          chmod 600 ~/.ssh/id_ed25519
-        
-          cat ~/.ssh/id_ed25519 | head -2
-        
-          ssh-keyscan huggingface.co >> ~/.ssh/known_hosts
-        
-          ssh -T git@huggingface.co || true
+          git config --global credential.helper store
+          echo "https://Agnibha07:${HF_TOKEN}@huggingface.co" > ~/.git-credentials
 
       - name: Clone Space
         run: |
-          git clone git@huggingface.co:spaces/Agnibha07/Strumm.git hf-space
+          git clone https://huggingface.co/spaces/Agnibha07/Strumm hf-space
 
       - name: Clean Space
         run: |
-          find hf-space -mindepth 1 -maxdepth 1 \
-            ! -name ".git" \
-            -exec rm -rf {} +
+          find hf-space -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
 
       - name: Copy Backend
         run: |
@@ -79,13 +54,11 @@ jobs:
             --exclude="venv" \
             --exclude=".env" \
             --exclude=".DS_Store" \
-            strumm/apps/api/ \
-            hf-space/
+            strumm/apps/api/ hf-space/
 
-      - name: Commit & Push
+      - name: Commit Changes
         run: |
           cd hf-space
-
           git add -A
 
           if git diff --cached --quiet; then
@@ -93,6 +66,9 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Deploy backend from GitHub Actions"
+          git commit -m "Auto deploy from GitHub"
 
+      - name: Push Changes
+        run: |
+          cd hf-space
           git push origin HEAD:main
