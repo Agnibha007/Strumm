@@ -1,0 +1,50 @@
+name: Deploy Backend to Hugging Face
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "strumm/apps/api/**"
+      - ".github/workflows/deploy-hf.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Clone Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git clone https://Agnibha07:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm hf-space
+
+      - name: Remove old files
+        run: |
+          find hf-space -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            -exec rm -rf {} +
+
+      - name: Copy backend
+        run: |
+          cp -r strumm/apps/api/* hf-space/
+
+      - name: Commit & Push
+        run: |
+          cd hf-space
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add .
+
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+          else
+            git commit -m "Auto deploy from GitHub"
+            git push
+          fi
