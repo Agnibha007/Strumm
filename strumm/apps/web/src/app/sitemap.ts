@@ -1,6 +1,7 @@
 import { MetadataRoute } from "next";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+// Try documented env var (NEXT_PUBLIC_API_URL) then the code-standard one (NEXT_PUBLIC_API_BASE_URL)
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 interface SitemapSong {
   videoId: string;
