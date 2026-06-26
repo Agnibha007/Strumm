@@ -133,12 +133,8 @@ export default function LyricsPage() {
         className="absolute inset-0 bg-cover bg-center filter blur-3xl opacity-30 transition-all duration-1000 scale-110"
         style={currentSong ? { backgroundImage: `url(${currentSong.thumbnail})` } : {}}
       />
-      {/* Dynamic Dominant Color Blending */}
-      <div 
-        className="absolute inset-0 transition-all duration-1000" 
-        style={{ background: `radial-gradient(circle at center, ${backdropColor} 0%, transparent 70%)` }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/60" />
+      {/* Subtle dark overlay for readability */}
+      <div className="absolute inset-0 bg-black/40" />
 
       {/* Header */}
       <div className="relative z-10 flex items-center justify-between border-b border-border/20 pb-6">

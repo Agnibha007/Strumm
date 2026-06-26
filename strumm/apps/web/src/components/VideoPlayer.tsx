@@ -179,7 +179,7 @@ export default function VideoPlayer({ onVideoError }: VideoPlayerProps) {
       <video
         ref={videoRef}
         src={videoUrl || undefined}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-cover"
         preload={audioQuality === "data-saver" ? "metadata" : "auto"}
         playsInline
         controls
