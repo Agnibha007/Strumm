@@ -31,6 +31,21 @@ def get_allowed_origins():
     # App domain from env var (set on Render: https://strumm.me)
     app_origin = os.getenv("STRUMM_APP_URL", "http://localhost:3000").rstrip("/")
     always_allowed = [app_origin, "http://localhost:5173", "http://localhost:3000"]
+    # Auto-add www variant if not already present (covers both strumm.me and www.strumm.me)
+    from urllib.parse import urlparse
+    parsed = urlparse(app_origin)
+    if parsed.hostname and not parsed.hostname.startswith("www."):
+        www_origin = f"{parsed.scheme}://www.{parsed.hostname}"
+        if parsed.port:
+            www_origin += f":{parsed.port}"
+        if www_origin not in origins:
+            origins.append(www_origin)
+    elif parsed.hostname and parsed.hostname.startswith("www."):
+        bare_origin = f"{parsed.scheme}://{parsed.hostname[4:]}"
+        if parsed.port:
+            bare_origin += f":{parsed.port}"
+        if bare_origin not in origins:
+            origins.append(bare_origin)
     for origin in always_allowed:
         if origin not in origins:
             origins.append(origin)
