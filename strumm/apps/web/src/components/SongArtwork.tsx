@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Music } from "lucide-react";
-import Image from "next/image";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates } from "web/lib/media";
 
@@ -13,8 +12,7 @@ interface SongArtworkProps {
   iconClassName?: string;
   priority?: boolean;
   /** 
-   * Responsive sizes string for <img sizes> attribute / next/image sizes prop.
-   * Required for priority/hero images using next/image optimization.
+   * Responsive sizes hint for the browser.
    * Example: "(max-width: 768px) 256px, 320px"
    */
   sizes?: string;
@@ -66,27 +64,14 @@ export default function SongArtwork({
         <div className="absolute inset-0 flex items-center justify-center text-muted z-20">
           <Music className={iconClassName} />
         </div>
-      ) : priority ? (
-        /* Use next/image with optimization for critical hero images */
-        <Image
-          src={src}
-          alt={alt || song?.title || "Artwork"}
-          fill
-          sizes={sizes || "256px"}
-          priority
-          referrerPolicy="no-referrer"
-          onLoad={handleLoad}
-          onError={handleError}
-          className={`object-cover ${loaded ? "image-reveal" : "opacity-0"}`}
-        />
       ) : (
-        /* Use regular img for non-critical thumbnails */
         <img
           src={src}
           alt={alt || song?.title || "Artwork"}
-          loading="lazy"
+          loading={priority ? "eager" : "lazy"}
           decoding="async"
           referrerPolicy="no-referrer"
+          sizes={sizes}
           onLoad={handleLoad}
           onError={handleError}
           className={`absolute inset-0 w-full h-full object-cover ${

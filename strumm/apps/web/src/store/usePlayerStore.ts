@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { Song } from "@strumm/types";
 import { getBestArtwork } from "web/lib/media";
 import { apiUrl } from "web/lib/api";
+import { useAuthStore } from "web/store/useAuthStore";
 
 type RepeatMode = "none" | "all" | "one";
 
@@ -167,7 +168,12 @@ export const usePlayerStore = create<PlayerState>()(
         if (isRadio && radioSeed === seedVideoId) return;
 
         try {
-          const res = await fetch(apiUrl(`/radio/${seedVideoId}?limit=20`));
+          const token = useAuthStore.getState().token;
+          const headers: Record<string, string> = {};
+          if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+          }
+          const res = await fetch(apiUrl(`/radio/${seedVideoId}?limit=20`), { headers });
           const json = await res.json();
           if (json.success && json.data?.songs?.length > 0) {
             get().startRadio(seedVideoId, json.data.songs);
