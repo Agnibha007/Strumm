@@ -17,24 +17,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Configure Git
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-      - name: Clone Hugging Face Space
+      - name: Configure SSH
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SSH_KEY: ${{ secrets.HF_SSH_KEY }}
         run: |
-          git clone https://Agnibha07:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm hf-space
+          mkdir -p ~/.ssh
 
-      - name: Show Remote
+          echo "$HF_SSH_KEY" > ~/.ssh/id_ed25519
+
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan huggingface.co >> ~/.ssh/known_hosts
+
+      - name: Clone Space
         run: |
-          cd hf-space
-          git remote -v
+          git clone git@huggingface.co:spaces/Agnibha07/Strumm.git hf-space
 
       - name: Clean Space
         run: |
@@ -59,27 +63,17 @@ jobs:
             strumm/apps/api/ \
             hf-space/
 
-      - name: Commit Changes
+      - name: Commit & Push
         run: |
           cd hf-space
 
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No changes."
+            echo "No changes to deploy."
             exit 0
           fi
 
-          git commit -m "Auto deploy from GitHub"
+          git commit -m "Deploy backend from GitHub Actions"
 
-      - name: Push to Hugging Face
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          cd hf-space
-        
-          git remote set-url origin https://Agnibha07:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm
-        
-          git remote -v
-        
           git push origin HEAD:main
