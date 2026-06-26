@@ -81,6 +81,9 @@ export default function SongArtwork({
             className={`absolute inset-0 w-full h-full object-fill ${
               loaded ? "image-reveal" : "opacity-0"
             }`}
+          style={{
+            imageRendering:'auto',
+          }}
         />
       )}
     </div>
