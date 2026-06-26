@@ -630,11 +630,11 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <div
                 className={`overflow-hidden border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 ${
                   effectiveShowLyrics 
-                    ? "w-52 h-52 md:w-72 md:h-72" 
-                    : "w-64 h-64 md:w-80 md:h-80"
+                    ? "w-72 h-52 md:w-96 md:h-72" 
+                    : "w-96 h-64 md:w-[320px] md:h-80"
                 }`}
               >
-                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 256px, 320px" />
+                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 384px, 512px" />
                 {/* Premium reflection gloss overlay */}
                 <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none rounded-2xl md:rounded-3xl" />
               </div>
