@@ -36,21 +36,39 @@ jobs:
 
       - name: Copy Backend
         run: |
-          rsync -av \
-            --delete \
+          rsync -av --delete \
             --exclude=".git" \
+            --exclude=".github" \
+            --exclude="__pycache__" \
+            --exclude="*.pyc" \
+            --exclude=".pytest_cache" \
+            --exclude=".mypy_cache" \
+            --exclude=".ruff_cache" \
+            --exclude=".venv" \
+            --exclude="venv" \
+            --exclude=".env" \
+            --exclude=".DS_Store" \
             strumm/apps/api/ \
             hf-space/
 
-      - name: Commit & Push
+      - name: Configure Hugging Face Remote
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cd hf-space
+          git remote set-url origin https://oauth2:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm
+
+      - name: Commit and Push
         run: |
           cd hf-space
 
-          git add .
+          git add -A
 
           if git diff --cached --quiet; then
             echo "No changes to deploy."
-          else
-            git commit -m "Auto deploy from GitHub Actions"
-            git push origin main
+            exit 0
           fi
+
+          git commit -m "Deploy backend from GitHub Actions"
+
+          git push origin main
