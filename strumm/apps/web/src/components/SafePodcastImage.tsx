@@ -57,7 +57,7 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
           decoding="async"
           onLoad={handleLoad}
           onError={handleError}
-          className={`absolute inset-0 w-full h-full object-fill ${
+          className={`absolute inset-0 w-full h-full object-cover ${
             loaded ? "image-reveal" : "opacity-0"
           }`}
           {...props}

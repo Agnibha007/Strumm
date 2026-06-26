@@ -78,7 +78,7 @@ export default function SongArtwork({
           sizes={sizes}
           onLoad={handleLoad}
           onError={handleError}
-            className={`absolute inset-0 w-full h-full object-fill ${
+            className={`absolute inset-0 w-full h-full object-cover ${
               loaded ? "image-reveal" : "opacity-0"
             }`}
           style={{
