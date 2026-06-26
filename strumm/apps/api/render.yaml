@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: strumm-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: STRUMM_APP_URL
+        value: https://strumm.me
+      - key: ALLOWED_ORIGINS
+        value: https://strumm.me,https://www.strumm.me
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SMTP_SERVER
+        sync: false
+      - key: SENDER_EMAIL
+        sync: false
+      - key: SENDER_PASSWORD
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SENDER_FROM
+        sync: false
+      - key: EXPOSE_DEV_OTP
+        sync: false
+      - key: DNS_NAMESERVERS
+        value: 1.1.1.1,8.8.8.8

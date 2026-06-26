@@ -187,6 +187,11 @@ app.include_router(recommendation.router)
 app.include_router(share.router)
 app.include_router(social.router)
 
+# Root endpoint for Render health checks
+@app.get("/")
+async def root():
+    return {"success": True, "message": "Strumm API is running"}
+
 # Health checks
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check(request: Request):
