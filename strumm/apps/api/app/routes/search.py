@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Query
 from typing import Optional, List, Dict, Any
 import asyncio
-from ytmusicapi import YTMusic
 from app.database import mongodb as db
 from app.services.podcast_index import PodcastIndexNotConfigured, search_podcasts
 from app.services.security import escaped_regex, sanitize_enum, sanitize_text
 from app.services.cache import cache_search, get_cached_search
+from app.services.ytmusic import get_ytmusic, search_ytmusic_safe
 import logging
 
 logger = logging.getLogger("strumm-search")
@@ -14,9 +14,8 @@ router = APIRouter(prefix="/search", tags=["search"])
 # Thread-safe helper to search YTMusic tracks
 async def search_yt_music_songs(q: str) -> List[Dict[str, Any]]:
     try:
-        yt = YTMusic()
-        # Run synchronous call in thread pool to prevent blocking event loop
-        search_results = await asyncio.to_thread(yt.search, q, filter="songs")
+        # Use shared ytmusic wrapper with SSL retry, run in thread pool
+        search_results = await asyncio.to_thread(search_ytmusic_safe, q, filter="songs")
         songs = []
         for item in search_results:
             video_id = item.get("videoId")
@@ -66,8 +65,7 @@ async def search_yt_music_songs(q: str) -> List[Dict[str, Any]]:
 # Helper to search YTMusic albums
 async def search_yt_music_albums(q: str) -> List[Dict[str, Any]]:
     try:
-        yt = YTMusic()
-        search_results = await asyncio.to_thread(yt.search, q, filter="albums")
+        search_results = await asyncio.to_thread(search_ytmusic_safe, q, filter="albums")
         albums = []
         for item in search_results:
             browse_id = item.get("browseId")
@@ -95,8 +93,7 @@ async def search_yt_music_albums(q: str) -> List[Dict[str, Any]]:
 # Helper to search YTMusic artists
 async def search_yt_music_artists(q: str) -> List[Dict[str, Any]]:
     try:
-        yt = YTMusic()
-        search_results = await asyncio.to_thread(yt.search, q, filter="artists")
+        search_results = await asyncio.to_thread(search_ytmusic_safe, q, filter="artists")
         artists = []
         for item in search_results:
             browse_id = item.get("browseId")
@@ -168,7 +165,7 @@ async def search_local_users(q: str) -> List[Dict[str, Any]]:
 @router.get("/song/{id}")
 async def get_song_by_id(id: str):
     try:
-        yt = YTMusic()
+        yt = await asyncio.to_thread(get_ytmusic)
         # ytmusicapi get_song doesn't fetch metadata well in all versions, get_watch_playlist is better
         watch = await asyncio.to_thread(yt.get_watch_playlist, videoId=id, limit=1)
         if not watch or not watch.get("tracks"):
@@ -288,7 +285,7 @@ async def search_all(
 
 async def get_yt_music_album_tracks(browse_id: str) -> Dict[str, Any]:
     try:
-        yt = YTMusic()
+        yt = await asyncio.to_thread(get_ytmusic)
         album_details = await asyncio.to_thread(yt.get_album, browse_id)
         if not album_details:
             return {"success": False, "error": "Album not found"}

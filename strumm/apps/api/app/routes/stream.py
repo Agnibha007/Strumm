@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks
-from ytmusicapi import YTMusic
 import asyncio
 
 from app.database import mongodb as db
@@ -41,7 +40,8 @@ async def get_song_metadata(video_id: str) -> Optional[dict]:
 
     # 2. Fetch from YTMusic API
     try:
-        yt = YTMusic()
+        from app.services.ytmusic import get_ytmusic
+        yt = await asyncio.to_thread(get_ytmusic)
         watch = await asyncio.to_thread(yt.get_watch_playlist, videoId=video_id, limit=1)
         if watch and watch.get("tracks"):
             track = watch["tracks"][0]

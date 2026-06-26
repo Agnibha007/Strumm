@@ -1,10 +1,12 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bullseye
 
 WORKDIR /app
 
-# Minimize image size: no apt packages needed (no ffmpeg/yt-dlp)
-# Clean apt lists to avoid caching them in a layer
-RUN rm -rf /var/lib/apt/lists/*
+# Install CA certificates for SSL/TLS (required for YouTube Music API in containers)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies with pip cache disabled
 COPY requirements.txt .

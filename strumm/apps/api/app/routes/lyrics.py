@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Path, Query
 import httpx
-from ytmusicapi import YTMusic
 from app.database import mongodb as db
 from app.services.security import sanitize_multiline_text, sanitize_text, sanitize_youtube_id
 from app.services.cache import cache_lyrics, get_cached_lyrics
+from app.services.ytmusic import get_ytmusic
 import logging
 import re
 
@@ -85,7 +85,7 @@ async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = No
     return None
 
 def fetch_ytmusic_lyrics_sync(video_id: str) -> Optional[dict]:
-    yt = YTMusic()
+    yt = get_ytmusic()
     watch = yt.get_watch_playlist(videoId=video_id, limit=1)
     lyrics_browse_id = watch.get("lyrics")
     if isinstance(lyrics_browse_id, dict):
