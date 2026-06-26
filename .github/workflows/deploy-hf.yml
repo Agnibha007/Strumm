@@ -39,13 +39,21 @@ jobs:
         env:
           HF_SSH_KEY: ${{ secrets.HF_SSH_KEY }}
         run: |
+          set -x
+        
           mkdir -p ~/.ssh
-
-          echo "$HF_SSH_KEY" > ~/.ssh/id_ed25519
-
+        
+          printf "%s" "$HF_SSH_KEY" > ~/.ssh/id_ed25519
+        
+          ls -la ~/.ssh
+        
           chmod 600 ~/.ssh/id_ed25519
-
+        
+          cat ~/.ssh/id_ed25519 | head -2
+        
           ssh-keyscan huggingface.co >> ~/.ssh/known_hosts
+        
+          ssh -T git@huggingface.co || true
 
       - name: Clone Space
         run: |
