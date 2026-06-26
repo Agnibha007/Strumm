@@ -17,34 +17,40 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
       - name: Clone Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git clone https://Agnibha07:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm hf-space
+          git clone https://oauth2:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm hf-space
 
-      - name: Remove old files
+      - name: Clean Hugging Face Space
         run: |
           find hf-space -mindepth 1 -maxdepth 1 \
             ! -name ".git" \
             -exec rm -rf {} +
 
-      - name: Copy backend
+      - name: Copy Backend
         run: |
-          cp -r strumm/apps/api/* hf-space/
+          rsync -av \
+            --delete \
+            --exclude=".git" \
+            strumm/apps/api/ \
+            hf-space/
 
       - name: Commit & Push
         run: |
           cd hf-space
-
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
 
           git add .
 
           if git diff --cached --quiet; then
             echo "No changes to deploy."
           else
-            git commit -m "Auto deploy from GitHub"
-            git push
+            git commit -m "Auto deploy from GitHub Actions"
+            git push origin main
           fi
