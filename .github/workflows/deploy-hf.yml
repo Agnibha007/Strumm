@@ -29,7 +29,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git clone https://oauth2:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm hf-space
+          git clone https://Agnibha07:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm hf-space
 
       - name: Show Remote
         run: |
@@ -77,7 +77,9 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           cd hf-space
-
-          git push \
-            https://oauth2:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm \
-            HEAD:main
+        
+          git remote set-url origin https://Agnibha07:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm
+        
+          git remote -v
+        
+          git push origin HEAD:main
