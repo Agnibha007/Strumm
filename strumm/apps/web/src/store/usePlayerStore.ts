@@ -75,6 +75,7 @@ interface PlayerState {
   stopRadio: () => void;
   fetchMoreRadio: () => Promise<void>;
   setRadioSession: (session: string | null) => void;
+  triggerRadio: (seedVideoId: string) => Promise<void>;
   
   // Actions
   setCurrentSong: (song: Song | null) => void;
@@ -158,6 +159,22 @@ export const usePlayerStore = create<PlayerState>()(
 
       setRadioSession: (session) => {
         set({ radioSession: session });
+      },
+
+      triggerRadio: async (seedVideoId: string) => {
+        const { isRadio, radioSeed } = get();
+        // Don't restart if already playing radio from this seed
+        if (isRadio && radioSeed === seedVideoId) return;
+
+        try {
+          const res = await fetch(apiUrl(`/radio/${seedVideoId}?limit=20`));
+          const json = await res.json();
+          if (json.success && json.data?.songs?.length > 0) {
+            get().startRadio(seedVideoId, json.data.songs);
+          }
+        } catch (e) {
+          console.error("Failed to start radio:", e);
+        }
       },
 
       fetchMoreRadio: async () => {

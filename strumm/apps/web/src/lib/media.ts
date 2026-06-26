@@ -14,23 +14,35 @@ export function getArtworkCandidates(song?: Pick<Song, "videoId" | "thumbnail"> 
   const videoId = getSongVideoId(song);
   const candidates: string[] = [];
 
+  // Priority order: most reliable YouTube thumbnails first
   if (videoId && !videoId.startsWith("podcast-")) {
     candidates.push(
+      // Most reliable: hqdefault exists for virtually every YouTube video
+      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+      // Second best: mqdefault also widely available
+      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+      // Less reliable but higher quality
+      `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
+      // Rarely exists but best quality
       `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-      `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`
     );
   }
 
+  // Fallback to API-provided thumbnail if available
   if (song?.thumbnail) {
-    candidates.push(song.thumbnail);
+    // Force HTTPS to avoid mixed content
+    const thumb = song.thumbnail.startsWith("http://")
+      ? song.thumbnail.replace("http://", "https://")
+      : song.thumbnail;
+    candidates.push(thumb);
   }
 
+  // Additional fallbacks as a last resort
   if (videoId && !videoId.startsWith("podcast-")) {
     candidates.push(
-      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-      `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       `https://img.youtube.com/vi/${videoId}/0.jpg`,
+      `https://img.youtube.com/vi/${videoId}/1.jpg`,
     );
   }
 

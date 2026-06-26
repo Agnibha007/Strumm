@@ -7,7 +7,7 @@ import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import Link from "next/link";
 
-import { Search, Play, Heart, Sparkles, Loader2, ListMusic } from "lucide-react";
+import { Search, Play, Heart, Sparkles, Loader2, ListMusic, Radio } from "lucide-react";
 import { Song } from "@strumm/types";
 
 import LoginPage from "./login/page";
@@ -15,7 +15,7 @@ import AICuratorChat from "web/components/AICuratorChat";
 
 export default function HomePage() {
   const { token } = useAuthStore();
-  const { playSong } = usePlayerStore();
+  const { playSong, isRadio, triggerRadio } = usePlayerStore();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Song[]>([]);
@@ -164,26 +164,39 @@ export default function HomePage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {recommendations.map((song, idx) => (
-                  <button
+                  <div
                     key={`rec-${song.videoId}-${idx}`}
-                    onClick={() => playSong(song, recommendations)}
-                    className="p-3 bg-surface/40 border border-border/40 hover:bg-surface hover:border-border/80 rounded-xl transition flex items-center gap-3 text-left w-full cursor-pointer group"
+                    className="p-3 bg-surface/40 border border-border/40 hover:bg-surface hover:border-border/80 rounded-xl transition group"
                   >
-                    <div className="w-12 h-12 rounded overflow-hidden flex-shrink-0 relative">
-                      <SongArtwork song={song} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Play className="w-4 h-4 text-white fill-current" />
-                      </div>
+                    <div className="flex items-center gap-3 text-left w-full cursor-pointer">
+                      <button
+                        onClick={() => playSong(song, recommendations)}
+                        className="flex items-center gap-3 flex-1 min-w-0"
+                      >
+                        <div className="w-12 h-12 rounded overflow-hidden flex-shrink-0 relative">
+                          <SongArtwork song={song} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Play className="w-4 h-4 text-white fill-current" />
+                          </div>
+                        </div>
+                        <div className="min-w-0 flex-grow">
+                          <div className="font-editorial text-sm font-bold text-text truncate group-hover:text-primary transition">
+                            {song.title}
+                          </div>
+                          <div className="text-[10px] text-muted truncate mt-0.5">
+                            {song.artist}
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => triggerRadio(song.videoId)}
+                        className={`p-2 rounded-lg transition flex-shrink-0 self-center ${isRadio ? "text-primary text-glow" : "text-muted hover:text-primary opacity-0 group-hover:opacity-100"}`}
+                        title={isRadio ? "Radio active" : "Start Radio from this song"}
+                      >
+                        <Radio className="w-4 h-4" />
+                      </button>
                     </div>
-                    <div className="min-w-0 flex-grow">
-                      <div className="font-editorial text-sm font-bold text-text truncate group-hover:text-primary transition">
-                        {song.title}
-                      </div>
-                      <div className="text-[10px] text-muted truncate mt-0.5">
-                        {song.artist}
-                      </div>
-                    </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

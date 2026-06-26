@@ -13,7 +13,7 @@ import Link from "next/link";
 
 export default function SearchPage() {
   const { token } = useAuthStore();
-  const { playSong, addToQueue, queue } = usePlayerStore();
+  const { playSong, addToQueue, queue, isRadio, triggerRadio } = usePlayerStore();
   const { show } = useNotificationStore();
   
   const [query, setQuery] = useState("");
@@ -415,6 +415,13 @@ export default function SearchPage() {
                         <div className="text-xs text-muted truncate mt-0.5">{song.artist}</div>
                       </div>
                       <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                        <button
+                          onClick={() => triggerRadio(song.videoId)}
+                          className={`p-1.5 rounded-lg transition ${isRadio ? "text-primary text-glow" : "hover:bg-surface-elevated text-muted hover:text-primary"}`}
+                          title={isRadio ? "Radio active" : "Start Radio from this song"}
+                        >
+                          <Radio className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleLikeSong(song)}
                           className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded-lg transition"

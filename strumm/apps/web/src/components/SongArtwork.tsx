@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Music } from "lucide-react";
+import Image from "next/image";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates } from "web/lib/media";
-import { apiUrl } from "web/lib/api";
-import Image from "next/image";
 
 interface SongArtworkProps {
   song?: Pick<Song, "videoId" | "thumbnail" | "title"> | null;
@@ -13,6 +12,12 @@ interface SongArtworkProps {
   className?: string;
   iconClassName?: string;
   priority?: boolean;
+  /** 
+   * Responsive sizes string for <img sizes> attribute / next/image sizes prop.
+   * Required for priority/hero images using next/image optimization.
+   * Example: "(max-width: 768px) 256px, 320px"
+   */
+  sizes?: string;
 }
 
 export default function SongArtwork({
@@ -21,49 +26,73 @@ export default function SongArtwork({
   className = "",
   iconClassName = "w-5 h-5",
   priority = false,
+  sizes,
 }: SongArtworkProps) {
-  const candidates = useMemo(() => {
-    const directCandidates = getArtworkCandidates(song);
-    const proxiedCandidates = directCandidates
-      .filter((candidate) => candidate.startsWith("http"))
-      .map((candidate) => apiUrl(`/image-proxy?url=${encodeURIComponent(candidate)}`));
-
-    return [...directCandidates, ...proxiedCandidates];
-  }, [song?.videoId, song?.thumbnail]);
+  const candidates = useMemo(() => getArtworkCandidates(song), [song?.videoId, song?.thumbnail]);
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
 
   useEffect(() => {
     setIndex(0);
     setLoaded(false);
+    setErrored(false);
   }, [song?.videoId, song?.thumbnail]);
 
   const src = candidates[index];
-  const exhausted = !src;
+
+  const handleLoad = () => {
+    setLoaded(true);
+    setErrored(false);
+  };
+
+  const handleError = () => {
+    setLoaded(false);
+    const nextIndex = index + 1;
+    if (nextIndex < candidates.length) {
+      setIndex(nextIndex);
+    } else {
+      setErrored(true);
+    }
+  };
 
   return (
     <div className={`relative overflow-hidden bg-surface-elevated ${className}`}>
-      {!loaded && !exhausted && (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-surface-elevated via-border/40 to-surface-elevated" />
-      )}
-      {src ? (
-        <Image
-          src={src}
-          alt={alt || song?.title || ""}
-          fill
-          priority={priority}
-          referrerPolicy="no-referrer"
-          onLoad={() => setLoaded(true)}
-          onError={() => {
-            setLoaded(false);
-            setIndex((current) => current + 1);
-          }}
-          className={`object-cover transition-all duration-300 ${loaded ? "opacity-100 scale-100 blur-none" : "opacity-0 scale-95 blur-md"}`}
-        />
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-muted">
+      {/* Polished shimmer skeleton while loading */}
+      {!loaded && !errored && <div className="image-skeleton" />}
+
+      {/* Fallback icon when all candidates fail */}
+      {errored || !src ? (
+        <div className="absolute inset-0 flex items-center justify-center text-muted z-20">
           <Music className={iconClassName} />
         </div>
+      ) : priority ? (
+        /* Use next/image with optimization for critical hero images */
+        <Image
+          src={src}
+          alt={alt || song?.title || "Artwork"}
+          fill
+          sizes={sizes || "256px"}
+          priority
+          referrerPolicy="no-referrer"
+          onLoad={handleLoad}
+          onError={handleError}
+          className={`object-cover ${loaded ? "image-reveal" : "opacity-0"}`}
+        />
+      ) : (
+        /* Use regular img for non-critical thumbnails */
+        <img
+          src={src}
+          alt={alt || song?.title || "Artwork"}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onLoad={handleLoad}
+          onError={handleError}
+          className={`absolute inset-0 w-full h-full object-cover ${
+            loaded ? "image-reveal" : "opacity-0"
+          }`}
+        />
       )}
     </div>
   );

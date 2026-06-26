@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search, Check, Users, UserPlus, UserMinus } from "lucide-react";
+import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search, Check, Users, UserPlus, UserMinus, Radio } from "lucide-react";
 import { Playlist, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -16,7 +16,7 @@ interface PlaylistDetailPageProps {
 export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) {
   const { id } = use(params);
   const { token, user } = useAuthStore();
-  const { playSong, setQueue, addToQueue, queue } = usePlayerStore();
+  const { playSong, setQueue, addToQueue, queue, isRadio, triggerRadio } = usePlayerStore();
   const router = useRouter();
 
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -311,28 +311,28 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
         {/* Cover Art */}
         <div className="w-48 h-48 md:w-56 md:h-56 rounded-xl bg-surface-elevated flex items-center justify-center border border-border/80 relative shadow-2xl overflow-hidden flex-shrink-0">
           {playlist.songs.length === 1 ? (
-            <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority={true} />
+            <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 192px, 224px" />
           ) : playlist.songs.length === 2 ? (
             <div className="grid grid-cols-2 w-full h-full">
-              <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority={true} />
-              <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority={true} />
+              <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
+              <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
             </div>
           ) : playlist.songs.length === 3 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               <div className="col-span-2 row-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority={true} />
+                <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 192px, 224px" />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority={true} />
+                <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={playlist.songs[2]} className="w-full h-full object-cover" priority={true} />
+                <SongArtwork song={playlist.songs[2]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
               </div>
             </div>
           ) : playlist.songs.length >= 4 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               {playlist.songs.slice(0, 4).map((s, idx) => (
-                <SongArtwork key={idx} song={s} className="w-full h-full object-cover" priority={true} />
+                <SongArtwork key={idx} song={s} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
               ))}
             </div>
           ) : (
@@ -578,6 +578,13 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
                               <Play className="w-3.5 h-3.5 fill-current" />
                             </button>
                             <button
+                              onClick={() => triggerRadio(song.videoId)}
+                              className={`p-1.5 rounded transition cursor-pointer ${isRadio ? "text-primary text-glow" : "hover:bg-surface-elevated text-muted hover:text-primary"}`}
+                              title={isRadio ? "Radio active" : "Start Radio from this song"}
+                            >
+                              <Radio className="w-3.5 h-3.5" />
+                            </button>
+                            <button
                               onClick={() => handleLikeSong(song)}
                               className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded transition cursor-pointer"
                               title="Like track"
@@ -644,6 +651,13 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
                         {Math.floor(song.duration / 60)}:{(song.duration % 60) < 10 ? "0" : ""}{song.duration % 60}
                       </span>
                       <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => triggerRadio(song.videoId)}
+                          className={`p-1.5 rounded-lg transition active:scale-95 cursor-pointer ${isRadio ? "text-primary text-glow" : "hover:bg-surface-elevated text-muted hover:text-primary"}`}
+                          title={isRadio ? "Radio active" : "Start Radio from this song"}
+                        >
+                          <Radio className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleLikeSong(song)}
                           className="p-1.5 hover:bg-surface-elevated text-muted hover:text-primary rounded-lg transition active:scale-95 cursor-pointer"

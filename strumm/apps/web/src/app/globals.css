@@ -197,6 +197,73 @@ h1, h2, h3, h4, .font-editorial {
   box-shadow: 0 4px 30px var(--glow);
 }
 
+/* ── Image lazy-load skeleton shimmer ── */
+@keyframes image-shimmer {
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+  }
+  100% {
+    transform: translateX(200%) skewX(-15deg);
+  }
+}
+
+.image-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--surface-elevated);
+  overflow: hidden;
+}
+
+.image-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%) skewX(-15deg);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--border) 40%, transparent) 50%,
+    transparent 100%
+  );
+  animation: image-shimmer 1.8s ease-in-out infinite;
+}
+
+/* ── Image reveal animation (delayed, spring-like) ── */
+@keyframes image-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(1.05);
+    filter: blur(8px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.image-reveal {
+  animation: image-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-skeleton::after {
+    animation: none;
+    opacity: 0.3;
+  }
+  .image-reveal {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 @keyframes soft-enter {
   from {
     opacity: 0;

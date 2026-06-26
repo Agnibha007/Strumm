@@ -24,7 +24,8 @@ import {
   ChevronDown,
   X,
   Video,
-  Sparkles
+  Sparkles,
+  Radio
 } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { apiUrl, cleanText, decodeHtml } from "web/lib/api";
@@ -67,6 +68,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     setPodcastMode,
     playerError,
     isPlayerLoading,
+    isRadio,
+    triggerRadio,
   } = usePlayerStore();
   const { token } = useAuthStore();
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
@@ -610,7 +613,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                     : "w-64 h-64 md:w-80 md:h-80"
                 }`}
               >
-                <SongArtwork song={currentSong} className="w-full h-full" iconClassName="w-14 h-14" />
+                <SongArtwork song={currentSong} className="w-full h-full" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 256px, 320px" />
                 {/* Premium reflection gloss overlay */}
                 <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
               </div>
@@ -752,6 +755,20 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               </button>
 
               <AddToPlaylistMenu song={currentSong} className="!p-0 !bg-transparent hover:!bg-transparent hover:scale-105" />
+
+              {!isPodcast && (
+                <button
+                  onClick={() => currentSong && triggerRadio(currentSong.videoId)}
+                  className={`p-2 cursor-pointer transition hover:scale-105 ${
+                    isRadio
+                      ? "text-primary text-glow"
+                      : "text-muted hover:text-text"
+                  }`}
+                  title={isRadio ? "Radio active" : "Start Radio from this song"}
+                >
+                  <Radio className="w-4 h-4" />
+                </button>
+              )}
 
               {isPodcast && (
                 <button
