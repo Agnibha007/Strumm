@@ -1,0 +1,46 @@
+# Dependencies
+node_modules
+.pnpm-store
+pnpm-lock.yaml
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+
+# IDE & OS
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Next.js (frontend - not needed in API image)
+.next
+
+# TypeScript (frontend)
+tsconfig.json
+tsconfig.*.json
+
+# Project config files (not needed at runtime)
+turbo.json
+pnpm-workspace.yaml
+package.json

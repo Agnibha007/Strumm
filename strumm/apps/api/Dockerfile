@@ -2,14 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Minimal system dependencies - no ffmpeg needed (audio transcoding removed)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+# Minimize image size: no apt packages needed (no ffmpeg/yt-dlp)
+# Clean apt lists to avoid caching them in a layer
+RUN rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies with pip cache disabled
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy only runtime application code
+COPY app/ ./app/
 
 EXPOSE 8000
 

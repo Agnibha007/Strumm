@@ -1,5 +1,6 @@
 import os
 import time
+import shutil
 from collections import OrderedDict
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,10 @@ import logging
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("strumm-api")
+
+# Disk storage threshold
+MAX_DISK_MB = 512
+DISK_WARNING_THRESHOLD = 0.80  # Warn at 80% usage
 
 app = FastAPI(
     title="Strumm API",
@@ -139,6 +144,9 @@ async def startup_db_client():
 
         logger.info("Successfully initialized database indexes.")
 
+        # Check disk usage on startup
+        _check_disk_usage()
+
         # Launch daily statistics refresher loop
         import asyncio
         asyncio.create_task(user.daily_stats_refresher())
@@ -186,6 +194,49 @@ async def health_check(request: Request):
             content={"success": False, "error": f"Service unhealthy: {str(e)}"}
         )
 
+def _check_disk_usage() -> None:
+    """Log a warning if disk usage exceeds 80% of 512MB max."""
+    try:
+        total, used, free = shutil.disk_usage("/")
+        used_mb = used // (1024 * 1024)
+        total_mb = total // (1024 * 1024)
+        used_pct = used / total * 100
+        logger.info(f"Disk usage: {used_mb}MB / {total_mb}MB ({used_pct:.1f}%)")
+        if used_pct > DISK_WARNING_THRESHOLD * 100:
+            logger.warning(
+                f"DISK USAGE WARNING: {used_pct:.1f}% used ({used_mb}MB / {total_mb}MB). "
+                f"Render free tier limit is {MAX_DISK_MB}MB. Consider cleaning up or upgrading."
+            )
+    except Exception as e:
+        logger.warning(f"Could not check disk usage: {e}")
+
+
+async def disk_health():
+    """Return filesystem disk usage. Helps monitor Render 512MB ephemeral storage."""
+    try:
+        total, used, free = shutil.disk_usage("/")
+        used_mb = used // (1024 * 1024)
+        free_mb = free // (1024 * 1024)
+        total_mb = total // (1024 * 1024)
+        used_pct = round(used / total * 100, 1)
+        return {
+            "success": True,
+            "data": {
+                "total_mb": total_mb,
+                "used_mb": used_mb,
+                "free_mb": free_mb,
+                "used_pct": used_pct,
+                "max_render_mb": MAX_DISK_MB,
+                "status": "ok" if used_pct < DISK_WARNING_THRESHOLD * 100 else "warning",
+            }
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": f"Cannot read disk usage: {str(e)}"}
+        )
+
+
 # Migration Trigger endpoint
 @app.post("/migration/run")
 async def trigger_migration(
@@ -205,3 +256,7 @@ async def trigger_migration(
     except Exception as e:
         logger.error(f"Migration failed: {str(e)}")
         return {"success": False, "error": f"Migration execution aborted: {str(e)}"}
+
+
+# Register disk health route directly (not via router module)
+app.api_route("/health/disk", methods=["GET"])(disk_health)
