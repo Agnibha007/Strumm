@@ -9,6 +9,9 @@ on:
       - "strumm/apps/api/**"
       - ".github/workflows/deploy-hf.yml"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -28,7 +31,12 @@ jobs:
         run: |
           git clone https://oauth2:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm hf-space
 
-      - name: Clean Hugging Face Space
+      - name: Show Remote
+        run: |
+          cd hf-space
+          git remote -v
+
+      - name: Clean Space
         run: |
           find hf-space -mindepth 1 -maxdepth 1 \
             ! -name ".git" \
@@ -51,24 +59,25 @@ jobs:
             strumm/apps/api/ \
             hf-space/
 
-      - name: Configure Hugging Face Remote
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          cd hf-space
-          git remote set-url origin https://oauth2:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm
-
-      - name: Commit and Push
+      - name: Commit Changes
         run: |
           cd hf-space
 
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No changes to deploy."
+            echo "No changes."
             exit 0
           fi
 
-          git commit -m "Deploy backend from GitHub Actions"
+          git commit -m "Auto deploy from GitHub"
 
-          git push origin main
+      - name: Push to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cd hf-space
+
+          git push \
+            https://oauth2:${HF_TOKEN}@huggingface.co/spaces/Agnibha07/Strumm \
+            HEAD:main
