@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { useAuthStore } from "web/store/useAuthStore";
-import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Mic2, Heart, Trash2, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Mic2, Heart, Trash2, ChevronUp, ChevronDown, Loader2, Clock } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import dynamic from "next/dynamic";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -55,6 +55,8 @@ export default function EditorialPlayer() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showFullscreenMenu, setShowFullscreenMenu] = useState(false);
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
+  const sleepTimerDuration = usePlayerStore((s) => s.sleepTimerDuration);
+  const sleepTimerEndTime = usePlayerStore((s) => s.sleepTimerEndTime);
   const lastAutoOpenedVideoId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -336,6 +338,22 @@ export default function EditorialPlayer() {
             </button>
 
             <AddToPlaylistMenu song={currentSong} />
+
+            {/* Sleep Timer Indicator */}
+            {sleepTimerDuration && sleepTimerEndTime && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowFullscreenMenu(true)}
+                  className="p-2 rounded hover:bg-surface-elevated cursor-pointer transition text-primary text-glow"
+                  title={`Sleep timer: ${sleepTimerDuration === "end-of-track" ? "End of track" : `${sleepTimerDuration} min`}`}
+                >
+                  <Clock className="w-4 h-4 animate-pulse" />
+                </button>
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-primary text-background text-[8px] font-bold rounded-full flex items-center justify-center">
+                  {sleepTimerDuration === "end-of-track" ? "♪" : String(sleepTimerDuration).slice(-1)}
+                </span>
+              </div>
+            )}
 
             <button
               onClick={() => setShowFullscreenMenu(true)}

@@ -7,6 +7,8 @@ import { useAuthStore } from "web/store/useAuthStore";
 
 type RepeatMode = "none" | "all" | "one";
 
+type SleepTimerDuration = 15 | 30 | 45 | 60 | "end-of-track" | null;
+
 function resolveNextTrackIndex(
   queue: Song[],
   currentIndex: number,
@@ -67,7 +69,11 @@ interface PlayerState {
   audioQuality: "data-saver" | "balanced" | "high";
   isPlayerLoading: boolean;
   playerError: string | null;
-  
+
+  // Sleep Timer
+  sleepTimerDuration: SleepTimerDuration;
+  sleepTimerEndTime: number | null;
+   
   // Radio Mode
   isRadio: boolean;
   radioSeed: string | null;
@@ -112,6 +118,11 @@ interface PlayerState {
   } | null;
   setPlayerRef: (ref: any) => void;
   updateMediaSession: (song: Song) => void;
+
+  // Sleep Timer Actions
+  setSleepTimer: (duration: SleepTimerDuration) => void;
+  clearSleepTimer: () => void;
+  checkSleepTimer: () => void;
 }
 
 export const usePlayerStore = create<PlayerState>()(
@@ -136,6 +147,8 @@ export const usePlayerStore = create<PlayerState>()(
       isRadio: false,
       radioSeed: null,
       radioSession: null,
+      sleepTimerDuration: null,
+      sleepTimerEndTime: null,
       
       startRadio: (seedVideoId, initialSongs) => {
         set({
@@ -203,6 +216,43 @@ export const usePlayerStore = create<PlayerState>()(
           console.error("Failed to fetch more radio tracks:", e);
         }
       },
+
+      // Sleep Timer Actions
+      setSleepTimer: (duration: SleepTimerDuration) => {
+        const { currentSong, duration: songDuration } = get();
+        if (!duration) {
+          set({ sleepTimerDuration: null, sleepTimerEndTime: null });
+          return;
+        }
+
+        let endTime: number;
+        if (duration === "end-of-track") {
+          // End of current track - use remaining time
+          const remaining = Math.max(0, songDuration - get().currentTime);
+          endTime = Date.now() + remaining * 1000;
+        } else {
+          // Fixed duration in minutes
+          endTime = Date.now() + duration * 60 * 1000;
+        }
+
+        set({
+          sleepTimerDuration: duration,
+          sleepTimerEndTime: endTime,
+        });
+      },
+
+      clearSleepTimer: () => {
+        set({ sleepTimerDuration: null, sleepTimerEndTime: null });
+      },
+
+      checkSleepTimer: () => {
+        const { sleepTimerEndTime, isPlaying, togglePlay } = get();
+        if (sleepTimerEndTime && isPlaying && Date.now() >= sleepTimerEndTime) {
+          togglePlay();
+          set({ sleepTimerDuration: null, sleepTimerEndTime: null });
+        }
+      },
+
       setPlayerLoading: (loading) => set({ isPlayerLoading: loading }),
       setPlayerError: (error) => set({ playerError: error }),
 

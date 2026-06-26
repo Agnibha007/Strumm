@@ -29,6 +29,8 @@ export default function AudioEngine() {
     queue,
     currentIndex,
     fetchMoreRadio,
+    sleepTimerEndTime,
+    checkSleepTimer,
   } = usePlayerStore();
 
   const playerInstanceRef = useRef<any>(null);
@@ -45,6 +47,17 @@ export default function AudioEngine() {
       fetchMoreRadio();
     }
   }, [currentIndex, isRadio, queue.length, fetchMoreRadio]);
+
+  // Sleep Timer Check
+  useEffect(() => {
+    if (!sleepTimerEndTime || !isPlaying) return;
+
+    const sleepTimerInterval = setInterval(() => {
+      checkSleepTimer();
+    }, 1000); // Check every second
+
+    return () => clearInterval(sleepTimerInterval);
+  }, [sleepTimerEndTime, isPlaying, checkSleepTimer]);
 
   // 1. Setup HTML Audio elements and events
   useEffect(() => {

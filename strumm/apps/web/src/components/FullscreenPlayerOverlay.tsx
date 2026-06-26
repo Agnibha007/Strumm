@@ -25,7 +25,9 @@ import {
   X,
   Video,
   Sparkles,
-  Radio
+  Radio,
+  Clock,
+  Music
 } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { apiUrl, cleanText, decodeHtml } from "web/lib/api";
@@ -70,6 +72,10 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     isPlayerLoading,
     isRadio,
     triggerRadio,
+    sleepTimerDuration,
+    sleepTimerEndTime,
+    setSleepTimer,
+    clearSleepTimer,
   } = usePlayerStore();
   const { token } = useAuthStore();
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
@@ -78,6 +84,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const router = useRouter();
   
   const [showQueue, setShowQueue] = useState(false);
+  const [showSleepTimer, setShowSleepTimer] = useState(false);
 
   const removeSong = (idxToRemove: number) => {
     const newQueue = queue.filter((_, idx) => idx !== idxToRemove);
@@ -401,6 +408,20 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <span className="hidden sm:inline">Memory</span>
             </button>
           )}
+
+          {/* Sleep Timer Button */}
+          <button
+            onClick={() => setShowSleepTimer(!showSleepTimer)}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold cursor-pointer transition-all ${
+              sleepTimerDuration
+                ? "bg-amber-500/20 border-amber-500 text-amber-400 shadow-md box-glow"
+                : "border-border/30 bg-surface-elevated/40 text-muted hover:text-text hover:border-primary/50"
+            }`}
+            title={sleepTimerDuration ? "Sleep Timer Active" : "Set Sleep Timer"}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{sleepTimerDuration ? "Sleep" : "Sleep"}</span>
+          </button>
         </div>
       </div>
 
@@ -1109,6 +1130,114 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               )}
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Sleep Timer Popover */}
+      <AnimatePresence>
+        {showSleepTimer && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ type: "spring", duration: 0.3 }}
+            className="fixed inset-0 z-[1000] flex items-end justify-center p-4 md:items-center md:justify-center pointer-events-none"
+          >
+            <div className="absolute inset-0 bg-background/60 backdrop-blur-sm pointer-events-auto" onClick={() => setShowSleepTimer(false)} />
+            <motion.div
+              className="relative w-full max-w-sm bg-surface border border-border/80 rounded-2xl p-5 shadow-2xl pointer-events-auto"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-editorial text-lg text-text font-bold">Sleep Timer</h3>
+                    <p className="text-[10px] uppercase tracking-wider text-muted font-semibold mt-0.5">
+                      Stop playback after
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSleepTimer(false)}
+                  className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded transition cursor-pointer"
+                >
+                  <X className="w-4.5 h-4.5" />
+                </button>
+              </div>
+
+              {sleepTimerEndTime && sleepTimerDuration && (
+                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-amber-400 font-semibold">Active Timer</p>
+                    <p className="text-sm text-amber-300 font-bold mt-0.5">
+                      {sleepTimerDuration === "end-of-track"
+                        ? "End of current track"
+                        : `${sleepTimerDuration} minutes`}
+                    </p>
+                    <p className="text-[10px] text-amber-500/80 mt-0.5">
+                      Stops at {new Date(sleepTimerEndTime).toLocaleTimeString()}
+                    </p>
+                  </div>
+                  <button
+                    onClick={clearSleepTimer}
+                    className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500 text-amber-400 text-[10px] font-bold rounded-lg transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {([15, 30, 45, 60] as const).map((mins) => (
+                  <button
+                    key={mins}
+                    onClick={() => setSleepTimer(mins)}
+                    className={`p-3 rounded-xl border transition cursor-pointer ${
+                      sleepTimerDuration === mins
+                        ? "bg-primary/20 border-primary text-primary shadow-md box-glow"
+                        : "bg-surface-elevated/40 border-border/30 text-muted hover:text-text hover:border-primary/50"
+                    }`}
+                  >
+                    <span className="text-lg font-bold block">{mins} min</span>
+                    <span className="text-[10px] block mt-0.5">
+                      {new Date(Date.now() + mins * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setSleepTimer("end-of-track")}
+                className={`w-full p-3 rounded-xl border transition cursor-pointer ${
+                  sleepTimerDuration === "end-of-track"
+                    ? "bg-primary/20 border-primary text-primary shadow-md box-glow"
+                    : "bg-surface-elevated/40 border-border/30 text-muted hover:text-text hover:border-primary/50"
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <span className="w-5 h-5 flex items-center justify-center">
+                    <Music className="w-5 h-5" />
+                  </span>
+                  <span className="font-bold">End of Track</span>
+                </div>
+                {currentSong && (
+                  <span className="text-[10px] block text-muted text-center mt-0.5">
+                    ~{Math.ceil((duration - currentTime) / 60)} min remaining
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={clearSleepTimer}
+                disabled={!sleepTimerDuration}
+                className="w-full mt-3 py-2.5 border border-border hover:bg-surface-elevated text-muted hover:text-text text-xs font-semibold rounded-xl transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed select-none"
+              >
+                Clear Timer
+              </button>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
