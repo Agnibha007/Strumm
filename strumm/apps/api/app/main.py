@@ -28,7 +28,9 @@ app = FastAPI(
 def get_allowed_origins():
     origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
     origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
-    always_allowed = ["https://strumm.pixelneststudios.tech", "http://localhost:5173", "http://localhost:3000"]
+    # App domain from env var (set on Render: https://strumm.me)
+    app_origin = os.getenv("STRUMM_APP_URL", "http://localhost:3000").rstrip("/")
+    always_allowed = [app_origin, "http://localhost:5173", "http://localhost:3000"]
     for origin in always_allowed:
         if origin not in origins:
             origins.append(origin)

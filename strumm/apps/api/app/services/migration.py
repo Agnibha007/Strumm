@@ -4,6 +4,10 @@ from datetime import datetime
 from bson import ObjectId
 from app.database import mongodb as db
 
+# Default email domain for migrated users without an email
+# Override via STRUMM_EMAIL_DOMAIN env var in production (e.g. "strumm.me")
+DEFAULT_EMAIL_DOMAIN = os.getenv("STRUMM_EMAIL_DOMAIN", "strumm.me")
+
 # Duration parser: converts "MM:SS" or "HH:MM:SS" to integer seconds
 def parse_duration(duration_str) -> int:
     if duration_str is None:
@@ -85,7 +89,7 @@ async def run_yuzone_migration(json_dir: str) -> dict:
         migrated_users = []
         for u in users_data:
             user_id = parse_bson_id(u.get("_id"))
-            email = u.get("email", f"user_{user_id}@strumm.pixelneststudios.tech")
+            email = u.get("email", f"user_{user_id}@{DEFAULT_EMAIL_DOMAIN}")
             name = u.get("name", "Strummer")
             theme = convert_theme(u.get("theme"))
             

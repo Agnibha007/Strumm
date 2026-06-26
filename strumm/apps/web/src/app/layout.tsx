@@ -18,7 +18,7 @@ const playfair = Playfair_Display({
   weight: ["400", "500", "600", "700", "800"],
 });
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://strumm.pixelneststudios.tech";
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: {

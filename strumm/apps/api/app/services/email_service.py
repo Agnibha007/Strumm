@@ -12,6 +12,10 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "") # Google App Password
 
+# Email domain for the sender address (set on Render: "strumm.me")
+EMAIL_DOMAIN = os.getenv("STRUMM_EMAIL_DOMAIN", "strumm.me")
+SENDER_FROM = os.getenv("SENDER_FROM", f"Strumm <no-reply@{EMAIL_DOMAIN}>")
+
 async def send_otp_email(receiver_email: str, otp_code: str) -> bool:
     # If credentials are not set up, skip and log to console (development fallback)
     if not SENDER_EMAIL or not SENDER_PASSWORD:
@@ -94,7 +98,7 @@ async def send_resend_otp_email(receiver_email: str, otp_code: str) -> bool:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "from": "Strumm <no-reply@pixelneststudios.tech>",
+                    "from": SENDER_FROM,
                     "to": [receiver_email],
                     "subject": f"Your Strumm verification code: {otp_code}",
                     "html": html_content
