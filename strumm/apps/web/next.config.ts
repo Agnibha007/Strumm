@@ -5,16 +5,7 @@ const apiOrigin = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:800
 const nextConfig: NextConfig = {
   transpilePackages: ["@strumm/types", "@strumm/ui", "@strumm/database"],
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**",
-      },
-      {
-        protocol: "http",
-        hostname: "**",
-      },
-    ],
+    unoptimized: true,
   },
   eslint: {
     // Skip linting during the build to avoid type‑checking errors that are not critical for production.

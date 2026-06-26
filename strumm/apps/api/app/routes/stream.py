@@ -133,13 +133,22 @@ async def stream_podcast_audio(
 
 
 @router.get("/image-proxy")
-async def proxy_image(url: str = Query(..., max_length=1500)):
-    """Proxy external images to avoid mixed content issues."""
+async def proxy_image(
+    url: str = Query(..., max_length=1500),
+    w: int = Query(0, ge=0, le=1000, description="Desired width in pixels. 0 = original size."),
+    quality: int = Query(80, ge=10, le=100, description="JPEG/WebP compression quality."),
+):
+    """Proxy and optionally optimize external images.
+
+    Fetches an external image, optionally resizes it to the desired width,
+    converts to WebP for modern browsers, and returns with aggressive caching.
+    """
     try:
         from app.services.security import assert_public_http_url
         import httpx
 
         safe_url = assert_public_http_url(url)
+
         async with httpx.AsyncClient(
             headers={"User-Agent": "Strumm/1.0"},
             follow_redirects=True,
@@ -148,15 +157,64 @@ async def proxy_image(url: str = Query(..., max_length=1500)):
             response = await client.get(safe_url)
             response.raise_for_status()
 
+        raw_bytes = response.content
         content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].lower()
+
         if not content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="URL did not return an image.")
 
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            iter([response.content]),
-            media_type=content_type,
-            headers={"Cache-Control": "public, max-age=86400"},
+        # Attempt server-side image optimization with Pillow (run in thread pool to avoid blocking)
+        optimized = None
+        output_mime = content_type
+
+        try:
+            import asyncio
+            from PIL import Image
+            import io
+
+            def optimize_image(raw: bytes, target_w: int, q: int) -> tuple[bytes, str]:
+                img = Image.open(io.BytesIO(raw))
+
+                # Convert RGBA/P to RGB
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGBA" if img.mode == "P" and img.info.get("transparency") else "RGB")
+
+                orig_w, orig_h = img.size
+
+                # Resize if requested width is smaller than original
+                if 0 < target_w < orig_w:
+                    ratio = target_w / orig_w
+                    new_h = int(orig_h * ratio)
+                    img = img.resize((target_w, new_h), Image.LANCZOS)
+
+                buf = io.BytesIO()
+                if img.mode == "RGBA":
+                    img.save(buf, format="PNG", optimize=True)
+                    return buf.getvalue(), "image/png"
+                else:
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    img.save(buf, format="WEBP", quality=q, method=6)
+                    return buf.getvalue(), "image/webp"
+
+            optimized, output_mime = await asyncio.to_thread(optimize_image, raw_bytes, w, quality)
+        except ImportError:
+            # Pillow not installed — pass through raw bytes
+            logger.warning("Pillow not installed; serving image unoptimized.")
+        except Exception as e:
+            logger.warning(f"Image optimization failed (serving original): {e}")
+
+        if optimized is None:
+            optimized = raw_bytes
+
+        from fastapi.responses import Response
+        return Response(
+            content=optimized,
+            media_type=output_mime,
+            headers={
+                "Cache-Control": "public, max-age=604800, immutable",
+                "CDN-Cache-Control": "public, max-age=604800, immutable",
+            },
         )
     except HTTPException:
         raise

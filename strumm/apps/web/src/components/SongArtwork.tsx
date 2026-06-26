@@ -26,7 +26,11 @@ export default function SongArtwork({
   priority = false,
   sizes,
 }: SongArtworkProps) {
-  const candidates = useMemo(() => getArtworkCandidates(song), [song?.videoId, song?.thumbnail]);
+  // For priority (hero) images, generate optimized proxy URLs
+  const candidates = useMemo(
+    () => getArtworkCandidates(song, priority),
+    [song?.videoId, song?.thumbnail, priority],
+  );
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
