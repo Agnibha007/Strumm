@@ -38,6 +38,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const [room, setRoom] = useState<RoomDetails | null>(null);
   const [loading, setLoading] = useState(true);
   
+  // Track currently active members using WebSocket join/leave events
+  const [activeMemberIds, setActiveMemberIds] = useState<Set<string>>(new Set());
+  
   // WebSocket and WebRTC Refs
   const socketRef = useRef<WebSocket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -87,6 +90,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       const json = await response.json();
       if (json.success) {
         setRoom(json.data);
+        // Initialize active members with all members from initial fetch
+        // (will be updated in real-time via WebSocket)
+        setActiveMemberIds(new Set(json.data.members.map((m: any) => m.id)));
       }
     } catch (e) {
       console.error("Failed to load room details:", e);
@@ -99,7 +105,17 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     if (token) {
       fetchRoomInfo();
     }
-  }, [token, id]);
+    // Cleanup: remove current user from active members when leaving room
+    return () => {
+      if (user?.id) {
+        setActiveMemberIds(prev => {
+          const next = new Set(prev);
+          next.delete(user.id);
+          return next;
+        });
+      }
+    };
+  }, [token, id, user?.id]);
 
   // Connect WebSocket
   useEffect(() => {
@@ -113,6 +129,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
+    // Add current user to active members on connect
+    setActiveMemberIds(prev => new Set([...prev, user.id]));
+
     ws.onmessage = async (event) => {
       const payload = JSON.parse(event.data);
       const { event: wsEvent, data: eventData } = payload;
@@ -120,6 +139,10 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       if (wsEvent === "room:join") {
         setMessages(prev => [...prev, { sender: "System", text: `A listener joined the room.` }]);
         fetchRoomInfo();
+        // Track active member
+        const newMemberId = eventData.userId;
+        setActiveMemberIds(prev => new Set([...prev, newMemberId]));
+        
         if (isHostRef.current && currentSongRef.current) {
           // Sync new member with host's current track state
           ws.send(JSON.stringify({
@@ -133,7 +156,6 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         }
         
         // If voice is active, initiate WebRTC offer to the newly joined member
-        const newMemberId = eventData.userId;
         if (voiceActiveRef.current && newMemberId !== user?.id) {
           const pc = createPeerConnection(newMemberId);
           pc.createOffer().then(offer => {
@@ -146,6 +168,13 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       else if (wsEvent === "room:leave") {
         setMessages(prev => [...prev, { sender: "System", text: `A listener left the room.` }]);
         fetchRoomInfo();
+        // Track member leaving
+        const leavingMemberId = eventData.userId;
+        setActiveMemberIds(prev => {
+          const next = new Set(prev);
+          next.delete(leavingMemberId);
+          return next;
+        });
         // Remove WebRTC peer connection
         const peerId = eventData.userId;
         if (peerConnectionsRef.current[peerId]) {
@@ -210,6 +239,12 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     };
 
     return () => {
+      // Remove current user from active members on disconnect
+      setActiveMemberIds(prev => {
+        const next = new Set(prev);
+        next.delete(user?.id);
+        return next;
+      });
       ws.close();
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(t => t.stop());
@@ -660,10 +695,12 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           {/* Active Members */}
           <div className="bg-surface/30 border border-border/60 rounded-2xl p-5 space-y-4 min-w-0">
             <h3 className="font-editorial text-base text-text font-bold border-b border-border/20 pb-2">
-              Lobby Members ({room.membersProfiles.length})
+              Active Listeners ({room.membersProfiles.filter(m => activeMemberIds.has(m.id)).length})
             </h3>
             <div className="flex flex-wrap gap-2.5 max-h-40 overflow-y-auto">
-              {room.membersProfiles.map((m) => (
+              {room.membersProfiles
+                .filter(m => activeMemberIds.has(m.id))
+                .map((m) => (
                 <div key={m.id} className="flex items-center gap-2 p-1.5 bg-surface-elevated/40 border border-border/40 rounded-xl max-w-full">
                   {m.avatar ? (
                     <img src={m.avatar} alt="" loading="lazy" decoding="async" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
