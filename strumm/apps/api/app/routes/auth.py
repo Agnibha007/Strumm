@@ -633,7 +633,8 @@ async def forgot_password(request: ForgotPasswordRequest):
         
         logger.info(f"Generated password reset token for {email}")
         
-        reset_link = f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/reset-password?token={reset_token}&email={email}"
+        frontend_url = os.getenv('FRONTEND_URL') or os.getenv('STRUMM_APP_URL', 'https://strumm.me')
+        reset_link = f"{frontend_url}/reset-password?token={reset_token}&email={email}"
         
         # Send actual email with reset link
         email_sent = await send_password_reset_email(email, reset_link)

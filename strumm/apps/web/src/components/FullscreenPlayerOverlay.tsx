@@ -635,8 +635,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 }`}
               >
                 <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 384px, 512px" />
-                {/* Premium reflection gloss overlay */}
-                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none rounded-2xl md:rounded-3xl" />
               </div>
             </div>
 
