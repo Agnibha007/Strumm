@@ -24,6 +24,17 @@ jobs:
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
+      - name: Check Secret
+        env:
+          HF_SSH_KEY: ${{ secrets.HF_SSH_KEY }}
+        run: |
+          if [ -z "$HF_SSH_KEY" ]; then
+            echo "EMPTY"
+            exit 1
+          else
+            echo "FOUND"
+            echo "Length: ${#HF_SSH_KEY}"
+          fi
       - name: Configure SSH
         env:
           HF_SSH_KEY: ${{ secrets.HF_SSH_KEY }}
