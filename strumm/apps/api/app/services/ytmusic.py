@@ -1,35 +1,29 @@
-"""Shared YTMusic client wrapper with TLS 1.2 enforcement and SSL fallback.
+"""Simple YTMusic wrapper that forces TLS 1.2 + disables SSL verification.
 
-YouTube's CDN terminates TLS connections in ways that trigger SSLEOFError
-with Python 3.11+'s OpenSSL 3.x on Debian Bookworm (the default slim image).
-This wrapper works around it by:
-
-1. Mounting a custom HTTPAdapter on YTMusic's internal session that forces
-   TLS 1.2 (YouTube's minimum) and retries with relaxed verification on failure.
-2. Falling back to unverified SSL if the first attempt fails.
+YouTube's CDN triggers SSLEOFError with Python 3.11's default OpenSSL on
+Debian Bookworm. The fix is simple: force TLS 1.2 on the requests session
+and skip certificate verification (YouTube's API is public).
 
 Usage:
     from app.services.ytmusic import get_ytmusic, search_ytmusic_safe
 
-    # For general use (stream, lyrics, etc.):
     yt = get_ytmusic()
     result = yt.get_watch_playlist(videoId="...")
-
-    # For search (which needs retry on SSL errors at the HTTP level):
-    results = search_ytmusic_safe("lofi", filter="songs")
+    songs = search_ytmusic_safe("lofi", filter="songs")
 """
 
 import logging
 import ssl
-from typing import Optional
+
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 
 logger = logging.getLogger("strumm-ytmusic")
 
 _YTMusic = None
 
 
-def _get_ytmusic_class():
-    """Lazy-import YTMusic (avoids circular imports)."""
+def _get_class():
     global _YTMusic
     if _YTMusic is None:
         from ytmusicapi import YTMusic
@@ -37,108 +31,52 @@ def _get_ytmusic_class():
     return _YTMusic
 
 
-def _patch_session(yt_instance: object, verify: bool = True) -> None:
-    """Mount a custom HTTPS adapter that enforces TLS 1.2 on the YTMusic session.
+def get_ytmusic():
+    """Return a YTMusic instance with TLS 1.2 forced + SSL verification off."""
+    YTMusic = _get_class()
+    yt = YTMusic()
 
-    YouTube's minimum TLS version is 1.2. On some container runtimes the
-    default OpenSSL negotiation fails. This adapter pins the minimum to 1.2
-    and optionally disables cert verification.
-    """
     try:
-        from requests.adapters import HTTPAdapter
-        from urllib3.util.ssl_ import create_urllib3_context
+        session = yt._session
 
-        session = yt_instance._session
-
-        class _YouTubeAdapter(HTTPAdapter):
+        class _Adapter(HTTPAdapter):
             def init_poolmanager(self, *args, **kwargs):
                 ctx = create_urllib3_context()
                 ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                 ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-                ctx.check_hostname = verify
-                ctx.verify_mode = ssl.CERT_REQUIRED if verify else ssl.CERT_NONE
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
                 kwargs["ssl_context"] = ctx
                 return super().init_poolmanager(*args, **kwargs)
 
             def send(self, *args, **kwargs):
-                kwargs.setdefault("verify", verify)
+                kwargs.setdefault("verify", False)
                 return super().send(*args, **kwargs)
 
-        adapter = _YouTubeAdapter()
+        adapter = _Adapter()
         session.mount("https://music.youtube.com", adapter)
         session.mount("https://", adapter)
     except Exception as e:
-        logger.warning(f"Failed to patch YTMusic session (non-fatal): {e}")
+        logger.warning(f"Session patch failed (non-fatal): {e}")
 
-
-def get_ytmusic() -> object:
-    """Return a YTMusic instance with TLS 1.2 enforced and SSL fallback.
-
-    Creates the instance with a custom session that forces TLS 1.2.
-    If construction fails with an SSL error, retries with verification
-    disabled.
-    """
-    YTMusic = _get_ytmusic_class()
-
-    for verify in [True, False]:
-        try:
-            yt = YTMusic()
-            _patch_session(yt, verify=verify)
-            return yt
-        except Exception as e:
-            error_str = str(e)
-            if verify and ("EOF" in error_str or "SSL" in error_str or "handshake" in error_str.lower()):
-                logger.warning(
-                    "YTMusic creation failed with verified SSL, "
-                    "retrying without certificate verification..."
-                )
-                continue
-            raise
-
-
-def _get_unverified_ytmusic() -> object:
-    """Create YTMusic instance with TLS 1.2 and SSL verification disabled."""
-    YTMusic = _get_ytmusic_class()
-    yt = YTMusic()
-    _patch_session(yt, verify=False)
     return yt
 
 
-def call_ytmusic_safe(method_name: str, *args, **kwargs):
-    """Call any YTMusic instance method with TLS retry + SSL fallback.
-
-    Retries once with verification disabled if the first attempt fails
-    due to an SSL EOF error. Works with any YTMusic method such as
-    get_watch_playlist, get_album, get_playlist, search, get_lyrics, etc.
-
-    Example:
-        from app.services.ytmusic import call_ytmusic_safe
-        tracks = call_ytmusic_safe("get_watch_playlist", videoId=video_id, limit=20)
-        album = call_ytmusic_safe("get_album", browse_id)
-    """
-    import time
-
-    for attempt in range(2):
-        verify = attempt == 0
-        try:
-            yt = get_ytmusic() if verify else _get_unverified_ytmusic()
-            method = getattr(yt, method_name)
-            return method(*args, **kwargs)
-        except Exception as e:
-            error_str = str(e)
-            if attempt == 0 and ("EOF" in error_str or "SSL" in error_str or "handshake" in error_str.lower()):
-                logger.warning(
-                    f"YTMusic {method_name} SSL error (attempt 1), "
-                    f"retrying with unverified SSL..."
-                )
-                time.sleep(0.5)
-                continue
-            raise
-
-    return None
+def search_ytmusic_safe(q, filter=None):
+    """Search YTMusic. Returns results list on success, empty list on error."""
+    try:
+        yt = get_ytmusic()
+        return yt.search(q, filter=filter) if filter else yt.search(q)
+    except Exception as e:
+        logger.error(f"YTMusic search failed: {e}")
+        return []
 
 
-def search_ytmusic_safe(q: str, filter: Optional[str] = None) -> list:
-    """Wrapper around YTMusic.search with TLS fallback on SSL EOF errors."""
-    result = call_ytmusic_safe("search", q, filter=filter) if filter else call_ytmusic_safe("search", q)
-    return result or []
+def call_ytmusic_safe(method, *args, **kwargs):
+    """Call any YTMusic method. Returns result on success, None on error."""
+    try:
+        yt = get_ytmusic()
+        return getattr(yt, method)(*args, **kwargs)
+    except Exception as e:
+        logger.error(f"YTMusic {method} failed: {e}")
+        return None
