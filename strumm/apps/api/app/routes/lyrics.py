@@ -7,7 +7,6 @@ import httpx
 from app.database import mongodb as db
 from app.services.security import sanitize_multiline_text, sanitize_text, sanitize_youtube_id
 from app.services.cache import cache_lyrics, get_cached_lyrics
-from app.services.ytmusic import get_ytmusic
 import logging
 import re
 
@@ -85,15 +84,18 @@ async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = No
     return None
 
 def fetch_ytmusic_lyrics_sync(video_id: str) -> Optional[dict]:
-    yt = get_ytmusic()
-    watch = yt.get_watch_playlist(videoId=video_id, limit=1)
+    from app.services.ytmusic import call_ytmusic_safe
+    watch = call_ytmusic_safe("get_watch_playlist", videoId=video_id, limit=1)
+    if not watch:
+        return None
     lyrics_browse_id = watch.get("lyrics")
     if isinstance(lyrics_browse_id, dict):
         lyrics_browse_id = lyrics_browse_id.get("browseId")
     if not isinstance(lyrics_browse_id, str) or not lyrics_browse_id:
         return None
 
-    lyrics = yt.get_lyrics(lyrics_browse_id)
+    from app.services.ytmusic import call_ytmusic_safe
+    lyrics = call_ytmusic_safe("get_lyrics", lyrics_browse_id)
     plain = sanitize_multiline_text(lyrics.get("lyrics", ""), max_length=50000) if lyrics else ""
     if not plain:
         return None

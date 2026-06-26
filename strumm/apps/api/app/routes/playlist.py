@@ -419,7 +419,7 @@ def extract_spotify_playlist(url: str) -> list:
 
 
 def extract_ytmusic_playlist(url: str) -> list:
-    from app.services.ytmusic import get_ytmusic
+    from app.services.ytmusic import call_ytmusic_safe
 
     playlist_id = None
     if "list=" in url:
@@ -429,8 +429,9 @@ def extract_ytmusic_playlist(url: str) -> list:
         return []
 
     try:
-        yt = get_ytmusic()
-        playlist = yt.get_playlist(playlist_id, limit=None)
+        playlist = call_ytmusic_safe("get_playlist", playlist_id, limit=None)
+        if not playlist:
+            return []
         tracks = playlist.get("tracks", [])
         parsed = []
         for t in tracks:

@@ -5,7 +5,7 @@ from app.database import mongodb as db
 from app.services.podcast_index import PodcastIndexNotConfigured, search_podcasts
 from app.services.security import escaped_regex, sanitize_enum, sanitize_text
 from app.services.cache import cache_search, get_cached_search
-from app.services.ytmusic import get_ytmusic, search_ytmusic_safe
+from app.services.ytmusic import search_ytmusic_safe
 import logging
 
 logger = logging.getLogger("strumm-search")
@@ -164,10 +164,14 @@ async def search_local_users(q: str) -> List[Dict[str, Any]]:
 
 @router.get("/song/{id}")
 async def get_song_by_id(id: str):
+    from app.services.ytmusic import call_ytmusic_safe
+    import asyncio
     try:
-        yt = await asyncio.to_thread(get_ytmusic)
         # ytmusicapi get_song doesn't fetch metadata well in all versions, get_watch_playlist is better
-        watch = await asyncio.to_thread(yt.get_watch_playlist, videoId=id, limit=1)
+        watch = await asyncio.to_thread(
+            call_ytmusic_safe, "get_watch_playlist",
+            videoId=id, limit=1
+        )
         if not watch or not watch.get("tracks"):
             return {"success": False, "error": "Song not found"}
             
@@ -284,9 +288,12 @@ async def search_all(
         }
 
 async def get_yt_music_album_tracks(browse_id: str) -> Dict[str, Any]:
+    from app.services.ytmusic import call_ytmusic_safe
+    import asyncio
     try:
-        yt = await asyncio.to_thread(get_ytmusic)
-        album_details = await asyncio.to_thread(yt.get_album, browse_id)
+        album_details = await asyncio.to_thread(
+            call_ytmusic_safe, "get_album", browse_id
+        )
         if not album_details:
             return {"success": False, "error": "Album not found"}
             

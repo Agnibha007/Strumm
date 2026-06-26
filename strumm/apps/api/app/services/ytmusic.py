@@ -96,11 +96,25 @@ def get_ytmusic() -> object:
             raise
 
 
-def search_ytmusic_safe(q: str, filter: Optional[str] = None) -> list:
-    """Wrapper around YTMusic.search with TLS fallback on SSL EOF errors.
+def _get_unverified_ytmusic() -> object:
+    """Create YTMusic instance with TLS 1.2 and SSL verification disabled."""
+    YTMusic = _get_ytmusic_class()
+    yt = YTMusic()
+    _patch_session(yt, verify=False)
+    return yt
+
+
+def call_ytmusic_safe(method_name: str, *args, **kwargs):
+    """Call any YTMusic instance method with TLS retry + SSL fallback.
 
     Retries once with verification disabled if the first attempt fails
-    due to an SSL EOF error.
+    due to an SSL EOF error. Works with any YTMusic method such as
+    get_watch_playlist, get_album, get_playlist, search, get_lyrics, etc.
+
+    Example:
+        from app.services.ytmusic import call_ytmusic_safe
+        tracks = call_ytmusic_safe("get_watch_playlist", videoId=video_id, limit=20)
+        album = call_ytmusic_safe("get_album", browse_id)
     """
     import time
 
@@ -108,24 +122,23 @@ def search_ytmusic_safe(q: str, filter: Optional[str] = None) -> list:
         verify = attempt == 0
         try:
             yt = get_ytmusic() if verify else _get_unverified_ytmusic()
-            return yt.search(q, filter=filter) if filter else yt.search(q)
+            method = getattr(yt, method_name)
+            return method(*args, **kwargs)
         except Exception as e:
             error_str = str(e)
             if attempt == 0 and ("EOF" in error_str or "SSL" in error_str or "handshake" in error_str.lower()):
                 logger.warning(
-                    "YTMusic search SSL error (attempt 1), "
-                    "retrying with unverified SSL..."
+                    f"YTMusic {method_name} SSL error (attempt 1), "
+                    f"retrying with unverified SSL..."
                 )
                 time.sleep(0.5)
                 continue
             raise
 
-    return []
+    return None
 
 
-def _get_unverified_ytmusic() -> object:
-    """Create YTMusic instance with TLS 1.2 and SSL verification disabled."""
-    YTMusic = _get_ytmusic_class()
-    yt = YTMusic()
-    _patch_session(yt, verify=False)
-    return yt
+def search_ytmusic_safe(q: str, filter: Optional[str] = None) -> list:
+    """Wrapper around YTMusic.search with TLS fallback on SSL EOF errors."""
+    result = call_ytmusic_safe("search", q, filter=filter) if filter else call_ytmusic_safe("search", q)
+    return result or []

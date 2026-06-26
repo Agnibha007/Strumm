@@ -256,12 +256,11 @@ async def get_radio(
     Uses ytmusicapi's get_watch_playlist which returns related tracks.
     """
     try:
-        from app.services.ytmusic import get_ytmusic
+        from app.services.ytmusic import call_ytmusic_safe
         import asyncio
-        yt = await asyncio.to_thread(get_ytmusic)
 
         watch = await asyncio.to_thread(
-            yt.get_watch_playlist,
+            call_ytmusic_safe, "get_watch_playlist",
             videoId=video_id,
             limit=limit
         )
