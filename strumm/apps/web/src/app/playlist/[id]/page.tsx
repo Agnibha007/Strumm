@@ -752,7 +752,7 @@ export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) 
                   <UserPlus className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-[9px] text-muted italic">Enter the user's database ID to add them as a collaborator. They can add/remove songs.</p>
+              <p className="text-[9px] text-muted italic">Enter the user&apos;s database ID to add them as a collaborator. They can add/remove songs.</p>
             </div>
           </div>
         </div>
