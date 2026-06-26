@@ -1,7 +1,10 @@
 import os
 import time
 import shutil
+import asyncio
 from collections import OrderedDict
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,17 +15,99 @@ from app.services.security import require_admin
 import logging
 
 # Setup Logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
 logger = logging.getLogger("strumm-api")
 
 # Disk storage threshold
 MAX_DISK_MB = 512
 DISK_WARNING_THRESHOLD = 0.80  # Warn at 80% usage
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup tasks run, then app serves, then shutdown."""
+    t_start = time.time()
+    logger.info("=== Application startup beginning ===")
+
+    # 1. Connect to MongoDB (non-blocking, motor handles it lazily)
+    db.connect_db()
+    logger.info(f"MongoDB client created in {time.time() - t_start:.3f}s.")
+
+    # 2. Launch heavy initialization as background task so server starts accepting immediately
+    asyncio.create_task(_background_startup_work())
+
+    yield  # App serves requests here
+
+    # Shutdown
+    db.close_db()
+    logger.info("Application shutdown complete.")
+
+
+async def _background_startup_work():
+    """Heavy lifting that must NOT block the app from accepting requests."""
+    t0 = time.time()
+
+    # Brief pause so the server can bind before DB work
+    await asyncio.sleep(0.1)
+
+    try:
+        logger.info(f"[{time.time() - t0:.3f}s] Beginning background initialization...")
+        database = db.get_db()
+
+        # --- Database indexes (non-critical) ---
+        await _create_indexes(database)
+        logger.info(f"[{time.time() - t0:.3f}s] Database indexes created.")
+
+        # --- Disk usage check ---
+        _check_disk_usage()
+
+        # --- Daily statistics refresher loop (runs forever) ---
+        asyncio.create_task(user.daily_stats_refresher())
+        logger.info(f"[{time.time() - t0:.3f}s] Daily Sound DNA refresh task launched.")
+
+        logger.info(f"[{time.time() - t0:.3f}s] Background initialization complete. App is fully ready.")
+    except Exception as e:
+        logger.error(f"Background initialization failed (app continues serving): {e}")
+
+
+async def _create_indexes(database):
+    """Create all MongoDB indexes. Fails gracefully."""
+    try:
+        await database[db.USERS].create_index("email", unique=True)
+        await database[db.USERS].create_index("username", unique=True)
+        await database[db.PLAYBACK_HISTORIES].create_index([("userId", 1), ("playedAt", -1)])
+        await database[db.PLAYBACK_HISTORIES].create_index([("song.videoId", 1)])
+        await database[db.PLAYLISTS].create_index("userId")
+        await database[db.PLAYLISTS].create_index([("name", 1), ("visibility", 1)])
+        await database[db.PLAYLISTS].create_index("songs.videoId")
+        await database[db.LIKED_SONGS].create_index([("userId", 1), ("song.videoId", 1)])
+        await database[db.SHARES].create_index("expiry", expireAfterSeconds=0)
+        await database[db.PODCAST_SHOWS].create_index("rss", unique=True, sparse=True)
+        await database[db.PODCAST_EPISODES].create_index("showId")
+        await database[db.PODCAST_EPISODES].create_index([("showId", 1), ("publishedAt", -1)])
+        await database["lyrics_cache"].create_index("videoId", unique=True, sparse=True)
+        await database["connections"].create_index("requesterId")
+        await database["connections"].create_index("receiverId")
+        await database["connections"].create_index([("requesterId", 1), ("receiverId", 1)])
+        await database["activities"].create_index("expiresAt", expireAfterSeconds=0)
+        await database["activities"].create_index("userId")
+        await database["notifications"].create_index("userId")
+        await database["notifications"].create_index([("userId", 1), ("createdAt", -1)])
+        await database["rooms"].create_index("hostId")
+        await database["follows"].create_index([("userId", 1), ("contentType", 1)])
+    except Exception as e:
+        logger.warning(f"Index creation failed (non-fatal): {e}")
+
+
 app = FastAPI(
     title="Strumm API",
     description="Backend services for the premium handcrafted Strumm music ecosystem.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 def get_allowed_origins():
@@ -111,70 +196,6 @@ async def rate_limiting_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
-# DB Connection Management
-@app.on_event("startup")
-async def startup_db_client():
-    db.connect_db()
-    try:
-        database = db.get_db()
-        # Create users indexes
-        await database[db.USERS].create_index("email", unique=True)
-        await database[db.USERS].create_index("username", unique=True)
-
-        # History indexes
-        await database[db.PLAYBACK_HISTORIES].create_index([("userId", 1), ("playedAt", -1)])
-        await database[db.PLAYBACK_HISTORIES].create_index([("song.videoId", 1)])
-
-        # Playlists indexes
-        await database[db.PLAYLISTS].create_index("userId")
-        await database[db.PLAYLISTS].create_index([("name", 1), ("visibility", 1)])
-        await database[db.PLAYLISTS].create_index("songs.videoId")
-
-        # Liked songs indexes
-        await database[db.LIKED_SONGS].create_index([("userId", 1), ("song.videoId", 1)])
-
-        # Shares TTL index
-        await database[db.SHARES].create_index("expiry", expireAfterSeconds=0)
-
-        # Podcast indexes
-        await database[db.PODCAST_SHOWS].create_index("rss", unique=True, sparse=True)
-        await database[db.PODCAST_EPISODES].create_index("showId")
-        await database[db.PODCAST_EPISODES].create_index([("showId", 1), ("publishedAt", -1)])
-
-        # Lyrics cache index
-        await database["lyrics_cache"].create_index("videoId", unique=True, sparse=True)
-
-        # Social indexes
-        await database["connections"].create_index("requesterId")
-        await database["connections"].create_index("receiverId")
-        await database["connections"].create_index([("requesterId", 1), ("receiverId", 1)])
-        await database["activities"].create_index("expiresAt", expireAfterSeconds=0)
-        await database["activities"].create_index("userId")
-        await database["notifications"].create_index("userId")
-        await database["notifications"].create_index([("userId", 1), ("createdAt", -1)])
-
-        # Room indexes
-        await database["rooms"].create_index("hostId")
-
-        # Follows indexes
-        await database["follows"].create_index([("userId", 1), ("contentType", 1)])
-
-        logger.info("Successfully initialized database indexes.")
-
-        # Check disk usage on startup
-        _check_disk_usage()
-
-        # Launch daily statistics refresher loop
-        import asyncio
-        asyncio.create_task(user.daily_stats_refresher())
-        logger.info("Daily Sound DNA & statistics refresher background task launched.")
-    except Exception as e:
-        logger.error(f"Error initializing indexes on startup: {str(e)}")
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    db.close_db()
-
 # Register Routers
 app.include_router(auth.router)
 app.include_router(search.router)
@@ -187,19 +208,27 @@ app.include_router(recommendation.router)
 app.include_router(share.router)
 app.include_router(social.router)
 
-# Root endpoint for Render health checks
+# Lightweight health endpoints — never query MongoDB, always respond in <10ms
 @app.get("/")
 async def root():
-    return {"success": True, "message": "Strumm API is running"}
+    """Root health probe for HF Spaces / Render."""
+    return {"status": "ok", "service": "Strumm API"}
 
-# Health checks
+
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check(request: Request):
+    """Lightweight liveness probe. No DB calls."""
+    if request.method == "HEAD":
+        return Response(status_code=200)
+    return {"status": "healthy"}
+
+
+@app.api_route("/health/db", methods=["GET"])
+async def health_check_db():
+    """Detailed health check that probes MongoDB. Only call this for diagnostics."""
     try:
         database = db.get_db()
         await database.list_collection_names()
-        if request.method == "HEAD":
-            return Response(status_code=200)
         return {
             "success": True,
             "data": {
@@ -208,9 +237,7 @@ async def health_check(request: Request):
             }
         }
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        if request.method == "HEAD":
-            return Response(status_code=503)
+        logger.error(f"DB health check failed: {str(e)}")
         return JSONResponse(
             status_code=503,
             content={"success": False, "error": f"Service unhealthy: {str(e)}"}
