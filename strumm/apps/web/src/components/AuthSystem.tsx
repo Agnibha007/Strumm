@@ -207,49 +207,49 @@ export default function AuthSystem() {
               <p className="text-[11px] text-muted mt-1 leading-snug">Return to your music universe.</p>
             </div>
 
-            <form onSubmit={handlePasswordLogin} className="space-y-4">
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
-                  <input
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition"
-                  />
+            {!forgotPasswordMode ? (
+              <form onSubmit={handlePasswordLogin} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
+                    <input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="w-full bg-background border border-border rounded-lg pl-10 pr-10 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3 text-muted hover:text-text transition focus:outline-none"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="w-full bg-background border border-border rounded-lg pl-10 pr-10 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-3 text-muted hover:text-text transition focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {!forgotPasswordMode ? (
                 <button
                   type="button"
                   onClick={() => setForgotPasswordMode(true)}
@@ -257,86 +257,86 @@ export default function AuthSystem() {
                 >
                   Forgot password?
                 </button>
-              ) : (
-                <form onSubmit={handleForgotPassword} className="space-y-3">
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">
-                      Email Address
-                    </label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-3 w-4 h-4 text-muted" />
-                      <input
-                        type="email"
-                        placeholder="you@example.com"
-                        value={forgotEmail}
-                        onChange={(e) => setForgotEmail(e.target.value)}
-                        required
-                        className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text focus:outline-none focus:border-primary/50 transition"
-                      />
-                    </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">
+                    <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+                    <span>{error}</span>
                   </div>
+                )}
 
-                  {forgotMessage && (
-                    <div className={`flex items-center gap-2 text-xs p-2.5 rounded-lg ${
-                      forgotMessage.includes("sent") ? "text-emerald-500 bg-emerald-500/10 border border-emerald-500/20" : "text-primary bg-primary/5 border border-primary/20"
-                    }`}>
-                      <RotateCcw className="w-4 h-4 flex-shrink-0" />
-                      <span>{forgotMessage}</span>
-                    </div>
-                  )}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 bg-text text-background hover:bg-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
+                >
+                  {loading ? "Entering..." : "Enter Strumm"}
+                  <ArrowRight className="w-4 h-4 text-background" />
+                </button>
 
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
-                  >
-                    {loading ? "Sending..." : "Send Reset Link"}
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => { setForgotPasswordMode(false); setForgotMessage(null); }}
-                    className="w-full py-2 text-xs text-muted hover:text-text cursor-pointer transition text-center"
-                  >
-                    Back to login
-                  </button>
-                </form>
-              )}
-
-              {error && (
-                <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">
-                  <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-                  <span>{error}</span>
+                <div className="relative my-4 flex items-center justify-center">
+                  <div className="absolute inset-0 border-t border-border/40" />
+                  <span className="relative px-3 bg-surface text-[9px] text-muted tracking-widest uppercase">
+                    Or Connect With
+                  </span>
                 </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 bg-text text-background hover:bg-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
-              >
-                {loading ? "Entering..." : "Enter Strumm"}
-                <ArrowRight className="w-4 h-4 text-background" />
-              </button>
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-surface-elevated hover:bg-surface border border-border/80 text-text text-xs rounded-lg flex items-center justify-center gap-2 cursor-pointer transition"
+                >
+                  <Chrome className="w-3.5 h-3.5 text-accent" />
+                  Sign in with Google
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleForgotPassword} className="space-y-3">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-3 w-4 h-4 text-muted" />
+                    <input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      required
+                      className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text focus:outline-none focus:border-primary/50 transition"
+                    />
+                  </div>
+                </div>
 
-              <div className="relative my-4 flex items-center justify-center">
-                <div className="absolute inset-0 border-t border-border/40" />
-                <span className="relative px-3 bg-surface text-[9px] text-muted tracking-widest uppercase">
-                  Or Connect With
-                </span>
-              </div>
+                {forgotMessage && (
+                  <div className={`flex items-center gap-2 text-xs p-2.5 rounded-lg ${
+                    forgotMessage.includes("sent") ? "text-emerald-500 bg-emerald-500/10 border border-emerald-500/20" : "text-primary bg-primary/5 border border-primary/20"
+                  }`}>
+                    <RotateCcw className="w-4 h-4 flex-shrink-0" />
+                    <span>{forgotMessage}</span>
+                  </div>
+                )}
 
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={loading}
-                className="w-full py-2.5 bg-surface-elevated hover:bg-surface border border-border/80 text-text text-xs rounded-lg flex items-center justify-center gap-2 cursor-pointer transition"
-              >
-                <Chrome className="w-3.5 h-3.5 text-accent" />
-                Sign in with Google
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
+                >
+                  {loading ? "Sending..." : "Send Reset Link"}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setForgotPasswordMode(false); setForgotMessage(null); }}
+                  className="w-full py-2 text-xs text-muted hover:text-text cursor-pointer transition text-center"
+                >
+                  Back to login
+                </button>
+              </form>
+            )}
 
             <div className="text-center pt-2">
               <span className="text-xs text-muted">
