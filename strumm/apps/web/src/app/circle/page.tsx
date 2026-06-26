@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send, Trash2 } from "lucide-react";
+import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 as Loader2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
 
@@ -65,6 +65,10 @@ export default function CirclePage() {
   const [includeSong, setIncludeSong] = useState(true);
   const [sendingShare, setSendingShare] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [isPageVisible, setIsPageVisible] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const refreshCountRef = useRef(0);
+  const maxRefreshes = 5;
 
   const closeShareModal = () => {
     setSharingTarget(null);
@@ -106,44 +110,64 @@ export default function CirclePage() {
     }
   };
 
-  const loadCircleData = async () => {
+  const loadCircleData = useCallback(async () => {
     if (!token) return;
     try {
-      // 1. Fetch circle
-      const fResp = await fetch(apiUrl("/social/circle"), {
+      // Use combined endpoint for better performance
+      const resp = await fetch(apiUrl("/social/circle/all"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
-      const fJson = await fResp.json();
-      if (fJson.success) setFriends(fJson.data || []);
+      const json = await resp.json();
 
-      // 2. Fetch requests
-      const rResp = await fetch(apiUrl("/social/requests"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const rJson = await rResp.json();
-      if (rJson.success) setIncomingRequests(rJson.data || []);
-
-      // 3. Fetch notifications
-      const nResp = await fetch(apiUrl("/social/notifications"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const nJson = await nResp.json();
-      if (nJson.success) setNotifications(nJson.data || []);
-      
+      if (json.success) {
+        if (json.data.friends) setFriends(json.data.friends);
+        if (json.data.requests) setIncomingRequests(json.data.requests);
+        if (json.data.notifications) setNotifications(json.data.notifications);
+      }
+      setLastRefreshed(new Date());
     } catch (e) {
       setError("Failed to fetch Strumm Circle data.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  const handleManualRefresh = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    await loadCircleData();
+    refreshCountRef.current = 0;
+  }, [loadCircleData, token]);
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      const visible = !document.hidden;
+      setIsPageVisible(visible);
+      if (visible && token) {
+        loadCircleData();
+      }
+    };
+
     if (token) {
       loadCircleData();
-      const interval = setInterval(loadCircleData, 8000);
-      return () => clearInterval(interval);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      
+      const interval = setInterval(() => {
+        if (isPageVisible) {
+          loadCircleData();
+          refreshCountRef.current += 1;
+          if (refreshCountRef.current >= maxRefreshes) {
+            clearInterval(interval);
+          }
+        }
+      }, 30000);
+      
+      return () => {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        clearInterval(interval);
+      };
     }
-  }, [token]);
+  }, [token, loadCircleData, isPageVisible]);
 
   const handleAccept = async (requestId: string) => {
     if (!token) return;
@@ -358,16 +382,32 @@ export default function CirclePage() {
           <p className="text-sm text-muted mt-2 max-w-xl line-clamp-2">
             Social space strictly built around music identity, shared memories, and joint listening.
           </p>
+          {lastRefreshed && (
+            <p className="text-[10px] text-muted mt-1">
+              Last updated: {lastRefreshed.toLocaleTimeString()}
+            </p>
+          )}
         </div>
-        {notifications.some(n => !n.read) && (
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {notifications.some(n => !n.read) && (
+            <button
+              onClick={handleClearNotifications}
+              className="p-2.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition rounded-xl flex items-center gap-2 text-xs font-semibold"
+            >
+              <Bell className="w-4 h-4 animate-bounce" />
+              Clear Alerts
+            </button>
+          )}
           <button
-            onClick={handleClearNotifications}
-            className="p-2.5 bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition rounded-xl flex items-center gap-2 text-xs font-semibold"
+            onClick={handleManualRefresh}
+            disabled={loading}
+            className="p-2.5 bg-surface-elevated border border-border/60 hover:border-primary/40 hover:bg-surface transition rounded-xl flex items-center gap-2 text-xs font-semibold text-muted hover:text-text disabled:opacity-50"
+            title="Refresh circle data"
           >
-            <Bell className="w-4 h-4 animate-bounce" />
-            Clear Alerts
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
           </button>
-        )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start min-w-0">

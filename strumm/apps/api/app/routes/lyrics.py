@@ -132,35 +132,45 @@ async def get_lyrics(
         artist = sanitize_text(artist, max_length=160) if artist else None
         database = db.get_db()
 
-        # 1. Check in-memory cache first
-        cache_key_str = f"lyrics:{id}"
-        cached = get_cached_lyrics(cache_key_str)
-        if cached:
-            return {"success": True, "data": cached}
-        
-        # 2. Look inside playlists or history for song title/artist if not supplied
-        song_title = title
-        song_artist = artist
-        
-        if not song_title or not song_artist:
-            song_doc = await database[db.PLAYLISTS].find_one(
-                {"songs.videoId": id},
-                {"songs.$": 1}
-            )
-            if song_doc and "songs" in song_doc:
-                song_title = song_doc["songs"][0].get("title")
-                song_artist = song_doc["songs"][0].get("artist")
+        # 1. FIRST: Verify song exists in database (playlists, liked_songs, playback_histories)
+        # This ensures we only fetch lyrics for known songs in our database
+        song_doc = await database[db.PLAYLISTS].find_one(
+            {"songs.videoId": id},
+            {"songs.$": 1}
+        )
+        if song_doc and "songs" in song_doc:
+            song_title = song_doc["songs"][0].get("title")
+            song_artist = song_doc["songs"][0].get("artist")
+        else:
+            liked_doc = await database[db.LIKED_SONGS].find_one({"song.videoId": id})
+            if liked_doc:
+                song_title = liked_doc["song"].get("title")
+                song_artist = liked_doc["song"].get("artist")
             else:
-                liked_doc = await database[db.LIKED_SONGS].find_one({"song.videoId": id})
-                if liked_doc:
-                    song_title = liked_doc["song"].get("title")
-                    song_artist = liked_doc["song"].get("artist")
+                history_doc = await database[db.PLAYBACK_HISTORIES].find_one({"song.videoId": id})
+                if history_doc:
+                    song_title = history_doc["song"].get("title")
+                    song_artist = history_doc["song"].get("artist")
+                else:
+                    return {"success": False, "error": "Song not found in database. Lyrics unavailable."}
+
+        # Use provided title/artist if available, fallback to DB values
+        if title:
+            song_title = title
+        if artist:
+            song_artist = artist
 
         if not song_title:
             song_title = "Unknown Song"
         if not song_artist:
             song_artist = "Unknown Artist"
 
+        # 2. Check in-memory cache
+        cache_key_str = f"lyrics:{id}"
+        cached = get_cached_lyrics(cache_key_str)
+        if cached:
+            return {"success": True, "data": cached}
+        
         # 3. Check MongoDB lyrics cache
         lyrics_cache = await database["lyrics_cache"].find_one({"videoId": id})
         if lyrics_cache and lyrics_cache.get("source") in {"lrclib", "ytmusic"}:
@@ -174,7 +184,7 @@ async def get_lyrics(
             cache_lyrics(cache_key_str, result)
             return {"success": True, "data": result}
 
-        # 4. Fetch from external APIs
+        # 4. Fetch from external APIs (lrclib first, then ytmusic fallback)
         lyrics = await fetch_lrclib_lyrics(song_title, song_artist)
         if not lyrics or not lyrics.get("plain") and not lyrics.get("synced"):
             lyrics = await fetch_ytmusic_lyrics(id)

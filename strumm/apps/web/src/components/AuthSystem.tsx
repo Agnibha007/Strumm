@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { signIn } from "next-auth/react";
-import { Mail, ShieldAlert, ArrowRight, Chrome, Send, Lock, User, AtSign, Eye, EyeOff } from "lucide-react";
+import { Mail, ShieldAlert, ArrowRight, Chrome, Send, Lock, User, AtSign, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText, cleanUsername } from "web/lib/api";
 import BrandLogo from "web/components/BrandLogo";
@@ -22,8 +22,47 @@ export default function AuthSystem() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
   
   const { login } = useAuthStore();
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setForgotMessage("Please enter your email address.");
+      return;
+    }
+    
+    setLoading(true);
+    setForgotMessage(null);
+    
+    try {
+      const cleanedEmail = cleanText(forgotEmail, 254).toLowerCase();
+      const response = await fetch(apiUrl("/auth/forgot-password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanedEmail }),
+      });
+      
+      const json = await response.json();
+      if (json.success) {
+        setForgotMessage(json.message || "Password reset link sent to your email.");
+        setForgotEmail("");
+        setTimeout(() => {
+          setForgotPasswordMode(false);
+          setForgotMessage(null);
+        }, 5000);
+      } else {
+        setForgotMessage(json.error || "Failed to send reset link.");
+      }
+    } catch (err) {
+      setForgotMessage("Cannot connect to Strumm API. Verify server connection.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,6 +248,61 @@ export default function AuthSystem() {
                   </button>
                 </div>
               </div>
+
+              {!forgotPasswordMode ? (
+                <button
+                  type="button"
+                  onClick={() => setForgotPasswordMode(true)}
+                  className="text-right text-[10px] text-primary hover:underline font-semibold cursor-pointer transition"
+                >
+                  Forgot password?
+                </button>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3.5 top-3 w-4 h-4 text-muted" />
+                      <input
+                        type="email"
+                        placeholder="you@example.com"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        required
+                        className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text focus:outline-none focus:border-primary/50 transition"
+                      />
+                    </div>
+                  </div>
+
+                  {forgotMessage && (
+                    <div className={`flex items-center gap-2 text-xs p-2.5 rounded-lg ${
+                      forgotMessage.includes("sent") ? "text-emerald-500 bg-emerald-500/10 border border-emerald-500/20" : "text-primary bg-primary/5 border border-primary/20"
+                    }`}>
+                      <RotateCcw className="w-4 h-4 flex-shrink-0" />
+                      <span>{forgotMessage}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
+                  >
+                    {loading ? "Sending..." : "Send Reset Link"}
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setForgotPasswordMode(false); setForgotMessage(null); }}
+                    className="w-full py-2 text-xs text-muted hover:text-text cursor-pointer transition text-center"
+                  >
+                    Back to login
+                  </button>
+                </form>
+              )}
 
               {error && (
                 <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">

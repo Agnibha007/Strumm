@@ -80,6 +80,9 @@ class EmailPasswordLoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
 class EmailSignupRequest(BaseModel):
     email: EmailStr
     username: str
@@ -592,3 +595,121 @@ async def logout_session(
     except Exception as e:
         logger.error(f"Error during logout: {str(e)}")
         return {"success": False, "error": f"Logout error: {str(e)}"}
+
+@router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    try:
+        email = request.email.lower()
+        database = db.get_db()
+        
+        # Check if user exists with this email
+        user = await database[db.USERS].find_one({"email": email})
+        if not user:
+            # For security, we don't reveal if the email exists or not
+            # We always return success to prevent email enumeration
+            return {
+                "success": True,
+                "message": "If an account exists with this email, a password reset link has been sent."
+            }
+        
+        # Generate a reset token
+        reset_token = secrets.token_urlsafe(32)
+        reset_token_hash = hashlib.sha256(reset_token.encode("utf-8")).hexdigest()
+        expiry = datetime.utcnow() + timedelta(hours=1)  # 1 hour validity
+        
+        # Store reset token
+        await database["password_resets"].update_one(
+            {"email": email},
+            {
+                "$set": {
+                    "email": email,
+                    "token_hash": reset_token_hash,
+                    "expiry": expiry,
+                    "used": False
+                }
+            },
+            upsert=True
+        )
+        
+        logger.info(f"Generated password reset token for {email}")
+        
+        # TODO: Send actual email with reset link
+        # For now, just log it for development
+        reset_link = f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/reset-password?token={reset_token}&email={email}"
+        logger.info(f"Password reset link for {email}: {reset_link}")
+        
+        # In production, send email with reset_link
+        # email_sent = await send_password_reset_email(email, reset_link)
+        
+        return {
+            "success": True,
+            "message": "If an account exists with this email, a password reset link has been sent.",
+            "dev_reset_link": reset_link if os.getenv("ENVIRONMENT", "development").lower() == "development" else None
+        }
+    except Exception as e:
+        logger.error(f"Error generating password reset: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to process password reset request."
+        }
+
+@router.post("/reset-password")
+async def reset_password(
+    email: str,
+    token: str,
+    new_password: str
+):
+    try:
+        email = email.lower()
+        database = db.get_db()
+        
+        # Find reset token
+        reset_doc = await database["password_resets"].find_one({"email": email})
+        if not reset_doc:
+            return {"success": False, "error": "Invalid or expired reset link."}
+        
+        # Verify token
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        if reset_doc.get("token_hash") != token_hash:
+            return {"success": False, "error": "Invalid or expired reset link."}
+        
+        # Check expiry
+        if datetime.utcnow() > reset_doc.get("expiry"):
+            return {"success": False, "error": "Reset link has expired. Please request a new one."}
+        
+        # Check if already used
+        if reset_doc.get("used"):
+            return {"success": False, "error": "This reset link has already been used."}
+        
+        # Validate password
+        if len(new_password) < 6:
+            return {"success": False, "error": "Password must be at least 6 characters long."}
+        
+        # Hash new password
+        from app.services.auth_utils import hash_password
+        hashed_password = hash_password(new_password)
+        
+        # Update user password
+        await database[db.USERS].update_one(
+            {"email": email},
+            {"$set": {"password": hashed_password}}
+        )
+        
+        # Mark reset token as used
+        await database["password_resets"].update_one(
+            {"email": email},
+            {"$set": {"used": True}}
+        )
+        
+        logger.info(f"Password reset successful for {email}")
+        
+        return {
+            "success": True,
+            "message": "Password has been reset successfully. You can now log in with your new password."
+        }
+    except Exception as e:
+        logger.error(f"Error resetting password: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to reset password."
+        }

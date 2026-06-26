@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Body
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 from datetime import datetime, timedelta
 from bson import ObjectId
 from app.database import mongodb as db
@@ -9,6 +9,7 @@ from app.services.security import parse_object_id, sanitize_text
 from pydantic import BaseModel
 import logging
 import json
+import hashlib
 
 logger = logging.getLogger("strumm-social")
 router = APIRouter(prefix="/social", tags=["social"])
@@ -17,6 +18,179 @@ CONNECTIONS_COLLECTION = "connections"
 ACTIVITIES_COLLECTION = "activities"
 ROOMS_COLLECTION = "rooms"
 NOTIFICATIONS_COLLECTION = "notifications"
+
+# In-memory cache for taste match scores (in production, use Redis)
+_taste_score_cache: Dict[str, int] = {}
+_CACHE_TTL_SECONDS = 3600  # 1 hour
+
+def _cache_key(user_a: str, user_b: str) -> str:
+    """Generate consistent cache key for two users."""
+    a, b = sorted([str(user_a), str(user_b)])
+    return hashlib.sha256(f"{a}:{b}".encode()).hexdigest()[:32]
+
+async def batch_compute_taste_scores(my_id: str, user_ids: List[str]) -> Dict[str, int]:
+    """
+    Batch compute taste match scores for multiple users at once.
+    Much more efficient than individual computations.
+    """
+    if not user_ids:
+        return {}
+    
+    try:
+        database = db.get_db()
+        my_id_str = str(my_id)
+        
+        # Collect all unique user IDs we need data for
+        all_user_ids = [my_id_str] + [str(uid) for uid in user_ids]
+        possible_ids = list(set(all_user_ids))
+        
+        # Single query for all playback histories
+        playback_cursor = database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}})
+        playback_data = await playback_cursor.to_list(length=2000)
+        
+        # Single query for all liked songs
+        likes_cursor = database[db.LIKED_SONGS].find({"userId": {"$in": possible_ids}})
+        likes_data = await likes_cursor.to_list(length=2000)
+        
+        # Organize data by user ID
+        user_artists: Dict[str, Set[str]] = {}
+        user_songs: Dict[str, Set[str]] = {}
+        
+        for uid in possible_ids:
+            user_artists[uid] = set()
+            user_songs[uid] = set()
+        
+        # Process playback history
+        for h in playback_data:
+            uid = str(h.get("userId", ""))
+            if uid in user_artists:
+                song = h.get("song", {})
+                if song.get("artist"):
+                    user_artists[uid].add(str(song["artist"]).strip().lower())
+                if song.get("videoId"):
+                    user_songs[uid].add(str(song["videoId"]))
+        
+        # Process liked songs
+        for h in likes_data:
+            uid = str(h.get("userId", ""))
+            if uid in user_artists:
+                song = h.get("song", {})
+                if song.get("artist"):
+                    user_artists[uid].add(str(song["artist"]).strip().lower())
+                if song.get("videoId"):
+                    user_songs[uid].add(str(song["videoId"]))
+        
+        # Compute scores for each target user
+        results = {}
+        my_artists = user_artists.get(my_id_str, set())
+        my_songs = user_songs.get(my_id_str, set())
+        
+        for target_id in user_ids:
+            target_str = str(target_id)
+            cache_key = _cache_key(my_id_str, target_str)
+            
+            # Check cache first
+            if cache_key in _taste_score_cache:
+                results[target_str] = _taste_score_cache[cache_key]
+                continue
+            
+            target_artists = user_artists.get(target_str, set())
+            target_songs = user_songs.get(target_str, set())
+            
+            if not my_songs and not target_songs:
+                score = 50
+            else:
+                common_artists = my_artists.intersection(target_artists)
+                common_songs = my_songs.intersection(target_songs)
+                
+                min_artist_len = min(len(my_artists), len(target_artists))
+                artist_similarity = len(common_artists) / max(1, min_artist_len) if min_artist_len > 0 else 0
+                
+                min_song_len = min(len(my_songs), len(target_songs))
+                song_similarity = len(common_songs) / max(1, min_song_len) if min_song_len > 0 else 0
+                
+                score = int(round(35 + 35 * artist_similarity + 28 * song_similarity))
+                score = max(15, min(98, score))
+            
+            # Cache the result
+            _taste_score_cache[cache_key] = score
+            results[target_str] = score
+        
+        return results
+    except Exception as e:
+        logger.warning(f"Batch taste score computation failed: {e}")
+        return {uid: 50 for uid in user_ids}
+
+
+async def compute_taste_match_score(user_a_id: str, user_b_id: str) -> int:
+    """
+    Compute taste match score with caching.
+    Falls back to individual computation if batch not available.
+    """
+    try:
+        cache_key = _cache_key(user_a_id, user_b_id)
+        
+        # Check cache first
+        if cache_key in _taste_score_cache:
+            return _taste_score_cache[cache_key]
+        
+        # Fallback to individual computation
+        user_a_str = str(user_a_id)
+        user_b_str = str(user_b_id)
+        
+        database = db.get_db()
+        possible_a_ids = [user_a_str]
+        if ObjectId.is_valid(user_a_str):
+            possible_a_ids.append(ObjectId(user_a_str))
+            
+        possible_b_ids = [user_b_str]
+        if ObjectId.is_valid(user_b_str):
+            possible_b_ids.append(ObjectId(user_b_str))
+            
+        a_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_a_ids}}).to_list(length=500)
+        b_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_b_ids}}).to_list(length=500)
+        
+        a_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_a_ids}}).to_list(length=500)
+        b_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_b_ids}}).to_list(length=500)
+        
+        a_artists = set()
+        a_songs = set()
+        for h in a_hist + a_likes:
+            s = h.get("song", {})
+            if s.get("artist"):
+                a_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                a_songs.add(str(s["videoId"]))
+                
+        b_artists = set()
+        b_songs = set()
+        for h in b_hist + b_likes:
+            s = h.get("song", {})
+            if s.get("artist"):
+                b_artists.add(str(s["artist"]).strip().lower())
+            if s.get("videoId"):
+                b_songs.add(str(s["videoId"]))
+                
+        if not a_songs and not b_songs:
+            return 50  # Neutral default for no data
+            
+        common_artists = a_artists.intersection(b_artists)
+        common_songs_ids = a_songs.intersection(b_songs)
+        
+        min_artist_len = min(len(a_artists), len(b_artists))
+        artist_similarity = len(common_artists) / max(1, min_artist_len) if min_artist_len > 0 else 0
+        
+        min_song_len = min(len(a_songs), len(b_songs))
+        song_similarity = len(common_songs_ids) / max(1, min_song_len) if min_song_len > 0 else 0
+        
+        match_percentage = int(round(35 + 35 * artist_similarity + 28 * song_similarity))
+        score = max(15, min(98, match_percentage))
+        
+        # Cache the result
+        _taste_score_cache[cache_key] = score
+        return score
+    except Exception:
+        return 50
 
 class ConnectionRequest(BaseModel):
     requesterId: str
@@ -247,12 +421,26 @@ async def get_friend_requests(current_user: dict = Depends(get_current_user)):
         "status": "pending"
     })
     
-    requests_list = []
+    # Collect all requester IDs for batch taste score computation
+    request_docs = []
+    requester_ids = []
     async for doc in cursor:
         doc["id"] = str(doc["_id"])
         del doc["_id"]
-        # Fetch requester user details
-        sender = await database[db.USERS].find_one({"_id": parse_object_id(doc["requesterId"])})
+        requester_ids.append(doc["requesterId"])
+        request_docs.append(doc)
+    
+    # Batch compute taste scores for all requesters
+    taste_scores = await batch_compute_taste_scores(my_id, requester_ids)
+    
+    # Batch fetch all requester user details
+    requester_ids_obj = [parse_object_id(rid) for rid in requester_ids if ObjectId.is_valid(rid)]
+    senders = await database[db.USERS].find({"_id": {"$in": requester_ids_obj}}).to_list(length=100)
+    senders_map = {str(s["_id"]): s for s in senders}
+    
+    requests_list = []
+    for doc in request_docs:
+        sender = senders_map.get(doc["requesterId"])
         if sender:
             doc["sender"] = {
                 "id": str(sender["_id"]),
@@ -260,8 +448,7 @@ async def get_friend_requests(current_user: dict = Depends(get_current_user)):
                 "username": sender.get("username"),
                 "avatar": sender.get("avatar")
             }
-            # Compute real-time taste compatibility dynamically
-            doc["tasteMatch"] = await compute_taste_match_score(my_id, doc["requesterId"])
+            doc["tasteMatch"] = taste_scores.get(doc["requesterId"], 50)
         requests_list.append(doc)
         
     return {"success": True, "data": requests_list}
@@ -277,45 +464,76 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
         "status": "accepted"
     })
     
-    friends = []
+    # Collect all friend IDs for batch operations
+    connections = []
+    friend_ids = []
     async for conn in cursor:
         friend_id = conn["receiverId"] if conn["requesterId"] == my_id else conn["requesterId"]
-        f_user = await database[db.USERS].find_one({"_id": parse_object_id(friend_id)})
-        if f_user:
-            # Check online/presence status
-            last_active = f_user.get("lastActive")
-            is_online = False
-            if last_active:
-                # Online if active in the last 45 seconds
-                is_online = (datetime.utcnow() - last_active).total_seconds() < 45
-
-            # Check current listening activity (respect settings)
-            show_act = f_user.get("settings", {}).get("showListeningActivity", True)
-            current_activity = None
-            if show_act:
-                act = await database[ACTIVITIES_COLLECTION].find_one({
-                    "userId": friend_id,
-                    "type": "listening"
-                })
-                if act:
-                    current_activity = {
-                        "song": act.get("song"),
-                        "timestamp": act.get("timestamp").isoformat() if act.get("timestamp") else None
-                    }
-                    is_online = True
-                    
-            # Compute real-time taste compatibility dynamically
-            taste_match_score = await compute_taste_match_score(my_id, friend_id)
-            friends.append({
-                "id": friend_id,
-                "displayName": f_user.get("displayName"),
-                "username": f_user.get("username"),
-                "avatar": f_user.get("avatar"),
-                "tasteMatch": taste_match_score,
-                "isOnline": is_online,
-                "currentActivity": current_activity
-            })
+        connections.append(conn)
+        friend_ids.append(friend_id)
+    
+    if not friend_ids:
+        return {"success": True, "data": []}
+    
+    # Batch fetch all friend user details
+    friend_ids_obj = [parse_object_id(fid) for fid in friend_ids if ObjectId.is_valid(fid)]
+    friend_users = await database[db.USERS].find({"_id": {"$in": friend_ids_obj}}).to_list(length=200)
+    users_map = {str(u["_id"]): u for u in friend_users}
+    
+    # Batch fetch activities for all friends who have showListeningActivity enabled
+    activity_users = [fid for fid in friend_ids if users_map.get(fid, {}).get("settings", {}).get("showListeningActivity", True)]
+    activities = []
+    if activity_users:
+        act_cursor = database[ACTIVITIES_COLLECTION].find({
+            "userId": {"$in": activity_users},
+            "type": "listening"
+        })
+        activities = await act_cursor.to_list(length=200)
+    activities_map = {a["userId"]: a for a in activities}
+    
+    # Batch compute taste scores for all friends
+    taste_scores = await batch_compute_taste_scores(my_id, friend_ids)
+    
+    # Build response
+    friends = []
+    for conn in connections:
+        friend_id = conn["receiverId"] if conn["requesterId"] == my_id else conn["requesterId"]
+        f_user = users_map.get(friend_id)
+        if not f_user:
+            continue
             
+        # Check online/presence status
+        last_active = f_user.get("lastActive")
+        is_online = False
+        if last_active:
+            # Online if active in the last 45 seconds
+            is_online = (datetime.utcnow() - last_active).total_seconds() < 45
+
+        # Check current listening activity (respect settings)
+        show_act = f_user.get("settings", {}).get("showListeningActivity", True)
+        current_activity = None
+        if show_act:
+            act = activities_map.get(friend_id)
+            if act:
+                current_activity = {
+                    "song": act.get("song"),
+                    "timestamp": act.get("timestamp").isoformat() if act.get("timestamp") else None
+                }
+                is_online = True
+                
+        # Get precomputed taste match score
+        taste_match_score = taste_scores.get(friend_id, 50)
+        
+        friends.append({
+            "id": friend_id,
+            "displayName": f_user.get("displayName"),
+            "username": f_user.get("username"),
+            "avatar": f_user.get("avatar"),
+            "tasteMatch": taste_match_score,
+            "isOnline": is_online,
+            "currentActivity": current_activity
+        })
+        
     return {"success": True, "data": friends}
 
 # Rooms Endpoint: List Rooms
@@ -754,7 +972,145 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
             {"_id": parse_object_id(roomId)},
             {"$pull": {"members": userId}}
         )
-        await ws_manager.broadcast_to_room(
-            roomId, 
-            {"event": "room:leave", "data": {"userId": userId}}
-        )
+
+
+# Combined Circle Data Endpoint - Get all circle data in one call
+@router.get("/circle/all")
+async def get_all_circle_data(current_user: dict = Depends(get_current_user)):
+    """
+    Get friends, requests, and notifications in a single optimized call.
+    Uses batch operations for significantly better performance.
+    """
+    database = db.get_db()
+    my_id = current_user["id"]
+    
+    # 1. Fetch all accepted connections (friends)
+    conn_cursor = database[CONNECTIONS_COLLECTION].find({
+        "$or": [{"requesterId": my_id}, {"receiverId": my_id}],
+        "status": "accepted"
+    })
+    
+    connections = []
+    friend_ids = []
+    async for conn in conn_cursor:
+        friend_id = conn["receiverId"] if conn["requesterId"] == my_id else conn["requesterId"]
+        connections.append(conn)
+        friend_ids.append(friend_id)
+    
+    # 2. Fetch all pending requests (received)
+    req_cursor = database[CONNECTIONS_COLLECTION].find({
+        "receiverId": my_id,
+        "status": "pending"
+    })
+    
+    requests = []
+    requester_ids = []
+    async for doc in req_cursor:
+        doc["id"] = str(doc["_id"])
+        del doc["_id"]
+        requests.append(doc)
+        requester_ids.append(doc["requesterId"])
+    
+    # 3. Fetch notifications
+    user_id_str = my_id
+    user_id_oid = parse_object_id(user_id_str)
+    notif_cursor = database[NOTIFICATIONS_COLLECTION].find({
+        "userId": {"$in": [user_id_str, user_id_oid]}
+    }).sort("createdAt", -1).limit(40)
+    
+    notifications = []
+    async for n in notif_cursor:
+        n["id"] = str(n["_id"])
+        del n["_id"]
+        if "createdAt" in n:
+            n["createdAt"] = n["createdAt"].isoformat()
+        notifications.append(n)
+    
+    # If no friends and no requests, return early
+    if not friend_ids and not requester_ids:
+        return {
+            "success": True,
+            "data": {
+                "friends": [],
+                "requests": [],
+                "notifications": notifications
+            }
+        }
+    
+    # 4. Batch fetch all user details needed
+    all_user_ids = list(set(friend_ids + requester_ids))
+    all_user_ids_obj = [parse_object_id(uid) for uid in all_user_ids if ObjectId.is_valid(uid)]
+    users = await database[db.USERS].find({"_id": {"$in": all_user_ids_obj}}).to_list(length=300)
+    users_map = {str(u["_id"]): u for u in users}
+    
+    # 5. Batch fetch activities for friends
+    activity_users = [fid for fid in friend_ids if users_map.get(fid, {}).get("settings", {}).get("showListeningActivity", True)]
+    activities_map = {}
+    if activity_users:
+        act_cursor = database[ACTIVITIES_COLLECTION].find({
+            "userId": {"$in": activity_users},
+            "type": "listening"
+        })
+        activities = await act_cursor.to_list(length=200)
+        activities_map = {a["userId"]: a for a in activities}
+    
+    # 6. Batch compute taste scores for all users
+    all_taste_ids = list(set(friend_ids + requester_ids))
+    taste_scores = await batch_compute_taste_scores(my_id, all_taste_ids)
+    
+    # 7. Build friends response
+    friends = []
+    for conn in connections:
+        friend_id = conn["receiverId"] if conn["requesterId"] == my_id else conn["requesterId"]
+        f_user = users_map.get(friend_id)
+        if not f_user:
+            continue
+            
+        last_active = f_user.get("lastActive")
+        is_online = False
+        if last_active:
+            is_online = (datetime.utcnow() - last_active).total_seconds() < 45
+
+        show_act = f_user.get("settings", {}).get("showListeningActivity", True)
+        current_activity = None
+        if show_act:
+            act = activities_map.get(friend_id)
+            if act:
+                current_activity = {
+                    "song": act.get("song"),
+                    "timestamp": act.get("timestamp").isoformat() if act.get("timestamp") else None
+                }
+                is_online = True
+                
+        friends.append({
+            "id": friend_id,
+            "displayName": f_user.get("displayName"),
+            "username": f_user.get("username"),
+            "avatar": f_user.get("avatar"),
+            "tasteMatch": taste_scores.get(friend_id, 50),
+            "isOnline": is_online,
+            "currentActivity": current_activity
+        })
+    
+    # 8. Build requests response
+    requests_list = []
+    for doc in requests:
+        sender = users_map.get(doc["requesterId"])
+        if sender:
+            doc["sender"] = {
+                "id": str(sender["_id"]),
+                "displayName": sender.get("displayName"),
+                "username": sender.get("username"),
+                "avatar": sender.get("avatar")
+            }
+            doc["tasteMatch"] = taste_scores.get(doc["requesterId"], 50)
+        requests_list.append(doc)
+    
+    return {
+        "success": True,
+        "data": {
+            "friends": friends,
+            "requests": requests_list,
+            "notifications": notifications
+        }
+    }
