@@ -1,7 +1,41 @@
 import { MetadataRoute } from "next";
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
+interface SitemapSong {
+  videoId: string;
+  title: string;
+}
+
+interface SitemapPlaylist {
+  id: string;
+  name: string;
+}
+
+interface SitemapPodcast {
+  id: string;
+  title: string;
+}
+
+interface SitemapUser {
+  username: string;
+  displayName: string;
+}
+
+interface SitemapResponse {
+  success: boolean;
+  data: {
+    songs: SitemapSong[];
+    playlists: SitemapPlaylist[];
+    podcasts: SitemapPodcast[];
+    users: SitemapUser[];
+  };
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+  // 1. Static routes
   const staticRoutes: Array<{
     path: string;
     changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"];
@@ -15,11 +49,70 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: "/lyrics", changeFrequency: "weekly", priority: 0.5 },
     { path: "/login", changeFrequency: "monthly", priority: 0.4 },
   ];
-  
-  return staticRoutes.map((route) => ({
+
+  const entries: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
     url: `${baseUrl}${route.path}`,
     lastModified: new Date(),
     changeFrequency: route.changeFrequency,
     priority: route.priority,
   }));
+
+  // 2. Dynamic routes — fetch from backend API
+  try {
+    const response = await fetch(`${BACKEND_URL}/sitemap`, {
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (response.ok) {
+      const json: SitemapResponse = await response.json();
+
+      if (json.success && json.data) {
+        const { songs, playlists, podcasts, users } = json.data;
+
+        // Song pages: /song/{videoId}
+        for (const song of songs) {
+          entries.push({
+            url: `${baseUrl}/song/${song.videoId}`,
+            lastModified: new Date(),
+            changeFrequency: "weekly" as const,
+            priority: 0.6,
+          });
+        }
+
+        // Public playlist pages: /playlist/{id}
+        for (const playlist of playlists) {
+          entries.push({
+            url: `${baseUrl}/playlist/${playlist.id}`,
+            lastModified: new Date(),
+            changeFrequency: "weekly" as const,
+            priority: 0.5,
+          });
+        }
+
+        // Podcast show pages: /podcasts/show/{id}
+        for (const podcast of podcasts) {
+          entries.push({
+            url: `${baseUrl}/podcasts/show/${podcast.id}`,
+            lastModified: new Date(),
+            changeFrequency: "weekly" as const,
+            priority: 0.5,
+          });
+        }
+
+        // User profile pages: /public/{username}
+        for (const user of users) {
+          entries.push({
+            url: `${baseUrl}/public/${user.username}`,
+            lastModified: new Date(),
+            changeFrequency: "weekly" as const,
+            priority: 0.4,
+          });
+        }
+      }
+    }
+  } catch {
+    // Backend unreachable — serve static routes only
+  }
+
+  return entries;
 }

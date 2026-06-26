@@ -277,3 +277,109 @@ async def trigger_migration(
 
 # Register disk health route directly (not via router module)
 app.api_route("/health/disk", methods=["GET"])(disk_health)
+
+
+# --- Sitemap endpoint (public, no auth required) ---
+
+@app.get("/sitemap")
+async def sitemap_data():
+    """Return all indexable URLs for SEO sitemap generation.
+    No auth required — used by the frontend at build time.
+    """
+    try:
+        database = db.get_db()
+        songs = []
+        playlists = []
+        podcasts = []
+        users = []
+
+        # 1. Collect unique song videoIds from all collections
+        seen_video_ids = set()
+
+        # From playlists
+        playlist_cursor = database[db.PLAYLISTS].find(
+            {"songs": {"$exists": True, "$ne": []}},
+            {"songs.videoId": 1, "songs.title": 1}
+        )
+        async for doc in playlist_cursor:
+            for song in doc.get("songs", []):
+                vid = song.get("videoId")
+                if vid and vid not in seen_video_ids:
+                    seen_video_ids.add(vid)
+                    songs.append({
+                        "videoId": vid,
+                        "title": song.get("title", "")
+                    })
+
+        # From liked songs
+        liked_cursor = database[db.LIKED_SONGS].find(
+            {},
+            {"song.videoId": 1, "song.title": 1}
+        )
+        async for doc in liked_cursor:
+            s = doc.get("song", {})
+            vid = s.get("videoId")
+            if vid and vid not in seen_video_ids:
+                seen_video_ids.add(vid)
+                songs.append({
+                    "videoId": vid,
+                    "title": s.get("title", "")
+                })
+
+        # 2. Collect public playlists
+        playlist_list_cursor = database[db.PLAYLISTS].find(
+            {"visibility": "public"},
+            {"_id": 1, "name": 1}
+        )
+        async for doc in playlist_list_cursor:
+            playlists.append({
+                "id": str(doc["_id"]),
+                "name": doc.get("name", "")
+            })
+
+        # 3. Collect podcast shows
+        podcast_cursor = database[db.PODCAST_SHOWS].find(
+            {},
+            {"_id": 1, "title": 1}
+        )
+        async for doc in podcast_cursor:
+            podcasts.append({
+                "id": str(doc["_id"]),
+                "title": doc.get("title", "")
+            })
+
+        # 4. Collect public user profiles
+        user_cursor = database[db.USERS].find(
+            {},
+            {"username": 1, "displayName": 1}
+        )
+        async for doc in user_cursor:
+            username = doc.get("username")
+            if username:
+                users.append({
+                    "username": username,
+                    "displayName": doc.get("displayName", "")
+                })
+
+        return {
+            "success": True,
+            "data": {
+                "songs": songs,
+                "playlists": playlists,
+                "podcasts": podcasts,
+                "users": users,
+                "counts": {
+                    "songs": len(songs),
+                    "playlists": len(playlists),
+                    "podcasts": len(podcasts),
+                    "users": len(users),
+                    "total": len(songs) + len(playlists) + len(podcasts) + len(users)
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error generating sitemap data: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
