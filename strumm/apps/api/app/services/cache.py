@@ -1,25 +1,95 @@
-"""Lightweight in-memory TTL cache with LRU eviction strategy.
-
-Used to cache search results, lyrics, recommendations, and podcast metadata
-to reduce external API calls and improve response times on Render Free Tier.
 """
+In-memory TTL cache with LRU eviction.
+
+All data lives in RAM only — no disk writes.
+Designed for Hugging Face Spaces free tier (no Redis, no files).
+
+TTL values:
+  search         5 min     (user queries change frequently)
+  artist        30 min     (artist metadata is stable)
+  album         30 min     (album metadata is stable)
+  lyrics        24 hours   (lyrics rarely change)
+  recommendation 15 min    (mood-based, short-lived)
+  podcast        1 hour    (episode metadata)
+  stream         2 hours   (song metadata)
+"""
+
+from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Optional
 
-T = TypeVar("T")
+# ---------------------------------------------------------------------------
+# Per-namespace TTLs (seconds)
+# ---------------------------------------------------------------------------
 
-MAX_CACHE_SIZE = 200
-DEFAULT_TTL = {
-    "search": 1800,       # 30 minutes
-    "lyrics": 86400,      # 24 hours
-    "recommendations": 3600,  # 1 hour
-    "podcasts": 3600,     # 1 hour
-    "stream": 7200,       # 2 hours
-    "default": 300,       # 5 minutes
+TTL = {
+    "search": 300,           # 5 minutes
+    "artist": 1800,          # 30 minutes
+    "album": 1800,           # 30 minutes
+    "lyrics": 86400,         # 24 hours
+    "recommendations": 900,  # 15 minutes
+    "podcasts": 3600,        # 1 hour
+    "stream": 7200,          # 2 hours
+    "default": 300,          # 5 minutes
 }
 
+MAX_CACHE_SIZE = 200
+
+
+# ---------------------------------------------------------------------------
+# Latency histogram for P50 / P95 / P99 tracking
+# ---------------------------------------------------------------------------
+
+_LATENCY_BUCKETS_MS = [50, 100, 200, 500, 1000, 2000, 3000, 5000, 10000]
+
+
+class LatencyHistogram:
+    """Simple fixed-bucket latency histogram (thread-safe via GIL)."""
+
+    def __init__(self, buckets: list[int]) -> None:
+        self._buckets = sorted(buckets)
+        self._counts: dict[str, int] = {str(b): 0 for b in buckets}
+        self._counts["inf"] = 0
+        self._total = 0
+
+    def record(self, elapsed_ms: float) -> None:
+        self._total += 1
+        for b in self._buckets:
+            if elapsed_ms <= b:
+                self._counts[str(b)] += 1
+                return
+        self._counts["inf"] += 1
+
+    def percentile(self, pct: float) -> float:
+        """Return the latency value at the given percentile (0-100)."""
+        if self._total == 0:
+            return 0.0
+        target = self._total * pct / 100.0
+        cumulative = 0
+        for b in self._buckets:
+            cumulative += self._counts[str(b)]
+            if cumulative >= target:
+                return float(b)
+        return float(self._buckets[-1] * 2) if self._buckets else 0.0
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "p50_ms": round(self.percentile(50), 1),
+            "p95_ms": round(self.percentile(95), 1),
+            "p99_ms": round(self.percentile(99), 1),
+            "total": self._total,
+        }
+
+
+# Global latency histogram for all YTMusic-bound calls
+search_latency_histogram = LatencyHistogram(_LATENCY_BUCKETS_MS)
+
+
+# ---------------------------------------------------------------------------
+# TTL Cache
+# ---------------------------------------------------------------------------
 
 class TTLCache:
     """Thread-safe TTL cache with LRU eviction."""
@@ -34,11 +104,8 @@ class TTLCache:
 
     def _expire_stale(self) -> None:
         now = time.monotonic()
-        stale_keys = [
-            k for k, (expires_at, _) in self._cache.items()
-            if expires_at < now
-        ]
-        for k in stale_keys:
+        stale = [k for k, (expires_at, _) in self._cache.items() if expires_at < now]
+        for k in stale:
             self._cache.pop(k, None)
 
     def get(self, key: str) -> Optional[Any]:
@@ -50,7 +117,6 @@ class TTLCache:
         if expires_at < time.monotonic():
             self._cache.pop(key, None)
             return None
-        # Move to end (most recently used)
         self._cache.move_to_end(key)
         return value
 
@@ -72,94 +138,115 @@ class TTLCache:
         return len(self._cache)
 
 
-# Global cache instances by namespace
+# ---------------------------------------------------------------------------
+# Cache instances
+# ---------------------------------------------------------------------------
+
 _search_cache = TTLCache(max_size=100)
+_artist_cache = TTLCache(max_size=80)
+_album_cache = TTLCache(max_size=80)
 _lyrics_cache = TTLCache(max_size=100)
 _recommendation_cache = TTLCache(max_size=50)
 _podcast_cache = TTLCache(max_size=50)
 _stream_cache = TTLCache(max_size=100)
 
 
+# ---------------------------------------------------------------------------
+# Public helpers — intended to be called by route handlers
+# ---------------------------------------------------------------------------
+
 def cache_key(*parts: str) -> str:
-    """Build a colon-delimited cache key from parts."""
     return ":".join(str(p) for p in parts)
 
 
-def get_cached_or_fetch(
-    cache: TTLCache,
-    key: str,
-    fetch_fn: Callable[[], T],
-    ttl: int = 300,
-) -> T:
-    """Return cached value or fetch, cache, and return."""
-    cached = cache.get(key)
-    if cached is not None:
-        return cached
-    value = fetch_fn()
-    cache.set(key, value, ttl)
-    return value
-
-
-async def get_cached_or_fetch_async(
-    cache: TTLCache,
-    key: str,
-    fetch_fn: Callable[[], Any],
-    ttl: int = 300,
-) -> Any:
-    """Async version of get_cached_or_fetch."""
-    cached = cache.get(key)
-    if cached is not None:
-        return cached
-    value = await fetch_fn()
-    cache.set(key, value, ttl)
-    return value
-
-
-# Public helpers for each namespace
+# --- Search (TTL: 5 min) ---
 
 def cache_search(key: str, value: Any) -> None:
-    _search_cache.set(key, value, DEFAULT_TTL["search"])
+    _search_cache.set(key, value, TTL["search"])
 
 
 def get_cached_search(key: str) -> Optional[Any]:
     return _search_cache.get(key)
 
 
+# --- Artist (TTL: 30 min) ---
+
+def cache_artist(key: str, value: Any) -> None:
+    _artist_cache.set(key, value, TTL["artist"])
+
+
+def get_cached_artist(key: str) -> Optional[Any]:
+    return _artist_cache.get(key)
+
+
+# --- Album (TTL: 30 min) ---
+
+def cache_album(key: str, value: Any) -> None:
+    _album_cache.set(key, value, TTL["album"])
+
+
+def get_cached_album(key: str) -> Optional[Any]:
+    return _album_cache.get(key)
+
+
+# --- Lyrics (TTL: 24 h) ---
+
 def cache_lyrics(key: str, value: Any) -> None:
-    _lyrics_cache.set(key, value, DEFAULT_TTL["lyrics"])
+    _lyrics_cache.set(key, value, TTL["lyrics"])
 
 
 def get_cached_lyrics(key: str) -> Optional[Any]:
     return _lyrics_cache.get(key)
 
 
+# --- Recommendations (TTL: 15 min) ---
+
 def cache_recommendation(key: str, value: Any) -> None:
-    _recommendation_cache.set(key, value, DEFAULT_TTL["recommendations"])
+    _recommendation_cache.set(key, value, TTL["recommendations"])
 
 
 def get_cached_recommendation(key: str) -> Optional[Any]:
     return _recommendation_cache.get(key)
 
 
+# --- Podcast (TTL: 1 h) ---
+
 def cache_podcast(key: str, value: Any) -> None:
-    _podcast_cache.set(key, value, DEFAULT_TTL["podcasts"])
+    _podcast_cache.set(key, value, TTL["podcasts"])
 
 
 def get_cached_podcast(key: str) -> Optional[Any]:
     return _podcast_cache.get(key)
 
 
+# --- Stream metadata (TTL: 2 h) ---
+
 def cache_stream(key: str, value: Any) -> None:
-    _stream_cache.set(key, value, DEFAULT_TTL["stream"])
+    _stream_cache.set(key, value, TTL["stream"])
 
 
 def get_cached_stream(key: str) -> Optional[Any]:
     return _stream_cache.get(key)
 
 
+# --- Latency recording ---
+
+def record_search_latency(elapsed_ms: float) -> None:
+    """Record a YTMusic-bound call latency into the global histogram."""
+    search_latency_histogram.record(elapsed_ms)
+
+
+def get_latency_snapshot() -> dict[str, Any]:
+    """Return P50 / P95 / P99 latency snapshot."""
+    return search_latency_histogram.snapshot()
+
+
+# --- Clear all ---
+
 def clear_all_caches() -> None:
-    """Clear all in-memory caches."""
     _search_cache.clear()
+    _artist_cache.clear()
+    _album_cache.clear()
     _lyrics_cache.clear()
     _recommendation_cache.clear()
     _podcast_cache.clear()
