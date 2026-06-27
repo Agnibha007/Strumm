@@ -41,13 +41,12 @@ logger = logging.getLogger("strumm-provider-piped")
 
 PIPED_INSTANCES = [
     "https://pipedapi.kavin.rocks",       # Official — most reliable
-    "https://pipedapi.syncpundit.io",
-    "https://pipedapi.moomoo.me",
-    "https://pipedapi.r4fo.com",
     "https://pipedapi.pwoss.org",
     "https://pipedapi.lunar.icu",
     "https://pipedapi.adminforge.de",
     "https://api.piped.re",
+    "https://pipedapi.syncpundit.io",     # Known 403 issues
+    "https://pipedapi.moomoo.me",         # Known 502 issues
 ]
 
 # Search filter mapping
@@ -78,7 +77,7 @@ class PipedProvider(MusicProvider):
                 "Accept": "application/json",
             },
             timeout=TIMEOUT,
-            follow_redirects=True,
+            follow_redirects=False,  # Do NOT follow redirects — 3xx = unhealthy instance
         )
         self._metrics = ProviderMetrics()
         self._cooldown_until: Optional[float] = None
@@ -137,12 +136,15 @@ class PipedProvider(MusicProvider):
         """
         Make a GET request to the Piped API, with automatic instance rotation.
 
+        Any non-200 response (including 3xx redirects) triggers instance rotation.
+        Does NOT follow redirects — a redirecting instance is considered unhealthy.
+
         Returns parsed JSON or None on failure.
         """
         instance = self._get_current_instance()
         url = f"{instance}{path}"
 
-        for attempt in range(2):  # Max 2 attempts (one per instance)
+        for attempt in range(3):  # Max 3 attempts (rotate through instances)
             try:
                 resp = await self._http.get(url, params=params, timeout=timeout)
                 if resp.status_code == 200:
@@ -150,36 +152,37 @@ class PipedProvider(MusicProvider):
                         return resp.json()
                     except (ValueError, TypeError):
                         logger.warning(f"Piped instance {instance} returned non-JSON response")
+                        self._mark_unhealthy(instance)
                         instance = await self._rotate_instance()
                         url = f"{instance}{path}"
                         continue
 
-                if resp.status_code in (429, 502, 503):
-                    # Instance is rate-limited or down — rotate
-                    logger.warning(
-                        f"Piped instance {instance} returned {resp.status_code}, rotating"
-                    )
-                    instance = await self._rotate_instance()
-                    url = f"{instance}{path}"
-                    continue
-
+                # Any non-200 means rotate (includes 3xx redirects, 4xx, 5xx)
                 logger.warning(
-                    f"Piped instance {instance} returned {resp.status_code} for {path}"
+                    f"Piped instance {instance} returned HTTP {resp.status_code} for {path}, rotating"
                 )
-                return None
+                self._mark_unhealthy(instance)
+                instance = await self._rotate_instance()
+                url = f"{instance}{path}"
 
             except httpx.TimeoutException:
                 logger.warning(f"Piped instance {instance} timed out, rotating")
+                self._mark_unhealthy(instance)
                 instance = await self._rotate_instance()
                 url = f"{instance}{path}"
             except httpx.RequestError as exc:
                 logger.warning(
                     f"Piped instance {instance} error: {type(exc).__name__}, rotating"
                 )
+                self._mark_unhealthy(instance)
                 instance = await self._rotate_instance()
                 url = f"{instance}{path}"
 
         return None
+
+    def _mark_unhealthy(self, instance: str) -> None:
+        """Mark an instance as unhealthy in the cache."""
+        self._instance_health[instance] = (time.monotonic(), False)
 
     # -- Provider interface -----------------------------------------------
 
