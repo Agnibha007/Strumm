@@ -59,14 +59,10 @@ class ProviderRegistry:
 
     Usage:
         registry = ProviderRegistry()
-        registry.register(InnerTubeProvider())
         registry.register(YTMusicProvider())
 
-        # Get the best available provider
-        provider = await registry.get_provider()
-
         # Routes just call:
-        result = await registry.search("lofi beats", filter="songs")
+        result = await registry.get_song("dQw4w9WgXcQ")
     """
 
     def __init__(self) -> None:
@@ -396,30 +392,17 @@ def create_registry() -> ProviderRegistry:
     """
     Create and populate the global provider registry.
 
-    Provider priority (first = highest):
-      1. YouTube Data API  (official Google API, works everywhere incl. HF Spaces)
-      2. InnerTube         (uses www.youtube.com InnerTube API)
-      3. Piped             (uses public Piped API instances)
-      4. YTMusic           (uses music.youtube.com — local/Render environments)
+    Creates and registers the YTMusic provider (wraps ytmusicapi).
     """
     global _registry
 
-    from app.services.providers.youtube_data_provider import YouTubeDataAPIProvider
-    from app.services.providers.innertube_provider import InnerTubeProvider
-    from app.services.providers.piped_provider import PipedProvider
     from app.services.providers.ytmusic_provider import YTMusicProvider
 
     registry = ProviderRegistry()
-    registry.register(YouTubeDataAPIProvider())  # Priority 1: official API, works everywhere
-    registry.register(InnerTubeProvider())        # Priority 2: direct InnerTube
-    registry.register(PipedProvider())            # Priority 3: Piped proxy
-    registry.register(YTMusicProvider())          # Priority 4: ytmusicapi fallback
+    registry.register(YTMusicProvider())
 
     _registry = registry
-    logger.info(
-        "Music provider registry initialized: "
-        "youtube-data (primary) → innertube → piped → ytmusic (last resort)"
-    )
+    logger.info("Music provider registry initialized: ytmusicapi (single provider)")
     return registry
 
 
