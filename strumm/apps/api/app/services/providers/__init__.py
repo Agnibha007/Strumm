@@ -20,6 +20,7 @@ from app.services.providers.base import (
     ProviderMetrics,
     ProviderError,
 )
+from app.services.providers.youtube_data_provider import YouTubeDataAPIProvider
 from app.services.providers.innertube_provider import InnerTubeProvider
 from app.services.providers.piped_provider import PipedProvider
 from app.services.providers.ytmusic_provider import YTMusicProvider
@@ -32,6 +33,7 @@ __all__ = [
     "ProviderStatus",
     "ProviderMetrics",
     "ProviderError",
+    "YouTubeDataAPIProvider",
     "InnerTubeProvider",
     "PipedProvider",
     "YTMusicProvider",

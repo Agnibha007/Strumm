@@ -397,25 +397,28 @@ def create_registry() -> ProviderRegistry:
     Create and populate the global provider registry.
 
     Provider priority (first = highest):
-      1. InnerTube  (uses www.youtube.com InnerTube API — may work on some HF instances)
-      2. Piped      (uses public Piped API instances — works when YouTube CDN blocks direct access)
-      3. YTMusic    (uses music.youtube.com — fallback for local/Render environments)
+      1. YouTube Data API  (official Google API, works everywhere incl. HF Spaces)
+      2. InnerTube         (uses www.youtube.com InnerTube API)
+      3. Piped             (uses public Piped API instances)
+      4. YTMusic           (uses music.youtube.com — local/Render environments)
     """
     global _registry
 
+    from app.services.providers.youtube_data_provider import YouTubeDataAPIProvider
     from app.services.providers.innertube_provider import InnerTubeProvider
     from app.services.providers.piped_provider import PipedProvider
     from app.services.providers.ytmusic_provider import YTMusicProvider
 
     registry = ProviderRegistry()
-    registry.register(InnerTubeProvider())  # Priority 1: direct InnerTube
-    registry.register(PipedProvider())      # Priority 2: Piped proxy
-    registry.register(YTMusicProvider())    # Priority 3: ytmusicapi fallback
+    registry.register(YouTubeDataAPIProvider())  # Priority 1: official API, works everywhere
+    registry.register(InnerTubeProvider())        # Priority 2: direct InnerTube
+    registry.register(PipedProvider())            # Priority 3: Piped proxy
+    registry.register(YTMusicProvider())          # Priority 4: ytmusicapi fallback
 
     _registry = registry
     logger.info(
         "Music provider registry initialized: "
-        "innertube (primary) → piped (fallback) → ytmusic (last resort)"
+        "youtube-data (primary) → innertube → piped → ytmusic (last resort)"
     )
     return registry
 

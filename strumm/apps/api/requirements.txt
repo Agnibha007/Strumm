@@ -13,3 +13,4 @@ ytmusicapi>=1.7.0
 beautifulsoup4>=4.12.0
 websockets>=12.0
 Pillow>=11.0.0  # Server-side image optimization (resize, WebP conversion, quality)
+google-api-python-client>=2.120.0  # YouTube Data API v3
