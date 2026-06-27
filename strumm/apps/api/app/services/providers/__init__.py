@@ -12,7 +12,7 @@ Usage:
     results = await provider.search("lofi beats", filter="songs")
 """
 
-from app.services.providers.registry import get_music_provider, MusicProviderRegistry
+from app.services.providers.registry import get_music_provider, ProviderRegistry
 from app.services.providers.base import (
     MusicProvider,
     ProviderHealth,
@@ -26,7 +26,7 @@ from app.services.providers.ytmusic_provider import YTMusicProvider
 
 __all__ = [
     "get_music_provider",
-    "MusicProviderRegistry",
+    "ProviderRegistry",
     "MusicProvider",
     "ProviderHealth",
     "ProviderStatus",
