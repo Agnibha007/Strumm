@@ -418,9 +418,8 @@ def extract_spotify_playlist(url: str) -> list:
     return []
 
 
-def extract_ytmusic_playlist(url: str) -> list:
-    from app.services.ytmusic import call_ytmusic_safe
-
+async def extract_ytmusic_playlist(url: str) -> list:
+    """Extract playlist tracks from YouTube Music URL using the active provider."""
     playlist_id = None
     if "list=" in url:
         playlist_id = url.split("list=")[-1].split("&")[0]
@@ -429,7 +428,10 @@ def extract_ytmusic_playlist(url: str) -> list:
         return []
 
     try:
-        playlist = call_ytmusic_safe("get_playlist", playlist_id, limit=None)
+        from app.services.providers import get_music_provider
+        provider = get_music_provider()
+
+        playlist = await provider.get_playlist(playlist_id, limit=None)
         if not playlist:
             return []
         tracks = playlist.get("tracks", [])
@@ -456,7 +458,7 @@ def extract_ytmusic_playlist(url: str) -> list:
             parsed.append(item)
         return parsed
     except Exception as e:
-        logger.error(f"Error fetching YTMusic playlist: {str(e)}")
+        logger.error(f"Error fetching provider playlist: {str(e)}")
         return []
 
 
@@ -503,7 +505,7 @@ async def import_playlist(
             parsed_rows = extract_spotify_playlist(import_data)
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-            parsed_rows = extract_ytmusic_playlist(import_data)
+            parsed_rows = await extract_ytmusic_playlist(import_data)
 
         if not parsed_rows and source in ["spotify", "youtube"]:
             for line in import_data.split("\n"):

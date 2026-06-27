@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Query
 from typing import Optional, List, Dict, Any
 import asyncio
-import time
 import logging
 
 from app.database import mongodb as db
@@ -10,209 +9,33 @@ from app.services.security import escaped_regex, sanitize_enum, sanitize_text
 from app.services.cache import (
     cache_search,
     get_cached_search,
-    cache_artist,
-    get_cached_artist,
-    cache_album,
-    get_cached_album,
-    record_search_latency,
 )
-from app.services.coalescer import get_coalescer
-from app.services.ytmusic import search_ytmusic_safe
+from app.services.providers import get_music_provider
 
 logger = logging.getLogger("strumm-search")
 router = APIRouter(prefix="/search", tags=["search"])
 
-_coalescer = get_coalescer()
-
 # ---------------------------------------------------------------------------
-# Internal helpers — parse raw YTMusic results into Strumm format
-# ---------------------------------------------------------------------------
-
-
-def _parse_song_results(search_results: list) -> list:
-    """Parse raw YTMusic song search results into Strumm format."""
-    songs = []
-    for item in search_results:
-        video_id = item.get("videoId")
-        if not video_id:
-            continue
-
-        duration_sec = item.get("duration_seconds")
-        if not duration_sec and item.get("duration"):
-            dur_str = item["duration"]
-            try:
-                parts = list(map(int, dur_str.split(":")))
-                if len(parts) == 2:
-                    duration_sec = parts[0] * 60 + parts[1]
-                elif len(parts) == 3:
-                    duration_sec = parts[0] * 3600 + parts[1] * 60 + parts[2]
-            except Exception:
-                duration_sec = 200
-        if not duration_sec:
-            duration_sec = 200
-
-        artists_list = item.get("artists", [])
-        artist_name = ", ".join(
-            [a.get("name", "") for a in artists_list if a.get("name")]
-        ) if artists_list else "Unknown Artist"
-
-        thumbnails = item.get("thumbnails", [])
-        thumb_url = (
-            thumbnails[-1].get("url", "")
-            if thumbnails
-            else f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
-        )
-
-        album_info = item.get("album")
-        album_name = album_info.get("name", "") if album_info else ""
-
-        songs.append({
-            "videoId": video_id,
-            "title": item.get("title", "Untitled Track"),
-            "artist": artist_name,
-            "thumbnail": thumb_url,
-            "duration": duration_sec,
-            "metadata": {"album": album_name},
-        })
-    return songs
-
-
-def _parse_album_results(search_results: list) -> list:
-    """Parse raw YTMusic album search results into Strumm format."""
-    albums = []
-    for item in search_results:
-        browse_id = item.get("browseId")
-        if not browse_id:
-            continue
-        artists_list = item.get("artists", [])
-        artist_name = ", ".join(
-            [a.get("name", "") for a in artists_list if a.get("name")]
-        ) if artists_list else "Unknown Artist"
-        thumbnails = item.get("thumbnails", [])
-        thumb_url = thumbnails[-1].get("url", "") if thumbnails else ""
-        albums.append({
-            "id": browse_id,
-            "title": item.get("title", "Untitled Album"),
-            "artist": artist_name,
-            "thumbnail": thumb_url,
-            "year": item.get("year", ""),
-        })
-    return albums
-
-
-def _parse_artist_results(search_results: list) -> list:
-    """Parse raw YTMusic artist search results into Strumm format."""
-    artists = []
-    for item in search_results:
-        browse_id = item.get("browseId")
-        if not browse_id:
-            continue
-        thumbnails = item.get("thumbnails", [])
-        thumb_url = thumbnails[-1].get("url", "") if thumbnails else ""
-        artists.append({
-            "id": browse_id,
-            "name": item.get("artist", "Unknown Artist"),
-            "thumbnail": thumb_url,
-        })
-    return artists
-
-
-# ---------------------------------------------------------------------------
-# YTMusic search helpers — with cache + coalescing
+# Provider-backed search helpers
 # ---------------------------------------------------------------------------
 
 
 async def search_yt_music_songs(q: str) -> List[Dict[str, Any]]:
-    """Search YTMusic songs with in-memory cache and request coalescing."""
-    cache_key_str = f"song:{q}"
-
-    cached = get_cached_search(cache_key_str)
-    if cached is not None:
-        logger.info(f"Search cache HIT for '{q}'")
-        return cached
-
-    start = time.monotonic()
-    try:
-        search_results = await _coalescer.execute(
-            key=f"yt:songs:{q}",
-            factory=lambda: asyncio.to_thread(search_ytmusic_safe, q, filter="songs"),
-            timeout=8.0,
-        )
-    except Exception as exc:
-        logger.warning(
-            f"YTMusic song search failed for '{q}': {type(exc).__name__}: {exc!s:.150}"
-        )
-        return []
-
-    elapsed_ms = (time.monotonic() - start) * 1000
-    record_search_latency(elapsed_ms)
-
-    songs = _parse_song_results(search_results or [])
-    cache_search(cache_key_str, songs)
-    logger.info(f"Search cache MISS for '{q}' — cached {len(songs)} songs ({elapsed_ms:.0f}ms)")
-    return songs
+    """Search songs via the active music provider."""
+    provider = get_music_provider()
+    return await provider.search(q, filter="songs")
 
 
 async def search_yt_music_albums(q: str) -> List[Dict[str, Any]]:
-    """Search YTMusic albums with in-memory cache and request coalescing."""
-    cache_key_str = f"album:{q}"
-
-    cached = get_cached_album(cache_key_str)
-    if cached is not None:
-        logger.info(f"Album cache HIT for '{q}'")
-        return cached
-
-    start = time.monotonic()
-    try:
-        search_results = await _coalescer.execute(
-            key=f"yt:albums:{q}",
-            factory=lambda: asyncio.to_thread(search_ytmusic_safe, q, filter="albums"),
-            timeout=8.0,
-        )
-    except Exception as exc:
-        logger.warning(
-            f"YTMusic album search failed for '{q}': {type(exc).__name__}: {exc!s:.150}"
-        )
-        return []
-
-    elapsed_ms = (time.monotonic() - start) * 1000
-    record_search_latency(elapsed_ms)
-
-    albums = _parse_album_results(search_results or [])
-    cache_album(cache_key_str, albums)
-    logger.info(f"Album cache MISS for '{q}' — cached {len(albums)} albums ({elapsed_ms:.0f}ms)")
-    return albums
+    """Search albums via the active music provider."""
+    provider = get_music_provider()
+    return await provider.search(q, filter="albums")
 
 
 async def search_yt_music_artists(q: str) -> List[Dict[str, Any]]:
-    """Search YTMusic artists with in-memory cache and request coalescing."""
-    cache_key_str = f"artist:{q}"
-
-    cached = get_cached_artist(cache_key_str)
-    if cached is not None:
-        logger.info(f"Artist cache HIT for '{q}'")
-        return cached
-
-    start = time.monotonic()
-    try:
-        search_results = await _coalescer.execute(
-            key=f"yt:artists:{q}",
-            factory=lambda: asyncio.to_thread(search_ytmusic_safe, q, filter="artists"),
-            timeout=8.0,
-        )
-    except Exception as exc:
-        logger.warning(
-            f"YTMusic artist search failed for '{q}': {type(exc).__name__}: {exc!s:.150}"
-        )
-        return []
-
-    elapsed_ms = (time.monotonic() - start) * 1000
-    record_search_latency(elapsed_ms)
-
-    artists = _parse_artist_results(search_results or [])
-    cache_artist(cache_key_str, artists)
-    logger.info(f"Artist cache MISS for '{q}' — cached {len(artists)} artists ({elapsed_ms:.0f}ms)")
-    return artists
+    """Search artists via the active music provider."""
+    provider = get_music_provider()
+    return await provider.search(q, filter="artists")
 
 
 # ---------------------------------------------------------------------------
@@ -277,13 +100,10 @@ async def search_local_users(q: str) -> List[Dict[str, Any]]:
 
 @router.get("/song/{id}")
 async def get_song_by_id(id: str):
-    from app.services.ytmusic import call_ytmusic_safe
+    provider = get_music_provider()
 
     try:
-        watch = await asyncio.to_thread(
-            call_ytmusic_safe, "get_watch_playlist",
-            videoId=id, limit=1,
-        )
+        watch = await provider.get_watch_playlist(id, limit=1)
         if not watch or not watch.get("tracks"):
             return {"success": False, "error": "Song not found"}
 
@@ -395,10 +215,10 @@ async def search_all(
 
 
 async def get_yt_music_album_tracks(browse_id: str) -> Dict[str, Any]:
-    from app.services.ytmusic import call_ytmusic_safe
+    provider = get_music_provider()
 
     try:
-        album_details = await asyncio.to_thread(call_ytmusic_safe, "get_album", browse_id)
+        album_details = await provider.get_album(browse_id)
         if not album_details:
             return {"success": False, "error": "Album not found"}
 

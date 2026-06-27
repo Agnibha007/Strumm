@@ -253,15 +253,14 @@ async def get_radio(
     current_user: Optional[dict] = Depends(get_current_user),
 ):
     """Generate an infinite radio stream based on a seed song.
-    Uses ytmusicapi's get_watch_playlist which returns related tracks.
+    Uses the active music provider to fetch related tracks.
     """
     try:
-        from app.services.ytmusic import call_ytmusic_safe
-        import asyncio
+        from app.services.providers import get_music_provider
+        provider = get_music_provider()
 
-        watch = await asyncio.to_thread(
-            call_ytmusic_safe, "get_watch_playlist",
-            videoId=video_id,
+        watch = await provider.get_watch_playlist(
+            video_id,
             limit=limit
         )
 

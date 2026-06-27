@@ -12,6 +12,7 @@ from app.database import mongodb as db
 from app.routes import auth, search, stream, lyrics, playlist, user, podcast, recommendation, share, social
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
+from app.services.providers import get_music_provider
 import logging
 
 # Setup Logging
@@ -44,6 +45,12 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     db.close_db()
+    # Close provider registry
+    try:
+        provider = get_music_provider()
+        await provider.close()
+    except Exception as exc:
+        logger.warning(f"Provider registry shutdown error: {exc!s:.100}")
     logger.info("Application shutdown complete.")
 
 
@@ -58,9 +65,17 @@ async def _background_startup_work():
         logger.info(f"[{time.time() - t0:.3f}s] Beginning background initialization...")
         database = db.get_db()
 
+        # --- Initialize provider registry ---
+        provider_registry = get_music_provider()
+        logger.info(f"[{time.time() - t0:.3f}s] Music provider registry initialized.")
+
         # --- Database indexes (non-critical) ---
         await _create_indexes(database)
         logger.info(f"[{time.time() - t0:.3f}s] Database indexes created.")
+
+        # --- Provider recovery loop ---
+        asyncio.create_task(provider_registry.start_recovery_loop())
+        logger.info(f"[{time.time() - t0:.3f}s] Provider recovery loop started.")
 
         # --- Disk usage check ---
         _check_disk_usage()
