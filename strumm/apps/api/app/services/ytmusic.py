@@ -514,7 +514,26 @@ class YTMusicManager:
                 yt_result = d
                 break
 
-        reachable = bool(yt_result and yt_result["connect_ok"] and yt_result["status_code"] and yt_result["status_code"] < 500)
+        # Determine reachability
+        reachable = False
+        failure_reason = yt_result["error"] if yt_result else "No diagnostic result"
+
+        if yt_result and yt_result["connect_ok"] and yt_result["status_code"] and yt_result["status_code"] < 500:
+            # HTTP 200 but YouTube's CDN may serve a bot-detection page
+            title = (yt_result.get("html_title") or "").lower()
+            ct = (yt_result.get("content_type") or "").lower()
+            if "text/html" in ct and any(
+                kw in title
+                for kw in ["deprecated", "browser", "captcha", "bot", "unusual traffic",
+                           "automated", "verify", "sorry", "please confirm"]
+            ):
+                reachable = False
+                failure_reason = (
+                    f"YouTube returned bot-detection page (HTTP {yt_result['status_code']}, "
+                    f"title={yt_result.get('html_title','')!r})"
+                )
+            else:
+                reachable = True
 
         with self._lock:
             self._last_reachability_check = now
@@ -526,7 +545,7 @@ class YTMusicManager:
         if not reachable:
             logger.error(
                 f"music.youtube.com REACHABILITY: FAIL — cached for {REACHABILITY_CACHE_TTL:.0f}s. "
-                f"{yt_result['error'] if yt_result else 'No diagnostic result'}"
+                f"Reason: {failure_reason}"
             )
         else:
             logger.info(
