@@ -32,7 +32,9 @@ Why Hugging Face Spaces experiences SSL EOF while local development does not:
 from __future__ import annotations
 
 import logging
+import re
 import ssl
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -54,12 +56,14 @@ YT_BASE_URL = f"https://{YT_HOST}"
 # Time budgets (seconds)
 CONNECT_TIMEOUT = 3.0
 READ_TIMEOUT = 3.0
-# Reachability probe uses a tighter timeout — we only need to know if
-# YouTube responds at all, not whether it responds quickly.
-PROBE_CONNECT_TIMEOUT = 1.0
-PROBE_READ_TIMEOUT = 1.0
+# Diagnostic probe timeouts — we want enough time to get a response
+# (including bot challenge pages) without hanging forever.
+PROBE_CONNECT_TIMEOUT = 3.0
+PROBE_READ_TIMEOUT = 5.0
 MAX_RETRY_TOTAL_SECONDS = 5.0
-REACHABILITY_CACHE_TTL = 30.0
+# Cache the unreachable result for 2 minutes to avoid hammering YT
+# when it's known to be blocked from cloud IP ranges.
+REACHABILITY_CACHE_TTL = 120.0
 
 # Connection pool settings
 POOL_CONNECTIONS = 10
@@ -75,6 +79,13 @@ DEFAULT_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 )
+
+# Diagnostic probe targets
+PROBE_TARGETS = [
+    ("google.com", "https://www.google.com"),
+    ("youtube.com", "https://www.youtube.com"),
+    ("music.youtube.com", "https://music.youtube.com"),
+]
 
 # Chrome 125 cipher suites (TLS 1.2 only)
 CIPHER_SUITES = (
@@ -347,14 +358,142 @@ class YTMusicManager:
                 return self._client
             return self._create_client()
 
+    # -- Connectivity diagnostics -------------------------------------------
+
+    @staticmethod
+    def _probe_url(
+        label: str, url: str, timeout: tuple[float, float],
+    ) -> dict[str, Any]:
+        """
+        Probe a URL and return structured diagnostics.
+
+        Returns a dict with keys:
+          label, url, connect_ok, dns_duration, tls_duration, connect_duration,
+          status_code, redirect_chain, content_type, html_title, error
+        """
+        result: dict[str, Any] = {
+            "label": label,
+            "url": url,
+            "connect_ok": False,
+            "dns_duration": None,
+            "tls_duration": None,
+            "connect_duration": None,
+            "status_code": None,
+            "redirect_chain": [],
+            "content_type": None,
+            "html_title": None,
+            "error": None,
+        }
+
+        probe_session = SessionManager.create_session()
+        start = time.monotonic()
+
+        try:
+            resp = probe_session.get(
+                url,
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            elapsed = time.monotonic() - start
+
+            result["connect_ok"] = True
+            result["connect_duration"] = round(elapsed, 3)
+            result["status_code"] = resp.status_code
+            result["content_type"] = resp.headers.get("content-type", "")[:100]
+            result["headers"] = {
+                "content-length": resp.headers.get("content-length", ""),
+                "set-cookie": (resp.headers.get("set-cookie", "") or "")[:80],
+                "x-robots-tag": resp.headers.get("x-robots-tag", ""),
+                "x-frame-options": resp.headers.get("x-frame-options", ""),
+                "server": resp.headers.get("server", ""),
+                "cache-control": resp.headers.get("cache-control", ""),
+            }
+
+            # Redirect chain
+            for h in resp.history:
+                result["redirect_chain"].append({
+                    "status": h.status_code,
+                    "location": h.headers.get("location", "")[:120],
+                })
+
+            # Extract HTML title for bot-detection pages (read at most 5KB)
+            ct = (resp.headers.get("content-type", "") or "").lower()
+            if "text/html" in ct:
+                chunk = b""
+                for c in resp.iter_content(5000):
+                    chunk += c
+                    if len(chunk) >= 5000:
+                        break
+                if chunk:
+                    # Try UTF-8, fall back to latin-1 for binary-ish pages
+                    try:
+                        text = chunk.decode("utf-8", errors="replace")
+                    except Exception:
+                        text = chunk.decode("latin-1", errors="replace")
+                    m = re.search(
+                        r"<title[^>]*>([^<]+)</title>",
+                        text,
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                    if m:
+                        result["html_title"] = m.group(1).strip()[:120]
+
+        except Exception as exc:
+            result["connect_ok"] = False
+            result["error"] = f"{type(exc).__name__}: {exc!s:.200}"
+            result["connect_duration"] = round(time.monotonic() - start, 3)
+
+        return result
+
+    def _run_diagnostics(self) -> list[dict[str, Any]]:
+        """Run probes against all diagnostic targets and log results."""
+        results = []
+        timeout = (PROBE_CONNECT_TIMEOUT, PROBE_READ_TIMEOUT)
+
+        for label, url in PROBE_TARGETS:
+            # DNS resolution timing
+            dns_start = time.monotonic()
+            try:
+                host = url.split("/")[2]
+                socket.getaddrinfo(host, 443, socket.AF_INET)
+                dns_duration = round(time.monotonic() - dns_start, 4)
+            except Exception as exc:
+                dns_duration = None
+
+            r = self._probe_url(label, url, timeout)
+            r["dns_duration"] = dns_duration
+
+            if r["connect_ok"]:
+                logger.info(
+                    f"[diag] {label} ({url}) — "
+                    f"DNS={r['dns_duration']}s, "
+                    f"conn={r['connect_duration']}s, "
+                    f"HTTP {r['status_code']}, "
+                    f"type={r['content_type']}, "
+                    f"title={r['html_title']!r}"
+                )
+                if r["redirect_chain"]:
+                    for rd in r["redirect_chain"]:
+                        logger.info(f"[diag]   → redirect {rd['status']} → {rd['location']}")
+            else:
+                logger.warning(
+                    f"[diag] {label} ({url}) — FAILED: {r['error']} "
+                    f"(DNS={r['dns_duration']}s, duration={r['connect_duration']}s)"
+                )
+
+            results.append(r)
+
+        return results
+
     # -- Reachability check -------------------------------------------------
 
     def _check_reachability(self) -> bool:
         """
         Probe whether music.youtube.com is reachable from this host.
 
-        Results are cached for REACHABILITY_CACHE_TTL seconds to avoid
-        hammering the endpoint on every search request.
+        On failure, caches the result for REACHABILITY_CACHE_TTL (2 minutes)
+        to avoid hammering YT with repeated probes from blocked IPs.
+        On success, clears the cache so subsequent checks proceed fresh.
         """
         now = time.monotonic()
         with self._lock:
@@ -365,20 +504,17 @@ class YTMusicManager:
             ):
                 return self._reachability_cached
 
-        # Perform the check outside the lock
-        probe_session = SessionManager.create_session()
-        try:
-            resp = probe_session.get(
-                YT_BASE_URL,
-                timeout=(PROBE_CONNECT_TIMEOUT, PROBE_READ_TIMEOUT),
-                allow_redirects=True,
-            )
-            reachable = resp.status_code < 500
-        except Exception as exc:
-            logger.warning(
-                f"YouTube Music unreachable (probe): {type(exc).__name__}: {exc!s:.120}"
-            )
-            reachable = False
+        # Perform diagnostics outside the lock
+        diag_results = self._run_diagnostics()
+
+        # Determine reachability from music.youtube.com result
+        yt_result = None
+        for d in diag_results:
+            if d["label"] == "music.youtube.com":
+                yt_result = d
+                break
+
+        reachable = bool(yt_result and yt_result["connect_ok"] and yt_result["status_code"] and yt_result["status_code"] < 500)
 
         with self._lock:
             self._last_reachability_check = now
@@ -388,7 +524,17 @@ class YTMusicManager:
                 self._metrics.record_reachability_fail()
 
         if not reachable:
-            logger.error("music.youtube.com is unreachable from this host")
+            logger.error(
+                f"music.youtube.com REACHABILITY: FAIL — cached for {REACHABILITY_CACHE_TTL:.0f}s. "
+                f"{yt_result['error'] if yt_result else 'No diagnostic result'}"
+            )
+        else:
+            logger.info(
+                f"music.youtube.com REACHABILITY: OK — "
+                f"HTTP {yt_result['status_code']}, "
+                f"title={yt_result.get('html_title', '')!r}"
+            )
+
         return reachable
 
     # -- Fallback client (rate-limit bypass) --------------------------------
