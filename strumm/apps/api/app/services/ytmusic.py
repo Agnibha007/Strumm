@@ -54,6 +54,10 @@ YT_BASE_URL = f"https://{YT_HOST}"
 # Time budgets (seconds)
 CONNECT_TIMEOUT = 3.0
 READ_TIMEOUT = 3.0
+# Reachability probe uses a tighter timeout — we only need to know if
+# YouTube responds at all, not whether it responds quickly.
+PROBE_CONNECT_TIMEOUT = 1.0
+PROBE_READ_TIMEOUT = 1.0
 MAX_RETRY_TOTAL_SECONDS = 5.0
 REACHABILITY_CACHE_TTL = 30.0
 
@@ -366,13 +370,13 @@ class YTMusicManager:
         try:
             resp = probe_session.get(
                 YT_BASE_URL,
-                timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+                timeout=(PROBE_CONNECT_TIMEOUT, PROBE_READ_TIMEOUT),
                 allow_redirects=True,
             )
             reachable = resp.status_code < 500
         except Exception as exc:
             logger.warning(
-                f"YouTube Music unreachable: {type(exc).__name__}: {exc!s:.120}"
+                f"YouTube Music unreachable (probe): {type(exc).__name__}: {exc!s:.120}"
             )
             reachable = False
 
