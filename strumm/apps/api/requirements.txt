@@ -1,5 +1,5 @@
 fastapi>=0.110.0
-uvicorn>=0.28.0
+uvicorn[standard]>=0.28.0
 motor>=3.3.0
 pydantic>=2.6.0
 python-dotenv>=1.0.1
@@ -12,5 +12,8 @@ email-validator>=2.0.0
 ytmusicapi>=1.7.0
 beautifulsoup4>=4.12.0
 websockets>=12.0
-Pillow>=11.0.0  # Server-side image optimization (resize, WebP conversion, quality)
-google-api-python-client>=2.120.0  # YouTube Data API v3
+Pillow>=11.0.0
+google-api-python-client>=2.120.0
+requests>=2.32.0
+dnspython>=2.6.0
+gunicorn>=22.0.0
