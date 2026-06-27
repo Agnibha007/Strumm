@@ -38,11 +38,10 @@ async def get_song_metadata(video_id: str) -> Optional[dict]:
     if hist_doc:
         return hist_doc["song"]
 
-    # 2. Fetch from active music provider
+    # 2. Fetch from YTMusic
     try:
-        from app.services.providers import get_music_provider
-        provider = get_music_provider()
-        watch = await provider.get_watch_playlist(video_id, limit=1)
+        from app.services.ytmusic import call_ytmusic_safe
+        watch = await asyncio.to_thread(lambda: call_ytmusic_safe("get_watch_playlist", videoId=video_id, limit=1))
         if watch and watch.get("tracks"):
             track = watch["tracks"][0]
             duration_sec = track.get("length") or 200

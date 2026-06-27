@@ -84,13 +84,12 @@ async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = No
     return None
 
 async def fetch_provider_lyrics(video_id: str) -> Optional[dict]:
-    """Fetch lyrics via the active music provider."""
-    from app.services.providers import get_music_provider
-
+    """Fetch lyrics via ytmusicapi directly."""
     try:
-        provider = get_music_provider()
+        from app.services.ytmusic import call_ytmusic_safe
+
         # First, get the watch playlist to find the lyrics browse ID
-        watch = await provider.get_watch_playlist(video_id, limit=1)
+        watch = await asyncio.to_thread(lambda: call_ytmusic_safe("get_watch_playlist", videoId=video_id, limit=1))
         if not watch:
             return None
 
@@ -100,7 +99,7 @@ async def fetch_provider_lyrics(video_id: str) -> Optional[dict]:
         if not isinstance(lyrics_browse_id, str) or not lyrics_browse_id:
             return None
 
-        lyrics = await provider.get_lyrics(lyrics_browse_id)
+        lyrics = await asyncio.to_thread(lambda: call_ytmusic_safe("get_lyrics", lyrics_browse_id))
         plain = sanitize_multiline_text(lyrics.get("lyrics", ""), max_length=50000) if lyrics else ""
         if not plain:
             return None
@@ -112,7 +111,7 @@ async def fetch_provider_lyrics(video_id: str) -> Optional[dict]:
             "isSynced": False,
         }
     except Exception as e:
-        logger.warning(f"Provider lyrics fallback failed for {video_id}: {str(e)}")
+        logger.warning(f"YTMusic lyrics fallback failed for {video_id}: {str(e)}")
     return None
 
 def unavailable_lyrics(title: str, artist: str) -> dict:

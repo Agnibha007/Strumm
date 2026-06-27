@@ -6,6 +6,7 @@ from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.security import escaped_regex, sanitize_text, parse_object_id
+import asyncio
 import httpx
 import logging
 
@@ -68,8 +69,7 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
     resolved = []
     database = db.get_db()
     from app.routes.search import search_yt_music_songs
-    import asyncio
-    
+
     async def resolve_single(s: dict):
         title = s.get("title", "")
         artist = s.get("artist", "")
@@ -256,13 +256,13 @@ async def get_radio(
     Uses the active music provider to fetch related tracks.
     """
     try:
-        from app.services.providers import get_music_provider
-        provider = get_music_provider()
+        from app.services.ytmusic import call_ytmusic_safe
 
-        watch = await provider.get_watch_playlist(
-            video_id,
+        watch = await asyncio.to_thread(lambda: call_ytmusic_safe(
+            "get_watch_playlist",
+            videoId=video_id,
             limit=limit
-        )
+        ))
 
         if not watch or not watch.get("tracks"):
             return {"success": False, "error": "No related tracks found for this song."}

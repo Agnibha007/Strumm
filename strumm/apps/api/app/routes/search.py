@@ -10,8 +10,7 @@ from app.services.cache import (
     cache_search,
     get_cached_search,
 )
-from app.services.ytmusic import search_ytmusic_safe
-from app.services.providers import get_music_provider
+from app.services.ytmusic import search_ytmusic_safe, call_ytmusic_safe
 
 logger = logging.getLogger("strumm-search")
 router = APIRouter(prefix="/search", tags=["search"])
@@ -98,10 +97,8 @@ async def search_local_users(q: str) -> List[Dict[str, Any]]:
 
 @router.get("/song/{id}")
 async def get_song_by_id(id: str):
-    provider = get_music_provider()
-
     try:
-        watch = await provider.get_watch_playlist(id, limit=1)
+        watch = await asyncio.to_thread(lambda: call_ytmusic_safe("get_watch_playlist", videoId=id, limit=1))
         if not watch or not watch.get("tracks"):
             return {"success": False, "error": "Song not found"}
 
@@ -213,10 +210,8 @@ async def search_all(
 
 
 async def get_yt_music_album_tracks(browse_id: str) -> Dict[str, Any]:
-    provider = get_music_provider()
-
     try:
-        album_details = await provider.get_album(browse_id)
+        album_details = await asyncio.to_thread(lambda: call_ytmusic_safe("get_album", browse_id))
         if not album_details:
             return {"success": False, "error": "Album not found"}
 

@@ -624,7 +624,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             {/* Album Cover Card */}
             <div className={`relative group flex-shrink-0 ${effectiveShowLyrics ? "hidden lg:block" : "block"}`}>
               <div
-                className={`overflow-hidden border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 ${
+                className={`overflow-hidden rounded-2xl md:rounded-3xl border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 ${
                   effectiveShowLyrics 
                     ? "w-72 h-52 md:w-96 md:h-72" 
                     : "w-96 h-64 md:w-[320px] md:h-80"

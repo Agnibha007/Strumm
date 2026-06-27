@@ -419,7 +419,7 @@ def extract_spotify_playlist(url: str) -> list:
 
 
 async def extract_ytmusic_playlist(url: str) -> list:
-    """Extract playlist tracks from YouTube Music URL using the active provider."""
+    """Extract playlist tracks from YouTube Music URL using ytmusicapi directly."""
     playlist_id = None
     if "list=" in url:
         playlist_id = url.split("list=")[-1].split("&")[0]
@@ -428,10 +428,10 @@ async def extract_ytmusic_playlist(url: str) -> list:
         return []
 
     try:
-        from app.services.providers import get_music_provider
-        provider = get_music_provider()
+        from app.services.ytmusic import call_ytmusic_safe
+        import asyncio
 
-        playlist = await provider.get_playlist(playlist_id, limit=None)
+        playlist = await asyncio.to_thread(lambda: call_ytmusic_safe("get_playlist", playlist_id, limit=None))
         if not playlist:
             return []
         tracks = playlist.get("tracks", [])
@@ -458,7 +458,7 @@ async def extract_ytmusic_playlist(url: str) -> list:
             parsed.append(item)
         return parsed
     except Exception as e:
-        logger.error(f"Error fetching provider playlist: {str(e)}")
+        logger.error(f"Error fetching YTMusic playlist: {str(e)}")
         return []
 
 
