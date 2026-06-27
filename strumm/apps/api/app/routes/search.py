@@ -10,32 +10,30 @@ from app.services.cache import (
     cache_search,
     get_cached_search,
 )
+from app.services.ytmusic import search_ytmusic_safe
 from app.services.providers import get_music_provider
 
 logger = logging.getLogger("strumm-search")
 router = APIRouter(prefix="/search", tags=["search"])
 
 # ---------------------------------------------------------------------------
-# Provider-backed search helpers
+# ytmusicapi-backed search helpers
 # ---------------------------------------------------------------------------
 
 
 async def search_yt_music_songs(q: str) -> List[Dict[str, Any]]:
-    """Search songs via the active music provider."""
-    provider = get_music_provider()
-    return await provider.search(q, filter="songs")
+    """Search songs via ytmusicapi directly."""
+    return await asyncio.to_thread(lambda: search_ytmusic_safe(q, filter="songs"))
 
 
 async def search_yt_music_albums(q: str) -> List[Dict[str, Any]]:
-    """Search albums via the active music provider."""
-    provider = get_music_provider()
-    return await provider.search(q, filter="albums")
+    """Search albums via ytmusicapi directly."""
+    return await asyncio.to_thread(lambda: search_ytmusic_safe(q, filter="albums"))
 
 
 async def search_yt_music_artists(q: str) -> List[Dict[str, Any]]:
-    """Search artists via the active music provider."""
-    provider = get_music_provider()
-    return await provider.search(q, filter="artists")
+    """Search artists via ytmusicapi directly."""
+    return await asyncio.to_thread(lambda: search_ytmusic_safe(q, filter="artists"))
 
 
 # ---------------------------------------------------------------------------
