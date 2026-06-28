@@ -1,23 +1,25 @@
-import os
-import json
 from fastapi import APIRouter, Depends, Query, Path
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.security import escaped_regex, sanitize_text, parse_object_id
+from app.services.ai.hf_provider import get_hf_provider
 import asyncio
-import httpx
 import logging
 
 logger = logging.getLogger("strumm-recommendation")
 router = APIRouter(tags=["recommendation"])
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+hf = get_hf_provider()
 
-async def get_curated_mix_from_groq(mood: str, user_likes: List[dict], user_history: List[dict]) -> List[dict]:
-    if not GROQ_API_KEY:
-        # Fallback if no GROQ key
+async def get_ai_suggestions(mood: str, user_likes: List[dict], user_history: List[dict]) -> List[dict]:
+    """
+    Get music suggestions from Hugging Face Inference API.
+    Falls back to empty list if HF is not configured.
+    """
+    if not hf.configured:
+        logger.warning("HF not configured; AI recommendations will fall back to DB sampling.")
         return []
         
     likes_summary = [f"'{s['song']['title']}' by {s['song']['artist']}" for s in user_likes[:10]]
@@ -33,35 +35,10 @@ async def get_curated_mix_from_groq(mood: str, user_likes: List[dict], user_hist
         f"Do not write any markdown code block wrappers (like ```json), notes, or introductory text. Just raw JSON output."
     )
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.6
-                },
-                timeout=5.0
-            )
-            
-            if response.status_code == 200:
-                content = response.json()["choices"][0]["message"]["content"].strip()
-                if content.startswith("```"):
-                    content = content.replace("```json", "").replace("```", "").strip()
-                
-                suggestions = json.loads(content)
-                if isinstance(suggestions, list):
-                    return suggestions
-    except Exception as e:
-        logger.error(f"Error calling Groq for recommendations: {str(e)}")
-        
+    messages = [{"role": "user", "content": prompt}]
+    suggestions = await hf.extract_json(messages, temperature=0.6, timeout=8.0)
+    if isinstance(suggestions, list):
+        return suggestions
     return []
 
 # Helper: Resolve song recommendation into a mock playback object (or query DB)
@@ -151,9 +128,9 @@ async def get_flow(
         history = [h async for h in history_cursor]
         
         # Fetch smart recommendations
-        suggestions = await get_curated_mix_from_groq(mood, likes, history)
+        suggestions = await get_ai_suggestions(mood, likes, history)
         
-        # Fallback database curation if GROQ fails or isn't set up
+        # Fallback database curation if HF fails or isn't set up
         if not suggestions:
             # Sample from user likes or standard songs in DB
             db_songs_cursor = database[db.PLAYLISTS].aggregate([
@@ -207,7 +184,7 @@ async def get_discover(
         history_cursor = database[db.PLAYBACK_HISTORIES].find({"userId": userId}).sort("playedAt", -1).limit(10)
         history = [h async for h in history_cursor]
         
-        suggestions = await get_curated_mix_from_groq("Fresh & Undiscovered music", likes, history)
+        suggestions = await get_ai_suggestions("Fresh & Undiscovered music", likes, history)
         
         if not suggestions:
             # Fallback random curation from general playlists
@@ -437,37 +414,18 @@ async def explore_chat(
             "2. Return ONLY the JSON object. Do not include markdown code block wrappers (like ```json), introductory text, or concluding notes. Just raw JSON."
         )
         
-        if not GROQ_API_KEY:
-            return {"success": False, "error": "Groq API key not configured on server."}
-            
+        if not hf.configured:
+            return {"success": False, "error": "HuggingFace API key not configured on server."}
+
         messages_payload = [{"role": "system", "content": system_prompt}]
         for hist_msg in payload.history or []:
             messages_payload.append({"role": hist_msg.role, "content": hist_msg.content})
         messages_payload.append({"role": "user", "content": user_prompt})
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "llama-3.1-8b-instant",
-                    "messages": messages_payload,
-                    "temperature": 0.7
-                },
-                timeout=5.0
-            )
-            
-        if response.status_code != 200:
-            return {"success": False, "error": f"Failed to get response from Groq. Code: {response.status_code}"}
-            
-        content = response.json()["choices"][0]["message"]["content"].strip()
-        if content.startswith("```"):
-            content = content.replace("```json", "").replace("```", "").strip()
-            
-        result_data = json.loads(content)
+        result_data = await hf.extract_json(messages_payload, temperature=0.7, timeout=10.0)
+        if result_data is None:
+            return {"success": False, "error": "Failed to get response from HuggingFace."}
+
         message = result_data.get("message", "Here is your update:")
         songs_suggestions = result_data.get("songs", [])
         create_playlist = result_data.get("create_playlist", False)

@@ -1,0 +1,77 @@
+name: Deploy API to Hugging Face Spaces
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "strumm/apps/api/**"
+      - ".github/workflows/deploy-hf.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate Python compilation
+        working-directory: ./strumm/apps/api
+        run: |
+          pip install -r requirements.txt
+          python -m compileall app/
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_DEPLOY_TOKEN }}
+          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "❌ HF_DEPLOY_TOKEN secret not set — skipping deploy."
+            exit 1
+          fi
+          if [ -z "$HF_SPACE_NAME" ]; then
+            echo "❌ HF_SPACE_NAME secret not set — skipping deploy."
+            exit 1
+          fi
+
+          SPACE_REPO="https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_NAME}"
+          TEMP_CLONE=$(mktemp -d)
+
+          echo "🔄 Cloning HF Space: $HF_SPACE_NAME"
+          git clone --depth 1 "$SPACE_REPO" "$TEMP_CLONE"
+
+          echo "📦 Syncing strumm/apps/api contents..."
+          rsync -av --delete \
+            --exclude ".git" \
+            --exclude ".env" \
+            --exclude "__pycache__" \
+            --exclude "*.pyc" \
+            strumm/apps/api/ "$TEMP_CLONE/"
+
+          cd "$TEMP_CLONE"
+
+          git config user.email "deploy@github.actions"
+          git config user.name "GitHub Actions Deploy"
+
+          git add -A
+
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "✅ No changes to deploy."
+          else
+            git commit -m "Deploy $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "🚀 Pushing to HF Space..."
+            git push
+            echo "✅ Deploy complete: https://huggingface.co/spaces/$HF_SPACE_NAME"
+          fi
+
+          rm -rf "$TEMP_CLONE"

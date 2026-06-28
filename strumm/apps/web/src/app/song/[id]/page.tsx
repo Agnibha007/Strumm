@@ -5,6 +5,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { apiUrl } from "web/lib/api";
+import { getVideoDetails } from "web/lib/invidious";
 import BrandLogo from "web/components/BrandLogo";
 import { Song } from "@strumm/types";
 
@@ -22,15 +23,12 @@ export default function SongPage({ params }: SongPageProps) {
   useEffect(() => {
     const loadSong = async () => {
       try {
-        const response = await fetch(apiUrl(`/search/song/${id}`));
-        const json = await response.json();
-        
-        if (json.success && json.data) {
-          const song = json.data as Song;
+        const song = await getVideoDetails(id);
+        if (song) {
           playSong(song, [song]);
           router.push("/");
         } else {
-          setError(json.error || "Song not found.");
+          setError("Song not found.");
         }
       } catch (err) {
         setError("Failed to resolve song.");

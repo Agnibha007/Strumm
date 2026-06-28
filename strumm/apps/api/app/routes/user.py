@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from typing import Optional, Dict, Any, List
 from bson import ObjectId
 from datetime import datetime, timedelta
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import SongSchema, UserSettingsSchema
-from app.services.security import parse_object_id, sanitize_positive_int, sanitize_text
+from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
 from pydantic import BaseModel
 import logging
 
@@ -1305,6 +1305,37 @@ async def delete_memory(memory_id: str, current_user: dict = Depends(get_current
     except Exception as e:
         logger.error(f"Error deleting memory {memory_id}: {str(e)}")
         return {"success": False, "error": str(e)}
+
+# --- User Search (for Profiles filter in search page) ---
+
+@router.get("/users/search")
+async def search_users(
+    q: str = Query(..., min_length=1, description="Search query for display name"),
+    limit: int = Query(6, ge=1, le=20)
+):
+    """Search public user profiles by display name. No auth required."""
+    try:
+        database = db.get_db()
+        cleaned_query = sanitize_text(q, max_length=120)
+        regex_query = escaped_regex(cleaned_query)
+        user_cursor = database[db.USERS].find(
+            {"displayName": regex_query, "settings.privacy": "public"},
+            {"displayName": 1, "username": 1, "avatar": 1, "theme": 1},
+        ).limit(limit)
+
+        users = []
+        async for u in user_cursor:
+            users.append({
+                "id": str(u["_id"]),
+                "displayName": u.get("displayName"),
+                "username": u.get("username"),
+                "avatar": u.get("avatar"),
+            })
+
+        return {"success": True, "data": users}
+    except Exception as e:
+        logger.error(f"User search failed: {str(e)}")
+        return {"success": True, "data": []}
 
 # --- Public Profiles (@username) ---
 

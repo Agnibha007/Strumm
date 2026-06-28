@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import mongodb as db
-from app.routes import auth, search, stream, lyrics, playlist, user, podcast, recommendation, share, social
+from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 import logging
@@ -198,7 +198,6 @@ async def rate_limiting_middleware(request: Request, call_next):
 
 # Register Routers
 app.include_router(auth.router)
-app.include_router(search.router)
 app.include_router(stream.router)
 app.include_router(lyrics.router)
 app.include_router(playlist.router)

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl, cleanText } from "web/lib/api";
+import { searchInvidious } from "web/lib/invidious";
 import SongArtwork from "web/components/SongArtwork";
 import Link from "next/link";
 
@@ -26,7 +27,7 @@ export default function HomePage() {
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [homeLoading, setHomeLoading] = useState(true);
 
-  // Perform search queries on typing
+  // Perform search queries on typing (directly from browser via Invidious API)
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
@@ -36,12 +37,11 @@ export default function HomePage() {
     const delayDebounce = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const response = await fetch(apiUrl(`/search?q=${encodeURIComponent(cleanText(searchQuery, 120))}`));
-        const json = await response.json();
-        if (json.success && json.data) {
-          setSearchResults(json.data.results.songs || []);
-          setTrending(json.data.trending || []);
-        }
+        const results = await searchInvidious({
+          query: cleanText(searchQuery, 120),
+          type: "video"
+        });
+        setSearchResults(results.songs || []);
       } catch (e) {
         console.warn("Search API offline.");
       } finally {

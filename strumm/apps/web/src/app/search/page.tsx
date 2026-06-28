@@ -7,6 +7,7 @@ import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loa
 import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
+import { searchInvidious, getPlaylistItems } from "web/lib/invidious";
 import SongArtwork from "web/components/SongArtwork";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import Link from "next/link";
@@ -50,7 +51,7 @@ export default function SearchPage() {
   const [albumTracks, setAlbumTracks] = useState<Song[]>([]);
   const [loadingAlbumTracks, setLoadingAlbumTracks] = useState(false);
 
-  // Fetch album tracks when selectedAlbum changes
+  // Fetch album tracks when selectedAlbum changes (via Invidious playlist endpoint)
   useEffect(() => {
     if (!selectedAlbum) {
       setAlbumTracks([]);
@@ -59,15 +60,14 @@ export default function SearchPage() {
     const loadTracks = async () => {
       setLoadingAlbumTracks(true);
       try {
-        const response = await fetch(apiUrl(`/search/albums/${encodeURIComponent(selectedAlbum.id)}/tracks`));
-        const json = await response.json();
-        if (json.success && json.data) {
-          setAlbumTracks(json.data.tracks || []);
+        const tracks = await getPlaylistItems(selectedAlbum.id);
+        if (tracks.length > 0) {
+          setAlbumTracks(tracks);
         } else {
-          show(json.error || "Failed to load album tracks.", "error");
+          show("No tracks found for this album/playlist.", "warning");
         }
       } catch (e) {
-        show("Failed to connect to backend server.", "error");
+        show("Failed to load album tracks.", "error");
       } finally {
         setLoadingAlbumTracks(false);
       }
@@ -151,6 +151,7 @@ export default function SearchPage() {
   }, []);
 
   // 3. Search query debounce and execution with local cache
+  // Uses Invidious API directly from the browser — no backend hop.
   useEffect(() => {
     if (!query.trim()) {
       setResults({ songs: [], playlists: [], podcasts: [], users: [], artists: [], albums: [] });
@@ -168,28 +169,61 @@ export default function SearchPage() {
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const cat = categoryParam === "profiles" ? "users" : categoryParam;
-        const url = activeFilter === "All"
-          ? apiUrl(`/search?q=${encodeURIComponent(cleanText(query, 120))}`)
-          : apiUrl(`/search?q=${encodeURIComponent(cleanText(query, 120))}&category=${cat}`);
-          
-        const response = await fetch(url);
-        const json = await response.json();
-        if (json.success && json.data) {
+        const q = cleanText(query, 120);
+
+        if (activeFilter === "Profiles") {
+          // User search still goes through backend (local MongoDB)
+          try {
+            const response = await fetch(apiUrl(`/users/search?q=${encodeURIComponent(q)}`));
+            const json = await response.json();
+            if (json.success) {
+              const fetchedResults = {
+                songs: [], playlists: [], podcasts: [], users: json.data || [], artists: [], albums: []
+              };
+              setResults(fetchedResults);
+              searchCacheRef.current[cacheKey] = fetchedResults;
+            }
+          } catch { /* user search failed */ }
+        } else {
+          // Client-side search via Invidious API
+          const type = getInvidiousTypeParam(activeFilter);
+          const invidiousResults = await searchInvidious({ query: q, type });
+
+          // Fetch podcasts from backend (separate route, not /search)
+          let podcasts: PodcastShow[] = [];
+          if (activeFilter === "All" || activeFilter === "Podcasts") {
+            try {
+              const podRes = await fetch(apiUrl(`/podcasts/shows?query=${encodeURIComponent(q)}&limit=6`));
+              const podJson = await podRes.json();
+              if (podJson.success) {
+                podcasts = podJson.data || [];
+              }
+            } catch { /* podcast search offline */ }
+          }
+
+          // Fetch local Strumm playlists from backend (separate route, not /search)
+          let playlists: Playlist[] = [];
+          if (activeFilter === "All" || activeFilter === "Playlists") {
+            try {
+              const plRes = await fetch(apiUrl(`/playlists/search?q=${encodeURIComponent(q)}`));
+              const plJson = await plRes.json();
+              if (plJson.success) {
+                playlists = plJson.data || [];
+              }
+            } catch { /* playlist search offline */ }
+          }
+
           const fetchedResults = {
-            songs: json.data.results.songs || [],
-            playlists: json.data.results.playlists || [],
-            podcasts: json.data.results.podcasts || [],
-            users: json.data.results.users || [],
-            artists: json.data.results.artists || [],
-            albums: json.data.results.albums || []
+            songs: invidiousResults.songs || [],
+            playlists,
+            podcasts,
+            users: [],
+            artists: invidiousResults.artists || [],
+            albums: invidiousResults.albums || [],
           };
           setResults(fetchedResults);
           searchCacheRef.current[cacheKey] = fetchedResults;
-          
-          if (json.data.trending) {
-            setTrending(json.data.trending);
-          }
+
           if (query.trim().length >= 2) {
             saveRecentSearch(query.trim());
           }
@@ -203,6 +237,16 @@ export default function SearchPage() {
 
     return () => clearTimeout(timer);
   }, [query, activeFilter]);
+
+  function getInvidiousTypeParam(filter: string): "video" | "playlist" | "channel" | "all" {
+    switch (filter) {
+      case "Songs": return "video";
+      case "Albums": return "playlist";
+      case "Artists": return "channel";
+      case "Playlists": return "playlist";
+      default: return "all";
+    }
+  }
 
   // 4. Save recent searches
   const saveRecentSearch = (term: string) => {

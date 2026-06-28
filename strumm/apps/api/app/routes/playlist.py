@@ -8,6 +8,7 @@ from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
+from app.services.cache import cache_search, get_cached_search
 from pydantic import BaseModel
 import logging
 
@@ -21,6 +22,45 @@ def is_owner_or_collaborator(playlist: dict, user_id: str) -> bool:
         return True
     collaborators = playlist.get("collaborators", []) or []
     return user_id in collaborators
+
+
+# --- Playlist Search (for Playlists filter in search page) ---
+
+@router.get("/search")
+async def search_playlists(
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(6, ge=1, le=20)
+):
+    """Search public playlists by name. No auth required."""
+    try:
+        cleaned_query = sanitize_text(q, max_length=120)
+        cache_key_str = f"playlist-search:{cleaned_query}"
+        cached = get_cached_search(cache_key_str)
+        if cached:
+            return {"success": True, "data": cached}
+
+        database = db.get_db()
+        regex_query = escaped_regex(cleaned_query)
+        cursor = database[db.PLAYLISTS].find(
+            {"name": regex_query, "visibility": "public"},
+            {"name": 1, "description": 1, "followers": 1, "songs": {"$slice": 1}},
+        ).limit(limit)
+
+        playlists = []
+        async for p in cursor:
+            playlists.append({
+                "id": str(p["_id"]),
+                "name": p.get("name"),
+                "description": p.get("description", ""),
+                "followers": p.get("followers", 0),
+                "songs": p.get("songs", []),
+            })
+
+        cache_search(cache_key_str, playlists)
+        return {"success": True, "data": playlists}
+    except Exception as e:
+        logger.error(f"Playlist search failed: {str(e)}")
+        return {"success": True, "data": []}
 
 
 @router.post("")
