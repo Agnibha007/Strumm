@@ -4,22 +4,22 @@ from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.security import escaped_regex, sanitize_text, parse_object_id
-from app.services.ai.hf_provider import get_hf_provider
+from app.services.ai.groq_provider import get_ai_provider
 import asyncio
 import logging
 
 logger = logging.getLogger("strumm-recommendation")
 router = APIRouter(tags=["recommendation"])
 
-hf = get_hf_provider()
+ai = get_ai_provider()
 
 async def get_ai_suggestions(mood: str, user_likes: List[dict], user_history: List[dict]) -> List[dict]:
     """
-    Get music suggestions from Hugging Face Inference API.
-    Falls back to empty list if HF is not configured.
+    Get music suggestions from Groq AI.
+    Falls back to empty list if Groq is not configured.
     """
-    if not hf.configured:
-        logger.warning("HF not configured; AI recommendations will fall back to DB sampling.")
+    if not ai.configured:
+        logger.warning("Groq not configured; AI recommendations will fall back to DB sampling.")
         return []
         
     likes_summary = [f"'{s['song']['title']}' by {s['song']['artist']}" for s in user_likes[:10]]
@@ -36,7 +36,7 @@ async def get_ai_suggestions(mood: str, user_likes: List[dict], user_history: Li
     )
 
     messages = [{"role": "user", "content": prompt}]
-    suggestions = await hf.extract_json(messages, temperature=0.6, timeout=8.0)
+    suggestions = await ai.extract_json(messages, temperature=0.6, timeout=8.0)
     if isinstance(suggestions, list):
         return suggestions
     return []
@@ -130,7 +130,7 @@ async def get_flow(
         # Fetch smart recommendations
         suggestions = await get_ai_suggestions(mood, likes, history)
         
-        # Fallback database curation if HF fails or isn't set up
+        # Fallback database curation if Groq fails or isn't set up
         if not suggestions:
             # Sample from user likes or standard songs in DB
             db_songs_cursor = database[db.PLAYLISTS].aggregate([
@@ -414,17 +414,17 @@ async def explore_chat(
             "2. Return ONLY the JSON object. Do not include markdown code block wrappers (like ```json), introductory text, or concluding notes. Just raw JSON."
         )
         
-        if not hf.configured:
-            return {"success": False, "error": "HuggingFace API key not configured on server."}
+        if not ai.configured:
+            return {"success": False, "error": "Groq API key not configured on server."}
 
         messages_payload = [{"role": "system", "content": system_prompt}]
         for hist_msg in payload.history or []:
             messages_payload.append({"role": hist_msg.role, "content": hist_msg.content})
         messages_payload.append({"role": "user", "content": user_prompt})
 
-        result_data = await hf.extract_json(messages_payload, temperature=0.7, timeout=10.0)
+        result_data = await ai.extract_json(messages_payload, temperature=0.7, timeout=10.0)
         if result_data is None:
-            return {"success": False, "error": "Failed to get response from HuggingFace."}
+            return {"success": False, "error": "Failed to get response from Groq AI."}
 
         message = result_data.get("message", "Here is your update:")
         songs_suggestions = result_data.get("songs", [])
