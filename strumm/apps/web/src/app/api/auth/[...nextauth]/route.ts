@@ -22,24 +22,42 @@ const handler = NextAuth({
             headers: {
               "Content-Type": "application/json",
             },
-            credentials: "include",
             body: JSON.stringify({
               idToken: account.id_token,
             }),
           });
           
-          const json = await response.json();
-          if (json.success && json.data) {
-            token.accessToken = json.data.token;
-            // Trim user object to avoid NextAuth cookie blooming over Vercel's 14KB limit
-            token.strummUser = {
-              id: json.data.user.id,
-              username: json.data.user.username,
-              email: json.data.user.email,
-              displayName: json.data.user.displayName,
-              avatar: json.data.user.avatar,
-              role: json.data.user.role
-            };
+          if (!response.ok) {
+            console.error(
+              "Strumm Auth: Backend API returned HTTP", response.status,
+              "for Google OAuth sync. Check that the API has GOOGLE_CLIENT_ID configured.",
+            );
+            // Still try to parse JSON body for error details
+            try {
+              const errBody = await response.json();
+              if (errBody.error) {
+                console.error("Strumm Auth: API error detail:", errBody.error);
+              }
+            } catch (_) {}
+          } else {
+            const json = await response.json();
+            if (json.success && json.data) {
+              token.accessToken = json.data.token;
+              // Trim user object to avoid NextAuth cookie blooming over Vercel's 14KB limit
+              token.strummUser = {
+                id: json.data.user.id,
+                username: json.data.user.username,
+                email: json.data.user.email,
+                displayName: json.data.user.displayName,
+                avatar: json.data.user.avatar,
+                role: json.data.user.role
+              };
+            } else {
+              console.error(
+                "Strumm Auth: Backend API rejected Google OAuth:",
+                json.error || "Unknown error (no success flag)",
+              );
+            }
           }
         } catch (e) {
           console.error("Strumm Auth: Failed to sync Google OAuth with FastAPI server", e);

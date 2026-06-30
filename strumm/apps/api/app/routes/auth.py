@@ -113,7 +113,7 @@ async def verify_google_id_token(id_token: str) -> dict:
     if not client_id:
         raise HTTPException(status_code=500, detail="Google authentication is not configured.")
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         response = await client.get(
             "https://oauth2.googleapis.com/tokeninfo",
             params={"id_token": sanitize_text(id_token, max_length=4096)},
