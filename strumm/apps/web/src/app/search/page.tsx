@@ -7,7 +7,7 @@ import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loa
 import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
-import { searchInvidious, getPlaylistItems } from "web/lib/invidious";
+import { searchInvidious, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import Link from "next/link";

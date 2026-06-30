@@ -5,7 +5,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { apiUrl } from "web/lib/api";
-import { getVideoDetails } from "web/lib/invidious";
+import { getVideoDetails } from "web/lib/search";
 import BrandLogo from "web/components/BrandLogo";
 import { Song } from "@strumm/types";
 
