@@ -1,4 +1,4 @@
-const CACHE_NAME = "strumm-shell-v2";
+const CACHE_NAME = "strumm-shell-v3";
 const SHELL_ASSETS = ["/", "/login", "/strumm-icon.png", "/strumm-logo.png", "/manifest.webmanifest"];
 
 // Exclude copyrighted media, dynamic stream endpoints, and image proxies from SW cache
