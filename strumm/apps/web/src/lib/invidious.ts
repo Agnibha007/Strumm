@@ -1,10 +1,14 @@
 /**
  * Search API client — calls the Next.js API route /api/search which proxies
- * to Piped API (primary) and Invidious (fallback) on the server side.
+ * to the YouTube Data API v3 on the server side.
  *
  * No CORS issues — the browser calls its own origin (www.strumm.me/api/search).
- * No rate limits — Vercel's free tier handles 100k invocations/day.
  * No external dependencies — all proxying happens server-side on Vercel.
+ *
+ * This file only exposes the same `searchInvidious`, `getVideoDetails`, and
+ * `getPlaylistItems` exports that the frontend already imports.  The name is
+ * preserved for backward compatibility; the underlying implementation has
+ * been migrated away from Invidious.
  */
 
 // ---------------------------------------------------------------------------
@@ -27,8 +31,8 @@ export interface InvidiousSearchResults {
 /**
  * Search across videos (songs), playlists (albums), and channels (artists).
  *
- * Calls the same-origin /api/search endpoint, which proxies to Piped API
- * and falls back to Invidious on the server side. No CORS issues.
+ * Calls the same-origin /api/search endpoint, which proxies to the YouTube
+ * Data API v3 on the server side. No CORS issues.
  */
 export async function searchInvidious(
   opts: InvidiousSearchOptions,

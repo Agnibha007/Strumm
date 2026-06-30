@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Strumm Web — Next.js Frontend
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Required | Description |
+|---|---|---|
+| `YOUTUBE_API_KEY` | **Yes** | Google Cloud API key with the YouTube Data API v3 enabled. Used for all song/album/artist search queries. |
+| `NEXT_PUBLIC_API_URL` | No | Backend API base URL (defaults to `http://localhost:8000`). |
+| `NEXT_PUBLIC_INVIDIOUS_INSTANCE` | No (legacy) | No longer used — search now goes through the YouTube Data API. |
 
-## Learn More
+### Obtaining a YouTube API Key
 
-To learn more about Next.js, take a look at the following resources:
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project (or select an existing one).
+3. Navigate to **APIs & Services → Library**.
+4. Search for **"YouTube Data API v3"** and enable it.
+5. Go to **APIs & Services → Credentials**.
+6. Click **Create Credentials → API Key**.
+7. Copy the generated key.
+8. (Optional) Restrict the key to the YouTube Data API v3 and your Vercel deployment's IP range for security.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Setting the Key for Production (Vercel)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+vercel env add YOUTUBE_API_KEY
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Or set it via the Vercel Dashboard: **Project → Settings → Environment Variables**.
