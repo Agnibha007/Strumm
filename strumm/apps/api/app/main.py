@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import mongodb as db
-from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social, search_proxy
+from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 import logging
@@ -218,7 +218,6 @@ app.include_router(podcast.router)
 app.include_router(recommendation.router)
 app.include_router(share.router)
 app.include_router(social.router)
-app.include_router(search_proxy.router)
 
 # Lightweight health endpoints — never query MongoDB, always respond in <10ms
 @app.get("/")
