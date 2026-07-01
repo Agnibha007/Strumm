@@ -5,6 +5,7 @@ from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.security import escaped_regex, sanitize_text, parse_object_id
 from app.services.ai.groq_provider import get_ai_provider
+from app.services.recommendation_engine import get_recommendation_engine
 import asyncio
 import logging
 
@@ -12,37 +13,11 @@ logger = logging.getLogger("strumm-recommendation")
 router = APIRouter(tags=["recommendation"])
 
 ai = get_ai_provider()
+rec_engine = get_recommendation_engine()
 
-async def get_ai_suggestions(mood: str, user_likes: List[dict], user_history: List[dict]) -> List[dict]:
-    """
-    Get music suggestions from Groq AI.
-    Falls back to empty list if Groq is not configured.
-    """
-    if not ai.configured:
-        logger.warning("Groq not configured; AI recommendations will fall back to DB sampling.")
-        return []
-        
-    likes_summary = [f"'{s['song']['title']}' by {s['song']['artist']}" for s in user_likes[:10]]
-    history_summary = [f"'{s['song']['title']}' by {s['song']['artist']}" for s in user_history[:10]]
-    
-    mood = sanitize_text(mood, max_length=80)
-    prompt = (
-        f"The user wants a music recommendation playlist for the mood: '{mood}'. "
-        f"Here are some songs the user likes: {', '.join(likes_summary)}. "
-        f"Here is their recent listening history: {', '.join(history_summary)}. "
-        f"Based on this profile and mood, suggest 6 complementary real song titles and their artists. "
-        f"Return ONLY a JSON array of objects, where each object has fields 'title' and 'artist'. "
-        f"Do not write any markdown code block wrappers (like ```json), notes, or introductory text. Just raw JSON output."
-    )
-
-    messages = [{"role": "user", "content": prompt}]
-    suggestions = await ai.extract_json(messages, temperature=0.6, timeout=8.0)
-    if isinstance(suggestions, list):
-        return suggestions
-    return []
-
-# Helper: Resolve song recommendation into a mock playback object (or query DB)
+# Shared helper: resolve song suggestions into full song objects
 async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
+    """Resolve {title, artist} pairs from AI into full song objects."""
     resolved = []
     database = db.get_db()
     from app.routes.search import search_yt_music_songs
@@ -67,7 +42,6 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
                 "duration": song["duration"]
             }
         
-        # If not in DB, search YTMusic
         search_results = await search_yt_music_songs(f"{title} {artist}")
         if search_results:
             best_match = search_results[0]
@@ -79,7 +53,7 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
                 "duration": best_match["duration"]
             }
             
-        # Absolute fallback if YTMusic yields nothing
+        # Fallback mock
         str_hash = f"{title}-{artist}".lower()
         mock_id = "dQw4w9WgXcQ"
         if "lofi" in str_hash:
@@ -115,55 +89,35 @@ async def get_flow(
     mood: str = Query("Chill", description="Mood state: Chill, Focus, Energetic, Sad, Creative"),
     current_user: dict = Depends(get_current_user),
 ):
+    """
+    Generate a personalized Flow playlist.
+
+    1. Uses the shared RecommendationEngine to produce candidates from
+       the user's listening history, likes, top artists, and genres.
+    2. Optionally enhances with AI (reorder, name, description).
+    3. Falls back gracefully to engine output if AI is unavailable.
+    """
     try:
         mood = sanitize_text(mood, max_length=80) or "Chill"
-        database = db.get_db()
-        userId = ObjectId(current_user["id"])
-        
-        # Load user history and likes
-        likes_cursor = database[db.LIKED_SONGS].find({"userId": userId}).limit(10)
-        likes = [l async for l in likes_cursor]
-        
-        history_cursor = database[db.PLAYBACK_HISTORIES].find({"userId": userId}).sort("playedAt", -1).limit(10)
-        history = [h async for h in history_cursor]
-        
-        # Fetch smart recommendations
-        suggestions = await get_ai_suggestions(mood, likes, history)
-        
-        # Fallback database curation if Groq fails or isn't set up
-        if not suggestions:
-            # Sample from user likes or standard songs in DB
-            db_songs_cursor = database[db.PLAYLISTS].aggregate([
-                {"$unwind": "$songs"},
-                {"$sample": {"size": 6}},
-                {"$project": {
-                    "_id": 0,
-                    "videoId": "$songs.videoId",
-                    "title": "$songs.title",
-                    "artist": "$songs.artist",
-                    "thumbnail": "$songs.thumbnail",
-                    "duration": "$songs.duration"
-                }}
-            ])
-            resolved = [s async for s in db_songs_cursor]
-            
-            # If DB is completely empty (no playlists imported yet), load a static catalog
-            if not resolved:
-                resolved = [
-                    {"videoId": "jfKfPfyJRdk", "title": "Lofi Chill Beats", "artist": "Strumm Curation", "thumbnail": "https://img.youtube.com/vi/jfKfPfyJRdk/hqdefault.jpg", "duration": 300},
-                    {"videoId": "jgpJVIgAmDY", "title": "Nuvole Bianche", "artist": "Ludovico Einaudi", "thumbnail": "https://img.youtube.com/vi/jgpJVIgAmDY/hqdefault.jpg", "duration": 357},
-                    {"videoId": "cZUvEPDYcOU", "title": "Heer", "artist": "A.R. Rahman", "thumbnail": "https://img.youtube.com/vi/cZUvEPDYcOU/hqdefault.jpg", "duration": 314}
-                ]
-        else:
-            resolved = await resolve_suggestions(suggestions)
+        user_id = current_user["id"]
+
+        # Step 1: Engine-generated candidates (always works)
+        engine_result = await rec_engine.generate(
+            user_id, mood=mood, limit=20,
+        )
+
+        # Step 2: AI enhancement (optional — errors are swallowed)
+        enhanced = await rec_engine.enhance_with_ai(
+            engine_result["songs"],
+            user_id,
+            mood=mood,
+            ai_provider=ai,
+            limit=15,
+        )
 
         return {
             "success": True,
-            "data": {
-                "name": f"Flow: {mood}",
-                "description": "Your listening flow customized to your mood.",
-                "songs": resolved
-            }
+            "data": enhanced,
         }
     except Exception as e:
         logger.error(f"Error resolving Flow curation: {str(e)}")
@@ -173,49 +127,13 @@ async def get_flow(
 async def get_discover(
     current_user: dict = Depends(get_current_user),
 ):
+    """Generate a Discovery Mix for the Home page using the shared engine."""
     try:
-        database = db.get_db()
-        userId = current_user["id"]
-        
-        # Gather profile statistics
-        likes_cursor = database[db.LIKED_SONGS].find({"userId": userId}).limit(10)
-        likes = [l async for l in likes_cursor]
-        
-        history_cursor = database[db.PLAYBACK_HISTORIES].find({"userId": userId}).sort("playedAt", -1).limit(10)
-        history = [h async for h in history_cursor]
-        
-        suggestions = await get_ai_suggestions("Fresh & Undiscovered music", likes, history)
-        
-        if not suggestions:
-            # Fallback random curation from general playlists
-            db_songs_cursor = database[db.PLAYLISTS].aggregate([
-                {"$unwind": "$songs"},
-                {"$sample": {"size": 6}},
-                {"$project": {
-                    "_id": 0,
-                    "videoId": "$songs.videoId",
-                    "title": "$songs.title",
-                    "artist": "$songs.artist",
-                    "thumbnail": "$songs.thumbnail",
-                    "duration": "$songs.duration"
-                }}
-            ])
-            resolved = [s async for s in db_songs_cursor]
-            if not resolved:
-                resolved = [
-                    {"videoId": "5qap5aO4i9A", "title": "Lofi hip hop radio - beats to relax/study to", "artist": "ChilledCow", "thumbnail": "https://img.youtube.com/vi/5qap5aO4i9A/hqdefault.jpg", "duration": 180},
-                    {"videoId": "dQw4w9WgXcQ", "title": "Never Gonna Give You Up", "artist": "Rick Astley", "thumbnail": "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg", "duration": 212}
-                ]
-        else:
-            resolved = await resolve_suggestions(suggestions)
-
+        user_id = current_user["id"]
+        result = await rec_engine.generate_discovery(user_id)
         return {
             "success": True,
-            "data": {
-                "name": "Discovery Mix",
-                "description": "Smart suggestions expanding your musical horizons.",
-                "songs": resolved
-            }
+            "data": result,
         }
     except Exception as e:
         logger.error(f"Error creating discovery recommendation: {str(e)}")
@@ -370,20 +288,29 @@ async def explore_chat(
 
         user_prompt = sanitize_text(payload.prompt, max_length=1000)
         
-        # 1. Fetch user likes
+        # 1. Fetch user data (same data sources as recommendation engine)
         likes_cursor = database[db.LIKED_SONGS].find({"userId": userId}).limit(15)
         likes = [l async for l in likes_cursor]
         likes_summary = ", ".join([f"'{s['song']['title']}' by {s['song']['artist']}" for s in likes])
         
-        # 2. Fetch user history
         history_cursor = database[db.PLAYBACK_HISTORIES].find({"userId": userId}).sort("playedAt", -1).limit(15)
         history = [h async for h in history_cursor]
         history_summary = ", ".join([f"'{s['song']['title']}' by {s['song']['artist']}" for s in history])
         
-        # 3. Fetch user playlist details
         playlists_cursor = database[db.PLAYLISTS].find({"userId": userId})
         playlists = [p async for p in playlists_cursor]
         playlist_summary = ", ".join([f"'{p['name']}' (ID: {str(p['_id'])})" for p in playlists])
+        
+        # 2. Pre-generate engine candidates so AI enhances rather than generates from scratch
+        engine_candidates = await rec_engine.generate(
+            user_id=userId,
+            mood="Chill",
+            limit=10,
+            exclude_video_ids=set(),
+        )
+        engine_songs_summary = ", ".join(
+            [f"'{s['title']}' by {s['artist']}" for s in engine_candidates.get("songs", [])[:6]]
+        )
         
         if not likes_summary:
             likes_summary = "None (New user)"
@@ -391,16 +318,19 @@ async def explore_chat(
             history_summary = "None (New user)"
         if not playlist_summary:
             playlist_summary = "None (No playlists created yet)"
+        if not engine_songs_summary:
+            engine_songs_summary = "(Will be generated from scratch)"
             
         system_prompt = (
             "You are 'Strumm Flow', a premium, intelligent music curator assistant. Your goal is to help the user discover music, answer music-related questions, suggest tracks, build custom playlists, or edit existing playlists.\n"
             "You are provided with details about the user's music taste:\n"
             f"1. Liked songs: {likes_summary}\n"
             f"2. Listening history: {history_summary}\n"
-            f"3. User's existing playlists with their database IDs: {playlist_summary}\n\n"
+            f"3. User's existing playlists with their database IDs: {playlist_summary}\n"
+            f"4. Pre-generated recommendation candidates (for reference/selection): {engine_songs_summary}\n\n"
             "Your response MUST be a valid JSON object containing exactly the following keys:\n"
             "- 'message': (string) Your text response to the user's message. Be conversational, polite, and explain your recommendations or actions. Keep it brief (2-4 sentences).\n"
-            "- 'songs': (array of objects) If recommending songs (either matching their prompt or based on their history), include a list of up to 6 recommended songs. Each object must have keys 'title' and 'artist'. Otherwise, return an empty array [].\n"
+            "- 'songs': (array of objects) If recommending songs, include up to 6 recommended songs. You may select from the pre-generated candidates above OR suggest new ones. Each object must have keys 'title' and 'artist'. Otherwise, return an empty array [].\n"
             "- 'create_playlist': (boolean) Set to true ONLY if the user explicitly asked to create, save, build, or make a playlist. Otherwise, set to false.\n"
             "- 'playlist_name': (string) If create_playlist is true, specify a creative name for the playlist. Otherwise, null.\n"
             "- 'playlist_description': (string) If create_playlist is true, specify a short description. Otherwise, null.\n"
@@ -408,14 +338,24 @@ async def explore_chat(
             "- 'playlist_id': (string) If edit_playlist is true, specify the exact ID of the playlist to be edited (from the provided list of existing playlists). Otherwise, null.\n"
             "- 'songs_to_add': (array of objects) If editing a playlist, list the songs to be added. Each object must have keys 'title' and 'artist'. Otherwise, an empty array [].\n"
             "- 'songs_to_remove': (array of objects) If editing a playlist, list the songs to be removed. Each object must have keys 'title' and 'artist'. Otherwise, an empty array [].\n"
-            "- 'requires_confirmation': (boolean) Set to true if the user wants to edit/overwrite pre-made content (so the system can ask for a second confirmation). Otherwise, set to false.\n\n"
+            "- 'requires_confirmation': (boolean) Set to true if the user wants to edit/overwrite pre-made content. Otherwise, set to false.\n\n"
             "Rules:\n"
             "1. Suggest ONLY real, existing songs and artists.\n"
-            "2. Return ONLY the JSON object. Do not include markdown code block wrappers (like ```json), introductory text, or concluding notes. Just raw JSON."
+            "2. You may pick from the pre-generated candidates or suggest different ones — use your best judgment.\n"
+            "3. Return ONLY the JSON object. Do not include markdown code block wrappers, introductory text, or concluding notes. Just raw JSON."
         )
         
         if not ai.configured:
-            return {"success": False, "error": "Groq API key not configured on server."}
+            # AI not available — return engine candidates directly
+            return {
+                "success": True,
+                "data": {
+                    "message": "Here's a personalized flow based on your listening preferences:",
+                    "songs": engine_candidates.get("songs", []),
+                    "playlist": None,
+                    "source": "engine",
+                }
+            }
 
         messages_payload = [{"role": "system", "content": system_prompt}]
         for hist_msg in payload.history or []:
@@ -424,7 +364,16 @@ async def explore_chat(
 
         result_data = await ai.extract_json(messages_payload, temperature=0.7, timeout=10.0)
         if result_data is None:
-            return {"success": False, "error": "Failed to get response from Groq AI."}
+            # AI failed — return engine candidates as fallback
+            return {
+                "success": True,
+                "data": {
+                    "message": "Here's a personalized flow based on your listening preferences:",
+                    "songs": engine_candidates.get("songs", []),
+                    "playlist": None,
+                    "source": "engine",
+                }
+            }
 
         message = result_data.get("message", "Here is your update:")
         songs_suggestions = result_data.get("songs", [])
@@ -441,6 +390,9 @@ async def explore_chat(
         resolved_songs = []
         if songs_suggestions:
             resolved_songs = await resolve_suggestions(songs_suggestions)
+        # If AI didn't suggest songs, use engine candidates
+        if not resolved_songs:
+            resolved_songs = engine_candidates.get("songs", [])
             
         created_playlist_info = None
         if create_playlist and resolved_songs:

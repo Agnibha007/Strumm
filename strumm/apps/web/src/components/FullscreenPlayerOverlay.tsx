@@ -38,6 +38,7 @@ import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
 import AddToPlaylistMenu from "web/components/AddToPlaylistMenu";
 import VideoPlayer from "web/components/VideoPlayer";
+import YouTubeVideoPlayer from "web/components/player/YouTubeVideoPlayer";
 
 interface FullscreenPlayerOverlayProps {
   onClose: () => void;
@@ -79,6 +80,21 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   } = usePlayerStore();
   const { token } = useAuthStore();
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
+  const videoMode = usePlayerStore((s) => s.videoMode);
+  const toggleVideoMode = usePlayerStore((s) => s.toggleVideoMode);
+  const [ytPlayerReady, setYtPlayerReady] = useState(false);
+  const ytPlayerActionsRef = useRef<{
+    playVideo: () => void;
+    pauseVideo: () => void;
+    seekTo: (sec: number) => void;
+  } | null>(null);
+
+  if (!currentSong) return null;
+
+  const isPodcast = currentSong.videoId.startsWith("podcast-");
+
+  // When videoMode is active for a non-podcast song, show the YouTube video player
+  const showVideo = !isPodcast && videoMode && currentSong?.hasVideo;
 
   const { isAnimated } = useThemeStore();
   const router = useRouter();
@@ -326,9 +342,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     }
   }, [activeIndex, lyricsLoading, showLyrics]);
 
-  if (!currentSong) return null;
 
-  const isPodcast = currentSong.videoId.startsWith("podcast-");
   const effectiveShowLyrics = showLyrics && !isPodcast;
 
   return (
@@ -836,8 +850,100 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
           </div>
 
-          {/* Right Side: Lyrics Section */}
-          {effectiveShowLyrics && (
+          {/* Video Mode — show YouTube embed instead of artwork */}
+        {showVideo && currentSong && (
+          <div className="w-full flex-1 mt-4 md:mt-8 min-h-0 z-10 mx-auto max-w-5xl flex flex-col items-center gap-6 overflow-y-auto p-1">
+            {/* Video Player */}
+            <div className="w-full max-w-4xl">
+              <YouTubeVideoPlayer
+                videoId={currentSong.videoId}
+                startSeconds={currentTime}
+                isPlaying={isPlaying}
+                volume={volume}
+                playbackRate={playbackRate}
+                onReady={() => setYtPlayerReady(true)}
+                onPlay={() => usePlayerStore.getState().setPlaying(true)}
+                onPause={() => usePlayerStore.getState().setPlaying(false)}
+                onEnded={() => usePlayerStore.getState().handleTrackEnded()}
+                onTimeUpdate={(t) => usePlayerStore.getState().setCurrentTime(t)}
+                onDurationChange={(d) => usePlayerStore.getState().setDuration(d)}
+                onError={(err) => usePlayerStore.getState().setPlayerError(err)}
+                onBuffering={() => {}}
+                onActionsReady={(actions) => {
+                  // Sync the playerRef so the store can control video playback
+                  usePlayerStore.getState().setPlayerRef(actions);
+                  ytPlayerActionsRef.current = actions;
+                }}
+              />
+            </div>
+
+            {/* Song info below video */}
+            <div className="w-full max-w-4xl flex items-center justify-between">
+              <div className="min-w-0 flex-1">
+                <h2 className="font-editorial font-bold text-text text-xl md:text-2xl truncate">
+                  {currentSong.title}
+                </h2>
+                <p className="text-sm text-muted truncate">{currentSong.artist}</p>
+              </div>
+              <button
+                onClick={() => toggleVideoMode()}
+                className="flex items-center gap-2 px-4 py-2 rounded-full border border-primary/50 text-primary hover:bg-primary/10 text-xs font-bold cursor-pointer transition-all"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+                <span>Switch to Audio</span>
+              </button>
+            </div>
+
+            {/* Controls under video */}
+            <div className="w-full max-w-4xl bg-surface-elevated/20 border border-border/30 rounded-2xl p-5 space-y-4">
+              {/* Timeline scrubber */}
+              <div className="w-full flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-[10px] text-muted font-semibold tracking-wider">
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
+                <div className="relative group flex items-center h-4 w-full">
+                  <input
+                    type="range"
+                    min="0"
+                    max={duration || 100}
+                    step="1"
+                    value={currentTime}
+                    onChange={(e) => {
+                      const newTime = parseFloat(e.target.value);
+                      ytPlayerActionsRef.current?.seekTo(newTime);
+                      setCurrentTime(newTime);
+                    }}
+                    className="w-full h-1 bg-border/40 group-hover:h-1.5 rounded-full appearance-none cursor-pointer accent-primary focus:outline-none transition-all"
+                    style={{
+                      background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${progressPercent}%, rgba(255,255,255,0.05) ${progressPercent}%, rgba(255,255,255,0.05) 100%)`
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Control buttons */}
+              <div className="flex items-center justify-center gap-5 md:gap-7">
+                <button onClick={prev} className="p-2 text-muted hover:text-text cursor-pointer transition hover:scale-105" title="Previous">
+                  <SkipBack className="w-5 h-5 fill-current" />
+                </button>
+                <button onClick={togglePlay} className="p-4 bg-text text-background rounded-full hover:scale-110 cursor-pointer transition shadow-xl flex items-center justify-center box-glow" title={isPlaying ? "Pause" : "Play"}>
+                  {isPlaying ? <Pause className="w-5 h-5 fill-current text-background" /> : <Play className="w-5 h-5 fill-current translate-x-0.5 text-background" />}
+                </button>
+                <button onClick={next} className="p-2 text-muted hover:text-text cursor-pointer transition hover:scale-105" title="Next">
+                  <SkipForward className="w-5 h-5 fill-current" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Right Side: Lyrics Section */}
+        {effectiveShowLyrics && (
             <div className="flex flex-col flex-1 lg:h-full bg-surface-elevated/20 border border-border/30 rounded-3xl p-4 md:p-7 min-h-0 overflow-hidden backdrop-blur-md w-full transition-all">
               <div className="flex justify-between items-center border-b border-border/20 pb-3 mb-3 flex-shrink-0">
                 <div className="flex items-center gap-2">

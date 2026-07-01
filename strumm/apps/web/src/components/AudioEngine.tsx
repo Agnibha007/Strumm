@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl } from "web/lib/api";
 
+// YT type is declared in YouTubeVideoPlayer.tsx — we only need the callback here.
 declare global {
   interface Window {
     onYouTubeIframeAPIReady?: () => void;
-    YT?: any;
   }
 }
 
@@ -24,6 +24,7 @@ export default function AudioEngine() {
     setDuration,
     setPlayerRef,
     podcastMode,
+    videoMode,
     audioQuality,
     isRadio,
     queue,
@@ -239,31 +240,53 @@ export default function AudioEngine() {
     }
   }, [currentSong, isPlaying, pathname]);
 
-  // 2. Lazy Load YouTube API
-  const loadYouTubeAPI = () => {
-    if (window.YT && window.YT.Player) {
-      if (!playerInstanceRef.current) {
+  // 2. Lazy Load YouTube API (only when NOT in videoMode — YouTubeVideoPlayer handles that)
+  useEffect(() => {
+    // Skip loading the hidden YouTube player when video mode is active
+    if (videoMode) return;
+
+    const isYTSong = currentSong && !currentSong.metadata?.audioUrl;
+    if (!isYTSong || !isPlaying) return;
+
+    // The YouTube IFrame API script may already be loaded by YouTubeVideoPlayer.
+    // We rename our callback to avoid collision: only init if not already set up.
+    const tryInit = () => {
+      if (window.YT && window.YT.Player && !playerInstanceRef.current) {
         initPlayer();
       }
-      return;
-    }
+    };
 
     usePlayerStore.getState().setPlayerLoading(true);
     usePlayerStore.getState().setPlayerError(null);
 
-    // Manually create the player target element outside of React Virtual DOM
-    // to prevent React unmount "removeChild" mismatch errors.
+    // Manually create the player target element
     if (containerRef.current && !document.getElementById("strumm-player-iframe")) {
       const playerDiv = document.createElement("div");
       playerDiv.id = "strumm-player-iframe";
       containerRef.current.appendChild(playerDiv);
     }
 
-    window.onYouTubeIframeAPIReady = () => {
-      console.log("AudioEngine: onYouTubeIframeAPIReady callback triggered!");
+    // Try immediately if API is already loaded
+    if (window.YT && window.YT.Player) {
       initPlayer();
+      return;
+    }
+
+    // Set callback — but DON'T overwrite if already set by YouTubeVideoPlayer
+    // Use a shared callback approach: chain to existing
+    const existingCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      // Call existing callback first (YouTubeVideoPlayer's handler)
+      if (typeof existingCallback === "function") {
+        existingCallback();
+      }
+      console.log("AudioEngine: onYouTubeIframeAPIReady");
+      if (!playerInstanceRef.current) {
+        initPlayer();
+      }
     };
 
+    // Only load the script if not already loading
     if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
       const tag = document.createElement("script");
       tag.src = "https://www.youtube.com/iframe_api";
@@ -281,18 +304,18 @@ export default function AudioEngine() {
       document.head.appendChild(tag);
       console.log("AudioEngine: script element appended to head.");
     } else {
-      if (window.YT && window.YT.Player) {
-        initPlayer();
-      }
+      // Script already loading — poll for API
+      const pollInterval = setInterval(() => {
+        if (window.YT && window.YT.Player) {
+          clearInterval(pollInterval);
+          if (!playerInstanceRef.current) {
+            initPlayer();
+          }
+        }
+      }, 200);
+      setTimeout(() => clearInterval(pollInterval), 10_000);
     }
-  };
-
-  useEffect(() => {
-    const isYTSong = currentSong && !currentSong.metadata?.audioUrl;
-    if (isYTSong && isPlaying) {
-      loadYouTubeAPI();
-    }
-  }, [currentSong?.videoId, isPlaying]);
+  }, [currentSong?.videoId, isPlaying, videoMode]);
 
   useEffect(() => {
     return () => {
@@ -314,9 +337,9 @@ export default function AudioEngine() {
   useEffect(() => {
     if (!htmlAudioRef.current) return;
 
-    const isVideoMode = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
-
-    if (isVideoMode) {
+    const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
+    // Also yield when non-podcast video mode is active (YouTubeVideoPlayer takes over)
+    if (isPodcastVideo || videoMode) {
       // Pause YouTube player
       if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
         try {
@@ -330,7 +353,8 @@ export default function AudioEngine() {
         htmlAudioRef.current.pause();
       } catch (e) {}
 
-      // Do NOT set playerRef here; VideoPlayer component will register its own playerRef when it mounts
+      // Do NOT set playerRef here; VideoPlayer or YouTubeVideoPlayer component
+      // will register its own playerRef when it mounts
       return;
     }
 
@@ -454,12 +478,12 @@ export default function AudioEngine() {
         });
       }
     }
-  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality]);
+  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality, videoMode]);
 
   // 4. Watch for play/pause toggle from UI
   useEffect(() => {
-    const isVideoMode = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
-    if (isVideoMode) return;
+    const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
+    if (isPodcastVideo || videoMode) return;
 
     if (currentSong?.metadata?.audioUrl) {
       if (htmlAudioRef.current) {
@@ -500,8 +524,8 @@ export default function AudioEngine() {
 
   // 5. Watch for volume changes from UI
   useEffect(() => {
-    const isVideoMode = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
-    if (isVideoMode) return;
+    const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
+    if (isPodcastVideo || videoMode) return;
 
     if (currentSong?.metadata?.audioUrl) {
       if (htmlAudioRef.current) {

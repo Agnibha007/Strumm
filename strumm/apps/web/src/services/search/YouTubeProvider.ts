@@ -24,6 +24,7 @@
 
 import type { SearchProvider, SearchResults, SongResult, AlbumResult, ArtistResult } from "./SearchProvider";
 import { searchCache } from "./cache";
+import { normalizeSong, normalizeSongs } from "../metadata/MetadataNormalizer";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,13 +122,14 @@ function ytItemToSong(item: any): SongResult | null {
   const id = item.id?.videoId;
   const snippet = item.snippet;
   if (!id || !snippet) return null;
-  return {
-    videoId: id,
-    title: snippet.title ?? "Untitled",
-    artist: snippet.channelTitle ?? "Unknown Artist",
-    thumbnail: pickThumbnail(snippet.thumbnails),
-    duration: 0, // /search doesn't return duration; use getVideoDetails() for real value
-  };
+  // Pipe through the Metadata Normalizer immediately
+  return normalizeSong(
+    id,
+    snippet.title ?? "Untitled",
+    snippet.channelTitle ?? "Unknown Artist",
+    pickThumbnail(snippet.thumbnails),
+    0, // /search doesn't return duration; use getVideoDetails() for real value
+  );
 }
 
 function ytItemToAlbum(item: any): AlbumResult | null {
@@ -223,13 +225,13 @@ export const youTubeProvider: SearchProvider = {
 
     if (!snippet) return null;
 
-    const result: SongResult = {
+    const result = normalizeSong(
       videoId,
-      title: snippet.title ?? "Untitled",
-      artist: snippet.channelTitle ?? "Unknown Artist",
-      thumbnail: pickThumbnail(snippet.thumbnails),
-      duration: details?.duration ? parseDurationIso8601(details.duration) : 0,
-    };
+      snippet.title ?? "Untitled",
+      snippet.channelTitle ?? "Unknown Artist",
+      pickThumbnail(snippet.thumbnails),
+      details?.duration ? parseDurationIso8601(details.duration) : 0,
+    );
 
     searchCache.set(ck, result);
     return result;
@@ -259,12 +261,15 @@ export const youTubeProvider: SearchProvider = {
       const vid = snippet?.resourceId?.videoId;
       if (!vid) continue;
       videoIds.push(vid);
+      // Normalize immediately — duration patched below
       items.push({
-        videoId: vid,
-        title: snippet.title ?? "Untitled",
-        artist: snippet.videoOwnerChannelTitle ?? snippet.channelTitle ?? "Unknown Artist",
-        thumbnail: pickThumbnail(snippet.thumbnails),
-        duration: 0, // patched below
+        ...normalizeSong(
+          vid,
+          snippet.title ?? "Untitled",
+          snippet.videoOwnerChannelTitle ?? snippet.channelTitle ?? "Unknown Artist",
+          pickThumbnail(snippet.thumbnails),
+          0, // patched below
+        ),
       });
     }
 

@@ -12,6 +12,7 @@ from app.database import mongodb as db
 from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
+from app.services.realtime.websocket import router as realtime_router
 import logging
 
 # Setup Logging
@@ -218,6 +219,9 @@ app.include_router(podcast.router)
 app.include_router(recommendation.router)
 app.include_router(share.router)
 app.include_router(social.router)
+
+# WebSocket realtime router (global connection at /ws)
+app.include_router(realtime_router)
 
 # Lightweight health endpoints — never query MongoDB, always respond in <10ms
 @app.get("/")

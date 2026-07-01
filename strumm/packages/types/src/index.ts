@@ -91,6 +91,13 @@ export interface Song {
   thumbnail: string;
   duration: number; // in seconds
   metadata?: SongMetadata;
+
+  /**
+   * Whether this song has a playable YouTube video.
+   * Always `true` for YouTube results (every videoId is playable).
+   * For podcasts or external audio, may be `false`.
+   */
+  hasVideo: boolean;
 }
 
 export interface Playlist {

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
 import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED, WS_DISCONNECTED } from "web/services/realtime";
 
 interface FriendActivity {
   id: string;
@@ -54,7 +55,7 @@ export default function FriendActivitySidebar({
   const [sendingShare, setSendingShare] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
 
-  const fetchActivity = async () => {
+  const fetchActivity = useCallback(async () => {
     if (!token) return;
     try {
       const fResp = await fetch(apiUrl("/social/circle"), {
@@ -77,16 +78,77 @@ export default function FriendActivitySidebar({
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    if (token) {
-      fetchActivity();
-      // Poll every 8 seconds to keep live listening activity updated
-      const interval = setInterval(fetchActivity, 8000);
-      return () => clearInterval(interval);
-    }
   }, [token]);
+
+  // Initial fetch on mount + subscribe to real-time updates
+  useEffect(() => {
+    if (!token) return;
+
+    fetchActivity();
+
+    const dispatch = EventDispatcher.getInstance();
+
+    // Update friend activity in real-time via WebSocket
+    const unsubOnline = dispatch.on(USER_ONLINE, (data) => {
+      setFriends((prev) =>
+        prev.map((f) => (f.id === data.id ? { ...f, isOnline: true } : f)),
+      );
+    });
+
+    const unsubOffline = dispatch.on(USER_OFFLINE, (data) => {
+      setFriends((prev) =>
+        prev.map((f) => (f.id === data.id ? { ...f, isOnline: false, currentActivity: null } : f)),
+      );
+    });
+
+    const unsubListening = dispatch.on(USER_LISTENING, (data) => {
+      setFriends((prev) =>
+        prev.map((f) =>
+          f.id === data.id
+            ? {
+                ...f,
+                isOnline: true,
+                currentActivity: data.song
+                  ? { song: data.song, timestamp: data.timestamp }
+                  : f.currentActivity,
+              }
+            : f,
+        ),
+      );
+    });
+
+    const unsubNotListening = dispatch.on(USER_NOT_LISTENING, (data) => {
+      setFriends((prev) =>
+        prev.map((f) => (f.id === data.id ? { ...f, currentActivity: null } : f)),
+      );
+    });
+
+    // Refresh full data when WebSocket reconnects
+    const unsubConnected = dispatch.on(WS_CONNECTED, () => {
+      fetchActivity();
+    });
+
+    // Also periodically refresh rooms list (rooms are not yet fully WS-driven)
+    const refreshInterval = setInterval(() => {
+      fetch(apiUrl("/social/rooms"), {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(json => {
+          if (json.success) setActiveRooms(json.data || []);
+        })
+        .catch(() => {});
+    }, 30000); // Every 30s instead of every 8s
+
+    return () => {
+      unsubOnline();
+      unsubOffline();
+      unsubListening();
+      unsubNotListening();
+      unsubConnected();
+      clearInterval(refreshInterval);
+    };
+  }, [token, fetchActivity]);
 
   const hasActivity = token && friends.length > 0;
 

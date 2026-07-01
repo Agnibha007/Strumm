@@ -9,6 +9,7 @@ from app.routes.dependencies import get_current_user
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from app.services.cache import cache_search, get_cached_search
+from app.services.normalizer import canonical_song_key
 from pydantic import BaseModel
 import logging
 
@@ -589,10 +590,22 @@ async def import_playlist(
                     "thumbnail": track["thumbnail"],
                     "duration": track["duration"]
                 }
+                # Rule 1: videoId dedup
                 if any(x["videoId"] == song_item["videoId"] for x in matched):
                     duplicates.append(song_item)
-                else:
-                    matched.append(song_item)
+                    continue
+                # Rule 2: canonical dedup
+                incoming_key = canonical_song_key(
+                    song_item.get("title", ""),
+                    song_item.get("artist", ""),
+                )
+                if any(
+                    canonical_song_key(x.get("title", ""), x.get("artist", "")) == incoming_key
+                    for x in matched
+                ):
+                    duplicates.append(song_item)
+                    continue
+                matched.append(song_item)
                 continue
 
             regex_title = escaped_regex(title)
@@ -618,10 +631,22 @@ async def import_playlist(
                     "thumbnail": song["thumbnail"],
                     "duration": song["duration"]
                 }
+                # Rule 1: videoId dedup
                 if any(x["videoId"] == song_item["videoId"] for x in matched):
                     duplicates.append(song_item)
-                else:
-                    matched.append(song_item)
+                    continue
+                # Rule 2: canonical dedup
+                incoming_key = canonical_song_key(
+                    song_item.get("title", ""),
+                    song_item.get("artist", ""),
+                )
+                if any(
+                    canonical_song_key(x.get("title", ""), x.get("artist", "")) == incoming_key
+                    for x in matched
+                ):
+                    duplicates.append(song_item)
+                    continue
+                matched.append(song_item)
             else:
                 search_query = f"{title} {artist}".strip()
                 search_matches = await search_yt_music_songs(search_query)
@@ -634,10 +659,22 @@ async def import_playlist(
                         "thumbnail": song["thumbnail"],
                         "duration": song["duration"]
                     }
+                    # Rule 1: videoId dedup
                     if any(x["videoId"] == song_item["videoId"] for x in matched):
                         duplicates.append(song_item)
-                    else:
-                        matched.append(song_item)
+                        continue
+                    # Rule 2: canonical dedup
+                    incoming_key = canonical_song_key(
+                        song_item.get("title", ""),
+                        song_item.get("artist", ""),
+                    )
+                    if any(
+                        canonical_song_key(x.get("title", ""), x.get("artist", "")) == incoming_key
+                        for x in matched
+                    ):
+                        duplicates.append(song_item)
+                        continue
+                    matched.append(song_item)
                 else:
                     not_found.append({
                         "title": title,
@@ -696,10 +733,25 @@ async def add_song_to_playlist(
         song_dict = payload.song.model_dump()
         songs = playlist.get("songs", [])
 
+        # Rule 1: Reject if videoId already exists
         if any(s.get("videoId") == song_dict.get("videoId") for s in songs):
             return {
                 "success": False,
                 "error": "Song is already in this playlist."
+            }
+
+        # Rule 2: Reject if canonicalTitle + canonicalArtist match an existing song
+        incoming_key = canonical_song_key(
+            song_dict.get("title", ""),
+            song_dict.get("artist", ""),
+        )
+        if any(
+            canonical_song_key(s.get("title", ""), s.get("artist", "")) == incoming_key
+            for s in songs
+        ):
+            return {
+                "success": False,
+                "error": "This song is already in the playlist (matched by canonical title + artist)."
             }
 
         await database[db.PLAYLISTS].update_one(

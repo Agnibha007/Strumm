@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
 import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 as Loader2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import {
+  EventDispatcher,
+  USER_ONLINE,
+  USER_OFFLINE,
+  USER_LISTENING,
+  USER_NOT_LISTENING,
+  FRIEND_REQUEST,
+  FRIEND_ACCEPTED,
+  WS_CONNECTED,
+} from "web/services/realtime";
 
 interface Friend {
   id: string;
@@ -140,34 +150,77 @@ export default function CirclePage() {
   }, [loadCircleData, token]);
 
   useEffect(() => {
+    if (!token) return;
+
+    // Initial fetch
+    loadCircleData();
+
+    const dispatch = EventDispatcher.getInstance();
+
+    // Subscribe to real-time updates
+    const unsubOnline = dispatch.on(USER_ONLINE, (data) => {
+      setFriends((prev) =>
+        prev.map((f) => (f.id === data.id ? { ...f, isOnline: true } : f)),
+      );
+    });
+
+    const unsubOffline = dispatch.on(USER_OFFLINE, (data) => {
+      setFriends((prev) =>
+        prev.map((f) =>
+          f.id === data.id ? { ...f, isOnline: false, currentActivity: null } : f,
+        ),
+      );
+    });
+
+    const unsubListening = dispatch.on(USER_LISTENING, (data) => {
+      setFriends((prev) =>
+        prev.map((f) =>
+          f.id === data.id
+            ? {
+                ...f,
+                isOnline: true,
+                currentActivity: data.song
+                  ? {
+                      song: data.song,
+                      timestamp: data.timestamp,
+                    }
+                  : f.currentActivity,
+              }
+            : f,
+        ),
+      );
+    });
+
+    const unsubNotListening = dispatch.on(USER_NOT_LISTENING, (data) => {
+      setFriends((prev) =>
+        prev.map((f) =>
+          f.id === data.id ? { ...f, currentActivity: null } : f,
+        ),
+      );
+    });
+
+    const unsubConnected = dispatch.on(WS_CONNECTED, () => {
+      // Refresh full data when WebSocket reconnects
+      loadCircleData();
+    });
+
+    // Visibility change: refresh data when user returns to the tab
     const handleVisibilityChange = () => {
-      const visible = !document.hidden;
-      setIsPageVisible(visible);
-      if (visible && token) {
+      if (!document.hidden && token) {
         loadCircleData();
       }
     };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    if (token) {
-      loadCircleData();
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-      
-      const interval = setInterval(() => {
-        if (isPageVisible) {
-          loadCircleData();
-          refreshCountRef.current += 1;
-          if (refreshCountRef.current >= maxRefreshes) {
-            clearInterval(interval);
-          }
-        }
-      }, 30000);
-      
-      return () => {
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-        clearInterval(interval);
-      };
-    }
-  }, [token, loadCircleData, isPageVisible]);
+    return () => {
+      unsubOnline();
+      unsubOffline();
+      unsubListening();
+      unsubNotListening();
+      unsubConnected();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [token, loadCircleData]);
 
   const handleAccept = async (requestId: string) => {
     if (!token) return;

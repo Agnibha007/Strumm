@@ -6,6 +6,7 @@ from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import SongSchema, UserSettingsSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
+from app.services.normalizer import canonical_artist, normalize_artist
 from pydantic import BaseModel
 import logging
 
@@ -279,8 +280,10 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
     if not sorted_songs and user_stats.get("topSongs"):
         sorted_songs = user_stats.get("topSongs")
     
-    # 3. Top Artists
-    artist_counts = {}
+    # 3. Top Artists — grouped by canonicalArtist to prevent duplicates
+    #    e.g. "Arijit Singh", "ARIJIT SINGH", "Arijit Singh Official" all collapse
+    #    under the same canonical key.  The most-played display name wins.
+    canonical_groups: dict = {}
     for h in effective_histories:
         artist = h.get("song", {}).get("artist", "Unknown Artist")
         thumbnail = h.get("song", {}).get("thumbnail", "")
@@ -289,35 +292,57 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
             processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
             artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
             for single_art in artists_list:
-                if single_art not in artist_counts:
-                    artist_counts[single_art] = {
+                canonical_key = canonical_artist(single_art)
+                if not canonical_key:
+                    continue
+                if canonical_key not in canonical_groups:
+                    canonical_groups[canonical_key] = {
                         "artist": single_art,
                         "thumbnail": thumbnail,
                         "image": thumbnail,
                         "count": 0,
                         "plays": 0,
                         "minutes": 0,
-                        "totalSeconds": 0
+                        "totalSeconds": 0,
+                        "display_name": single_art,
+                        "name_counts": {single_art.lower(): 1},
                     }
-                artist_counts[single_art]["totalSeconds"] += h.get("listenDuration", 0)
+                else:
+                    # Track display name frequencies — most common wins
+                    name_lower = single_art.lower()
+                    group = canonical_groups[canonical_key]
+                    group["name_counts"][name_lower] = group["name_counts"].get(name_lower, 0) + 1
+                    # Update display name if this variant is more common
+                    if group["name_counts"][name_lower] > group["name_counts"].get(group["display_name"].lower(), 0):
+                        group["display_name"] = single_art
+                    # Keep the best thumbnail
+                    if thumbnail and not group["thumbnail"]:
+                        group["thumbnail"] = thumbnail
+                        group["image"] = thumbnail
+                canonical_groups[canonical_key]["totalSeconds"] += h.get("listenDuration", 0)
                 
     # Sum up artist plays based on their songs' calculated plays
-    for artist, ac in artist_counts.items():
+    for canonical_key, ac in canonical_groups.items():
         import re
         artist_plays = 0
         for s in song_counts.values():
             song_artist = s.get("artist", "")
             if song_artist:
                 song_artists_list = [sa.strip().lower() for sa in re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', song_artist).split(',') if sa.strip()]
-                if artist.lower() in song_artists_list:
-                    artist_plays += s["plays"]
+                # Match against canonical artist
+                for sa in song_artists_list:
+                    if canonical_artist(sa) == canonical_key:
+                        artist_plays += s["plays"]
+                        break
         ac["plays"] = max(1, artist_plays)
         ac["count"] = ac["plays"]
+        ac["artist"] = ac["display_name"]  # Use best display name
         ac["minutes"] = int(round(ac["totalSeconds"] / 60))
-        if "totalSeconds" in ac:
-            del ac["totalSeconds"]
+        # Remove internal tracking fields
+        for field in ["totalSeconds", "display_name", "name_counts"]:
+            ac.pop(field, None)
             
-    sorted_artists = sorted(artist_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+    sorted_artists = sorted(canonical_groups.values(), key=lambda x: x["plays"], reverse=True)[:5]
     if not sorted_artists and user_stats.get("topArtists"):
         sorted_artists = []
         for art in user_stats.get("topArtists"):
@@ -328,6 +353,11 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
                 "thumbnail": "",
                 "image": ""
             })
+    
+    # Ensure canonicalName is set for all entries (backward compat with legacy data)
+    for art in sorted_artists:
+        if not art.get("canonicalName"):
+            art["canonicalName"] = canonical_artist(art.get("artist", ""))
             
     # 4. Sound DNA
     sound_dna = calculate_sound_dna(effective_histories)
@@ -736,15 +766,27 @@ async def register_play_event(
             split_names = [a.strip() for a in re.split(r'\s*(?:,|&|\bfeat\.?|\bft\.?|\band\b)\s*', name_clean, flags=re.IGNORECASE) if a.strip()]
             
             # Update play counts for each artist separately
+            # Group artists by canonical key to prevent duplicates
             for single_art in split_names:
+                art_canonical = canonical_artist(single_art)
+                if not art_canonical:
+                    continue
                 found = False
                 for art in top_artists:
-                    if art.get("name", "").lower() == single_art.lower():
+                    existing_canonical = art.get("canonicalName") or canonical_artist(art.get("name", ""))
+                    if existing_canonical == art_canonical:
                         art["playCount"] = art.get("playCount", 0) + 1
+                        # Update display name if a better variant appears
+                        art["name"] = normalize_artist(single_art)
+                        art["canonicalName"] = art_canonical
                         found = True
                         break
                 if not found:
-                    top_artists.append({"name": single_art, "playCount": 1})
+                    top_artists.append({
+                        "name": normalize_artist(single_art),
+                        "canonicalName": art_canonical,
+                        "playCount": 1
+                    })
                 
             # Limit top artists to top 10 sorted by playCount
             top_artists = sorted(top_artists, key=lambda x: x.get("playCount", 0), reverse=True)[:10]

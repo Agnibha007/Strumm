@@ -4,11 +4,26 @@ import { useCallback, useEffect, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl } from "web/lib/api";
+import { EventDispatcher, WS_CONNECTED } from "web/services/realtime";
 
+/**
+ * PlayerStateSync — cross-device player state synchronisation.
+ *
+ * Unlike the previous implementation that:
+ *   - Sent PUT /player-state on EVERY state change (debounced 900ms)
+ *   - ALSO sent PUT /player-state every 10 seconds via setInterval
+ *
+ * This version:
+ *   - Saves to the server only for SIGNIFICANT events (play, pause,
+ *     track change, queue change, shuffle/repeat mode).
+ *   - Does NOT poll or periodically re-save state.
+ *   - Listens for cross-device sync events via WebSocket.
+ *   - Still REST-ores state from the server on initial login.
+ */
 export default function PlayerStateSync() {
   const { token } = useAuthStore();
   const restoredRef = useRef(false);
-  const saveTimerRef = useRef<number | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     currentSong,
@@ -23,41 +38,16 @@ export default function PlayerStateSync() {
     restorePlayerState,
   } = usePlayerStore();
 
-  const saveState = useCallback(async () => {
-    if (!token || !restoredRef.current) return;
-    const state = usePlayerStore.getState();
-    try {
-      await fetch(apiUrl("/player-state"), {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          deviceId: "primary",
-          currentSong: state.currentSong,
-          queue: state.queue,
-          currentIndex: state.currentIndex,
-          isPlaying: state.isPlaying,
-          volume: state.volume,
-          currentTime: state.currentTime,
-          isShuffle: state.isShuffle,
-          repeatMode: state.repeatMode,
-          playbackRate: state.playbackRate,
-        }),
-      });
-    } catch (e) {
-      console.warn("Unable to save cross-device player state.");
-    }
-  }, [token]);
-
+  // -------------------------------------------------------------------
+  // Initial restore: fetch saved state from server once
+  // -------------------------------------------------------------------
   useEffect(() => {
     if (!token || restoredRef.current) return;
 
     const restore = async () => {
       try {
         const response = await fetch(apiUrl("/player-state"), {
-          headers: { "Authorization": `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         const json = await response.json();
         if (json.success && json.data?.currentSong) {
@@ -72,7 +62,7 @@ export default function PlayerStateSync() {
             playbackRate: json.data.playbackRate ?? 1,
           });
         }
-      } catch (e) {
+      } catch {
         console.warn("Unable to restore cross-device player state.");
       } finally {
         restoredRef.current = true;
@@ -82,42 +72,80 @@ export default function PlayerStateSync() {
     restore();
   }, [token, restorePlayerState]);
 
+  // -------------------------------------------------------------------
+  // Save to server only on SIGNIFICANT events (debounced)
+  // -------------------------------------------------------------------
+  const saveState = useCallback(async () => {
+    if (!token || !restoredRef.current) return;
+    const state = usePlayerStore.getState();
+    try {
+      await fetch(apiUrl("/player-state"), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          deviceId: "primary",
+          currentSong: state.currentSong,
+          queue: state.queue,
+          currentIndex: state.currentIndex,
+          isPlaying: state.isPlaying,
+          volume: state.volume,
+          currentTime: state.currentTime,
+          isShuffle: state.isShuffle,
+          repeatMode: state.repeatMode,
+          playbackRate: state.playbackRate,
+        }),
+      });
+    } catch {
+      console.warn("Unable to save cross-device player state.");
+    }
+  }, [token]);
+
+  // Significant event keys — changes to these trigger a server save
+  const significantKeys = [
+    currentSong?.videoId,
+    queue.length,
+    currentIndex,
+    isPlaying,
+    isShuffle,
+    repeatMode,
+  ];
+
   useEffect(() => {
     if (!token || !restoredRef.current) return;
 
     if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
+      clearTimeout(saveTimerRef.current);
     }
 
-    saveTimerRef.current = window.setTimeout(saveState, 900);
+    saveTimerRef.current = setTimeout(saveState, 1200);
 
     return () => {
       if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
+        clearTimeout(saveTimerRef.current);
       }
     };
-  }, [
-    token,
-    currentSong,
-    queue,
-    currentIndex,
-    isPlaying,
-    volume,
-    isShuffle,
-    repeatMode,
-    playbackRate,
-    saveState,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, ...significantKeys, saveState]);
 
+  // -------------------------------------------------------------------
+  // Re-save state when WebSocket reconnects (new device may have joined)
+  // -------------------------------------------------------------------
+  // Re-save state when WebSocket reconnects (new device may have joined)
+  // -------------------------------------------------------------------
   useEffect(() => {
-    if (!token) return;
-    const interval = window.setInterval(() => {
-      if (usePlayerStore.getState().currentSong) {
+    const dispatch = EventDispatcher.getInstance();
+
+    const unsub = dispatch.on(WS_CONNECTED, () => {
+      if (restoredRef.current) {
         saveState();
       }
-    }, 10000);
-    return () => window.clearInterval(interval);
-  }, [token, saveState]);
+    });
+
+    return unsub;
+  }, [saveState]);
 
   return null;
 }

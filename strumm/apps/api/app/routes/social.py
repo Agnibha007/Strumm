@@ -6,6 +6,16 @@ from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import SongSchema
 from app.services.security import parse_object_id, sanitize_text
+from app.services.realtime.connection_manager import manager as realtime_manager
+from app.services.realtime.events import (
+    ROOM_CREATED,
+    ROOM_UPDATED,
+    ROOM_DELETED,
+    ROOM_JOINED,
+    ROOM_LEFT,
+    CIRCLE_ACTIVITY_UPDATED,
+    NOTIFICATION_CREATED,
+)
 from pydantic import BaseModel
 import logging
 import json
@@ -209,40 +219,8 @@ class RoomPlaybackStateRequest(BaseModel):
     playing: bool
     timestamp: float
 
-# Connection Manager for WebSockets Room Synced playback
-class ConnectionManager:
-    def __init__(self):
-        # room_id -> list of tuple (userId, WebSocket)
-        self.active_connections: Dict[str, List[tuple[str, WebSocket]]] = {}
-
-    async def connect(self, room_id: str, user_id: str, websocket: WebSocket):
-        await websocket.accept()
-        if room_id not in self.active_connections:
-            self.active_connections[room_id] = []
-        self.active_connections[room_id].append((user_id, websocket))
-
-    def disconnect(self, room_id: str, websocket: WebSocket):
-        if room_id in self.active_connections:
-            self.active_connections[room_id] = [c for c in self.active_connections[room_id] if c[1] != websocket]
-            if not self.active_connections[room_id]:
-                del self.active_connections[room_id]
-
-    async def send_to_user(self, websocket: WebSocket, message: dict):
-        try:
-            await websocket.send_json(message)
-        except Exception:
-            pass
-
-    async def broadcast_to_room(self, room_id: str, message: dict, exclude_user_id: Optional[str] = None):
-        if room_id in self.active_connections:
-            for user_id, websocket in self.active_connections[room_id]:
-                if exclude_user_id is None or user_id != exclude_user_id:
-                    try:
-                        await websocket.send_json(message)
-                    except Exception:
-                        pass
-
-ws_manager = ConnectionManager()
+# Delegate room WebSocket management to the centralized realtime manager
+ws_manager = realtime_manager
 
 # Helper: calculate taste match score dynamically
 async def compute_taste_match_score(user_a_id: str, user_b_id: str) -> int:
@@ -618,18 +596,14 @@ async def delete_room(roomId: str, current_user: dict = Depends(get_current_user
     if room.get("hostId") != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only the room host can delete this room.")
         
-    # Notify connected websocket clients to leave/close the room
-    # We can broadcast a 'room_deleted' websocket event if active connections are tracked,
-    # or let the websocket disconnect handle cleanups. Let's delete the room from database first:
-    await database[ROOMS_COLLECTION].delete_one({"_id": oid})
+    # Notify connected websocket clients via the centralized connection manager
+    await ws_manager.broadcast_to_room(
+        room_id=roomId,
+        message={"type": "room_deleted"},
+    )
     
-    # Broadcast deletion event if possible
-    active_room_connections = ws_manager.active_connections.get(roomId, [])
-    for user_id, client_ws in active_room_connections:
-        try:
-            await client_ws.send_json({"type": "room_deleted"})
-        except Exception:
-            pass
+    # Delete the room from the database
+    await database[ROOMS_COLLECTION].delete_one({"_id": oid})
             
     return {"success": True, "message": "Room deleted successfully."}
 
@@ -905,7 +879,7 @@ async def send_direct_message(
 # Room WebSocket Signaling and Sync Endpoint
 @router.websocket("/rooms/{roomId}/ws")
 async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str):
-    await ws_manager.connect(roomId, userId, websocket)
+    await ws_manager.connect_room(roomId, userId, websocket)
     database = db.get_db()
     
     # Update room member lists
@@ -916,8 +890,8 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
     
     # Broadcast join
     await ws_manager.broadcast_to_room(
-        roomId, 
-        {"event": "room:join", "data": {"userId": userId}},
+        room_id=roomId, 
+        message={"event": "room:join", "data": {"userId": userId}},
         exclude_user_id=userId
     )
     
@@ -934,7 +908,11 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
                     {"_id": parse_object_id(roomId)},
                     {"$set": {"currentTrack": event_data.get("song")}}
                 )
-                await ws_manager.broadcast_to_room(roomId, {"event": "track:update", "data": event_data}, exclude_user_id=userId)
+                await ws_manager.broadcast_to_room(
+                    room_id=roomId,
+                    message={"event": "track:update", "data": event_data},
+                    exclude_user_id=userId
+                )
                 
             elif event in {"play", "pause", "seek"}:
                 # Update playbackState
@@ -947,7 +925,11 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
                     {"_id": parse_object_id(roomId)},
                     {"$set": {"playbackState": playback_state}}
                 )
-                await ws_manager.broadcast_to_room(roomId, {"event": event, "data": event_data}, exclude_user_id=userId)
+                await ws_manager.broadcast_to_room(
+                    room_id=roomId,
+                    message={"event": event, "data": event_data},
+                    exclude_user_id=userId
+                )
                 
             elif event == "queue:add":
                 # Push songs into room queue
@@ -955,18 +937,29 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
                     {"_id": parse_object_id(roomId)},
                     {"$push": {"queue": event_data.get("song")}}
                 )
-                await ws_manager.broadcast_to_room(roomId, {"event": "queue:add", "data": event_data})
+                await ws_manager.broadcast_to_room(
+                    room_id=roomId,
+                    message={"event": "queue:add", "data": event_data}
+                )
                 
             elif event == "signal":
                 # WebRTC Signaling voice channel bypass
-                await ws_manager.broadcast_to_room(roomId, {"event": "signal", "data": event_data}, exclude_user_id=userId)
+                await ws_manager.broadcast_to_room(
+                    room_id=roomId,
+                    message={"event": "signal", "data": event_data},
+                    exclude_user_id=userId
+                )
                 
             elif event == "chat:message":
                 # Broadcast chat messages to other room members
-                await ws_manager.broadcast_to_room(roomId, {"event": "chat:message", "data": event_data}, exclude_user_id=userId)
+                await ws_manager.broadcast_to_room(
+                    room_id=roomId,
+                    message={"event": "chat:message", "data": event_data},
+                    exclude_user_id=userId
+                )
                 
     except WebSocketDisconnect:
-        ws_manager.disconnect(roomId, websocket)
+        ws_manager.disconnect_room(roomId, websocket)
         # Pull member lists
         await database[ROOMS_COLLECTION].update_one(
             {"_id": parse_object_id(roomId)},

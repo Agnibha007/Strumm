@@ -5,6 +5,7 @@ import Providers from "web/components/Providers";
 import AuthWrapper from "web/components/AuthWrapper";
 import PersistentPlayerWrapper from "web/components/PersistentPlayerWrapper";
 import NotificationToast from "web/components/NotificationToast";
+import { RealTimeProvider } from "web/services/realtime";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -192,7 +193,9 @@ export default function RootLayout({
         <div className="fixed inset-0 z-[-1] pointer-events-none opacity-[0.15] transition-opacity duration-1000 bg-[radial-gradient(ellipse_at_top,_var(--color-primary)_0%,_transparent_60%)] mix-blend-screen" />
         <Providers>
           <AuthWrapper>
-            {children}
+            <RealTimeProvider>
+              {children}
+            </RealTimeProvider>
           </AuthWrapper>
           <PersistentPlayerWrapper />
           <NotificationToast />

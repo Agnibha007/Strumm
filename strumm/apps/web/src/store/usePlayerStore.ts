@@ -66,6 +66,10 @@ interface PlayerState {
   reducedAnimation: boolean;
   playbackRate: number;
   podcastMode: "audio" | "video";
+
+  /** Whether the user has explicitly chosen to watch the current song as video. */
+  videoMode: boolean;
+
   audioQuality: "data-saver" | "balanced" | "high";
   isPlayerLoading: boolean;
   playerError: string | null;
@@ -102,6 +106,8 @@ interface PlayerState {
   setRepeatMode: (mode: "none" | "all" | "one") => void;
   setReducedAnimation: (reduced: boolean) => void;
   setPodcastMode: (mode: "audio" | "video") => void;
+  /** Toggle video mode on/off for the current YouTube song (non-podcast). */
+  toggleVideoMode: () => void;
   handleTrackEnded: () => void;
   restorePlayerState: (state: Partial<PlayerState>) => void;
   setPlayerLoading: (loading: boolean) => void;
@@ -140,6 +146,7 @@ export const usePlayerStore = create<PlayerState>()(
       reducedAnimation: false,
       playbackRate: 1.0,
       podcastMode: "audio",
+      videoMode: false,
       audioQuality: "balanced",
       playerRef: null,
       isPlayerLoading: false,
@@ -291,6 +298,8 @@ export const usePlayerStore = create<PlayerState>()(
           currentIndex: idx,
           isPlaying: true,
           currentTime: 0,
+          // Reset video mode on track change — opt-in per song
+          videoMode: false,
         });
 
         get().updateMediaSession(song);
@@ -372,6 +381,11 @@ export const usePlayerStore = create<PlayerState>()(
       setReducedAnimation: (reducedAnimation) => set({ reducedAnimation }),
 
       setPodcastMode: (podcastMode) => set({ podcastMode }),
+
+      toggleVideoMode: () => {
+        const { videoMode } = get();
+        set({ videoMode: !videoMode });
+      },
 
       handleTrackEnded: () => {
         const { queue, currentIndex, repeatMode, isShuffle, playerRef } = get();
@@ -520,6 +534,7 @@ export const usePlayerStore = create<PlayerState>()(
         reducedAnimation: state.reducedAnimation,
         playbackRate: state.playbackRate,
         podcastMode: state.podcastMode,
+        videoMode: false,
         audioQuality: state.audioQuality,
       }),
     }
