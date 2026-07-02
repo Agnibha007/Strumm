@@ -24,7 +24,7 @@
 
 import type { SearchProvider, SearchResults, SongResult, AlbumResult, ArtistResult } from "./SearchProvider";
 import { searchCache } from "./cache";
-import { normalizeSong } from "../metadata/MetadataNormalizer";
+import { normalizeSong, normalizeSongs } from "../metadata/MetadataNormalizer";
 
 // ---------------------------------------------------------------------------
 // Helpers

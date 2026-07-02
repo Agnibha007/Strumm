@@ -409,15 +409,17 @@ export default function AudioEngine() {
       });
     } else {
       // B. YouTube song
-      // Set up a silent audio track so the host page retains the OS MediaSession keys.
+      // Play a silent audio track so the host page retains the OS MediaSession keys.
       // This prevents the YouTube iframe from hijacking media hardware buttons.
-      // IMPORTANT: Do NOT .play() here — let the YT player start first via autoplay,
-      // then sync the silent audio inside onStateChange.  Playing the silent audio
-      // first would consume the browser's autoplay gesture and block YT playback.
       const silentAudioSrc = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
       if (htmlAudioRef.current.src !== silentAudioSrc) {
         htmlAudioRef.current.src = silentAudioSrc;
         htmlAudioRef.current.loop = true;
+      }
+      if (isPlaying) {
+        htmlAudioRef.current.play().catch(() => {});
+      } else {
+        htmlAudioRef.current.pause();
       }
 
       if (playerInstanceRef.current && currentSong?.videoId) {
@@ -492,9 +494,14 @@ export default function AudioEngine() {
         }
       }
     } else {
-      // Don't touch the silent audio here — it is synced reactively inside
-      // the onStateChange handler so it never competes with the YT player
-      // for the browser's autoplay gesture.
+      // Keep silent audio track in sync with UI play/pause for YouTube songs
+      if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
+        if (isPlaying) {
+          htmlAudioRef.current.play().catch(() => {});
+        } else {
+          htmlAudioRef.current.pause();
+        }
+      }
 
       if (playerInstanceRef.current) {
         try {
@@ -630,24 +637,11 @@ export default function AudioEngine() {
               usePlayerStore.getState().setPlayerLoading(false);
               setDuration(playerInstanceRef.current.getDuration() || currentSong?.duration || 0);
               startProgressTimer();
-              // Sync silent audio *after* YT confirms playing so it doesn't
-              // steal the autoplay gesture
-              if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
-                htmlAudioRef.current.play().catch(() => {});
-              }
             } else if (state === 2) {
               setPlaying(false);
               stopProgressTimer();
-              // Pause silent audio when YT pauses
-              if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
-                htmlAudioRef.current.pause();
-              }
             } else if (state === 0) {
               stopProgressTimer();
-              // Also stop silent audio on track end
-              if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
-                htmlAudioRef.current.pause();
-              }
               usePlayerStore.getState().handleTrackEnded();
             }
           },

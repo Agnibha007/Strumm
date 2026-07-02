@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Sparkles, Loader2, Music, CheckCircle2, ListMusic } from "lucide-react";
+import { Send, Sparkles, Loader2, Music, CheckCircle2, ListMusic, X } from "lucide-react";
 import { apiUrl } from "web/lib/api";
 import { Song } from "@strumm/types";
 import { usePlayerStore } from "web/store/usePlayerStore";

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { useAuthStore } from "web/store/useAuthStore";
-import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Heart, Trash2, ChevronUp, ChevronDown, Loader2, Clock } from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Mic2, Heart, Trash2, ChevronUp, ChevronDown, Loader2, Clock } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import dynamic from "next/dynamic";
 import { apiUrl, cleanText } from "web/lib/api";

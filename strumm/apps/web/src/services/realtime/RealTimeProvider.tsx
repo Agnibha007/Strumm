@@ -8,6 +8,7 @@ import { EventDispatcher } from "./EventDispatcher";
 import {
   USER_LISTENING,
   USER_NOT_LISTENING,
+  WS_CONNECTED,
 } from "./types";
 
 /**

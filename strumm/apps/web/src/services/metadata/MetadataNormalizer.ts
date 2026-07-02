@@ -23,7 +23,7 @@
 
 
 import type { NormalizedSong } from "./types";
-import { canonicalString } from "./canonical";
+import { canonicalString, canonicalSongKey } from "./canonical";
 import { canonicalArtist as canonicalArtistStr, normalizeArtist } from "./ArtistNormalizer";
 
 // ---------------------------------------------------------------------------
