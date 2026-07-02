@@ -631,7 +631,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           {/* Left Side: Song Details & Controls */}
           <div className={`flex flex-col items-center w-full transition-all duration-500 ${
             effectiveShowLyrics 
-              ? "gap-2 lg:gap-4 xl:gap-6 lg:items-start text-center lg:text-left flex-shrink-0 h-full overflow-y-auto" 
+              ? "gap-2 lg:gap-4 xl:gap-6 lg:items-start text-center lg:text-left flex-shrink-0" 
               : "gap-6 h-full items-center text-center"
           }`}>
             
@@ -640,8 +640,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <div
                 className={`overflow-hidden rounded-2xl md:rounded-3xl border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 ${
                   effectiveShowLyrics 
-                    ? "w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 xl:w-80 xl:h-80" 
-                    : "w-72 h-72 md:w-80 md:h-80 lg:w-96 lg:h-96"
+                    ? "w-48 h-48 md:w-56 md:h-56 lg:w-72 lg:h-72 xl:w-80 xl:h-80" 
+                    : "w-72 h-72 md:w-80 md:h-80 lg:w-96 lg:h-96 xl:w-[420px] xl:h-[420px]"
                 }`}
               >
                 <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 384px, (max-width: 1024px) 512px, 640px" />
