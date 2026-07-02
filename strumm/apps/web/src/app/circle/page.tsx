@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 as Loader2Icon } from "lucide-react";
+import { Users, Sparkles, UserMinus, Check, X, Bell, Play, Send, Trash2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import {
@@ -12,8 +12,6 @@ import {
   USER_OFFLINE,
   USER_LISTENING,
   USER_NOT_LISTENING,
-  FRIEND_REQUEST,
-  FRIEND_ACCEPTED,
   WS_CONNECTED,
 } from "web/services/realtime";
 

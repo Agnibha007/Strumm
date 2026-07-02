@@ -16,6 +16,7 @@ const eslintConfig = [
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", { "caughtErrors": "none", "ignoreRestSiblings": true }],
       "react-hooks/exhaustive-deps": "off",
       "@next/next/no-img-element": "off",
       "jsx-a11y/alt-text": "off"

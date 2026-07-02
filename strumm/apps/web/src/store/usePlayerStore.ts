@@ -226,7 +226,7 @@ export const usePlayerStore = create<PlayerState>()(
 
       // Sleep Timer Actions
       setSleepTimer: (duration: SleepTimerDuration) => {
-        const { currentSong, duration: songDuration } = get();
+        const { duration: songDuration } = get();
         if (!duration) {
           set({ sleepTimerDuration: null, sleepTimerEndTime: null });
           return;

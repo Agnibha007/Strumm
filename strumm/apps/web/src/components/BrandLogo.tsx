@@ -1,5 +1,3 @@
-import { motion } from "framer-motion";
-
 interface BrandLogoProps {
   variant?: "full" | "mark";
   size?: "sm" | "md" | "lg";

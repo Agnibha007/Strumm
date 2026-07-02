@@ -4,7 +4,6 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import "./globals.css"; // Ensure basic styles are loaded
 
 export default function GlobalError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string };

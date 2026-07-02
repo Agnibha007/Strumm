@@ -6,7 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import SongArtwork from "web/components/SongArtwork";
 import SoundDNAChart from "web/components/SoundDNAChart";
-import { Loader2, Music, Sparkles, Heart, ShieldAlert, Play, ArrowRight, Share2, Award } from "lucide-react";
+import { Loader2, Music, Sparkles, ShieldAlert, Play, ArrowRight, Award } from "lucide-react";
 import Link from "next/link";
 
 interface PublicProfileData {

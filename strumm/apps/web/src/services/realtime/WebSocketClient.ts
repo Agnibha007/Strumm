@@ -18,7 +18,7 @@
  */
 
 import { EventDispatcher } from "./EventDispatcher";
-import { PING, PONG, WS_CONNECTED, WS_DISCONNECTED, WS_RECONNECTING } from "./types";
+import { PING, PONG, WS_CONNECTED } from "./types";
 import { apiUrl } from "web/lib/api";
 
 // ---------------------------------------------------------------------------

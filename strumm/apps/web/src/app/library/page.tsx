@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Clock, Heart, Play, User as UserIcon, Trash2, Plus, Check } from "lucide-react";
+import { Clock, Heart, Play, Trash2, Plus, Check } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";

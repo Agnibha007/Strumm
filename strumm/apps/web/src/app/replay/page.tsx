@@ -7,7 +7,7 @@ import { useThemeStore } from "web/store/useThemeStore";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import SoundDNAChart from "web/components/SoundDNAChart";
-import { Loader2, Music, Sparkles, Trophy, Calendar, Compass, User, Play, Clock } from "lucide-react";
+import { Loader2, Music, Sparkles, Trophy, Compass, User, Play, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ReplayData {
@@ -162,7 +162,6 @@ export default function ReplayPage() {
   };
 
   // Disable animations if battery saver mode is on
-  const transitionProps = isAnimated ? {} : { duration: 0 };
   const animatedProps = isAnimated ? { initial: "hidden", animate: "show", variants: containerVariants } : {};
   const childAnimatedProps = isAnimated ? { variants: itemVariants } : {};
 
@@ -323,8 +322,7 @@ export default function ReplayPage() {
       {/* Top Songs */}
       <div className="space-y-4 min-w-0">
         <h3 className="font-editorial text-2xl text-text font-bold">Your Heavy Rotation</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-          {data.topSongs.map((song, idx) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">            {data.topSongs.map((song) => (
             <button
               key={song.videoId}
               onClick={() => playSong(song as any, data.topSongs as any)}
