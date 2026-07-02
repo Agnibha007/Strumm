@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuthStore } from "web/store/useAuthStore";
 import { Radio, Rss, ArrowRight, Loader2, Info, Search } from "lucide-react";
 import { PodcastShow } from "@strumm/types";
