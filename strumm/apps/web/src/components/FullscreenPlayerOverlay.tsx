@@ -347,25 +347,24 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   };
 
   return (
-    <div className={`fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-4 md:p-12 text-text overflow-x-hidden select-none transition-all ${effectiveShowLyrics ? "overflow-y-hidden" : "overflow-y-auto"}`}>
-      {/* Header bar */}
-      <div className="flex justify-between items-center z-10 flex-shrink-0 border-b border-border/20 pb-4">
+    <div className={`fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-4 md:p-6 lg:p-8 xl:p-12 text-text overflow-x-hidden select-none transition-all ${effectiveShowLyrics ? "overflow-y-hidden" : "overflow-y-auto"}`}>
+      {/* Header bar */}        <div className="flex justify-between items-start md:items-center z-10 flex-shrink-0 border-b border-border/20 pb-3 md:pb-4 gap-2">
         <button 
           onClick={onClose} 
-          className="flex items-center gap-2 text-muted hover:text-text cursor-pointer group transition"
+          className="flex items-center gap-1.5 md:gap-2 text-muted hover:text-text cursor-pointer group transition flex-shrink-0"
         >
-          <Minimize2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
-          <span className="text-xs uppercase tracking-wider font-semibold">Minimize</span>
+          <Minimize2 className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform" />
+          <span className="text-[10px] md:text-xs uppercase tracking-wider font-semibold">Minimize</span>
         </button>
 
-        <div className="text-center hidden md:block">
+        <div className="text-center hidden md:block flex-shrink min-w-0 px-2">
           <span className="text-[9px] tracking-widest uppercase font-semibold text-muted">Now Playing</span>
-          <h3 className="text-xs font-semibold tracking-wide text-text/80 truncate max-w-[200px] md:max-w-[450px] mt-0.5">
+          <h3 className="text-xs font-semibold tracking-wide text-text/80 truncate max-w-[120px] lg:max-w-[200px] xl:max-w-[400px] mt-0.5">
             {currentSong.metadata?.album || "Strumm Ecosystem"}
           </h3>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 md:gap-2 flex-wrap justify-end">
           {isPodcast && currentSong?.metadata?.videoAvailable && (
             <button
               onClick={() => setPodcastMode(podcastMode === "video" ? "audio" : "video")}
@@ -438,9 +437,9 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
       {/* Video Mode View or Audio/Lyrics Mode View */}
       {podcastMode === "video" && currentSong.metadata?.videoAvailable ? (
-        <div className="w-full flex-1 mt-4 md:mt-8 min-h-0 z-10 mx-auto max-w-7xl flex flex-col lg:grid lg:grid-cols-3 gap-6 lg:gap-8 overflow-y-auto lg:overflow-hidden p-1">
+        <div className="w-full flex-1 mt-3 md:mt-6 min-h-0 z-10 mx-auto max-w-7xl flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6 overflow-y-auto lg:overflow-hidden h-full">
           {/* Left/Main Column: Video Player, Episode Info */}
-          <div className="lg:col-span-2 flex flex-col gap-4 lg:h-full lg:overflow-y-auto pr-1">
+          <div className="lg:col-span-2 flex flex-col gap-3 lg:gap-4 lg:h-full lg:overflow-y-auto pr-0 lg:pr-2">
             {/* Header info / Episode artwork */}
             <div className="flex items-center gap-4 border-b border-border/20 pb-4">
               <div className="w-16 h-16 rounded-lg overflow-hidden border border-border/40 flex-shrink-0 bg-surface-elevated">
@@ -587,7 +586,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           </div>
 
           {/* Right Column: Episode List/Queue */}
-          <div className="flex flex-col gap-4 lg:h-full lg:overflow-hidden bg-surface-elevated/10 border border-border/20 rounded-2xl p-4">
+          <div className="flex flex-col gap-3 lg:h-full lg:overflow-hidden bg-surface-elevated/10 border border-border/20 rounded-2xl p-3 lg:p-4">
             <div className="flex justify-between items-center border-b border-border/20 pb-3">
               <h3 className="font-editorial text-text font-bold text-base">Up Next Queue</h3>
               <span className="text-[10px] text-muted font-bold">{queue.length} items</span>
@@ -623,16 +622,16 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           </div>
         </div>
       ) : (
-        <div className={`w-full flex-1 mt-4 md:mt-10 min-h-0 z-10 mx-auto max-w-7xl transition-all duration-500 ${
+        <div className={`w-full flex-1 mt-3 md:mt-6 min-h-0 z-10 mx-auto max-w-7xl transition-all duration-500 ${
           effectiveShowLyrics 
-            ? "flex flex-col lg:grid lg:grid-cols-2 gap-4 lg:gap-16" 
+            ? "flex flex-col lg:grid lg:grid-cols-2 gap-3 lg:gap-8 xl:gap-16 h-full min-h-0" 
             : "flex flex-col items-center justify-center max-w-xl"
         }`}>
           
           {/* Left Side: Song Details & Controls */}
-          <div className={`flex flex-col justify-center items-center w-full transition-all duration-500 ${
+          <div className={`flex flex-col items-center w-full transition-all duration-500 ${
             effectiveShowLyrics 
-              ? "gap-2 lg:gap-6 lg:items-start text-center lg:text-left flex-shrink-0" 
+              ? "gap-2 lg:gap-4 xl:gap-6 lg:items-start text-center lg:text-left flex-shrink-0 h-full overflow-y-auto" 
               : "gap-6 h-full items-center text-center"
           }`}>
             
@@ -641,11 +640,11 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <div
                 className={`overflow-hidden rounded-2xl md:rounded-3xl border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 ${
                   effectiveShowLyrics 
-                    ? "w-72 h-52 md:w-96 md:h-72" 
-                    : "w-96 h-64 md:w-[320px] md:h-80"
+                    ? "w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 xl:w-80 xl:h-80" 
+                    : "w-72 h-72 md:w-80 md:h-80 lg:w-96 lg:h-96"
                 }`}
               >
-                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 384px, 512px" />
+                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 384px, (max-width: 1024px) 512px, 640px" />
               </div>
             </div>
 
@@ -945,7 +944,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
         {/* Right Side: Lyrics Section */}
         {effectiveShowLyrics && (
-            <div className="flex flex-col flex-1 lg:h-full bg-surface-elevated/20 border border-border/30 rounded-3xl p-4 md:p-7 min-h-0 overflow-hidden backdrop-blur-md w-full transition-all">
+            <div className="flex flex-col lg:h-full bg-surface-elevated/20 border border-border/30 rounded-3xl p-3 md:p-4 lg:p-6 min-h-0 overflow-hidden backdrop-blur-md w-full transition-all">
               <div className="flex justify-between items-center border-b border-border/20 pb-3 mb-3 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <Mic2 className="w-4 h-4 text-primary" />
@@ -959,7 +958,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               {/* Scrolling Container */}
               <div 
                 ref={scrollContainerRef}
-                className="flex-1 overflow-y-auto pr-1 scrollbar-none my-2 space-y-5 text-center min-h-0"
+                className="flex-1 overflow-y-auto pr-1 md:pr-2 space-y-3 md:space-y-4 lg:space-y-5 text-center min-h-0"
               >
                 {lyricsLoading ? (
                   <div className="flex flex-col items-center justify-center h-full gap-2 text-muted py-12">
