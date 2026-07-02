@@ -9,7 +9,12 @@
  *
  * These are separate from the title normalization in MetadataNormalizer.ts
  * because artist names have their own suffix patterns and normalization needs.
+ *
+ * Uses shared utilities from normalization-utils.ts to avoid duplication
+ * with canonical.ts.
  */
+
+import { nfc, NOISE_WORDS, buildCanonical } from "./normalization-utils";
 
 // ---------------------------------------------------------------------------
 // YouTube channel suffix patterns
@@ -28,30 +33,6 @@ const ARTIST_SUFFIX_PATTERNS = [
   /\s*Channel\s*$/i,                // "Arijit Singh Channel"
   /\s*-\s*Subject\s*$/i,           // "Arijit Singh - Subject"
 ];
-
-/** Words that should be removed from the canonical artist key. */
-const CANONICAL_ARTIST_NOISE = new Set([
-  "official",
-  "artist",
-  "vevo",
-  "topic",
-  "music",
-  "records",
-  "channel",
-  "subject",
-]);
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function nfc(s: string): string {
-  return s.normalize("NFC");
-}
-
-function stripDiacritics(s: string): string {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -129,23 +110,8 @@ export function canonicalArtist(raw: string): string {
   // 4. Handle camelCase VEVO
   s = s.replace(/([a-z])([A-Z])/g, "$1 $2");
 
-  // 5. Remove noise words (whole word only)
-  const noisePattern = new RegExp(
-    `\\b(?:${[...CANONICAL_ARTIST_NOISE].map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`,
-    "gi",
-  );
-  s = s.replace(noisePattern, "");
-
-  // 6. Remove punctuation except hyphens inside words
-  s = s.replace(/[^\p{L}\p{N}\s-]/gu, " ");
-
-  // 7. Collapse whitespace
-  s = s.replace(/\s+/g, " ").trim();
-
-  // 8. Strip diacritics
-  s = stripDiacritics(s);
-
-  return s;
+  // Use shared buildCanonical for the rest (lowercase, emoji, noise, punctuation, whitespace, diacritics)
+  return buildCanonical(s);
 }
 
 /**

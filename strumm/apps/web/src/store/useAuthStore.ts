@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { User } from "@strumm/types";
-import { apiUrl } from "web/lib/api";
+import { apiFetch, ApiError } from "web/lib/api-client";
 
 interface AuthState {
   user: User | null;
@@ -41,22 +41,17 @@ export const useAuthStore = create<AuthState>()(
         if (!token) return false;
         
         try {
-          const response = await fetch(apiUrl("/profile"), {
-            headers: {
-              "Authorization": `Bearer ${token}`
-            }
-          });
-          const json = await response.json();
-          if (json.success && json.data) {
-            set({ user: json.data });
-            return true;
-          } else {
+          const data = await apiFetch<any>("/profile", { token });
+          set({ user: data });
+          return true;
+        } catch (e) {
+          // If 401/403, clear expired session
+          if (e instanceof ApiError && e.status && [401, 403].includes(e.status)) {
             get().logout();
             return false;
           }
-        } catch (e) {
           console.warn("Unable to sync profile offline. Using cached user session.");
-          return true; // use cached user details
+          return true;
         }
       }
     }),

@@ -7,7 +7,7 @@ import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loa
 import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
-import { searchInvidious, getPlaylistItems } from "web/lib/search";
+import { searchYouTube, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import Link from "next/link";
@@ -187,7 +187,7 @@ export default function SearchPage() {
         } else {
           // Client-side search via Invidious API
           const type = getInvidiousTypeParam(activeFilter);
-          const invidiousResults = await searchInvidious({ query: q, type });
+          const youtubeResults = await searchYouTube({ query: q, type });
 
           // Fetch podcasts from backend (separate route, not /search)
           let podcasts: PodcastShow[] = [];
@@ -214,12 +214,12 @@ export default function SearchPage() {
           }
 
           const fetchedResults = {
-            songs: invidiousResults.songs || [],
+            songs: youtubeResults.songs || [],
             playlists,
             podcasts,
             users: [],
-            artists: invidiousResults.artists || [],
-            albums: invidiousResults.albums || [],
+            artists: youtubeResults.artists || [],
+            albums: youtubeResults.albums || [],
           };
           setResults(fetchedResults);
           searchCacheRef.current[cacheKey] = fetchedResults;

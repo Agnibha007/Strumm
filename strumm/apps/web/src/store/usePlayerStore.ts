@@ -1,13 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Song } from "@strumm/types";
-import { getBestArtwork } from "web/lib/media";
-import { apiUrl } from "web/lib/api";
-import { useAuthStore } from "web/store/useAuthStore";
+import { updateMediaSession } from "web/store/media-session-utils";
+import { createRadioActions, initialRadioState } from "web/store/radio-actions";
+import { createSleepTimerActions, initialSleepTimerState, type SleepTimerDuration } from "web/store/sleep-timer-utils";
 
 type RepeatMode = "none" | "all" | "one";
-
-type SleepTimerDuration = 15 | 30 | 45 | 60 | "end-of-track" | null;
 
 function resolveNextTrackIndex(
   queue: Song[],
@@ -151,114 +149,14 @@ export const usePlayerStore = create<PlayerState>()(
       playerRef: null,
       isPlayerLoading: false,
       playerError: null,
-      isRadio: false,
-      radioSeed: null,
-      radioSession: null,
-      sleepTimerDuration: null,
-      sleepTimerEndTime: null,
+      ...initialRadioState,
+      ...initialSleepTimerState,
       
-      startRadio: (seedVideoId, initialSongs) => {
-        set({
-          queue: initialSongs,
-          currentIndex: 0,
-          isRadio: true,
-          radioSeed: seedVideoId,
-          radioSession: `radio_${seedVideoId}_${Date.now()}`,
-          isShuffle: false,
-          repeatMode: "none",
-        });
-        if (initialSongs.length > 0) {
-          const song = initialSongs[0];
-          set({ currentSong: song, isPlaying: true, currentTime: 0 });
-          get().updateMediaSession(song);
-        }
-      },
+      // Radio actions
+      ...createRadioActions(set, get),
 
-      stopRadio: () => {
-        set({ isRadio: false, radioSeed: null, radioSession: null });
-      },
-
-      setRadioSession: (session) => {
-        set({ radioSession: session });
-      },
-
-      triggerRadio: async (seedVideoId: string) => {
-        const { isRadio, radioSeed } = get();
-        // Don't restart if already playing radio from this seed
-        if (isRadio && radioSeed === seedVideoId) return;
-
-        try {
-          const token = useAuthStore.getState().token;
-          const headers: Record<string, string> = {};
-          if (token) {
-            headers["Authorization"] = `Bearer ${token}`;
-          }
-          const res = await fetch(apiUrl(`/radio/${seedVideoId}?limit=20`), { headers });
-          const json = await res.json();
-          if (json.success && json.data?.songs?.length > 0) {
-            get().startRadio(seedVideoId, json.data.songs);
-          }
-        } catch (e) {
-          console.error("Failed to start radio:", e);
-        }
-      },
-
-      fetchMoreRadio: async () => {
-        const { radioSeed, queue, isRadio } = get();
-        if (!isRadio || !radioSeed) return;
-
-        try {
-          const res = await fetch(apiUrl(`/radio/${radioSeed}?limit=20`));
-          const json = await res.json();
-          if (json.success && json.data?.songs) {
-            const existingVids = new Set(queue.map(s => s.videoId));
-            const newSongs = json.data.songs.filter((s: any) => !existingVids.has(s.videoId));
-            if (newSongs.length > 0) {
-              set({ queue: [...queue, ...newSongs] });
-            } else {
-              console.warn("Radio: No new tracks available");
-            }
-          }
-        } catch (e) {
-          console.error("Failed to fetch more radio tracks:", e);
-        }
-      },
-
-      // Sleep Timer Actions
-      setSleepTimer: (duration: SleepTimerDuration) => {
-        const { duration: songDuration } = get();
-        if (!duration) {
-          set({ sleepTimerDuration: null, sleepTimerEndTime: null });
-          return;
-        }
-
-        let endTime: number;
-        if (duration === "end-of-track") {
-          // End of current track - use remaining time
-          const remaining = Math.max(0, songDuration - get().currentTime);
-          endTime = Date.now() + remaining * 1000;
-        } else {
-          // Fixed duration in minutes
-          endTime = Date.now() + duration * 60 * 1000;
-        }
-
-        set({
-          sleepTimerDuration: duration,
-          sleepTimerEndTime: endTime,
-        });
-      },
-
-      clearSleepTimer: () => {
-        set({ sleepTimerDuration: null, sleepTimerEndTime: null });
-      },
-
-      checkSleepTimer: () => {
-        const { sleepTimerEndTime, isPlaying, togglePlay } = get();
-        if (sleepTimerEndTime && isPlaying && Date.now() >= sleepTimerEndTime) {
-          togglePlay();
-          set({ sleepTimerDuration: null, sleepTimerEndTime: null });
-        }
-      },
+      // Sleep timer actions
+      ...createSleepTimerActions(set, get),
 
       setPlayerLoading: (loading) => set({ isPlayerLoading: loading }),
       setPlayerError: (error) => set({ playerError: error }),
@@ -451,75 +349,7 @@ export const usePlayerStore = create<PlayerState>()(
 
       // Helper function to update system lockscreen metadata (Media Session API)
       updateMediaSession: (song: Song) => {
-        if (typeof window !== "undefined" && "mediaSession" in navigator) {
-          const artworkSrc = getBestArtwork(song) || song.thumbnail;
-          
-          // Force secure thumbnail to prevent mixed content issues
-          let secureArtwork = artworkSrc;
-          if (secureArtwork && secureArtwork.startsWith("http://")) {
-            secureArtwork = secureArtwork.replace("http://", "https://");
-          }
-
-          navigator.mediaSession.metadata = new MediaMetadata({
-            title: song.title,
-            artist: song.artist,
-            album: song.metadata?.album || "Strumm",
-            artwork: [
-              { src: secureArtwork || "", sizes: "96x96", type: "image/jpeg" },
-              { src: secureArtwork || "", sizes: "128x128", type: "image/jpeg" },
-              { src: secureArtwork || "", sizes: "192x192", type: "image/jpeg" },
-              { src: secureArtwork || "", sizes: "256x256", type: "image/jpeg" },
-              { src: secureArtwork || "", sizes: "384x384", type: "image/jpeg" },
-              { src: secureArtwork || "", sizes: "512x512", type: "image/jpeg" },
-            ],
-          });
-
-          // Setup system lockscreen media control actions
-          navigator.mediaSession.setActionHandler("play", () => {
-            const { isPlaying, playerRef } = get();
-            if (!isPlaying) {
-              playerRef?.playVideo();
-              set({ isPlaying: true });
-            }
-          });
-          navigator.mediaSession.setActionHandler("pause", () => {
-            const { isPlaying, playerRef } = get();
-            if (isPlaying) {
-              playerRef?.pauseVideo();
-              set({ isPlaying: false });
-            }
-          });
-          navigator.mediaSession.setActionHandler("previoustrack", () => {
-            const { currentTime, prev, playerRef } = get();
-            if (currentTime > 5) {
-              playerRef?.seekTo(0);
-              set({ currentTime: 0 });
-            } else {
-              prev();
-            }
-          });
-          navigator.mediaSession.setActionHandler("nexttrack", () => {
-            get().next();
-          });
-          navigator.mediaSession.setActionHandler("seekto", (details) => {
-            if (details.seekTime !== undefined) {
-              get().playerRef?.seekTo(details.seekTime);
-              set({ currentTime: details.seekTime });
-            }
-          });
-          navigator.mediaSession.setActionHandler("seekbackward", (details) => {
-            const offset = details.seekOffset || 10;
-            const targetTime = Math.max(0, get().currentTime - offset);
-            get().playerRef?.seekTo(targetTime);
-            set({ currentTime: targetTime });
-          });
-          navigator.mediaSession.setActionHandler("seekforward", (details) => {
-            const offset = details.seekOffset || 10;
-            const targetTime = Math.min(get().duration, get().currentTime + offset);
-            get().playerRef?.seekTo(targetTime);
-            set({ currentTime: targetTime });
-          });
-        }
+        updateMediaSession(song, get);
       },
     }),
     {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl, cleanText } from "web/lib/api";
-import { searchInvidious } from "web/lib/search";
+import { searchYouTube } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
 import Link from "next/link";
 
@@ -35,7 +35,7 @@ export default function HomePage() {
     const delayDebounce = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const results = await searchInvidious({
+        const results = await searchYouTube({
           query: cleanText(searchQuery, 120),
           type: "video"
         });

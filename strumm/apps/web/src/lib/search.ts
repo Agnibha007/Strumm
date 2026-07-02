@@ -5,24 +5,23 @@
  * No CORS issues — the browser calls its own origin (www.strumm.me/api/search).
  * No external dependencies — all proxying happens server-side on Vercel.
  *
- * This file only exposes the same `searchInvidious`, `getVideoDetails`, and
- * `getPlaylistItems` exports that the frontend already imports.  The name is
- * preserved for backward compatibility; the underlying implementation has
- * been migrated away from Invidious.
+ * This file exposes `searchYouTube`, `getVideoDetails`, and
+ * `getPlaylistItems` exports that the frontend uses to interact with the
+ * YouTube Data API v3 via Next.js API route proxies.
  */
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface InvidiousSearchOptions {
+export interface SearchOptions {
   query: string;
   type?: "video" | "playlist" | "channel" | "all";
   page?: number;
   sort?: "relevance" | "views";
 }
 
-export interface InvidiousSearchResults {
+export interface SearchResults {
   songs: import("@strumm/types").Song[];
   albums: any[];
   artists: any[];
@@ -34,9 +33,9 @@ export interface InvidiousSearchResults {
  * Calls the same-origin /api/search endpoint, which proxies to the YouTube
  * Data API v3 on the server side. No CORS issues.
  */
-export async function searchInvidious(
-  opts: InvidiousSearchOptions,
-): Promise<InvidiousSearchResults> {
+export async function searchYouTube(
+  opts: SearchOptions,
+): Promise<SearchResults> {
   const { query, type, page } = opts;
 
   if (!query.trim()) {

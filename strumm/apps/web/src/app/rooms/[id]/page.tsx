@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl } from "web/lib/api";
-import { searchInvidious } from "web/lib/search";
+import { searchYouTube } from "web/lib/search";
 import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2 } from "lucide-react";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
@@ -329,7 +329,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const handleSuggestSearch = async () => {
     if (!suggestQuery.trim()) return;
     try {
-      const results = await searchInvidious({
+      const results = await searchYouTube({
         query: suggestQuery,
         type: "video"
       });
