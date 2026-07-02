@@ -852,9 +852,9 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
           {/* Video Mode — show YouTube embed instead of artwork */}
         {showVideo && currentSong && (
-          <div className="w-full flex-1 mt-4 md:mt-8 min-h-0 z-10 mx-auto max-w-5xl flex flex-col items-center gap-6 overflow-y-auto p-1">
+          <div className="w-full flex-1 mt-2 md:mt-4 min-h-0 z-10 mx-auto max-w-6xl flex flex-col items-center gap-3 lg:gap-4 overflow-y-auto px-1">
             {/* Video Player */}
-            <div className="w-full max-w-4xl">
+            <div className="w-full max-w-4xl lg:max-w-full">
               <YouTubeVideoPlayer
                 videoId={currentSong.videoId}
                 startSeconds={currentTime}
@@ -878,18 +878,18 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             </div>
 
             {/* Song info below video */}
-            <div className="w-full max-w-4xl flex items-center justify-between">
+            <div className="w-full max-w-4xl lg:max-w-full flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <h2 className="font-editorial font-bold text-text text-xl md:text-2xl truncate">
+                <h2 className="font-editorial font-bold text-text text-lg md:text-xl lg:text-2xl truncate">
                   {currentSong.title}
                 </h2>
-                <p className="text-sm text-muted truncate">{currentSong.artist}</p>
+                <p className="text-xs md:text-sm text-muted truncate">{currentSong.artist}</p>
               </div>
               <button
                 onClick={() => toggleVideoMode()}
-                className="flex items-center gap-2 px-4 py-2 rounded-full border border-primary/50 text-primary hover:bg-primary/10 text-xs font-bold cursor-pointer transition-all"
+                className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-primary/50 text-primary hover:bg-primary/10 text-[10px] md:text-xs font-bold cursor-pointer transition-all flex-shrink-0"
               >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg className="w-3 h-3 md:w-3.5 md:h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M11 5L6 9H2v6h4l5 4V5z" />
                   <line x1="23" y1="9" x2="17" y2="15" />
                   <line x1="17" y1="9" x2="23" y2="15" />
@@ -899,7 +899,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             </div>
 
             {/* Controls under video */}
-            <div className="w-full max-w-4xl bg-surface-elevated/20 border border-border/30 rounded-2xl p-5 space-y-4">
+            <div className="w-full max-w-4xl lg:max-w-full bg-surface-elevated/20 border border-border/30 rounded-xl lg:rounded-2xl p-3 md:p-4 lg:p-5 space-y-3 lg:space-y-4">
               {/* Timeline scrubber */}
               <div className="w-full flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-[10px] text-muted font-semibold tracking-wider">
