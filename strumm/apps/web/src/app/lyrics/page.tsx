@@ -11,6 +11,7 @@ import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 
 export default function LyricsPage() {
   const { currentSong, currentTime, isPlaying, togglePlay, next, prev } = usePlayerStore();
+  const [, setBackdropColor] = useState<string>("rgba(0,0,0,0.25)");
   const router = useRouter();
 
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
