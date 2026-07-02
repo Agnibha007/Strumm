@@ -265,6 +265,10 @@ export default function AudioEngine() {
     if (window.YT && window.YT.Player) {
       if (!playerInstanceRef.current) {
         initPlayer();
+      } else {
+        // Player already exists — clear the loading state we set above.
+        // Otherwise, subsequent songs will show "Loading..." forever.
+        usePlayerStore.getState().setPlayerLoading(false);
       }
       return;
     }
