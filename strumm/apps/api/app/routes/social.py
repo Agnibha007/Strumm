@@ -24,10 +24,7 @@ import hashlib
 logger = logging.getLogger("strumm-social")
 router = APIRouter(prefix="/social", tags=["social"])
 
-CONNECTIONS_COLLECTION = "connections"
-ACTIVITIES_COLLECTION = "activities"
-ROOMS_COLLECTION = "rooms"
-NOTIFICATIONS_COLLECTION = "notifications"
+
 
 # In-memory cache for taste match scores (in production, use Redis)
 _taste_score_cache: Dict[str, int] = {}
@@ -222,62 +219,6 @@ class RoomPlaybackStateRequest(BaseModel):
 # Delegate room WebSocket management to the centralized realtime manager
 ws_manager = realtime_manager
 
-# Helper: calculate taste match score dynamically
-async def compute_taste_match_score(user_a_id: str, user_b_id: str) -> int:
-    try:
-        user_a_str = str(user_a_id)
-        user_b_str = str(user_b_id)
-        
-        database = db.get_db()
-        possible_a_ids = [user_a_str]
-        if ObjectId.is_valid(user_a_str):
-            possible_a_ids.append(ObjectId(user_a_str))
-            
-        possible_b_ids = [user_b_str]
-        if ObjectId.is_valid(user_b_str):
-            possible_b_ids.append(ObjectId(user_b_str))
-            
-        a_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_a_ids}}).to_list(length=500)
-        b_hist = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_b_ids}}).to_list(length=500)
-        
-        a_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_a_ids}}).to_list(length=500)
-        b_likes = await database[db.LIKED_SONGS].find({"userId": {"$in": possible_b_ids}}).to_list(length=500)
-        
-        a_artists = set()
-        a_songs = set()
-        for h in a_hist + a_likes:
-            s = h.get("song", {})
-            if s.get("artist"):
-                a_artists.add(str(s["artist"]).strip().lower())
-            if s.get("videoId"):
-                a_songs.add(str(s["videoId"]))
-                
-        b_artists = set()
-        b_songs = set()
-        for h in b_hist + b_likes:
-            s = h.get("song", {})
-            if s.get("artist"):
-                b_artists.add(str(s["artist"]).strip().lower())
-            if s.get("videoId"):
-                b_songs.add(str(s["videoId"]))
-                
-        if not a_songs and not b_songs:
-            return 50  # Neutral default for no data
-            
-        common_artists = a_artists.intersection(b_artists)
-        common_songs_ids = a_songs.intersection(b_songs)
-        
-        min_artist_len = min(len(a_artists), len(b_artists))
-        artist_similarity = len(common_artists) / max(1, min_artist_len) if min_artist_len > 0 else 0
-        
-        min_song_len = min(len(a_songs), len(b_songs))
-        song_similarity = len(common_songs_ids) / max(1, min_song_len) if min_song_len > 0 else 0
-        
-        match_percentage = int(round(35 + 35 * artist_similarity + 28 * song_similarity))
-        return max(15, min(98, match_percentage))
-    except Exception:
-        return 50
-
 # Create Friend Request
 @router.post("/request/{userId}")
 async def send_friend_request(userId: str, current_user: dict = Depends(get_current_user)):
@@ -298,7 +239,7 @@ async def send_friend_request(userId: str, current_user: dict = Depends(get_curr
         raise HTTPException(status_code=403, detail="This user has disabled incoming Circle requests.")
         
     # Check existing connection
-    existing = await database[CONNECTIONS_COLLECTION].find_one({
+    existing = await database[db.CONNECTIONS].find_one({
         "$or": [
             {"requesterId": my_id, "receiverId": target_id},
             {"requesterId": target_id, "receiverId": my_id}
@@ -324,7 +265,7 @@ async def send_friend_request(userId: str, current_user: dict = Depends(get_curr
         "updatedAt": datetime.utcnow()
     }
     
-    await database[CONNECTIONS_COLLECTION].insert_one(new_request)
+    await database[db.CONNECTIONS].insert_one(new_request)
     
     # Create notification
     notification = {
@@ -336,7 +277,7 @@ async def send_friend_request(userId: str, current_user: dict = Depends(get_curr
         "read": False,
         "createdAt": datetime.utcnow()
     }
-    await database[NOTIFICATIONS_COLLECTION].insert_one(notification)
+    await database[db.NOTIFICATIONS].insert_one(notification)
     
     return {"success": True, "message": "Circle request dispatched."}
 
@@ -347,14 +288,14 @@ async def accept_friend_request(requestId: str, current_user: dict = Depends(get
     my_id = current_user["id"]
     oid = parse_object_id(requestId)
     
-    connection = await database[CONNECTIONS_COLLECTION].find_one({"_id": oid})
+    connection = await database[db.CONNECTIONS].find_one({"_id": oid})
     if not connection:
         raise HTTPException(status_code=404, detail="Request not found.")
         
     if connection["receiverId"] != my_id:
         raise HTTPException(status_code=403, detail="Unauthorized action on this request.")
         
-    await database[CONNECTIONS_COLLECTION].update_one(
+    await database[db.CONNECTIONS].update_one(
         {"_id": oid},
         {"$set": {"status": "accepted", "updatedAt": datetime.utcnow()}}
     )
@@ -369,7 +310,7 @@ async def accept_friend_request(requestId: str, current_user: dict = Depends(get
         "read": False,
         "createdAt": datetime.utcnow()
     }
-    await database[NOTIFICATIONS_COLLECTION].insert_one(notification)
+    await database[db.NOTIFICATIONS].insert_one(notification)
     
     return {"success": True, "message": "Circle invitation accepted."}
 
@@ -379,7 +320,7 @@ async def remove_connection(userId: str, current_user: dict = Depends(get_curren
     database = db.get_db()
     my_id = current_user["id"]
     
-    await database[CONNECTIONS_COLLECTION].delete_many({
+    await database[db.CONNECTIONS].delete_many({
         "$or": [
             {"requesterId": my_id, "receiverId": userId},
             {"requesterId": userId, "receiverId": my_id}
@@ -394,7 +335,7 @@ async def get_friend_requests(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
     my_id = current_user["id"]
     
-    cursor = database[CONNECTIONS_COLLECTION].find({
+    cursor = database[db.CONNECTIONS].find({
         "receiverId": my_id,
         "status": "pending"
     })
@@ -437,7 +378,7 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
     my_id = current_user["id"]
     
-    cursor = database[CONNECTIONS_COLLECTION].find({
+    cursor = database[db.CONNECTIONS].find({
         "$or": [{"requesterId": my_id}, {"receiverId": my_id}],
         "status": "accepted"
     })
@@ -462,7 +403,7 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
     activity_users = [fid for fid in friend_ids if users_map.get(fid, {}).get("settings", {}).get("showListeningActivity", True)]
     activities = []
     if activity_users:
-        act_cursor = database[ACTIVITIES_COLLECTION].find({
+        act_cursor = database[db.ACTIVITIES].find({
             "userId": {"$in": activity_users},
             "type": "listening"
         })
@@ -518,7 +459,7 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
 @router.get("/rooms")
 async def list_rooms(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
-    cursor = database[ROOMS_COLLECTION].find()
+    cursor = database[db.ROOMS].find()
     
     rooms_list = []
     async for r in cursor:
@@ -552,7 +493,7 @@ async def create_room(payload: RoomCreateRequest, current_user: dict = Depends(g
         "createdAt": datetime.utcnow()
     }
     
-    res = await database[ROOMS_COLLECTION].insert_one(new_room)
+    res = await database[db.ROOMS].insert_one(new_room)
     new_room["id"] = str(res.inserted_id)
     del new_room["_id"]
     return {"success": True, "data": new_room}
@@ -563,7 +504,7 @@ async def get_room(roomId: str, current_user: dict = Depends(get_current_user)):
     database = db.get_db()
     oid = parse_object_id(roomId)
     
-    room = await database[ROOMS_COLLECTION].find_one({"_id": oid})
+    room = await database[db.ROOMS].find_one({"_id": oid})
     if not room:
         raise HTTPException(status_code=404, detail="Strumm Room not found.")
         
@@ -589,7 +530,7 @@ async def delete_room(roomId: str, current_user: dict = Depends(get_current_user
     database = db.get_db()
     oid = parse_object_id(roomId)
     
-    room = await database[ROOMS_COLLECTION].find_one({"_id": oid})
+    room = await database[db.ROOMS].find_one({"_id": oid})
     if not room:
         raise HTTPException(status_code=404, detail="Strumm Room not found.")
         
@@ -603,7 +544,7 @@ async def delete_room(roomId: str, current_user: dict = Depends(get_current_user
     )
     
     # Delete the room from the database
-    await database[ROOMS_COLLECTION].delete_one({"_id": oid})
+    await database[db.ROOMS].delete_one({"_id": oid})
             
     return {"success": True, "message": "Room deleted successfully."}
 
@@ -707,7 +648,7 @@ async def generate_blend(targetUserId: str, current_user: dict = Depends(get_cur
         "read": False,
         "createdAt": datetime.utcnow()
     }
-    await database[NOTIFICATIONS_COLLECTION].insert_one(notification)
+    await database[db.NOTIFICATIONS].insert_one(notification)
     
     return {"success": True, "data": blend_playlist}
 
@@ -729,7 +670,7 @@ async def react_to_memory(
     # Check visibility rules (e.g. circle only if is accepted friend)
     creator_id = memory["userId"]
     if memory.get("visibility") == "circle" and creator_id != my_id:
-        conn = await database[CONNECTIONS_COLLECTION].find_one({
+        conn = await database[db.CONNECTIONS].find_one({
             "$or": [
                 {"requesterId": my_id, "receiverId": creator_id},
                 {"requesterId": creator_id, "receiverId": my_id}
@@ -758,7 +699,7 @@ async def get_notifications(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
     user_id_str = current_user["id"]
     user_id_oid = parse_object_id(user_id_str)
-    cursor = database[NOTIFICATIONS_COLLECTION].find({
+    cursor = database[db.NOTIFICATIONS].find({
         "userId": {"$in": [user_id_str, user_id_oid]}
     }).sort("createdAt", -1).limit(40)
     
@@ -778,7 +719,7 @@ async def clear_notifications(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
     user_id_str = current_user["id"]
     user_id_oid = parse_object_id(user_id_str)
-    await database[NOTIFICATIONS_COLLECTION].update_many(
+    await database[db.NOTIFICATIONS].update_many(
         {"userId": {"$in": [user_id_str, user_id_oid]}, "read": False},
         {"$set": {"read": True}}
     )
@@ -790,7 +731,7 @@ async def delete_all_notifications(current_user: dict = Depends(get_current_user
     database = db.get_db()
     user_id_str = current_user["id"]
     user_id_oid = parse_object_id(user_id_str)
-    await database[NOTIFICATIONS_COLLECTION].delete_many(
+    await database[db.NOTIFICATIONS].delete_many(
         {"userId": {"$in": [user_id_str, user_id_oid]}}
     )
     return {"success": True, "message": "All notifications permanently deleted."}
@@ -801,7 +742,7 @@ async def get_connection_status(userId: str, current_user: dict = Depends(get_cu
     database = db.get_db()
     my_id = current_user["id"]
     
-    conn = await database[CONNECTIONS_COLLECTION].find_one({
+    conn = await database[db.CONNECTIONS].find_one({
         "$or": [
             {"requesterId": my_id, "receiverId": userId},
             {"requesterId": userId, "receiverId": my_id}
@@ -835,7 +776,7 @@ async def send_direct_message(
     my_id_oid = parse_object_id(my_id)
     receiver_id_oid = parse_object_id(receiver_id)
     # Verify that they are circle members (friends)
-    conn = await database[CONNECTIONS_COLLECTION].find_one({
+    conn = await database[db.CONNECTIONS].find_one({
         "$or": [
             {"requesterId": {"$in": [my_id, my_id_oid]}, "receiverId": {"$in": [receiver_id, receiver_id_oid]}},
             {"requesterId": {"$in": [receiver_id, receiver_id_oid]}, "receiverId": {"$in": [my_id, my_id_oid]}}
@@ -873,7 +814,7 @@ async def send_direct_message(
         "read": False,
         "createdAt": datetime.utcnow()
     }
-    await database[NOTIFICATIONS_COLLECTION].insert_one(notification)
+    await database[db.NOTIFICATIONS].insert_one(notification)
     return {"success": True, "message": "Song/Message sent successfully."}
 
 # Room WebSocket Signaling and Sync Endpoint
@@ -883,7 +824,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
     database = db.get_db()
     
     # Update room member lists
-    await database[ROOMS_COLLECTION].update_one(
+    await database[db.ROOMS].update_one(
         {"_id": parse_object_id(roomId)},
         {"$addToSet": {"members": userId}}
     )
@@ -904,7 +845,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
             
             if event == "track:update":
                 # Update tracks
-                await database[ROOMS_COLLECTION].update_one(
+                await database[db.ROOMS].update_one(
                     {"_id": parse_object_id(roomId)},
                     {"$set": {"currentTrack": event_data.get("song")}}
                 )
@@ -921,7 +862,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
                     "timestamp": event_data.get("timestamp", 0.0),
                     "updatedAt": datetime.utcnow()
                 }
-                await database[ROOMS_COLLECTION].update_one(
+                await database[db.ROOMS].update_one(
                     {"_id": parse_object_id(roomId)},
                     {"$set": {"playbackState": playback_state}}
                 )
@@ -933,7 +874,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
                 
             elif event == "queue:add":
                 # Push songs into room queue
-                await database[ROOMS_COLLECTION].update_one(
+                await database[db.ROOMS].update_one(
                     {"_id": parse_object_id(roomId)},
                     {"$push": {"queue": event_data.get("song")}}
                 )
@@ -961,7 +902,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str
     except WebSocketDisconnect:
         ws_manager.disconnect_room(roomId, websocket)
         # Pull member lists
-        await database[ROOMS_COLLECTION].update_one(
+        await database[db.ROOMS].update_one(
             {"_id": parse_object_id(roomId)},
             {"$pull": {"members": userId}}
         )
@@ -978,7 +919,7 @@ async def get_all_circle_data(current_user: dict = Depends(get_current_user)):
     my_id = current_user["id"]
     
     # 1. Fetch all accepted connections (friends)
-    conn_cursor = database[CONNECTIONS_COLLECTION].find({
+    conn_cursor = database[db.CONNECTIONS].find({
         "$or": [{"requesterId": my_id}, {"receiverId": my_id}],
         "status": "accepted"
     })
@@ -991,7 +932,7 @@ async def get_all_circle_data(current_user: dict = Depends(get_current_user)):
         friend_ids.append(friend_id)
     
     # 2. Fetch all pending requests (received)
-    req_cursor = database[CONNECTIONS_COLLECTION].find({
+    req_cursor = database[db.CONNECTIONS].find({
         "receiverId": my_id,
         "status": "pending"
     })
@@ -1007,7 +948,7 @@ async def get_all_circle_data(current_user: dict = Depends(get_current_user)):
     # 3. Fetch notifications
     user_id_str = my_id
     user_id_oid = parse_object_id(user_id_str)
-    notif_cursor = database[NOTIFICATIONS_COLLECTION].find({
+    notif_cursor = database[db.NOTIFICATIONS].find({
         "userId": {"$in": [user_id_str, user_id_oid]}
     }).sort("createdAt", -1).limit(40)
     
@@ -1040,7 +981,7 @@ async def get_all_circle_data(current_user: dict = Depends(get_current_user)):
     activity_users = [fid for fid in friend_ids if users_map.get(fid, {}).get("settings", {}).get("showListeningActivity", True)]
     activities_map = {}
     if activity_users:
-        act_cursor = database[ACTIVITIES_COLLECTION].find({
+        act_cursor = database[db.ACTIVITIES].find({
             "userId": {"$in": activity_users},
             "type": "listening"
         })

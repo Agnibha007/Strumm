@@ -17,8 +17,6 @@ import logging
 logger = logging.getLogger("strumm-auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-SESSIONS_COLLECTION = "sessions"
-
 def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -47,7 +45,7 @@ async def create_device_session(user_id: str, email: str, username: str, request
         "createdAt": datetime.utcnow(),
         "expiresAt": datetime.utcnow() + timedelta(days=30)
     }
-    await database[SESSIONS_COLLECTION].insert_one(session_doc)
+    await database[db.SESSIONS].insert_one(session_doc)
     
     return access_token, refresh_token
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
@@ -520,11 +518,11 @@ async def refresh_session(
 
         token_hash = hash_refresh_token(token)
         database = db.get_db()
-        session = await database[SESSIONS_COLLECTION].find_one({"refreshTokenHash": token_hash})
+        session = await database[db.SESSIONS].find_one({"refreshTokenHash": token_hash})
         
         if not session or session.get("expiresAt") < datetime.utcnow():
             if session:
-                await database[SESSIONS_COLLECTION].delete_one({"_id": session["_id"]})
+                await database[db.SESSIONS].delete_one({"_id": session["_id"]})
             raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
 
         user_id = session["userId"]
@@ -543,7 +541,7 @@ async def refresh_session(
         new_refresh_token = secrets.token_hex(32)
         new_refresh_token_hash = hash_refresh_token(new_refresh_token)
         
-        await database[SESSIONS_COLLECTION].update_one(
+        await database[db.SESSIONS].update_one(
             {"_id": session["_id"]},
             {
                 "$set": {
@@ -586,7 +584,7 @@ async def logout_session(
         if refresh_token:
             token_hash = hash_refresh_token(refresh_token)
             database = db.get_db()
-            await database[SESSIONS_COLLECTION].delete_one({"refreshTokenHash": token_hash})
+            await database[db.SESSIONS].delete_one({"refreshTokenHash": token_hash})
             
         response.delete_cookie(key="access_token", path="/")
         response.delete_cookie(key="refresh_token", path="/")

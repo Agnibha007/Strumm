@@ -57,3 +57,12 @@ SHARES = "shares"
 PODCAST_SHOWS = "podcastshows"
 PODCAST_EPISODES = "podcastepisodes"
 RECENTLY_PLAYED = "recentlyplayeds"
+
+# Social / Realtime collections
+CONNECTIONS = "connections"
+ACTIVITIES = "activities"
+ROOMS = "rooms"
+NOTIFICATIONS = "notifications"
+
+# Auth collections
+SESSIONS = "sessions"

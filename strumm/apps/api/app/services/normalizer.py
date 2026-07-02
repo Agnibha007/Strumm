@@ -179,6 +179,41 @@ def canonical_song_key(title: str, artist: str) -> str:
     return f"{canonical_string(title)}|{canonical_artist(artist)}"
 
 
+# ---------------------------------------------------------------------------
+# Genre classification (shared between recommendation engine and user stats)
+# ---------------------------------------------------------------------------
+
+
+def classify_genre(artist: str, title: str) -> str:
+    """Classify a song's genre based on artist name and title keywords."""
+    artist_lower = artist.lower()
+    title_lower = title.lower()
+
+    # Alternative & Rock
+    if any(a in artist_lower for a in ["radiohead", "neighbourhood", "djo", "lrb", "rock", "metal", "pink floyd", "linkin park", "coldplay"]):
+        return "Alternative & Rock"
+
+    # Rabindra Sangeet / Bengali Classic
+    if any(a in artist_lower for a in ["hemanta", "hemant", "sandhya", "manna", "kishore kumar", "lata mangeshkar", "mukherjee", "roy", "nachiketa", "anupam"]):
+        if any(w in title_lower for w in ["tumi", "ke", "chhabi", "gaan", "robindra", "rabindra"]):
+            return "Rabindra Sangeet"
+        return "Bengali Classic"
+
+    # Bollywood & Romantic
+    if any(a in artist_lower for a in ["arijit", "pritam", "mithoon", "shaan", "udit narayan", "sujatha", "himesh", "rdb", "lata", "asha", "rafi", "mishra", "nehawal", "aditya rikhari", "anuv jain"]):
+        return "Bollywood & Romantic"
+
+    # Ambient & Lo-Fi
+    if any(w in title_lower or w in artist_lower for w in ["lo-fi", "sleep", "binaural", "serenity", "delta", "theta", "relax", "meditation", "waves", "ambient"]):
+        return "Ambient & Lo-Fi"
+
+    # Pop & Indie
+    if any(a in artist_lower for a in ["shawn mendes", "taylor swift", "direction", "sheeran", "bieber", "perri", "kid laroi", "maddie zahm", "yung kai", "pop", "indie"]):
+        return "Pop & Indie"
+
+    return "Pop & Indie"
+
+
 def generate_canonical_for_song(song: dict) -> str:
     """
     Convenience: generate a canonical key from a song dict.

@@ -47,8 +47,7 @@ from typing import Any, Optional
 
 from app.database import mongodb as db
 from app.services.cache import cache_recommendation, get_cached_recommendation
-from app.services.normalizer import canonical_artist
-from app.routes.user import classify_genre
+from app.services.normalizer import canonical_artist, classify_genre
 
 logger = logging.getLogger("strumm-recommendation-engine")
 

@@ -6,7 +6,7 @@ from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import SongSchema, UserSettingsSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
-from app.services.normalizer import canonical_artist, normalize_artist
+from app.services.normalizer import canonical_artist, normalize_artist, classify_genre
 from pydantic import BaseModel
 import logging
 
@@ -119,34 +119,6 @@ def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, 
         
     return "Melody Harmonizer"
 
-# Helper to classify genre based on artist and title
-def classify_genre(artist: str, title: str) -> str:
-    artist_lower = artist.lower()
-    title_lower = title.lower()
-    
-    # Alternative & Rock
-    if any(a in artist_lower for a in ["radiohead", "neighbourhood", "djo", "lrb", "rock", "metal", "pink floyd", "linkin park", "coldplay"]):
-        return "Alternative & Rock"
-        
-    # Rabindra Sangeet / Bengali Classic
-    if any(a in artist_lower for a in ["hemanta", "hemant", "sandhya", "manna", "kishore kumar", "lata mangeshkar", "mukherjee", "roy", "nachiketa", "anupam"]):
-        if any(w in title_lower for w in ["tumi", "ke", "chhabi", "gaan", "robindra", "rabindra"]):
-            return "Rabindra Sangeet"
-        return "Bengali Classic"
-        
-    # Bollywood & Romantic
-    if any(a in artist_lower for a in ["arijit", "pritam", "mithoon", "shaan", "udit narayan", "sujatha", "himesh", "rdb", "lata", "asha", "rafi", "mishra", "nehawal", "aditya rikhari", "anuv jain"]):
-        return "Bollywood & Romantic"
-        
-    # Ambient & Lo-Fi
-    if any(w in title_lower or w in artist_lower for w in ["lo-fi", "sleep", "binaural", "serenity", "delta", "theta", "relax", "meditation", "waves", "ambient"]):
-        return "Ambient & Lo-Fi"
-        
-    # Pop & Indie
-    if any(a in artist_lower for a in ["shawn mendes", "taylor swift", "direction", "sheeran", "bieber", "perri", "kid laroi", "maddie zahm", "yung kai", "pop", "indie"]):
-        return "Pop & Indie"
-        
-    return "Pop & Indie"
 
 # Helper to get effective histories (merging actual playback history with seeded stats)
 def get_effective_histories(histories: List[Dict[str, Any]], user_stats: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
