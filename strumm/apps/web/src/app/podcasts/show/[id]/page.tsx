@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Radio, Plus, Check, Play, Clock, ArrowLeft, Loader2, Library } from "lucide-react";
+import { Radio, Plus, Check, Play, Clock, ArrowLeft, Loader2 } from "lucide-react";
 import { PodcastShow, PodcastEpisode, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, stripHtml } from "web/lib/api";
@@ -111,7 +111,6 @@ export default function PodcastShowPage({ params }: PodcastShowPageProps) {
 
   const formatEpisodeDuration = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
     if (mins > 60) {
       const hrs = Math.floor(mins / 60);
       const remainingMins = mins % 60;

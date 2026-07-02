@@ -7,7 +7,7 @@ import { useThemeStore } from "web/store/useThemeStore";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import SoundDNAChart from "web/components/SoundDNAChart";
-import { Loader2, Music, Sparkles, Trophy, Calendar, Compass, User, Play, Clock } from "lucide-react";
+import { Loader2, Music, Sparkles, Trophy, Compass, User, Play, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ReplayData {
@@ -162,7 +162,7 @@ export default function ReplayPage() {
   };
 
   // Disable animations if battery saver mode is on
-  const transitionProps = isAnimated ? {} : { duration: 0 };
+
   const animatedProps = isAnimated ? { initial: "hidden", animate: "show", variants: containerVariants } : {};
   const childAnimatedProps = isAnimated ? { variants: itemVariants } : {};
 
@@ -359,7 +359,7 @@ export default function ReplayPage() {
       <div className="space-y-4 min-w-0">
         <h3 className="font-editorial text-2xl text-text font-bold">Top Artists</h3>
         <div className="flex overflow-x-auto pb-4 gap-4 md:grid md:grid-cols-5 md:overflow-visible md:pb-0 scrollbar-thin min-w-0">
-          {data.topArtists.map((artist, idx) => (
+          {data.topArtists.map((artist) => (
             <div
               key={artist.artist}
               className="p-4 bg-surface/40 border border-border/60 rounded-xl text-center flex flex-col items-center gap-3 hover:border-primary/30 transition min-w-[140px] md:min-w-0 overflow-hidden flex-shrink-0 md:flex-shrink"

@@ -1,13 +1,11 @@
 "use client";
 
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import "./globals.css"; // Ensure basic styles are loaded
+import "./globals.css";
 
 export default function GlobalError({
-  error,
   reset,
 }: {
-  error: Error & { digest?: string };
   reset: () => void;
 }) {
   return (

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import type { VideoProviderProps, VideoProviderActions } from "web/services/player/VideoProvider";
-import { Loader2, AlertTriangle } from "lucide-react";
+
 
 declare global {
   interface Window {

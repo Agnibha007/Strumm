@@ -30,11 +30,8 @@ export default function PlayerStateSync() {
     queue,
     currentIndex,
     isPlaying,
-    volume,
-    currentTime,
     isShuffle,
     repeatMode,
-    playbackRate,
     restorePlayerState,
   } = usePlayerStore();
 
@@ -127,7 +124,6 @@ export default function PlayerStateSync() {
         clearTimeout(saveTimerRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, ...significantKeys, saveState]);
 
   // -------------------------------------------------------------------

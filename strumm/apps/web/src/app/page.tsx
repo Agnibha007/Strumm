@@ -12,7 +12,6 @@ import { Search, Play, Heart, Sparkles, Loader2, ListMusic, Radio } from "lucide
 import { Song } from "@strumm/types";
 
 import LoginPage from "./login/page";
-import AICuratorChat from "web/components/AICuratorChat";
 
 export default function HomePage() {
   const { token } = useAuthStore();
@@ -20,8 +19,7 @@ export default function HomePage() {
   
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Song[]>([]);
-  const [trending, setTrending] = useState<string[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [, setSearchLoading] = useState(false);
 
   const [recommendations, setRecommendations] = useState<Song[]>([]);
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);

@@ -5,7 +5,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl } from "web/lib/api";
 import { searchInvidious } from "web/lib/search";
-import { Users, Radio, Play, Pause, SkipForward, Send, Mic, MicOff, Loader2, Sparkles } from "lucide-react";
+import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2 } from "lucide-react";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
 

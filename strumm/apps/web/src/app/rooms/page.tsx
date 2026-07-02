@@ -30,7 +30,7 @@ export default function RoomsPage() {
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomVisibility, setNewRoomVisibility] = useState<"public" | "circle">("public");
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
 
   const fetchRooms = async () => {
     if (!token) return;

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Loader2, AlertTriangle, Play, Volume2, Maximize, RotateCw } from "lucide-react";
+import { Loader2, AlertTriangle, Play } from "lucide-react";
 
 interface VideoPlayerProps {
   onVideoError?: () => void;
@@ -14,7 +14,6 @@ export default function VideoPlayer({ onVideoError }: VideoPlayerProps) {
     isPlaying,
     volume,
     playbackRate,
-    currentTime,
     setCurrentTime,
     setDuration,
     setPlaying,

@@ -2,22 +2,21 @@
 
 import { useEffect, useState, useRef } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { useThemeStore } from "web/store/useThemeStore";
+
 import { Mic2, Loader2, Music4, ArrowLeft, Play, Pause, SkipForward, SkipBack } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
 import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
 
 export default function LyricsPage() {
   const { currentSong, currentTime, isPlaying, togglePlay, next, prev } = usePlayerStore();
-  const { isAnimated } = useThemeStore();
   const router = useRouter();
 
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [backdropColor, setBackdropColor] = useState<string>("rgba(255, 85, 0, 0.15)");
+  const [, setBackdropColor] = useState<string>("rgba(255, 85, 0, 0.15)");
 
   const activeLineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Play, FolderHeart, Music, Eye, Loader2, ArrowRight, ShieldAlert } from "lucide-react";
+import { Play, FolderHeart, Eye, Loader2, ArrowRight, ShieldAlert } from "lucide-react";
 import { Song, Playlist } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "web/lib/api";

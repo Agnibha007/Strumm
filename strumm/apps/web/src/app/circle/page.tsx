@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Users, UserPlus, Sparkles, UserMinus, ShieldAlert, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 as Loader2Icon } from "lucide-react";
+import { Users, Sparkles, UserMinus, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import {
@@ -12,8 +12,6 @@ import {
   USER_OFFLINE,
   USER_LISTENING,
   USER_NOT_LISTENING,
-  FRIEND_REQUEST,
-  FRIEND_ACCEPTED,
   WS_CONNECTED,
 } from "web/services/realtime";
 
@@ -59,7 +57,7 @@ interface NotificationItem {
 }
 
 export default function CirclePage() {
-  const { token, user } = useAuthStore();
+  const { token } = useAuthStore();
   const { playSong } = usePlayerStore();
   
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -75,10 +73,8 @@ export default function CirclePage() {
   const [includeSong, setIncludeSong] = useState(true);
   const [sendingShare, setSendingShare] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
-  const [isPageVisible, setIsPageVisible] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const refreshCountRef = useRef(0);
-  const maxRefreshes = 5;
 
   const closeShareModal = () => {
     setSharingTarget(null);
@@ -704,7 +700,7 @@ export default function CirclePage() {
   );
 }
 
-const Loader2 = ({ className }: { className?: string }) => (
+const LocalLoader2 = ({ className }: { className?: string }) => (
   <svg
     className={`animate-spin ${className}`}
     xmlns="http://www.w3.org/2000/svg"

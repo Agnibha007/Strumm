@@ -2,8 +2,8 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
-import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, X, Loader2, Play, Compass, History, Zap, Disc } from "lucide-react";
-import { Playlist, User } from "@strumm/types";
+import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, X, Loader2, Compass, History, Zap, Disc } from "lucide-react";
+import { Playlist } from "@strumm/types";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiUrl } from "web/lib/api";
 import { signOut } from "next-auth/react";

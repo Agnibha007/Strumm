@@ -19,7 +19,7 @@ export default function SearchPage() {
   
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [trending, setTrending] = useState<string[]>(["Lofi Beats", "Indian Classical", "Rain Ambient", "Electronic Focus", "Jazz Cafe"]);
+  const [trending] = useState<string[]>(["Lofi Beats", "Indian Classical", "Rain Ambient", "Electronic Focus", "Jazz Cafe"]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<"All" | "Songs" | "Artists" | "Albums" | "Podcasts" | "Playlists" | "Profiles">("All");
   const searchCacheRef = useRef<Record<string, any>>({});

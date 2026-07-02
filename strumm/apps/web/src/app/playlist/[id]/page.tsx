@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Loader2, Save, X, Search, Check, Users, UserPlus, UserMinus, Radio } from "lucide-react";
+import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Save, X, Search, Check, Users, UserPlus, UserMinus, Radio } from "lucide-react";
 import { Playlist, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -16,7 +16,7 @@ interface PlaylistDetailPageProps {
 export default function PlaylistDetailPage({ params }: PlaylistDetailPageProps) {
   const { id } = use(params);
   const { token, user } = useAuthStore();
-  const { playSong, setQueue, addToQueue, queue, isRadio, triggerRadio } = usePlayerStore();
+  const { playSong, addToQueue, queue, isRadio, triggerRadio } = usePlayerStore();
   const router = useRouter();
 
   const [playlist, setPlaylist] = useState<Playlist | null>(null);

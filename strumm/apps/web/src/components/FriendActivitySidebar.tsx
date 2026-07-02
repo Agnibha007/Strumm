@@ -6,7 +6,7 @@ import { apiUrl } from "web/lib/api";
 import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED, WS_DISCONNECTED } from "web/services/realtime";
+import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED } from "web/services/realtime";
 
 interface FriendActivity {
   id: string;

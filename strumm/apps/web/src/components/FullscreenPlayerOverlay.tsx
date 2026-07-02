@@ -82,6 +82,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
   const videoMode = usePlayerStore((s) => s.videoMode);
   const toggleVideoMode = usePlayerStore((s) => s.toggleVideoMode);
+
+  // ---- Local state & refs (moved BEFORE the early return to comply with Rules of Hooks) ----
   const [ytPlayerReady, setYtPlayerReady] = useState(false);
   const ytPlayerActionsRef = useRef<{
     playVideo: () => void;
@@ -89,56 +91,11 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     seekTo: (sec: number) => void;
   } | null>(null);
 
-  if (!currentSong) return null;
-
-  const isPodcast = currentSong.videoId.startsWith("podcast-");
-
-  // When videoMode is active for a non-podcast song, show the YouTube video player
-  const showVideo = !isPodcast && videoMode && currentSong?.hasVideo;
-
   const { isAnimated } = useThemeStore();
   const router = useRouter();
-  
+
   const [showQueue, setShowQueue] = useState(false);
   const [showSleepTimer, setShowSleepTimer] = useState(false);
-
-  const removeSong = (idxToRemove: number) => {
-    const newQueue = queue.filter((_, idx) => idx !== idxToRemove);
-    let newIndex = currentIndex;
-    if (idxToRemove === currentIndex) {
-      if (newQueue.length > 0) {
-        newIndex = idxToRemove >= newQueue.length ? newQueue.length - 1 : idxToRemove;
-        usePlayerStore.getState().playSong(newQueue[newIndex], newQueue);
-      } else {
-        usePlayerStore.setState({ currentSong: null, currentIndex: -1, isPlaying: false, queue: [] });
-      }
-    } else {
-      if (idxToRemove < currentIndex) {
-        newIndex = currentIndex - 1;
-      }
-      usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
-    }
-  };
-
-  const moveSong = (fromIdx: number, toIdx: number) => {
-    if (toIdx < 0 || toIdx >= queue.length) return;
-    const newQueue = [...queue];
-    const [removed] = newQueue.splice(fromIdx, 1);
-    newQueue.splice(toIdx, 0, removed);
-    
-    let newIndex = currentIndex;
-    if (currentIndex === fromIdx) {
-      newIndex = toIdx;
-    } else if (currentIndex === toIdx) {
-      newIndex = fromIdx;
-    } else if (fromIdx < currentIndex && toIdx >= currentIndex) {
-      newIndex = currentIndex - 1;
-    } else if (fromIdx > currentIndex && toIdx <= currentIndex) {
-      newIndex = currentIndex + 1;
-    }
-    usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
-  };
-  
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
@@ -149,39 +106,14 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   const [memoryVisibility, setMemoryVisibility] = useState<"public" | "private">("private");
   const [memorySaving, setMemorySaving] = useState(false);
   const [memorySuccess, setMemorySuccess] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const activeLineRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstScrollRef = useRef(true);
 
-  const handleSaveMemory = async () => {
-    if (!currentSong || !token) return;
-    setMemorySaving(true);
-    try {
-      const response = await fetch(apiUrl("/memories"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          song: currentSong,
-          note: memoryNote,
-          visibility: memoryVisibility
-        })
-      });
-      const json = await response.json();
-      if (json.success) {
-        setMemorySuccess(true);
-        setMemoryNote("");
-        setTimeout(() => {
-          setMemorySuccess(false);
-          setShowMemoryModal(false);
-        }, 1500);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setMemorySaving(false);
-    }
-  };
+  // ---- Effects (also moved before the early return) ----
 
+  // Restore lyrics preference from localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem("strumm-show-lyrics");
@@ -191,6 +123,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     }
   }, []);
 
+  // Escape key closes the overlay
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -201,14 +134,15 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // Push history state for the current song
   useEffect(() => {
     if (typeof window === "undefined" || !currentSong?.videoId) return;
 
     const originalPath = window.location.pathname + window.location.search;
     const songId = currentSong.videoId;
-    const isPodcast = songId.startsWith("podcast-");
+    const isPodcastEp = songId.startsWith("podcast-");
     
-    const targetPath = isPodcast 
+    const targetPath = isPodcastEp 
       ? `/podcast/${songId.substring("podcast-".length)}` 
       : `/song/${songId}`;
 
@@ -227,47 +161,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       }
     };
   }, [currentSong?.videoId, onClose]);
-  const [copied, setCopied] = useState(false);
 
-  const handleShare = async () => {
-    if (typeof window === "undefined" || !currentSong) return;
-    
-    const isPodcast = currentSong.videoId.startsWith("podcast-");
-    const sharePath = isPodcast 
-      ? `/podcast/${currentSong.videoId.substring("podcast-".length)}` 
-      : `/song/${currentSong.videoId}`;
-      
-    const shareUrl = `${window.location.origin}${sharePath}`;
-    const shareData = {
-      title: currentSong.title,
-      text: `Listen to "${currentSong.title}" by ${currentSong.artist} on Strumm`,
-      url: shareUrl,
-    };
-
-    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-      try {
-        await navigator.share(shareData);
-        return;
-      } catch (e) {
-        console.warn("Share aborted or failed:", e);
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy link:", err);
-    }
-  };
-
-  const activeLineRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  // 2. Fetch Lyrics on song load
+  // Fetch lyrics on song load
   useEffect(() => {
     if (!currentSong?.videoId || currentSong.videoId.startsWith("podcast-")) {
       setLyricsLoading(false);
@@ -311,16 +206,15 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     fetchLyrics();
   }, [currentSong?.videoId]);
 
-  // 3. Calculate active lyric index from LRCLIB timestamps
-  const activeIndex = getActiveLyricIndex(lyrics, currentTime);
-
-  const isFirstScrollRef = useRef(true);
-
   useEffect(() => {
     isFirstScrollRef.current = true;
   }, [currentSong?.videoId, showLyrics]);
 
-  // 4. Scroll active lyric line to center
+  // ---- Computed values (safe before early return — store defaults exist) ----
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const activeIndex = getActiveLyricIndex(lyrics, currentTime);
+
+  // Scroll active lyric line to center
   useEffect(() => {
     if (activeLineRef.current && scrollContainerRef.current) {
       const container = scrollContainerRef.current;
@@ -342,8 +236,115 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     }
   }, [activeIndex, lyricsLoading, showLyrics]);
 
+  // ---- Early return (after all hooks) ----
+  if (!currentSong) return null;
 
+  // ---- Derived values (require currentSong to be non-null) ----
+  const isPodcast = currentSong.videoId.startsWith("podcast-");
+  const showVideo = !isPodcast && videoMode && currentSong?.hasVideo;
   const effectiveShowLyrics = showLyrics && !isPodcast;
+
+  const removeSong = (idxToRemove: number) => {
+    const newQueue = queue.filter((_, idx) => idx !== idxToRemove);
+    let newIndex = currentIndex;
+    if (idxToRemove === currentIndex) {
+      if (newQueue.length > 0) {
+        newIndex = idxToRemove >= newQueue.length ? newQueue.length - 1 : idxToRemove;
+        usePlayerStore.getState().playSong(newQueue[newIndex], newQueue);
+      } else {
+        usePlayerStore.setState({ currentSong: null, currentIndex: -1, isPlaying: false, queue: [] });
+      }
+    } else {
+      if (idxToRemove < currentIndex) {
+        newIndex = currentIndex - 1;
+      }
+      usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
+    }
+  };
+
+  const moveSong = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= queue.length) return;
+    const newQueue = [...queue];
+    const [removed] = newQueue.splice(fromIdx, 1);
+    newQueue.splice(toIdx, 0, removed);
+    
+    let newIndex = currentIndex;
+    if (currentIndex === fromIdx) {
+      newIndex = toIdx;
+    } else if (currentIndex === toIdx) {
+      newIndex = fromIdx;
+    } else if (fromIdx < currentIndex && toIdx >= currentIndex) {
+      newIndex = currentIndex - 1;
+    } else if (fromIdx > currentIndex && toIdx <= currentIndex) {
+      newIndex = currentIndex + 1;
+    }
+    usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
+  };
+
+  const handleSaveMemory = async () => {
+    if (!currentSong || !token) return;
+    setMemorySaving(true);
+    try {
+      const response = await fetch(apiUrl("/memories"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          song: currentSong,
+          note: memoryNote,
+          visibility: memoryVisibility
+        })
+      });
+      const json = await response.json();
+      if (json.success) {
+        setMemorySuccess(true);
+        setMemoryNote("");
+        setTimeout(() => {
+          setMemorySuccess(false);
+          setShowMemoryModal(false);
+        }, 1500);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setMemorySaving(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (typeof window === "undefined" || !currentSong) return;
+    
+    const isPodcastEp = currentSong.videoId.startsWith("podcast-");
+    const sharePath = isPodcastEp 
+      ? `/podcast/${currentSong.videoId.substring("podcast-".length)}` 
+      : `/song/${currentSong.videoId}`;
+      
+    const shareUrl = `${window.location.origin}${sharePath}`;
+    const shareData = {
+      title: currentSong.title,
+      text: `Listen to \"${currentSong.title}\" by ${currentSong.artist} on Strumm`,
+      url: shareUrl,
+    };
+
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (e) {
+        console.warn("Share aborted or failed:", e);
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy link:", err);
+    }
+  };
 
   return (
     <div className={`fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-4 md:p-12 text-text overflow-x-hidden select-none transition-all ${effectiveShowLyrics ? "overflow-y-hidden" : "overflow-y-auto"}`}>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Upload, Link, Check, AlertTriangle, HelpCircle, ArrowRight, Play } from "lucide-react";
+import { Check, AlertTriangle, HelpCircle, ArrowRight, Play } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl, cleanText } from "web/lib/api";
 

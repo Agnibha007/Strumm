@@ -4,14 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { useAuthStore } from "web/store/useAuthStore";
-import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Mic2, Heart, Trash2, ChevronUp, ChevronDown, Loader2, Clock } from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Heart, Trash2, ChevronUp, ChevronDown, Loader2, Clock } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import dynamic from "next/dynamic";
 import { apiUrl, cleanText } from "web/lib/api";
 import { formatTime } from "web/lib/format";
 import { useLikeSong } from "web/hooks/useLikeSong";
 import SongArtwork from "web/components/SongArtwork";
-import { useRouter } from "next/navigation";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
 
 const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"), {
@@ -49,10 +48,9 @@ export default function EditorialPlayer() {
   const { token, fetchProfile } = useAuthStore();
 
   const { isAnimated } = useThemeStore();
-  const router = useRouter();
   const [showQueue, setShowQueue] = useState(false);
-  const [listenSeconds, setListenSeconds] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [, setListenSeconds] = useState(0);
+  const [, setIsFullscreen] = useState(false);
   const [showFullscreenMenu, setShowFullscreenMenu] = useState(false);
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
   const sleepTimerDuration = usePlayerStore((s) => s.sleepTimerDuration);
@@ -80,16 +78,6 @@ export default function EditorialPlayer() {
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch((err) => {
-        console.warn(`Fullscreen error: ${err.message}`);
-      });
-    } else {
-      document.exitFullscreen();
-    }
-  };
 
   // Sync listening stats to backend every 30 seconds of active playback
   const syncListeningStats = async (song: any, durationSec: number) => {

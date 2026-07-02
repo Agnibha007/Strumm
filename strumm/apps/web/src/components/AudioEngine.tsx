@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { apiUrl } from "web/lib/api";
 
 // YT type is declared in YouTubeVideoPlayer.tsx — we only need the callback here.
 declare global {
@@ -250,12 +249,6 @@ export default function AudioEngine() {
 
     // The YouTube IFrame API script may already be loaded by YouTubeVideoPlayer.
     // We rename our callback to avoid collision: only init if not already set up.
-    const tryInit = () => {
-      if (window.YT && window.YT.Player && !playerInstanceRef.current) {
-        initPlayer();
-      }
-    };
-
     usePlayerStore.getState().setPlayerLoading(true);
     usePlayerStore.getState().setPlayerError(null);
 
