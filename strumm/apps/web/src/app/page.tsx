@@ -21,6 +21,7 @@ export default function HomePage() {
   const [searchResults, setSearchResults] = useState<Song[]>([]);
 
   const [recommendations, setRecommendations] = useState<Song[]>([]);
+  const [, setSearchLoading] = useState(false);
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [homeLoading, setHomeLoading] = useState(true);
 
