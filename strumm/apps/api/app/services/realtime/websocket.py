@@ -28,7 +28,7 @@ from bson import ObjectId
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from app.database import mongodb as db
-from app.services.auth_utils import decode_token
+from app.services.auth_utils import decode_access_token
 from app.services.realtime.connection_manager import manager
 from app.services.realtime.events import (
     PING,
@@ -52,7 +52,7 @@ router = APIRouter()  # no prefix — mounted at /ws
 async def _verify_token(token: str) -> Optional[dict]:
     """Verify a JWT and return the user payload, or None."""
     try:
-        payload = decode_token(token)
+        payload = decode_access_token(token)
         if payload is None:
             return None
         return payload
