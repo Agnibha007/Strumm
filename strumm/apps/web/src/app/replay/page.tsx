@@ -322,7 +322,7 @@ export default function ReplayPage() {
       {/* Top Songs */}
       <div className="space-y-4 min-w-0">
         <h3 className="font-editorial text-2xl text-text font-bold">Your Heavy Rotation</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">            {data.topSongs.map((song) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">            {data.topSongs.map((song, idx) => (
             <button
               key={song.videoId}
               onClick={() => playSong(song as any, data.topSongs as any)}
