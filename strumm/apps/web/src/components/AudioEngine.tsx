@@ -266,9 +266,13 @@ export default function AudioEngine() {
       containerRef.current.appendChild(playerDiv);
     }
 
-    // Try immediately if API is already loaded
+    // Try immediately if API is already loaded — but only if player doesn't already exist.
+    // Calling initPlayer() again without destroying the old player orphans the first player
+    // and the second won't be ready in time for loadVideoById.
     if (window.YT && window.YT.Player) {
-      initPlayer();
+      if (!playerInstanceRef.current) {
+        initPlayer();
+      }
       return;
     }
 
