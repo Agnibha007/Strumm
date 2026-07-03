@@ -1,6 +1,8 @@
 import { MetadataRoute } from "next";
 
-// Try documented env var (NEXT_PUBLIC_API_URL) then the code-standard one (NEXT_PUBLIC_API_BASE_URL)
+// Use the same env var resolution as the rest of the frontend.
+// IMPORTANT: For production builds, set NEXT_PUBLIC_APP_URL (frontend URL)
+// and NEXT_PUBLIC_API_URL (backend API URL) so dynamic entries resolve correctly.
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 interface SitemapSong {
@@ -112,7 +114,32 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch {
-    // Backend unreachable — serve static routes only
+    // Backend unreachable at build time — fallback to static + known-default entries
+    // so the sitemap always has dynamic content for Google to crawl
+    entries.push({
+      url: `${baseUrl}/flow`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    });
+    entries.push({
+      url: `${baseUrl}/replay`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.5,
+    });
+    entries.push({
+      url: `${baseUrl}/circle`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.5,
+    });
+    entries.push({
+      url: `${baseUrl}/rooms`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.4,
+    });
   }
 
   return entries;

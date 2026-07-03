@@ -30,9 +30,8 @@ export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
   applicationName: "Strumm",
   manifest: "/manifest.webmanifest",
-  alternates: {
-    canonical: "/",
-  },
+  // No global canonical — each page defines its own via generateMetadata.
+  // A blanket canonical: "/" would tell Google every page is the homepage.
   keywords: ["Strumm", "music player", "podcasts", "playlists", "lyrics", "music streaming"],
   authors: [{ name: "Strumm" }],
   creator: "Strumm",

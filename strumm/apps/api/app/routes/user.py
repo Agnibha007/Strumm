@@ -8,6 +8,7 @@ from app.models.schemas import SongSchema, UserSettingsSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
 from app.services.normalizer import canonical_artist, normalize_artist, classify_genre
 from pydantic import BaseModel
+import asyncio
 import logging
 
 logger = logging.getLogger("strumm-user")
@@ -331,8 +332,9 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
         if not art.get("canonicalName"):
             art["canonicalName"] = canonical_artist(art.get("artist", ""))
             
-    # 4. Sound DNA
-    sound_dna = calculate_sound_dna(effective_histories)
+    # 4. Sound DNA — use real histories (not effective with simulated entries)
+    # so metrics reflect actual listening patterns, not inflated from seeded stats
+    sound_dna = calculate_sound_dna(histories)
     
     return {
         "totalListeningTime": total_seconds,
@@ -845,6 +847,10 @@ async def register_play_event(
                         {"$push": {"badges": {"$each": new_badges}}}
                     )
 
+        # 4. Fire-and-forget: recalculate full stats (soundDNA, topSongs, topArtists)
+        # in background so they're always fresh when the user visits Replay or Profile.
+        asyncio.create_task(recalculate_user_stats_and_save(str(userId)))
+
         return {
             "success": True,
             "data": {
@@ -978,43 +984,38 @@ class MemoryCreateRequest(BaseModel):
     note: str
     visibility: str = "private" # public, private
 
-async def daily_stats_refresher():
+async def recalculate_user_stats_and_save(user_id: str) -> None:
+    """Recalculate a single user's stats from raw playback histories and save to their document."""
     import asyncio
-    # Wait 10 seconds on startup before running
-    await asyncio.sleep(10)
-    while True:
-        try:
-            logger.info("Starting daily Sound DNA and statistics refresh for all users.")
-            database = db.get_db()
-            users_cursor = database[db.USERS].find({})
-            async for user in users_cursor:
-                try:
-                    user_id = str(user["_id"])
-                    possible_ids = [user_id, user["_id"]]
-                    histories = await database[db.PLAYBACK_HISTORIES].find(
-                        {"userId": {"$in": possible_ids}},
-                        {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
-                    ).to_list(length=2000)
-                    stats = compute_user_stats(histories, user.get("statistics"))
-                            
-                    await database[db.USERS].update_one(
-                        {"_id": user["_id"]},
-                        {"$set": {
-                            "soundDNA": stats["soundDNA"],
-                            "statistics.totalListeningTime": stats["totalListeningTime"],
-                            "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
-                            "statistics.topArtists": stats["topArtists"],
-                            "statistics.topSongs": stats["topSongs"]
-                        }}
-                    )
-                except Exception as user_ex:
-                    logger.error(f"Failed to refresh daily stats for user {user.get('username')}: {user_ex}")
-            logger.info("Completed daily Sound DNA and statistics refresh.")
-        except Exception as ex:
-            logger.error(f"Error in daily stats refresher loop: {ex}")
+    try:
+        database = db.get_db()
+        possible_ids = [user_id]
+        if ObjectId.is_valid(user_id):
+            possible_ids.append(ObjectId(user_id))
+        histories = await database[db.PLAYBACK_HISTORIES].find(
+            {"userId": {"$in": possible_ids}},
+            {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
+        ).to_list(length=2000)
         
-        # Sleep for 24 hours (86400 seconds)
-        await asyncio.sleep(86400)
+        # Fetch current user to get seeded statistics
+        user_doc = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
+        if not user_doc:
+            return
+        
+        stats = compute_user_stats(histories, user_doc.get("statistics"))
+        
+        await database[db.USERS].update_one(
+            {"_id": parse_object_id(user_id)},
+            {"$set": {
+                "soundDNA": stats["soundDNA"],
+                "statistics.totalListeningTime": stats["totalListeningTime"],
+                "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
+                "statistics.topArtists": stats["topArtists"],
+                "statistics.topSongs": stats["topSongs"]
+            }}
+        )
+    except Exception as ex:
+        logger.error(f"Failed to recalculate stats for user {user_id}: {ex}")
 
 @router.post("/profile/recalculate")
 async def recalculate_user_stats(current_user: dict = Depends(get_current_user)):

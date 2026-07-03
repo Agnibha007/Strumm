@@ -625,7 +625,9 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
         <div className={`w-full flex-1 mt-3 md:mt-6 min-h-0 z-10 mx-auto max-w-7xl transition-all duration-500 ${
           effectiveShowLyrics 
             ? "flex flex-col lg:grid lg:grid-cols-2 gap-3 lg:gap-8 xl:gap-16 h-full min-h-0" 
-            : "flex flex-col items-center justify-center max-w-xl"
+            : showVideo
+              ? "flex flex-col items-center justify-center"
+              : "flex flex-col items-center justify-center max-w-xl"
         }`}>
           
           {/* Left Side: Song Details & Controls */}
@@ -648,21 +650,21 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               </div>
             </div>
 
-            {/* Song title and artist */}
-            <div className="w-full min-w-0 overflow-hidden px-2">
-              <h2 className={`font-editorial font-bold text-text leading-tight tracking-tight mb-1 w-full truncate transition-all ${effectiveShowLyrics ? "text-xl md:text-3xl lg:text-5xl" : "text-2xl md:text-4xl lg:text-5xl"}`}>
+            {/* Song title and artist — wrap naturally instead of truncating */}
+            <div className="w-full min-w-0 px-2 break-words">
+              <h2 className={`font-editorial font-bold text-text leading-tight tracking-tight mb-1 w-full whitespace-normal transition-all ${effectiveShowLyrics ? "text-xl md:text-3xl lg:text-5xl" : "text-2xl md:text-4xl lg:text-5xl"}`}>
                 {currentSong.title}
               </h2>
               {playerError ? (
-                <p className={`text-red-500 font-semibold animate-pulse w-full truncate transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
+                <p className={`text-red-500 font-semibold animate-pulse w-full whitespace-normal transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
                   {playerError}
                 </p>
               ) : isPlayerLoading ? (
-                <p className={`text-primary font-medium w-full truncate transition-all flex items-center gap-1 ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
+                <p className={`text-primary font-medium w-full whitespace-normal transition-all flex items-center gap-1 ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
                   <Loader2 className="w-4.5 h-4.5 animate-spin" /> Loading...
                 </p>
               ) : (
-                <p className={`text-muted font-medium w-full truncate transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
+                <p className={`text-muted font-medium w-full whitespace-normal transition-all ${effectiveShowLyrics ? "text-xs md:text-sm lg:text-base" : "text-sm md:text-base"}`}>
                   {currentSong.artist}
                 </p>
               )}
@@ -878,12 +880,12 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             </div>
 
             {/* Song info below video */}
-            <div className="w-full max-w-4xl lg:max-w-full flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h2 className="font-editorial font-bold text-text text-lg md:text-xl lg:text-2xl truncate">
+            <div className="w-full max-w-4xl lg:max-w-full flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 break-words">
+                <h2 className="font-editorial font-bold text-text text-lg md:text-xl lg:text-2xl whitespace-normal leading-snug">
                   {currentSong.title}
                 </h2>
-                <p className="text-xs md:text-sm text-muted truncate">{currentSong.artist}</p>
+                <p className="text-xs md:text-sm text-muted whitespace-normal mt-1">{currentSong.artist}</p>
               </div>
               <button
                 onClick={() => toggleVideoMode()}

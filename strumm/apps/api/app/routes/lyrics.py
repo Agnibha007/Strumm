@@ -134,33 +134,19 @@ async def get_lyrics(
         artist = sanitize_text(artist, max_length=160) if artist else None
         database = db.get_db()
 
-        # 1. FIRST: Verify song exists in database (playlists, liked_songs, playback_histories)
-        # This ensures we only fetch lyrics for known songs in our database
-        song_doc = await database[db.PLAYLISTS].find_one(
-            {"songs.videoId": id},
-            {"songs.$": 1}
-        )
-        if song_doc and "songs" in song_doc:
-            song_title = song_doc["songs"][0].get("title")
-            song_artist = song_doc["songs"][0].get("artist")
-        else:
-            liked_doc = await database[db.LIKED_SONGS].find_one({"song.videoId": id})
-            if liked_doc:
-                song_title = liked_doc["song"].get("title")
-                song_artist = liked_doc["song"].get("artist")
-            else:
-                history_doc = await database[db.PLAYBACK_HISTORIES].find_one({"song.videoId": id})
-                if history_doc:
-                    song_title = history_doc["song"].get("title")
-                    song_artist = history_doc["song"].get("artist")
-                else:
-                    return {"success": False, "error": "Song not found in database. Lyrics unavailable."}
+        # 1. Resolve song title and artist:
+        #    - Use query params if provided (frontend always sends these)
+        #    - Fallback to database lookup via find_song_title_artist
+        song_title = title
+        song_artist = artist
 
-        # Use provided title/artist if available, fallback to DB values
-        if title:
-            song_title = title
-        if artist:
-            song_artist = artist
+        if not song_title or not song_artist:
+            from app.services.song_lookup import find_song_title_artist
+            db_title, db_artist = await find_song_title_artist(id)
+            if not song_title:
+                song_title = db_title
+            if not song_artist:
+                song_artist = db_artist
 
         if not song_title:
             song_title = "Unknown Song"

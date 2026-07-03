@@ -66,9 +66,8 @@ async def _background_startup_work():
         # --- Disk usage check ---
         _check_disk_usage()
 
-        # --- Daily statistics refresher loop (runs forever) ---
-        asyncio.create_task(user.daily_stats_refresher())
-        logger.info(f"[{time.time() - t0:.3f}s] Daily Sound DNA refresh task launched.")
+        # --- Stats are recalculated live on each play-event ---
+        # (No longer running a 24-hour background refresher for all users.)
 
         logger.info(f"[{time.time() - t0:.3f}s] Background initialization complete. App is fully ready.")
     except Exception as e:
