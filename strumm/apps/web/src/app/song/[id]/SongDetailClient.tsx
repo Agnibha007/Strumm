@@ -4,7 +4,7 @@ import { useEffect, useState, use } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldAlert } from "lucide-react";
-import { getVideoDetails } from "web/lib/search";
+import type { Song } from "@strumm/types";
 
 interface SongPageProps {
   params: Promise<{ id: string }>;
@@ -20,12 +20,25 @@ export default function SongDetailClient({ params }: SongPageProps) {
   useEffect(() => {
     const loadSong = async () => {
       try {
-        const song = await getVideoDetails(id);
-        if (song) {
+        // Search for the video by ID via the search API to get full metadata
+        const res = await fetch(`/api/search?q=${encodeURIComponent(id)}&type=video`);
+        const json = await res.json();
+        if (json.success && json.data?.songs?.length > 0) {
+          const song: Song = json.data.songs[0];
           playSong(song, [song]);
           router.push("/");
         } else {
-          setError("Song not found.");
+          // Fallback: create a minimal Song object from the video ID alone.
+          // The AudioEngine's YouTube player will load actual details.
+          const song: Song = {
+            videoId: id,
+            title: id,
+            artist: "YouTube",
+            thumbnail: "",
+            duration: 0,
+          };
+          playSong(song, [song]);
+          router.push("/");
         }
       } catch (err) {
         setError("Failed to resolve song.");

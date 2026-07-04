@@ -78,6 +78,9 @@ export interface SongMetadata {
   syncedLyrics?: string;
   audioUrl?: string;
   audioVariants?: Partial<Record<'data-saver' | 'balanced' | 'high', string>>;
+  videoAvailable?: boolean;
+  videoUrl?: string | null;
+  mediaType?: "audio" | "video";
   description?: string;
 }
 

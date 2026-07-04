@@ -7,6 +7,26 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 declare global {
   interface Window {
     onYouTubeIframeAPIReady?: () => void;
+    YT?: {
+      Player: new (
+        elementId: string,
+        config: {
+          height: string | number;
+          width: string | number;
+          videoId: string;
+          playerVars?: Record<string, any>;
+          events?: Record<string, (event: any) => void>;
+        },
+      ) => any;
+      PlayerState: {
+        UNSTARTED: -1;
+        ENDED: 0;
+        PLAYING: 1;
+        PAUSED: 2;
+        BUFFERING: 3;
+        CUED: 5;
+      };
+    };
   }
 }
 
