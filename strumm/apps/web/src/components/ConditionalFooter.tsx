@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useAuthStore } from "web/store/useAuthStore";
 
 const footerLinks = [
@@ -24,18 +25,18 @@ export default function ConditionalFooter() {
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
             <span className="font-semibold text-text whitespace-nowrap">© {new Date().getFullYear()} Strumm</span>
             {footerLinks.slice(0, 6).map((link) => (
-              <a key={link.href} href={link.href} className="hover:text-text transition whitespace-nowrap">
+              <Link key={link.href} href={link.href} className="hover:text-text transition whitespace-nowrap">
                 {link.label}
-              </a>
+              </Link>
             ))}
           </div>
           <div className="flex items-center gap-5">
             {footerLinks.slice(6).map((link) => (
-              <a key={link.href} href={link.href} className="hover:text-text transition whitespace-nowrap">
+              <Link key={link.href} href={link.href} className="hover:text-text transition whitespace-nowrap">
                 {link.label}
-              </a>
+              </Link>
             ))}
-            <a href="https://github.com/strumm/strumm" target="_blank" rel="noopener noreferrer" className="hover:text-text transition whitespace-nowrap">
+            <a href="https://github.com/Agnibha007/Strumm" target="_blank" rel="noopener noreferrer" className="hover:text-text transition whitespace-nowrap">
               GitHub
             </a>
           </div>
