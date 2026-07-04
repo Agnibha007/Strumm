@@ -819,7 +819,15 @@ async def send_direct_message(
 
 # Room WebSocket Signaling and Sync Endpoint
 @router.websocket("/rooms/{roomId}/ws")
-async def room_websocket_endpoint(websocket: WebSocket, roomId: str, userId: str):
+async def room_websocket_endpoint(websocket: WebSocket, roomId: str, token: str):
+    # Authenticate via JWT token (same pattern as global WebSocket)
+    from app.services.auth_utils import decode_access_token
+    payload = decode_access_token(token)
+    if not payload or "id" not in payload:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    userId = payload["id"]
+
     await ws_manager.connect_room(roomId, userId, websocket)
     database = db.get_db()
     

@@ -126,7 +126,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     if (baseWs.endsWith("/")) {
       baseWs = baseWs.slice(0, -1);
     }
-    const wsUrl = baseWs + `/social/rooms/${id}/ws?userId=${user.id}`;
+    const wsUrl = baseWs + `/social/rooms/${id}/ws?token=${token}`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 

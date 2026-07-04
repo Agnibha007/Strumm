@@ -1,5 +1,6 @@
 import os
 import hashlib
+import secrets
 import jwt
 from datetime import datetime, timedelta
 from typing import Optional, Dict
@@ -48,6 +49,6 @@ def verify_password(password: str, hashed: str) -> bool:
         salt = bytes.fromhex(salt_hex)
         key = bytes.fromhex(key_hex)
         new_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100000)
-        return new_key == key
+        return secrets.compare_digest(new_key, key)
     except Exception:
         return False
