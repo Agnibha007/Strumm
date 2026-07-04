@@ -148,7 +148,7 @@ class RecommendationEngine:
         )
 
         # Collect recently recommended videoIds to exclude for freshness
-        recently_shown = self._get_recently_recommended(database, user_id)
+        recently_shown = await self._get_recently_recommended(database, user_id)
 
         candidates = await self._build_candidates(
             database, user_id, likes, history, stats,
