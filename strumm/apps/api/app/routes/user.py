@@ -11,7 +11,6 @@ from app.services.email_service import send_account_deleted_email
 from pydantic import BaseModel
 import asyncio
 import logging
-
 logger = logging.getLogger("strumm-user")
 router = APIRouter(tags=["user"])
 

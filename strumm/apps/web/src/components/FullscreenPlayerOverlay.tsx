@@ -809,6 +809,30 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 </button>
               )}
 
+              {!isPodcast && currentSong?.hasVideo && (
+                <button
+                  onClick={() => toggleVideoMode()}
+                  className={`p-2 cursor-pointer transition hover:scale-105 ${
+                    videoMode
+                      ? "text-primary text-glow"
+                      : "text-muted hover:text-text"
+                  }`}
+                  title={videoMode ? "Switch to Audio" : "Watch Video"}
+                >
+                  {videoMode ? (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                      <line x1="23" y1="9" x2="17" y2="15" />
+                      <line x1="17" y1="9" x2="23" y2="15" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                  )}
+                </button>
+              )}
+
               {isPodcast && (
                 <button
                   disabled={!currentSong.metadata?.videoAvailable}
