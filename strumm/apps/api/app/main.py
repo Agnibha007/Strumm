@@ -7,6 +7,7 @@ import gzip
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,6 +19,22 @@ from app.services.security import require_admin
 from app.services.realtime.websocket import router as realtime_router
 from app.services.http_client import close_http_client
 import logging
+
+# --- Sentry Error Monitoring ---
+def _sentry_filter_health_check(tx):
+    """Drop health check transactions to reduce noise in Sentry."""
+    transaction_name = tx.get("transaction", "")
+    return transaction_name not in ("/health", "/health/db", "/health/disk", "/")
+
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN"),
+    environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+    release=os.environ.get("SENTRY_RELEASE"),
+    traces_sample_rate=1.0,
+    enable_logs=True,
+    send_default_pii=True,
+    before_send_transaction=_sentry_filter_health_check,
+)
 
 # Setup Logging
 class RequestIDFilter(logging.Filter):

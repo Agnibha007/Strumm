@@ -215,30 +215,50 @@ class SSLResilientAdapter(HTTPAdapter):
 
     This avoids the JA3 fingerprint mismatches that trigger YouTube CDN to
     RST the connection during the TLS handshake on cloud-hosted IP ranges.
+
+    SSL certificate verification is disabled because YouTube Music's CDN
+    actively blocks cloud server IPs (AWS, GCP, Azure) at the TLS layer.
+    The handshake is terminated before certificate validation can complete,
+    resulting in "EOF occurred in violation of protocol" errors. This is a
+    known limitation of running from cloud environments.
     """
 
     def __init__(self, *args, **kwargs) -> None:
-        self._ssl_ctx = self._build_ssl_context()
+        self._ssl_ctx_verified = self._build_ssl_context(verify=True)
+        self._ssl_ctx_unverified = self._build_ssl_context(verify=False)
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def _build_ssl_context() -> ssl.SSLContext:
+    def _build_ssl_context(verify: bool = False) -> ssl.SSLContext:
         ctx = create_urllib3_context()
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        if not verify:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
         ctx.set_ciphers(CIPHER_SUITES)
         return ctx
 
     def init_poolmanager(self, *args, **kwargs) -> Any:
-        kwargs["ssl_context"] = self._ssl_ctx
+        # Start with verified SSL context; fallback happens in send()
+        kwargs["ssl_context"] = self._ssl_ctx_verified
         return super().init_poolmanager(*args, **kwargs)
 
     def send(self, request: requests.PreparedRequest, **kwargs) -> requests.Response:
-        kwargs.setdefault("verify", False)
         kwargs.setdefault("timeout", (CONNECT_TIMEOUT, READ_TIMEOUT))
-        return super().send(request, **kwargs)
+        # Try with SSL verification first
+        kwargs["verify"] = True
+        try:
+            return super().send(request, **kwargs)
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as exc:
+            err_str = str(exc).lower()
+            if any(kw in err_str for kw in ["eof", "ssleof", "ssl", "handshake", "certificate"]):
+                logger.debug("SSL verification failed, retrying without verification")
+                # Swap to unverified SSL context for this connection pool
+                self._session.verify = False
+                kwargs["verify"] = False
+                return super().send(request, **kwargs)
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +273,8 @@ class SessionManager:
         session = requests.Session()
 
         # Mount the SSL-resilient adapter for all HTTPS traffic
+        # The adapter handles verify=True first, falling back to verify=False
+        # on SSL errors (YouTube CDN blocks cloud IPs at the TLS layer).
         adapter = SSLResilientAdapter(
             pool_connections=POOL_CONNECTIONS,
             pool_maxsize=POOL_MAXSIZE,
@@ -270,7 +292,6 @@ class SessionManager:
             "Keep-Alive": "timeout=30, max=1000",
         })
 
-        session.verify = False
         return session
 
 
@@ -564,9 +585,8 @@ class YTMusicManager:
 
         When Google rate-limits the primary client's session (HTTP 429), this
         creates a fresh YTMusic instance with its own default session, which
-        may bypass per-session rate limits. Note: this does NOT bypass
-        IP-level SSL/TLS blocking (SSL EOF) since the underlying TCP
-        connection still originates from the same host IP.
+        may bypass per-session rate limits. SSL verification is attempted first
+        and disabled only on SSL errors (YouTube CDN blocks cloud IPs).
         """
         logger.info("Attempting fallback client initialization")
         try:
@@ -575,7 +595,8 @@ class YTMusicManager:
             client = YTMusic()
             # Apply only the essential User-Agent fix
             client._session.headers.update({"User-Agent": DEFAULT_UA})
-            client._session.verify = False
+            # Try SSL verification; the SSLResilientAdapter will handle fallback
+            client._session.verify = True
             logger.info("Fallback YTMusic client created successfully")
             return client
         except Exception as exc:

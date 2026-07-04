@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 const practices = [
   { title: "Password Hashing", desc: "All passwords are hashed using bcrypt via passlib before storage. Plaintext passwords are never stored or logged." },
-  { title: "JWT Authentication", desc: "Access tokens (7-day expiry) and refresh tokens (30-day expiry) are used for session management. Tokens are stored in httpOnly, Secure, SameSite=None cookies." },
+  { title: "JWT Authentication", desc: "Access tokens (15-minute expiry, auto-refreshed) and refresh tokens (30-day expiry) are used for session management. Tokens are stored in httpOnly, Secure, SameSite=None cookies." },
   { title: "HTTPS Everywhere", desc: "All API and web traffic is served over TLS/HTTPS. HTTP requests are redirected." },
   { title: "Content Security Policy", desc: "CSP headers restrict script sources to trusted origins (self, YouTube, Cloudflare). Inline scripts are limited." },
   { title: "Rate Limiting", desc: "Authentication endpoints (login, signup, password reset) have strict per-IP rate limits. General API has a 100 requests per 10 seconds limit per client." },

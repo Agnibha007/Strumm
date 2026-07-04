@@ -50,10 +50,16 @@ router = APIRouter()  # no prefix — mounted at /ws
 
 
 async def _verify_token(token: str) -> Optional[dict]:
-    """Verify a JWT and return the user payload, or None."""
+    """Verify a JWT access token and return the user payload, or None.
+    
+    Rejects refresh tokens and other non-access token types.
+    """
     try:
         payload = decode_access_token(token)
         if payload is None:
+            return None
+        if payload.get("type") != "access":
+            logger.warning("WS rejected — non-access token type: %s", payload.get("type"))
             return None
         return payload
     except Exception:

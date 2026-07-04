@@ -38,7 +38,7 @@ export default function CookiesPage() {
           <div className="space-y-4">
             <div className="bg-surface/40 border border-border/60 rounded-xl p-5">
               <h3 className="text-sm font-bold text-text mb-1">access_token</h3>
-              <p className="text-xs text-muted leading-relaxed"><strong>Purpose:</strong> JWT access token for authenticating API requests. <strong>Type:</strong> httpOnly, Secure, SameSite=None. <strong>Duration:</strong> 7 days. <strong>Essential:</strong> Yes — the service cannot function without it.</p>
+              <p className="text-xs text-muted leading-relaxed"><strong>Purpose:</strong> JWT access token for authenticating API requests. <strong>Type:</strong> httpOnly, Secure, SameSite=None. <strong>Duration:</strong> 15 minutes (auto-refreshed). <strong>Essential:</strong> Yes — the service cannot function without it.</p>
             </div>
             <div className="bg-surface/40 border border-border/60 rounded-xl p-5">
               <h3 className="text-sm font-bold text-text mb-1">refresh_token</h3>

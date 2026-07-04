@@ -6,6 +6,7 @@ from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import SongSchema
 from app.services.security import parse_object_id, sanitize_text
+from app.services.auth_utils import decode_access_token
 from app.services.realtime.connection_manager import manager as realtime_manager
 from app.services.realtime.events import (
     ROOM_CREATED,
@@ -820,13 +821,21 @@ async def send_direct_message(
 # Room WebSocket Signaling and Sync Endpoint
 @router.websocket("/rooms/{roomId}/ws")
 async def room_websocket_endpoint(websocket: WebSocket, roomId: str, token: str):
-    # Authenticate via JWT token (same pattern as global WebSocket)
-    from app.services.auth_utils import decode_access_token
+    # Authenticate via JWT access token
     payload = decode_access_token(token)
-    if not payload or "id" not in payload:
-        await websocket.close(code=4001, reason="Authentication required")
+    if not payload:
+        logger.warning("Room WS rejected — invalid token (roomId=%s)", roomId)
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
         return
-    userId = payload["id"]
+    if payload.get("type") != "access":
+        logger.warning("Room WS rejected — refresh token used (roomId=%s)", roomId)
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Refresh tokens cannot be used for WebSocket connections")
+        return
+    userId = payload.get("sub")
+    if not userId:
+        logger.warning("Room WS rejected — missing sub claim (roomId=%s)", roomId)
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token payload")
+        return
 
     await ws_manager.connect_room(roomId, userId, websocket)
     database = db.get_db()

@@ -20,6 +20,7 @@
 import { EventDispatcher } from "./EventDispatcher";
 import { PING, PONG, WS_CONNECTED } from "./types";
 import { apiUrl } from "web/lib/api";
+import { useAuthStore } from "web/store/useAuthStore";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -46,6 +47,7 @@ export class WebSocketClient {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private _heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _lastCloseCode: number | null = null;
 
   /** Callback fired whenever connection state changes. */
   onStateChange: ((state: ConnectionState) => void) | null = null;
@@ -75,7 +77,14 @@ export class WebSocketClient {
    * Open (or re-open) the WebSocket connection with the given JWT.
    */
   connect(token: string): void {
+    const tokenChanged = this._token !== token;
     this._token = token;
+
+    if (tokenChanged && this._ws) {
+      // Token changed (e.g., after refresh) — force reconnect with new token
+      this._closeWs();
+      this._reconnectAttempt = 0;
+    }
 
     if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) {
       return; // already connected or connecting
@@ -130,7 +139,10 @@ export class WebSocketClient {
       const ws = new WebSocket(wsUrl);
       ws.onopen = () => this._onOpen();
       ws.onmessage = (event) => this._onMessage(event);
-      ws.onclose = () => this._onClose();
+      ws.onclose = (event) => {
+        this._lastCloseCode = event.code;
+        this._onClose();
+      };
       ws.onerror = () => {
         // onclose fires after onerror, so cleanup happens there
       };
@@ -176,11 +188,27 @@ export class WebSocketClient {
 
   private _onClose(): void {
     this._clearHeartbeat();
+    const closeCode = this._lastCloseCode;
     this._ws = null;
     this._setState("disconnected");
 
     if (this._token) {
-      this._scheduleReconnect();
+      // 1008 = Policy Violation (expired/invalid token) — try refresh first
+      if (closeCode === 1008) {
+        this._refreshAndReconnect();
+      } else {
+        this._scheduleReconnect();
+      }
+    }
+  }
+
+  private async _refreshAndReconnect(): Promise<void> {
+    const refreshed = await useAuthStore.getState().silentRefresh();
+    if (refreshed) {
+      this._token = useAuthStore.getState().token;
+      if (this._token) {
+        this._scheduleReconnect();
+      }
     }
   }
 
