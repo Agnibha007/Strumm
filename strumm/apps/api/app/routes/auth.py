@@ -246,12 +246,13 @@ async def verify_google_id_token(id_token: str) -> dict:
     if not client_id:
         raise HTTPException(status_code=500, detail="Google authentication is not configured.")
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        response = await client.get(
-            "https://oauth2.googleapis.com/tokeninfo",
-            params={"id_token": sanitize_text(id_token, max_length=4096)},
-            timeout=6.0
-        )
+    from app.services.http_client import get_http_client
+    client = get_http_client()
+    response = await client.get(
+        "https://oauth2.googleapis.com/tokeninfo",
+        params={"id_token": sanitize_text(id_token, max_length=4096)},
+        timeout=6.0,
+    )
 
     if response.status_code != 200:
         raise HTTPException(status_code=401, detail="Invalid Google identity token.")
@@ -392,7 +393,7 @@ async def send_signup_otp(request: EmailSignupRequest):
         logger.error(f"Error generating signup OTP: {str(e)}")
         return {
             "success": False,
-            "error": f"Failed to create signup profile: {str(e)}"
+            "error": "An internal error occurred."
         }
 
 @router.post("/verify")
@@ -502,7 +503,7 @@ async def verify_otp(
         logger.error(f"Error verifying OTP: {str(e)}")
         return {
             "success": False,
-            "error": f"Verification error: {str(e)}"
+            "error": "An internal error occurred."
         }
 
 @router.post("/google")
@@ -584,7 +585,7 @@ async def google_login(
         logger.error(f"Error in Google OAuth authentication: {str(e)}")
         return {
             "success": False,
-            "error": f"OAuth error: {str(e)}"
+            "error": "An internal error occurred."
         }
 
 @router.post("/login")
@@ -633,7 +634,7 @@ async def email_password_login(
         }
     except Exception as e:
         logger.error(f"Error logging in: {str(e)}")
-        return {"success": False, "error": f"Authentication error: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.post("/refresh")
 async def refresh_session(
@@ -714,7 +715,7 @@ async def refresh_session(
         raise he
     except Exception as e:
         logger.error(f"Error rotating refresh token: {str(e)}")
-        return {"success": False, "error": f"Refresh failed: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.post("/logout")
 async def logout_session(
@@ -733,7 +734,7 @@ async def logout_session(
         return {"success": True, "data": {"message": "Logged out successfully"}}
     except Exception as e:
         logger.error(f"Error during logout: {str(e)}")
-        return {"success": False, "error": f"Logout error: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest):

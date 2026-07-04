@@ -80,13 +80,14 @@ class GroqProvider:
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    GROQ_CHAT_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=timeout,
-                )
+            from app.services.http_client import get_http_client
+            client = get_http_client()
+            resp = await client.post(
+                GROQ_CHAT_URL,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
 
             if resp.status_code != 200:
                 logger.error(

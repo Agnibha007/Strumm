@@ -64,7 +64,7 @@ async def create_share_link(
         }
     except Exception as e:
         logger.error(f"Error creating share link: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/{token}")
 async def get_shared_content(
@@ -137,4 +137,4 @@ async def get_shared_content(
         }
     except Exception as e:
         logger.error(f"Error opening shared content {token}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}

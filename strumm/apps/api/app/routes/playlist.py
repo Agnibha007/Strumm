@@ -93,7 +93,7 @@ async def create_playlist(
         }
     except Exception as e:
         logger.error(f"Error creating playlist: {str(e)}")
-        return {"success": False, "error": f"Playlist creation failed: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 @router.get("")
@@ -148,7 +148,7 @@ async def get_playlists(
     except Exception as e:
         import traceback
         logger.error(f"Error fetching user playlists: {str(e)}\n{traceback.format_exc()}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 @router.get("/{id}")
@@ -198,7 +198,7 @@ async def get_playlist(
     except Exception as e:
         import traceback
         logger.error(f"Error resolving playlist {id}: {str(e)}\n{traceback.format_exc()}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 @router.patch("/{id}")
@@ -249,7 +249,7 @@ async def update_playlist(
         }
     except Exception as e:
         logger.error(f"Error updating playlist {id}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 @router.delete("/{id}")
@@ -275,7 +275,7 @@ async def delete_playlist(
         }
     except Exception as e:
         logger.error(f"Error deleting playlist {id}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 # --- COLLABORATOR MANAGEMENT ---
@@ -335,7 +335,7 @@ async def manage_collaborator(
         }
     except Exception as e:
         logger.error(f"Error managing collaborator for playlist {id}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 # --- PLAYLIST IMPORT ---
@@ -396,8 +396,8 @@ def parse_spotify_embed_html(html_content: str) -> list:
         return []
 
 
-def extract_spotify_playlist(url: str) -> list:
-    import httpx
+async def extract_spotify_playlist(url: str) -> list:
+    from app.services.http_client import get_http_client
 
     playlist_id = None
     entity_type = "playlist"
@@ -424,15 +424,17 @@ def extract_spotify_playlist(url: str) -> list:
         "Accept-Language": "en-US,en;q=0.9"
     }
 
+    client = get_http_client()
+
     # 1. Try direct fetch first
     try:
-        resp = httpx.get(embed_url, headers=headers, follow_redirects=True, timeout=8.0)
+        resp = await client.get(embed_url, headers=headers, timeout=8.0)
         if resp.status_code == 200:
             parsed = parse_spotify_embed_html(resp.text)
             if parsed:
                 return parsed
     except Exception as e:
-        logger.warning(f"Direct spotify embed fetch failed: {str(e)}")
+        logger.warning(f"Direct spotify embed fetch failed: {type(e).__name__}")
 
     # 2. Try alternative fetch methods
     try:
@@ -444,17 +446,16 @@ def extract_spotify_playlist(url: str) -> list:
         for proxy_url in proxies_list[:3]:
             try:
                 proxied_url = f"{proxy_url}{embed_url}"
-                with httpx.Client(headers=headers, timeout=8.0) as client:
-                    resp = client.get(proxied_url, follow_redirects=True)
-                    if resp.status_code == 200:
-                        parsed = parse_spotify_embed_html(resp.text)
-                        if parsed:
-                            logger.info("Successfully scraped Spotify playlist via proxy")
-                            return parsed
+                resp = await client.get(proxied_url, headers=headers, timeout=8.0, follow_redirects=True)
+                if resp.status_code == 200:
+                    parsed = parse_spotify_embed_html(resp.text)
+                    if parsed:
+                        logger.info("Successfully scraped Spotify playlist via proxy")
+                        return parsed
             except Exception:
                 continue
     except Exception as e:
-        logger.error(f"Error fetching spotify via proxies: {str(e)}")
+        logger.error(f"Error fetching spotify via proxies: {type(e).__name__}")
 
     return []
 
@@ -543,7 +544,7 @@ async def import_playlist(
                     parsed_rows.append({"title": title.strip(), "artist": artist.strip(), "album": album.strip()})
 
         elif source == "spotify" or "spotify.com" in import_data:
-            parsed_rows = extract_spotify_playlist(import_data)
+            parsed_rows = await extract_spotify_playlist(import_data)
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
             parsed_rows = await extract_ytmusic_playlist(import_data)
@@ -707,7 +708,7 @@ async def import_playlist(
         }
     except Exception as e:
         logger.error(f"Error importing playlist: {str(e)}")
-        return {"success": False, "error": f"Import failed: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 class AddSongRequest(BaseModel):
@@ -770,7 +771,7 @@ async def add_song_to_playlist(
         }
     except Exception as e:
         logger.error(f"Error adding song to playlist {id}: {str(e)}")
-        return {"success": False, "error": f"Failed to add song to playlist: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 @router.delete("/{id}/songs/{song_index}")
@@ -811,4 +812,4 @@ async def remove_song_from_playlist(
         }
     except Exception as e:
         logger.error(f"Error removing song from playlist {id}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}

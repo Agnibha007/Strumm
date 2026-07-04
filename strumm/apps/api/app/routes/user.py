@@ -531,7 +531,7 @@ async def update_profile(
         }
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
-        return {"success": False, "error": f"Failed to update profile: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 # Library Aggregator
 @router.get("/library")
@@ -576,7 +576,7 @@ async def get_library(current_user: dict = Depends(get_current_user)):
         tb_str = traceback.format_exc()
         logger.error(f"[/library] Exception traceback:\n{tb_str}")
         logger.error(f"Error fetching library: {str(e)}\n{tb_str}")
-        return {"success": False, "error": f"Failed to fetch library: {str(e)}", "traceback": tb_str}
+        return {"success": False, "error": "An internal error occurred."}
 
 # Liked Songs CRUD
 @router.get("/liked")
@@ -605,7 +605,7 @@ async def get_liked_songs(
         }
     except Exception as e:
         logger.error(f"Error listing liked songs: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/liked/{video_id}")
 async def check_if_liked(
@@ -625,7 +625,7 @@ async def check_if_liked(
             "data": {"liked": bool(existing)}
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.post("/liked")
 async def toggle_like_song(
@@ -663,7 +663,7 @@ async def toggle_like_song(
             }
     except Exception as e:
         logger.error(f"Error toggling liked song status: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 # History and Statistics (Live Listening Counter backend sync)
 @router.get("/history")
@@ -710,7 +710,7 @@ async def get_playback_history(
         }
     except Exception as e:
         logger.error(f"Error loading listening history: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.delete("/history")
 async def clear_playback_history(current_user: dict = Depends(get_current_user)):
@@ -741,7 +741,107 @@ async def clear_playback_history(current_user: dict = Depends(get_current_user))
         }
     except Exception as e:
         logger.error(f"Error deleting listening history: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
+
+# --- Background task debouncing for play events ---
+_stats_recalc_pending: Dict[str, asyncio.Task] = {}
+STATS_RECALC_DEBOUNCE = 30  # seconds
+
+def _schedule_stats_recalculation(user_id: str) -> None:
+    """Debounce stats recalculation: max once per 30 seconds per user."""
+    if user_id in _stats_recalc_pending:
+        _stats_recalc_pending[user_id].cancel()
+    _stats_recalc_pending[user_id] = asyncio.create_task(
+        _debounced_recalc(user_id)
+    )
+
+async def _debounced_recalc(user_id: str) -> None:
+    """Wait for debounce window, then recalculate stats."""
+    await asyncio.sleep(STATS_RECALC_DEBOUNCE)
+    _stats_recalc_pending.pop(user_id, None)
+    try:
+        await recalculate_user_stats_and_save(user_id)
+    except Exception as e:
+        logger.error(f"Debounced stats recalc failed for {user_id}: {type(e).__name__}")
+
+async def _check_podcast_badges(user_id: str, video_id: str) -> None:
+    """Check and award podcast badges in background (off the hot path)."""
+    import re as _re
+    try:
+        database = db.get_db()
+        user_oid = parse_object_id(user_id)
+        episode_id = video_id.replace("podcast-", "")
+
+        episode_doc = None
+        if ObjectId.is_valid(episode_id):
+            episode_doc = await database[db.PODCAST_EPISODES].find_one({"_id": ObjectId(episode_id)})
+
+        if not episode_doc:
+            return
+
+        show_id = episode_doc.get("showId")
+
+        # Count unique podcast episodes for this user via aggregation (faster than fetch-all)
+        possible_ids = [user_id]
+        if ObjectId.is_valid(user_id):
+            possible_ids.append(ObjectId(user_id))
+
+        count_pipeline = [
+            {"$match": {"userId": {"$in": possible_ids}, "song.videoId": {"$regex": "^podcast-"}}},
+            {"$group": {"_id": "$song.videoId"}},
+            {"$count": "total"}
+        ]
+        count_result = await database[db.PLAYBACK_HISTORIES].aggregate(count_pipeline).to_list(1)
+        unique_count = count_result[0]["total"] if count_result else 0
+        # +1 for current episode
+        unique_count = max(unique_count, 1)
+
+        user_doc = await database[db.USERS].find_one({"_id": user_oid})
+        existing_badges = user_doc.get("badges", []) if user_doc else []
+        existing_badge_ids = {b["id"] for b in existing_badges}
+
+        new_badges = []
+
+        if unique_count >= 1 and "podcast-first" not in existing_badge_ids:
+            new_badges.append({
+                "id": "podcast-first",
+                "title": "Podcast Pioneer",
+                "description": "Listened to your first podcast episode.",
+                "icon": "🎙️",
+                "earnedAt": datetime.utcnow().isoformat()
+            })
+
+        if unique_count >= 5 and "podcast-fifth" not in existing_badge_ids:
+            new_badges.append({
+                "id": "podcast-fifth",
+                "title": "Podcast Devotee",
+                "description": "Listened to 5 podcast episodes.",
+                "icon": "🎧",
+                "earnedAt": datetime.utcnow().isoformat()
+            })
+
+        if show_id:
+            completist_badge_id = f"podcast-completist-{show_id}"
+            if completist_badge_id not in existing_badge_ids:
+                show_episode_count = await database[db.PODCAST_EPISODES].count_documents({"showId": show_id})
+                if unique_count >= show_episode_count and show_episode_count > 0:
+                    show_doc = await database[db.PODCAST_SHOWS].find_one({"_id": parse_object_id(show_id)})
+                    show_title = show_doc.get("title", "this podcast") if show_doc else "this podcast"
+                    new_badges.append({
+                        "id": completist_badge_id,
+                        "title": f"{show_title} Completist",
+                        "description": f"Listened to every episode of '{show_title}'.",
+                        "icon": "🏆",
+                        "earnedAt": datetime.utcnow().isoformat()
+                    })
+
+        if new_badges:
+            await database[db.USERS].update_one(
+                {"_id": user_oid},
+                {"$push": {"badges": {"$each": new_badges}}}
+            )
+    except Exception as e:
+        logger.error(f"Podcast badge check failed for {user_id}: {type(e).__name__}")
 
 class PlayEventRequest(BaseModel):
     song: SongSchema
@@ -779,7 +879,7 @@ async def register_play_event(
         }
         await database[db.PLAYBACK_HISTORIES].insert_one(history_entry)
         
-        # Update user activity if showListeningActivity is enabled (defaults to True)
+        # 2. Update user activity (single atomic upsert, no extra query)
         show_act = current_user.get("settings", {}).get("showListeningActivity", True)
         if show_act:
             await database["activities"].update_one(
@@ -794,137 +894,19 @@ async def register_play_event(
                 upsert=True
             )
         
-        # 2. Update user statistics (totalListeningTime only)
-        # monthlyListeningTime is computed dynamically from history (30-day window)
-        # by compute_user_stats, so we only persist totalListeningTime here.
+        # 3. Update totalListeningTime atomically (single query)
         await database[db.USERS].update_one(
             {"_id": parse_object_id(userId)},
             {"$inc": {"statistics.totalListeningTime": duration_delta}}
         )
         
-        # Async updates of top artists (splitting multiple artists)
-        artist_name = song_dict.get("artist", "")
-        if artist_name:
-            # Check if artist is already tracked in user statistics
-            user_doc = await database[db.USERS].find_one({"_id": parse_object_id(userId)})
-            top_artists = user_doc.get("statistics", {}).get("topArtists", [])
-            
-            # Clean and split multiple artists
-            import re
-            name_clean = artist_name.replace("&amp;", ",")
-            split_names = [a.strip() for a in re.split(r'\s*(?:,|&|\bfeat\.?|\bft\.?|\band\b)\s*', name_clean, flags=re.IGNORECASE) if a.strip()]
-            
-            # Update play counts for each artist separately
-            # Group artists by canonical key to prevent duplicates
-            for single_art in split_names:
-                art_canonical = canonical_artist(single_art)
-                if not art_canonical:
-                    continue
-                found = False
-                for art in top_artists:
-                    existing_canonical = art.get("canonicalName") or canonical_artist(art.get("name", ""))
-                    if existing_canonical == art_canonical:
-                        art["playCount"] = art.get("playCount", 0) + 1
-                        # Update display name if a better variant appears
-                        art["name"] = normalize_artist(single_art)
-                        art["canonicalName"] = art_canonical
-                        found = True
-                        break
-                if not found:
-                    top_artists.append({
-                        "name": normalize_artist(single_art),
-                        "canonicalName": art_canonical,
-                        "playCount": 1
-                    })
-                
-            # Limit top artists to top 10 sorted by playCount
-            top_artists = sorted(top_artists, key=lambda x: x.get("playCount", 0), reverse=True)[:10]
-            
-            await database[db.USERS].update_one(
-                {"_id": parse_object_id(userId)},
-                {"$set": {"statistics.topArtists": top_artists}}
-            )
-
-        # 3. Handle podcast listening badges
-        is_podcast = song_dict.get("videoId", "").startswith("podcast-")
-        if is_podcast:
-            episode_id = song_dict["videoId"].replace("podcast-", "")
-            
-            # Fetch episode details from DB to find showId
-            episode_doc = None
-            if ObjectId.is_valid(episode_id):
-                episode_doc = await database[db.PODCAST_EPISODES].find_one({"_id": ObjectId(episode_id)})
-            
-            if episode_doc:
-                show_id = episode_doc.get("showId")
-                
-                # Fetch all histories for this user that are podcasts
-                possible_ids = [str(userId), userId]
-                user_histories = await database[db.PLAYBACK_HISTORIES].find({
-                    "userId": {"$in": possible_ids},
-                    "song.videoId": {"$regex": "^podcast-"}
-                }).to_list(length=1000)
-                
-                # Count unique episodes listened to
-                unique_episode_vids = {h["song"]["videoId"] for h in user_histories if h.get("song", {}).get("videoId")}
-                # Make sure current videoId is counted
-                unique_episode_vids.add(song_dict["videoId"])
-                
-                # Check user document for existing badges list
-                user_doc = await database[db.USERS].find_one({"_id": parse_object_id(userId)})
-                existing_badges = user_doc.get("badges", []) if user_doc else []
-                existing_badge_ids = {b["id"] for b in existing_badges}
-                
-                new_badges = []
-                
-                # First podcast episode: "Podcast Pioneer"
-                if len(unique_episode_vids) >= 1 and "podcast-first" not in existing_badge_ids:
-                    new_badges.append({
-                        "id": "podcast-first",
-                        "title": "Podcast Pioneer",
-                        "description": "Listened to your first podcast episode.",
-                        "icon": "🎙️",
-                        "earnedAt": datetime.utcnow().isoformat()
-                    })
-                
-                # Fifth podcast episode: "Podcast Devotee"
-                if len(unique_episode_vids) >= 5 and "podcast-fifth" not in existing_badge_ids:
-                    new_badges.append({
-                        "id": "podcast-fifth",
-                        "title": "Podcast Devotee",
-                        "description": "Listened to 5 podcast episodes.",
-                        "icon": "🎧",
-                        "earnedAt": datetime.utcnow().isoformat()
-                    })
-                
-                # Every episode of a podcast: "Completist"
-                if show_id:
-                    show_episodes = await database[db.PODCAST_EPISODES].find({"showId": show_id}).to_list(length=1000)
-                    show_episode_vids = {f"podcast-{str(ep['_id'])}" for ep in show_episodes}
-                    
-                    if show_episode_vids:
-                        show_doc = await database[db.PODCAST_SHOWS].find_one({"_id": parse_object_id(show_id)})
-                        show_title = show_doc.get("title", "this podcast") if show_doc else "this podcast"
-                        completist_badge_id = f"podcast-completist-{show_id}"
-                        
-                        if show_episode_vids.issubset(unique_episode_vids) and completist_badge_id not in existing_badge_ids:
-                            new_badges.append({
-                                "id": completist_badge_id,
-                                "title": f"{show_title} Completist",
-                                "description": f"Listened to every episode of '{show_title}'.",
-                                "icon": "🏆",
-                                "earnedAt": datetime.utcnow().isoformat()
-                            })
-                            
-                if new_badges:
-                    await database[db.USERS].update_one(
-                        {"_id": parse_object_id(userId)},
-                        {"$push": {"badges": {"$each": new_badges}}}
-                    )
-
-        # 4. Fire-and-forget: recalculate full stats (soundDNA, topSongs, topArtists)
-        # in background so they're always fresh when the user visits Replay or Profile.
-        asyncio.create_task(recalculate_user_stats_and_save(str(userId)))
+        # 4. Fire-and-forget background tasks (no blocking queries on hot path)
+        # Debounce stats recalculation per user (max once per 30 seconds)
+        _schedule_stats_recalculation(str(userId))
+        
+        # Podcast badge check is also offloaded to background
+        if song_dict.get("videoId", "").startswith("podcast-"):
+            asyncio.create_task(_check_podcast_badges(str(userId), song_dict["videoId"]))
 
         return {
             "success": True,
@@ -934,8 +916,8 @@ async def register_play_event(
             }
         }
     except Exception as e:
-        logger.error(f"Error registering playback event: {str(e)}")
-        return {"success": False, "error": str(e)}
+        logger.error(f"Error registering playback event: {type(e).__name__}")
+        return {"success": False, "error": "Failed to register play event."}
 
 @router.get("/player-state")
 async def get_player_state(current_user: dict = Depends(get_current_user)):
@@ -952,7 +934,7 @@ async def get_player_state(current_user: dict = Depends(get_current_user)):
         return {"success": True, "data": state}
     except Exception as e:
         logger.error(f"Error loading player state: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.put("/player-state")
 async def save_player_state(
@@ -1010,7 +992,7 @@ async def save_player_state(
         return {"success": True, "data": {"message": "Player state saved."}}
     except Exception as e:
         logger.error(f"Error saving player state: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.delete("/profile")
 async def delete_user_account(current_user: dict = Depends(get_current_user)):
@@ -1055,7 +1037,7 @@ async def delete_user_account(current_user: dict = Depends(get_current_user)):
         }
     except Exception as e:
         logger.error(f"Error deleting user account {user_id}: {str(e)}")
-        return {"success": False, "error": f"Failed to delete account: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 class MemoryCreateRequest(BaseModel):
     song: SongSchema
@@ -1139,7 +1121,7 @@ async def recalculate_user_stats(current_user: dict = Depends(get_current_user))
         }
     except Exception as e:
         logger.error(f"Error recalculating user statistics live: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/profile/export")
 async def export_user_data(current_user: dict = Depends(get_current_user)):
@@ -1274,7 +1256,7 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         }
     except Exception as e:
         logger.error(f"Error generating Strumm Replay: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/users/{user_id}/taste-match")
 async def get_taste_match(user_id: str, current_user: dict = Depends(get_current_user)):
@@ -1391,7 +1373,7 @@ async def get_taste_match(user_id: str, current_user: dict = Depends(get_current
         }
     except Exception as e:
         logger.error(f"Error calculating taste match: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 # --- Song Memories CRUD ---
 
@@ -1410,7 +1392,7 @@ async def get_memories(current_user: dict = Depends(get_current_user)):
         return {"success": True, "data": memories}
     except Exception as e:
         logger.error(f"Error fetching memories: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.post("/memories")
 async def create_memory(payload: MemoryCreateRequest, current_user: dict = Depends(get_current_user)):
@@ -1432,7 +1414,7 @@ async def create_memory(payload: MemoryCreateRequest, current_user: dict = Depen
         return {"success": True, "data": memory_doc}
     except Exception as e:
         logger.error(f"Error creating memory: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.put("/memories/{memory_id}")
 async def update_memory(memory_id: str, note: str = Body(..., embed=True), visibility: str = Body("private", embed=True), current_user: dict = Depends(get_current_user)):
@@ -1454,7 +1436,7 @@ async def update_memory(memory_id: str, note: str = Body(..., embed=True), visib
         return {"success": True, "data": {"message": "Memory updated successfully."}}
     except Exception as e:
         logger.error(f"Error updating memory {memory_id}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.delete("/memories/{memory_id}")
 async def delete_memory(memory_id: str, current_user: dict = Depends(get_current_user)):
@@ -1469,7 +1451,7 @@ async def delete_memory(memory_id: str, current_user: dict = Depends(get_current
         return {"success": True, "data": {"message": "Memory deleted successfully."}}
     except Exception as e:
         logger.error(f"Error deleting memory {memory_id}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 # --- User Search (for Profiles filter in search page) ---
 
@@ -1569,7 +1551,7 @@ async def get_public_profile(username: str):
         return {"success": True, "data": public_data}
     except Exception as e:
         logger.error(f"Error fetching public profile {username}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/users/public/{username}")
 async def get_users_public_profile(username: str):
@@ -1647,4 +1629,4 @@ async def get_users_public_profile(username: str):
         return {"success": True, "data": public_data}
     except Exception as e:
         logger.error(f"Error fetching users public profile {username}: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}

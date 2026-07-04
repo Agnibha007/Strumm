@@ -44,13 +44,13 @@ async def import_podcast_rss(
             del existing["_id"]
             return {"success": True, "data": existing, "message": "Podcast show already imported."}
             
-        # Parse RSS Feed asynchronously using httpx (disable verification to prevent local SSL errors)
-        async with httpx.AsyncClient(follow_redirects=True, verify=False) as client:
-            resp = await client.get(url, timeout=12.0)
-            if resp.status_code != 200:
-                return {"success": False, "error": f"Failed to download RSS feed. Status code: {resp.status_code}"}
-                
-            xml_text = resp.text
+        # Parse RSS Feed asynchronously using shared httpx client
+        from app.services.http_client import get_http_client
+        client = get_http_client()
+        resp = await client.get(url, timeout=12.0)
+        if resp.status_code != 200:
+            return {"success": False, "error": f"Failed to download RSS feed. Status code: {resp.status_code}"}
+        xml_text = resp.text
             
         # Parse feed data
         feed_data = feedparser.parse(xml_text)
@@ -172,7 +172,7 @@ async def import_podcast_rss(
         }
     except Exception as e:
         logger.error(f"Error importing podcast RSS: {str(e)}")
-        return {"success": False, "error": f"Import error: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/shows")
 async def get_shows(
@@ -214,7 +214,7 @@ async def get_shows(
         return {"success": True, "data": shows}
     except Exception as e:
         logger.error(f"Error fetching shows: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/shows/{id}")
 async def get_show_details(id: str = Path(...)):
@@ -267,7 +267,7 @@ async def get_show_details(id: str = Path(...)):
         }
     except Exception as e:
         logger.error(f"Error fetching show details: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.post("/shows/{id}/follow")
 async def follow_show(
@@ -299,7 +299,7 @@ async def follow_show(
             return {"success": True, "data": {"following": True, "message": "Followed podcast show."}}
     except Exception as e:
         logger.error(f"Error following podcast: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 @router.get("/episode/{id}")
@@ -351,4 +351,4 @@ async def get_episode_details(id: str = Path(...)):
         return {"success": False, "error": "Episode not found"}
     except Exception as e:
         logger.error(f"Error fetching episode details: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}

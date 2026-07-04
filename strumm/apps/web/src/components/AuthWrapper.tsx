@@ -7,8 +7,12 @@ import Navigation from "web/components/Navigation";
 import { useThemeStore } from "web/store/useThemeStore";
 import { usePathname, useRouter } from "next/navigation";
 import BrandLogo from "web/components/BrandLogo";
-import FriendActivitySidebar from "web/components/FriendActivitySidebar";
+import dynamic from "next/dynamic";
 import { isPublicRoute } from "web/lib/routes";
+
+const FriendActivitySidebar = dynamic(() => import("web/components/FriendActivitySidebar"), {
+  ssr: false,
+});
 
 export default function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();

@@ -3,17 +3,20 @@ import time
 import uuid
 import shutil
 import asyncio
+import gzip
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import mongodb as db
 from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 from app.services.realtime.websocket import router as realtime_router
+from app.services.http_client import close_http_client
 import logging
 
 # Setup Logging
@@ -52,12 +55,26 @@ async def lifespan(app: FastAPI):
     db.connect_db()
     logger.info(f"MongoDB client created in {time.time() - t_start:.3f}s.")
 
+    # Verify DB connectivity
+    try:
+        await db.get_db().command("ping")
+        logger.info(f"MongoDB ping OK in {time.time() - t_start:.3f}s.")
+    except Exception as e:
+        logger.error(f"MongoDB ping failed: {type(e).__name__}. Retrying in 2s...")
+        await asyncio.sleep(2)
+        try:
+            await db.get_db().command("ping")
+            logger.info("MongoDB ping OK on retry.")
+        except Exception as e2:
+            logger.error(f"MongoDB ping failed on retry: {type(e2).__name__}. App will start anyway.")
+
     # 2. Launch heavy initialization as background task so server starts accepting immediately
     asyncio.create_task(_background_startup_work())
 
     yield  # App serves requests here
 
-    # Shutdown
+    # Shutdown: close HTTP client pool and MongoDB
+    await close_http_client()
     db.close_db()
     logger.info("Application shutdown complete.")
 
@@ -89,32 +106,55 @@ async def _background_startup_work():
 
 
 async def _create_indexes(database):
-    """Create all MongoDB indexes. Fails gracefully."""
-    try:
-        await database[db.USERS].create_index("email", unique=True)
-        await database[db.USERS].create_index("username", unique=True)
-        await database[db.PLAYBACK_HISTORIES].create_index([("userId", 1), ("playedAt", -1)])
-        await database[db.PLAYBACK_HISTORIES].create_index([("song.videoId", 1)])
-        await database[db.PLAYLISTS].create_index("userId")
-        await database[db.PLAYLISTS].create_index([("name", 1), ("visibility", 1)])
-        await database[db.PLAYLISTS].create_index("songs.videoId")
-        await database[db.LIKED_SONGS].create_index([("userId", 1), ("song.videoId", 1)])
-        await database[db.SHARES].create_index("expiry", expireAfterSeconds=0)
-        await database[db.PODCAST_SHOWS].create_index("rss", unique=True, sparse=True)
-        await database[db.PODCAST_EPISODES].create_index("showId")
-        await database[db.PODCAST_EPISODES].create_index([("showId", 1), ("publishedAt", -1)])
-        await database["lyrics_cache"].create_index("videoId", unique=True, sparse=True)
-        await database[db.CONNECTIONS].create_index("requesterId")
-        await database[db.CONNECTIONS].create_index("receiverId")
-        await database[db.CONNECTIONS].create_index([("requesterId", 1), ("receiverId", 1)])
-        await database[db.ACTIVITIES].create_index("expiresAt", expireAfterSeconds=0)
-        await database[db.ACTIVITIES].create_index("userId")
-        await database[db.NOTIFICATIONS].create_index("userId")
-        await database[db.NOTIFICATIONS].create_index([("userId", 1), ("createdAt", -1)])
-        await database[db.ROOMS].create_index("hostId")
-        await database["follows"].create_index([("userId", 1), ("contentType", 1)])
-    except Exception as e:
-        logger.warning(f"Index creation failed (non-fatal): {e}")
+    """Create all MongoDB indexes. Each index is created independently
+    so a single failure does not skip subsequent indexes."""
+    indexes = [
+        ("users.email", lambda: database[db.USERS].create_index("email", unique=True)),
+        ("users.username", lambda: database[db.USERS].create_index("username", unique=True)),
+        ("playbackhistories.compound", lambda: database[db.PLAYBACK_HISTORIES].create_index([("userId", 1), ("playedAt", -1)])),
+        ("playbackhistories.videoId", lambda: database[db.PLAYBACK_HISTORIES].create_index([("song.videoId", 1)])),
+        ("playlists.userId", lambda: database[db.PLAYLISTS].create_index("userId")),
+        ("playlists.name_visibility", lambda: database[db.PLAYLISTS].create_index([("name", 1), ("visibility", 1)])),
+        ("playlists.songs.videoId", lambda: database[db.PLAYLISTS].create_index("songs.videoId")),
+        ("likedsongs.compound", lambda: database[db.LIKED_SONGS].create_index([("userId", 1), ("song.videoId", 1)])),
+        ("shares.expiry", lambda: database[db.SHARES].create_index("expiry", expireAfterSeconds=0)),
+        ("shares.shareToken", lambda: database[db.SHARES].create_index("shareToken", unique=True, sparse=True)),
+        ("podcastshows.rss", lambda: database[db.PODCAST_SHOWS].create_index("rss", unique=True, sparse=True)),
+        ("podcastepisodes.showId", lambda: database[db.PODCAST_EPISODES].create_index("showId")),
+        ("podcastepisodes.compound", lambda: database[db.PODCAST_EPISODES].create_index([("showId", 1), ("publishedAt", -1)])),
+        ("lyrics_cache.videoId", lambda: database["lyrics_cache"].create_index("videoId", unique=True, sparse=True)),
+        ("connections.requesterId", lambda: database[db.CONNECTIONS].create_index("requesterId")),
+        ("connections.receiverId", lambda: database[db.CONNECTIONS].create_index("receiverId")),
+        ("connections.compound", lambda: database[db.CONNECTIONS].create_index([("requesterId", 1), ("receiverId", 1)])),
+        ("connections.status_compound", lambda: database[db.CONNECTIONS].create_index([("requesterId", 1), ("receiverId", 1), ("status", 1)])),
+        ("activities.expiresAt", lambda: database[db.ACTIVITIES].create_index("expiresAt", expireAfterSeconds=0)),
+        ("activities.userId", lambda: database[db.ACTIVITIES].create_index("userId")),
+        ("notifications.userId", lambda: database[db.NOTIFICATIONS].create_index("userId")),
+        ("notifications.compound", lambda: database[db.NOTIFICATIONS].create_index([("userId", 1), ("createdAt", -1)])),
+        ("rooms.hostId", lambda: database[db.ROOMS].create_index("hostId")),
+        ("follows.compound", lambda: database["follows"].create_index([("userId", 1), ("contentType", 1)])),
+        # New indexes for previously unindexed collections
+        ("sessions.refreshTokenHash", lambda: database[db.SESSIONS].create_index("refreshTokenHash", sparse=True)),
+        ("sessions.userId", lambda: database[db.SESSIONS].create_index("userId", sparse=True)),
+        ("otps.email", lambda: database["otps"].create_index("email", sparse=True)),
+        ("password_resets.email", lambda: database["password_resets"].create_index("email", sparse=True)),
+        ("playerstates.userId_deviceId", lambda: database[db.PLAYER_STATES].create_index([("userId", 1), ("deviceId", 1)])),
+        ("songMemories.userId", lambda: database["songMemories"].create_index("userId")),
+        ("songMemories.compound", lambda: database["songMemories"].create_index([("userId", 1), ("createdAt", -1)])),
+        ("playlist_activity.playlistId", lambda: database["playlist_activity"].create_index("playlistId")),
+        ("playlist_activity.compound", lambda: database["playlist_activity"].create_index([("playlistId", 1), ("timestamp", -1)])),
+        ("notifications.read_compound", lambda: database[db.NOTIFICATIONS].create_index([("userId", 1), ("read", 1)])),
+    ]
+
+    created = 0
+    for name, create_fn in indexes:
+        try:
+            await create_fn()
+            created += 1
+        except Exception as e:
+            logger.warning(f"Index creation failed for {name} (non-fatal): {e}")
+
+    logger.info(f"Indexes: {created}/{len(indexes)} created successfully.")
 
 
 app = FastAPI(
@@ -167,9 +207,77 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Admin-API-Key"],
 )
+
+
+# --- Security Headers Middleware ---
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
+# --- GZip Compression Middleware ---
+class GZipMiddleware(BaseHTTPMiddleware):
+    """Minimal GZip compression for responses > 500 bytes."""
+    MIN_SIZE = 500
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Only compress if client accepts gzip and response is large enough
+        accept_encoding = request.headers.get("accept-encoding", "")
+        if "gzip" not in accept_encoding:
+            return response
+
+        body = b""
+        async for chunk in response.body_iterator:
+            if isinstance(chunk, str):
+                body += chunk.encode("utf-8")
+            else:
+                body += chunk
+
+        if len(body) < self.MIN_SIZE:
+            return Response(
+                content=body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
+
+        compressed = gzip.compress(body, compresslevel=6)
+        headers = dict(response.headers)
+        headers["content-encoding"] = "gzip"
+        headers["content-length"] = str(len(compressed))
+        headers["vary"] = "Accept-Encoding"
+
+        return Response(
+            content=compressed,
+            status_code=response.status_code,
+            headers=headers,
+            media_type=response.media_type,
+        )
+
+app.add_middleware(GZipMiddleware)
+
+
+# --- Global Exception Handler (prevents leaking internal details) ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception on {request.method} {request.url.path}: {type(exc).__name__}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": "An internal server error occurred."}
+    )
 
 # Per-endpoint rate limiting configuration
 RATE_LIMITS = [
@@ -323,10 +431,10 @@ async def health_check_db():
             }
         }
     except Exception as e:
-        logger.error(f"DB health check failed: {str(e)}")
+        logger.error(f"DB health check failed: {type(e).__name__}")
         return JSONResponse(
             status_code=503,
-            content={"success": False, "error": f"Service unhealthy: {str(e)}"}
+            content={"success": False, "error": "Service unhealthy: database connection failed"}
         )
 
 def _check_disk_usage() -> None:
@@ -401,8 +509,9 @@ app.api_route("/health/disk", methods=["GET"])(disk_health)
 
 @app.get("/sitemap")
 async def sitemap_data():
-    """Return all indexable URLs for SEO sitemap generation.
-    No auth required — used by the frontend at build time.
+    """Return indexable URLs for SEO sitemap generation.
+    Uses Aggregation Pipelines with $limit to avoid loading entire collections.
+    No auth required -- used by the frontend at build time.
     """
     try:
         database = db.get_db()
@@ -411,73 +520,59 @@ async def sitemap_data():
         podcasts = []
         users = []
 
-        # 1. Collect unique song videoIds from all collections
+        MAX_SONGS = 10000
+        MAX_PLAYLISTS = 5000
+        MAX_PODCASTS = 2000
+        MAX_USERS = 5000
+
+        # 1. Collect unique song videoIds via aggregation (bounded)
         seen_video_ids = set()
 
-        # From playlists
-        playlist_cursor = database[db.PLAYLISTS].find(
-            {"songs": {"$exists": True, "$ne": []}},
-            {"songs.videoId": 1, "songs.title": 1}
-        )
-        async for doc in playlist_cursor:
-            for song in doc.get("songs", []):
-                vid = song.get("videoId")
-                if vid and vid not in seen_video_ids:
-                    seen_video_ids.add(vid)
-                    songs.append({
-                        "videoId": vid,
-                        "title": song.get("title", "")
-                    })
-
-        # From liked songs
-        liked_cursor = database[db.LIKED_SONGS].find(
-            {},
-            {"song.videoId": 1, "song.title": 1}
-        )
-        async for doc in liked_cursor:
-            s = doc.get("song", {})
-            vid = s.get("videoId")
+        # From playlists -- unwind songs pipeline to extract unique videos
+        playlist_songs_pipeline = [
+            {"$match": {"songs": {"$exists": True, "$ne": []}}},
+            {"$unwind": "$songs"},
+            {"$project": {"videoId": "$songs.videoId", "title": "$songs.title"}},
+            {"$group": {"_id": "$videoId", "title": {"$first": "$title"}}},
+            {"$limit": MAX_SONGS},
+        ]
+        async for doc in database[db.PLAYLISTS].aggregate(playlist_songs_pipeline, allowDiskUse=True):
+            vid = doc.get("_id")
             if vid and vid not in seen_video_ids:
                 seen_video_ids.add(vid)
-                songs.append({
-                    "videoId": vid,
-                    "title": s.get("title", "")
-                })
+                songs.append({"videoId": vid, "title": doc.get("title", "")})
 
-        # 2. Collect public playlists
-        playlist_list_cursor = database[db.PLAYLISTS].find(
+        # From liked songs (bounded)
+        liked_pipeline = [
+            {"$group": {"_id": "$song.videoId", "title": {"$first": "$song.title"}}},
+            {"$limit": MAX_SONGS},
+        ]
+        async for doc in database[db.LIKED_SONGS].aggregate(liked_pipeline, allowDiskUse=True):
+            vid = doc.get("_id")
+            if vid and vid not in seen_video_ids:
+                seen_video_ids.add(vid)
+                songs.append({"videoId": vid, "title": doc.get("title", "")})
+
+        # 2. Public playlists (bounded)
+        async for doc in database[db.PLAYLISTS].find(
             {"visibility": "public"},
             {"_id": 1, "name": 1}
-        )
-        async for doc in playlist_list_cursor:
-            playlists.append({
-                "id": str(doc["_id"]),
-                "name": doc.get("name", "")
-            })
+        ).limit(MAX_PLAYLISTS):
+            playlists.append({"id": str(doc["_id"]), "name": doc.get("name", "")})
 
-        # 3. Collect podcast shows
-        podcast_cursor = database[db.PODCAST_SHOWS].find(
-            {},
-            {"_id": 1, "title": 1}
-        )
-        async for doc in podcast_cursor:
-            podcasts.append({
-                "id": str(doc["_id"]),
-                "title": doc.get("title", "")
-            })
+        # 3. Podcast shows (bounded)
+        async for doc in database[db.PODCAST_SHOWS].find(
+            {}, {"_id": 1, "title": 1}
+        ).limit(MAX_PODCASTS):
+            podcasts.append({"id": str(doc["_id"]), "title": doc.get("title", "")})
 
-        # 4. Collect public user profiles
-        user_cursor = database[db.USERS].find(
-            {},
-            {"username": 1, "displayName": 1}
-        )
-        async for doc in user_cursor:
+        # 4. Public user profiles (bounded)
+        async for doc in database[db.USERS].find(
+            {}, {"username": 1, "displayName": 1}
+        ).limit(MAX_USERS):
             username = doc.get("username")
             if username:
-                users.append({
-                    "username": username,
-                    "displayName": doc.get("displayName", "")
-                })
+                users.append({"username": username, "displayName": doc.get("displayName", "")})
 
         return {
             "success": True,
@@ -496,8 +591,8 @@ async def sitemap_data():
             }
         }
     except Exception as e:
-        logger.error(f"Error generating sitemap data: {str(e)}")
+        logger.error(f"Error generating sitemap data: {type(e).__name__}")
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(e)}
+            content={"success": False, "error": "Failed to generate sitemap data."}
         )

@@ -40,9 +40,20 @@ def configure_dns_resolver():
 def connect_db():
     configure_dns_resolver()
     mongo_uri = MONGODB_URI
-    db_instance.client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=8000)
+    db_instance.client = AsyncIOMotorClient(
+        mongo_uri,
+        serverSelectionTimeoutMS=8000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=10000,
+        maxPoolSize=100,
+        minPoolSize=10,
+        maxIdleTimeMS=45000,
+        waitQueueTimeoutMS=5000,
+        retryWrites=True,
+        retryReads=True,
+    )
     db_instance.db = db_instance.client[DB_NAME]
-    logger.info(f"Connected to MongoDB database: {DB_NAME}")
+    logger.info(f"Connected to MongoDB database: {DB_NAME} (pool: 100/10)")
 
 def close_db():
     if db_instance.client:

@@ -1,11 +1,20 @@
 "use client";
 
-import AICuratorChat from "web/components/AICuratorChat";
+import dynamic from "next/dynamic";
 import { Sparkles, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+
+const AICuratorChat = dynamic(() => import("web/components/AICuratorChat"), {
+  loading: () => (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  ),
+  ssr: false,
+});
 
 export default function FlowPage() {
   const { token, user } = useAuthStore();

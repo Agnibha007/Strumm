@@ -23,28 +23,35 @@ const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"
 });
 
 export default function EditorialPlayer() {
-  const {
-    currentSong,
-    isPlaying,
-    currentTime,
-    duration,
-    volume,
-    queue,
-    repeatMode,
-    isShuffle,
-    playerRef,
-    togglePlay,
-    next,
-    prev,
-    setVolume,
-    setCurrentTime,
-    setShuffle,
-    setRepeatMode,
-    currentIndex,
-    podcastMode,
-    playerError,
-    isPlayerLoading,
-  } = usePlayerStore();
+  // Granular selectors to minimize re-renders:
+  // currentTime changes every 250ms — isolate it from other state
+  const currentTime = usePlayerStore((s) => s.currentTime);
+  const setCurrentTime = usePlayerStore((s) => s.setCurrentTime);
+  const duration = usePlayerStore((s) => s.duration);
+
+  // Static/rarely-changing state
+  const currentSong = usePlayerStore((s) => s.currentSong);
+  const queue = usePlayerStore((s) => s.queue);
+  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const repeatMode = usePlayerStore((s) => s.repeatMode);
+  const isShuffle = usePlayerStore((s) => s.isShuffle);
+  const podcastMode = usePlayerStore((s) => s.podcastMode);
+  const playerError = usePlayerStore((s) => s.playerError);
+  const isPlayerLoading = usePlayerStore((s) => s.isPlayerLoading);
+
+  // Frequently-changing derived state
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const volume = usePlayerStore((s) => s.volume);
+
+  // Actions (stable references — safe to batch)
+  const playerRef = usePlayerStore((s) => s.playerRef);
+  const togglePlay = usePlayerStore((s) => s.togglePlay);
+  const next = usePlayerStore((s) => s.next);
+  const prev = usePlayerStore((s) => s.prev);
+  const setVolume = usePlayerStore((s) => s.setVolume);
+  const setShuffle = usePlayerStore((s) => s.setShuffle);
+  const setRepeatMode = usePlayerStore((s) => s.setRepeatMode);
+
   const { token, fetchProfile } = useAuthStore();
 
   const { isAnimated } = useThemeStore();

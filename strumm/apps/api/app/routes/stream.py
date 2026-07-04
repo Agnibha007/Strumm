@@ -105,7 +105,7 @@ async def resolve_track(
         logger.error(f"Error resolving track {id}: {str(e)}")
         return {
             "success": False,
-            "error": f"Failed to resolve track: {str(e)}",
+            "error": "An internal error occurred.",
         }
 
 
@@ -144,17 +144,12 @@ async def proxy_image(
     """
     try:
         from app.services.security import assert_public_http_url
-        import httpx
+        from app.services.http_client import get_http_client
 
         safe_url = assert_public_http_url(url)
-
-        async with httpx.AsyncClient(
-            headers={"User-Agent": "Strumm/1.0"},
-            follow_redirects=True,
-            timeout=8.0,
-        ) as client:
-            response = await client.get(safe_url)
-            response.raise_for_status()
+        client = get_http_client()
+        response = await client.get(safe_url, timeout=8.0)
+        response.raise_for_status()
 
         raw_bytes = response.content
         content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].lower()

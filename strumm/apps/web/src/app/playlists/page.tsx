@@ -2,12 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
-import PlaylistImport from "web/components/PlaylistImport";
+import dynamic from "next/dynamic";
 import { Plus, BookOpen, FilePlus2, Upload, X, Search } from "lucide-react";
 import { Playlist } from "@strumm/types";
 import { apiUrl, cleanText } from "web/lib/api";
 import { useRouter } from "next/navigation";
 import SongArtwork from "web/components/SongArtwork";
+
+const PlaylistImport = dynamic(() => import("web/components/PlaylistImport"), {
+  loading: () => (
+    <div className="p-4 bg-surface/30 border border-border/40 rounded-lg animate-pulse">
+      <div className="h-4 w-40 bg-border/40 rounded mb-3" />
+      <div className="h-10 bg-border/30 rounded" />
+    </div>
+  ),
+  ssr: false,
+});
 
 export default function PlaylistsPage() {
   const { token } = useAuthStore();

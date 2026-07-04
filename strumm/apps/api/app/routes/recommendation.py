@@ -121,7 +121,7 @@ async def get_flow(
         }
     except Exception as e:
         logger.error(f"Error resolving Flow curation: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 @router.get("/explore-mix")
 async def get_discover(
@@ -137,7 +137,7 @@ async def get_discover(
         }
     except Exception as e:
         logger.error(f"Error creating discovery recommendation: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}
 
 # --- RADIO MODE ---
 
@@ -202,7 +202,7 @@ async def get_radio(
         }
     except Exception as e:
         logger.error(f"Error generating radio for {video_id}: {str(e)}")
-        return {"success": False, "error": f"Failed to generate radio: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}
 
 
 from pydantic import BaseModel
@@ -427,4 +427,4 @@ async def explore_chat(
         }
     except Exception as e:
         logger.error(f"Error in explore chat interaction: {str(e)}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "An internal error occurred."}

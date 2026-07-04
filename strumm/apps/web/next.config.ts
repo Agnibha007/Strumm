@@ -4,8 +4,17 @@ const apiOrigin = (process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_AP
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@strumm/types", "@strumm/ui", "@strumm/database"],
+  reactStrictMode: true,
   images: {
-    unoptimized: true,
+    formats: ["image/avif", "image/webp"],
+    remotePatterns: [
+      { protocol: "https", hostname: "img.youtube.com" },
+      { protocol: "https", hostname: "i.ytimg.com" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+      { protocol: "https", hostname: "i.scdn.co" },
+      { protocol: "https", hostname: "mosaic.scdn.co" },
+      { protocol: "https", hostname: "image-cdn-ak.spotifycdn.com" },
+    ],
   },
   eslint: {
     // Skip linting during the build to avoid type‑checking errors that are not critical for production.

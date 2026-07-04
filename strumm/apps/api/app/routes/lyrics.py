@@ -60,25 +60,27 @@ async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = No
         params["duration"] = str(duration)
 
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": HTTP_USER_AGENT}, timeout=5.0) as client:
-            response = await client.get(
-                f"{LRCLIB_BASE_URL}/search",
-                params={"track_name": params["track_name"], "artist_name": params["artist_name"]},
-            )
-            response.raise_for_status()
-            data = choose_lrclib_match(response.json(), title, artist)
-            if not data:
-                return None
+        from app.services.http_client import get_http_client
+        client = get_http_client()
+        response = await client.get(
+            f"{LRCLIB_BASE_URL}/search",
+            params={"track_name": params["track_name"], "artist_name": params["artist_name"]},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        data = choose_lrclib_match(response.json(), title, artist)
+        if not data:
+            return None
 
-            synced = sanitize_multiline_text(data.get("syncedLyrics") or "", max_length=50000)
-            plain = sanitize_multiline_text(data.get("plainLyrics") or "", max_length=50000)
-            if synced or plain:
-                return {
-                    "plain": plain,
-                    "synced": synced,
-                    "source": "lrclib",
-                    "isSynced": has_lrc_timestamps(synced),
-                }
+        synced = sanitize_multiline_text(data.get("syncedLyrics") or "", max_length=50000)
+        plain = sanitize_multiline_text(data.get("plainLyrics") or "", max_length=50000)
+        if synced or plain:
+            return {
+                "plain": plain,
+                "synced": synced,
+                "source": "lrclib",
+                "isSynced": has_lrc_timestamps(synced),
+            }
     except Exception as e:
         logger.warning(f"LRCLIB lookup failed for '{title}' by '{artist}': {type(e).__name__}: {e!r}")
     return None
@@ -209,4 +211,4 @@ async def get_lyrics(
         return {"success": True, "data": result}
     except Exception as e:
         logger.error(f"Error in lyrics resolution for {id}: {str(e)}")
-        return {"success": False, "error": f"Failed to retrieve lyrics: {str(e)}"}
+        return {"success": False, "error": "An internal error occurred."}

@@ -161,17 +161,19 @@ async def _dispatch_via_resend(receiver_email: str, subject: str, html_content: 
     if not api_key:
         return False
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.post(
-                "https://api.resend.com/emails",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"from": SENDER_FROM, "to": [receiver_email], "subject": subject, "html": html_content},
-            )
-            if resp.status_code in {200, 201}:
-                logger.info(f"Resend dispatched '{subject}' to {receiver_email}")
-                return True
-            logger.error(f"Resend error {resp.status_code}: {resp.text[:200]}")
-            return False
+        from app.services.http_client import get_http_client
+        client = get_http_client()
+        resp = await client.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"from": SENDER_FROM, "to": [receiver_email], "subject": subject, "html": html_content},
+            timeout=8.0,
+        )
+        if resp.status_code in {200, 201}:
+            logger.info(f"Resend dispatched '{subject}' to {receiver_email}")
+            return True
+        logger.error(f"Resend error {resp.status_code}: {resp.text[:200]}")
+        return False
     except Exception as e:
         logger.error(f"Resend dispatch failed: {e}")
         return False

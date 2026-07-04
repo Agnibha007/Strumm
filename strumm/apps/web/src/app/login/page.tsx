@@ -1,10 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import AuthSystem from "web/components/AuthSystem";
+import dynamic from "next/dynamic";
 import { useThemeStore } from "web/store/useThemeStore";
 import { Music, Play, Radio, Users, Sparkles, Disc, Heart, Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
+
+const AuthSystem = dynamic(() => import("web/components/AuthSystem"), {
+  loading: () => (
+    <div className="w-full max-w-sm mx-auto p-8 bg-surface/30 border border-border/40 rounded-2xl animate-pulse">
+      <div className="h-8 w-32 bg-border/40 rounded mb-4" />
+      <div className="h-4 w-48 bg-border/30 rounded mb-8" />
+      <div className="space-y-3">
+        <div className="h-10 bg-border/30 rounded" />
+        <div className="h-10 bg-border/30 rounded" />
+        <div className="h-10 bg-primary/20 rounded" />
+      </div>
+    </div>
+  ),
+  ssr: false,
+});
 
 export default function LoginPage() {
   const { customImage } = useThemeStore();

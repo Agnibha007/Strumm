@@ -38,14 +38,16 @@ def _headers() -> Dict[str, str]:
 
 
 async def _get(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        response = await client.get(
-            f"{PODCAST_INDEX_BASE_URL}{path}",
-            params=params,
-            headers=_headers(),
-        )
-        response.raise_for_status()
-        return response.json()
+    from app.services.http_client import get_http_client
+    client = get_http_client()
+    response = await client.get(
+        f"{PODCAST_INDEX_BASE_URL}{path}",
+        params=params,
+        headers=_headers(),
+        timeout=8.0,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def _categories(value: Any) -> List[str]:

@@ -134,11 +134,12 @@
   --font-serif: var(--font-playfair), serif;
 }
 
-/* Custom premium transitions */
-* {
-  transition: background-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              border-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
-              box-shadow 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+/* Theme-aware transitions for interactive elements only */
+a, button, [role="button"], input, textarea, select, .transition {
+  transition: background-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 body {
