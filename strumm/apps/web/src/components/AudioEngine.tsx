@@ -147,7 +147,7 @@ export default function AudioEngine() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Media Session API for Lock-Screen Controls
+  // Media Session API for Lock-Screen Controls and Media Keys
   useEffect(() => {
     if ("mediaSession" in navigator && currentSong) {
       // Force secure thumbnail to prevent mixed content issues
@@ -170,13 +170,15 @@ export default function AudioEngine() {
       // Synchronize action handlers to control playback mechanisms
       const updateHandlers = () => {
         navigator.mediaSession.setActionHandler("play", () => {
-          if (!isPlaying) {
-            usePlayerStore.getState().togglePlay();
+          const state = usePlayerStore.getState();
+          if (!state.isPlaying) {
+            state.togglePlay();
           }
         });
         navigator.mediaSession.setActionHandler("pause", () => {
-          if (isPlaying) {
-            usePlayerStore.getState().togglePlay();
+          const state = usePlayerStore.getState();
+          if (state.isPlaying) {
+            state.togglePlay();
           }
         });
         navigator.mediaSession.setActionHandler("previoustrack", () => {
@@ -194,22 +196,40 @@ export default function AudioEngine() {
         navigator.mediaSession.setActionHandler("seekto", (details) => {
           if (details.seekTime !== undefined) {
             const time = details.seekTime;
-            usePlayerStore.getState().playerRef?.seekTo(time);
-            usePlayerStore.getState().setCurrentTime(time);
+            const state = usePlayerStore.getState();
+            state.playerRef?.seekTo(time);
+            state.setCurrentTime(time);
           }
         });
         navigator.mediaSession.setActionHandler("seekbackward", (details) => {
           const offset = details.seekOffset || 10;
-          const targetTime = Math.max(0, usePlayerStore.getState().currentTime - offset);
-          usePlayerStore.getState().playerRef?.seekTo(targetTime);
-          usePlayerStore.getState().setCurrentTime(targetTime);
+          const state = usePlayerStore.getState();
+          const targetTime = Math.max(0, state.currentTime - offset);
+          state.playerRef?.seekTo(targetTime);
+          state.setCurrentTime(targetTime);
         });
         navigator.mediaSession.setActionHandler("seekforward", (details) => {
           const offset = details.seekOffset || 10;
-          const targetTime = Math.min(usePlayerStore.getState().duration, usePlayerStore.getState().currentTime + offset);
-          usePlayerStore.getState().playerRef?.seekTo(targetTime);
-          usePlayerStore.getState().setCurrentTime(targetTime);
+          const state = usePlayerStore.getState();
+          const targetTime = Math.min(state.duration, state.currentTime + offset);
+          state.playerRef?.seekTo(targetTime);
+          state.setCurrentTime(targetTime);
         });
+
+        // Additional handlers for volume and skip-ad controls
+        try {
+          navigator.mediaSession.setActionHandler("skipad", () => {
+            usePlayerStore.getState().next();
+          });
+        } catch (e) {}
+
+        // Try to set playback rate handlers if supported
+        try {
+          const actions = ["togglecaptions"];
+          for (const action of actions) {
+            navigator.mediaSession.setActionHandler(action as any, null);
+          }
+        } catch (e) {}
       };
 
       updateHandlers();
@@ -217,7 +237,7 @@ export default function AudioEngine() {
 
     return () => {
       if ("mediaSession" in navigator) {
-        const actions = ["play", "pause", "previoustrack", "nexttrack", "seekto", "seekbackward", "seekforward"] as const;
+        const actions = ["play", "pause", "previoustrack", "nexttrack", "seekto", "seekbackward", "seekforward", "skipad"] as const;
         for (const action of actions) {
           try {
             navigator.mediaSession.setActionHandler(action, null);
@@ -226,6 +246,82 @@ export default function AudioEngine() {
       }
     };
   }, [currentSong, isPlaying]);
+
+  // Comprehensive keyboard listener for media keys (covers physical media buttons)
+  useEffect(() => {
+    const handleMediaKeyboardEvent = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      const state = usePlayerStore.getState();
+
+      // Handle standard media key codes that come through as keyboard events
+      // Different browsers and OSes report them differently
+      switch (e.code) {
+        case "MediaPlayPause":
+        case "MediaTogglePlayPause":
+          e.preventDefault();
+          state.togglePlay();
+          break;
+        case "MediaPlay":
+          e.preventDefault();
+          if (!state.isPlaying) {
+            state.togglePlay();
+          }
+          break;
+        case "MediaPause":
+          e.preventDefault();
+          if (state.isPlaying) {
+            state.togglePlay();
+          }
+          break;
+        case "MediaNextTrack":
+        case "MediaTrackNext":
+          e.preventDefault();
+          state.next();
+          break;
+        case "MediaPreviousTrack":
+        case "MediaTrackPrevious":
+          e.preventDefault();
+          if (state.currentTime > 5) {
+            state.playerRef?.seekTo(0);
+            state.setCurrentTime(0);
+          } else {
+            state.prev();
+          }
+          break;
+        case "MediaStop":
+          e.preventDefault();
+          state.togglePlay();
+          break;
+        case "AudioVolumeUp":
+          e.preventDefault();
+          const newVolumeUp = Math.min(1, state.volume + 0.1);
+          state.setVolume(newVolumeUp);
+          break;
+        case "AudioVolumeDown":
+          e.preventDefault();
+          const newVolumeDown = Math.max(0, state.volume - 0.1);
+          state.setVolume(newVolumeDown);
+          break;
+        case "AudioVolumeMute":
+          e.preventDefault();
+          // Toggle mute by setting volume to 0 or restoring previous volume
+          const currentVolume = state.volume;
+          state.setVolume(currentVolume === 0 ? 0.5 : 0);
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleMediaKeyboardEvent);
+    return () => window.removeEventListener("keydown", handleMediaKeyboardEvent);
+  }, []);
 
   // Dynamically update document title based on active track and playback state
   useEffect(() => {
