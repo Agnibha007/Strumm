@@ -93,8 +93,10 @@ export function createRadioActions(
       if (!isRadio || !radioSeed) return;
 
       try {
+        const token = useAuthStore.getState().token;
         const data = await apiFetch<{ songs: Song[] }>(
           `/radio/${radioSeed}?limit=20`,
+          { token },
         );
         if (data?.songs) {
           const existingVids = new Set(queue.map((s: Song) => s.videoId));
