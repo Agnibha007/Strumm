@@ -6,6 +6,8 @@ import AuthWrapper from "web/components/AuthWrapper";
 import PersistentPlayerWrapper from "web/components/PersistentPlayerWrapper";
 import NotificationToast from "web/components/NotificationToast";
 import { RealTimeProvider } from "web/services/realtime";
+import ContentWrapper from "web/components/ContentWrapper";
+import ConditionalFooter from "web/components/ConditionalFooter";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -144,7 +146,29 @@ export default function RootLayout({
               "@type": "Organization",
               "name": "Strumm",
               "url": appUrl,
-              "logo": `${appUrl}/strumm-logo.png`
+              "logo": `${appUrl}/strumm-logo.png`,
+              "sameAs": [
+                "https://github.com/strumm/strumm"
+              ]
+            })
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "SoftwareApplication",
+              "name": "Strumm",
+              "operatingSystem": "Web",
+              "applicationCategory": "MusicApplication",
+              "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD"
+              },
+              "description": "Strumm is a premium, handcrafted music ecosystem. Where your music lives, custom playlists, dynamic theme engine, and smart listening stats.",
+              "url": appUrl
             })
           }}
         />
@@ -189,16 +213,22 @@ export default function RootLayout({
       <body
         className={`${outfit.variable} ${playfair.variable} antialiased selection:bg-primary selection:text-white relative`}
       >
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[999] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-lg focus:text-sm focus:font-semibold focus:outline-none">
+          Skip to content
+        </a>
         <div className="fixed inset-0 z-[-1] pointer-events-none opacity-[0.15] transition-opacity duration-1000 bg-[radial-gradient(ellipse_at_top,_var(--color-primary)_0%,_transparent_60%)] mix-blend-screen" />
         <Providers>
           <AuthWrapper>
             <RealTimeProvider>
-              {children}
+              <ContentWrapper>
+                {children}
+              </ContentWrapper>
             </RealTimeProvider>
           </AuthWrapper>
           <PersistentPlayerWrapper />
           <NotificationToast />
         </Providers>
+        <ConditionalFooter />
       </body>
     </html>
   );

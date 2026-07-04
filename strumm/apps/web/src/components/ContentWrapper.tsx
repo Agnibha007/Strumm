@@ -1,0 +1,22 @@
+"use client";
+
+import { useAuthStore } from "web/store/useAuthStore";
+
+/**
+ * Client wrapper that conditionally applies the sidebar offset (md:ml-64)
+ * so the login page (which has no sidebar) isn't shifted right on desktop.
+ */
+export default function ContentWrapper({ children }: { children: React.ReactNode }) {
+  const { token } = useAuthStore();
+  const sidebarOffset = token ? "md:ml-64" : "";
+
+  return (
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className={`outline-none pt-14 md:pt-0 pb-8 md:pb-6 transition-all duration-300 ${sidebarOffset}`}
+    >
+      {children}
+    </main>
+  );
+}

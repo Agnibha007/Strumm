@@ -7,6 +7,7 @@ from app.routes.dependencies import get_current_user
 from app.models.schemas import SongSchema, UserSettingsSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
 from app.services.normalizer import canonical_artist, normalize_artist, classify_genre
+from app.services.email_service import send_account_deleted_email
 from pydantic import BaseModel
 import asyncio
 import logging
@@ -970,6 +971,9 @@ async def delete_user_account(current_user: dict = Depends(get_current_user)):
         # Delete user memories
         await database["songMemories"].delete_many({"userId": user_id})
         
+        # Notify via email in background before returning
+        asyncio.create_task(send_account_deleted_email(current_user.get("email", "")))
+
         logger.info(f"User account {user_id} and all associated collections deleted successfully.")
         return {
             "success": True,
@@ -1062,6 +1066,71 @@ async def recalculate_user_stats(current_user: dict = Depends(get_current_user))
     except Exception as e:
         logger.error(f"Error recalculating user statistics live: {str(e)}")
         return {"success": False, "error": str(e)}
+
+@router.get("/profile/export")
+async def export_user_data(current_user: dict = Depends(get_current_user)):
+    """Export all user data for GDPR compliance."""
+    try:
+        database = db.get_db()
+        user_id = current_user["id"]
+        possible_ids = [user_id, parse_object_id(user_id)]
+        
+        # Profile
+        user_data = dict(current_user)
+        if "_id" in user_data:
+            del user_data["_id"]
+        if "password" in user_data:
+            del user_data["password"]
+        
+        # Playlists
+        playlists = []
+        async for p in database[db.PLAYLISTS].find({"userId": {"$in": possible_ids}}):
+            p["id"] = str(p["_id"])
+            del p["_id"]
+            playlists.append(p)
+        
+        # Liked songs
+        liked = []
+        async for l in database[db.LIKED_SONGS].find({"userId": {"$in": possible_ids}}):
+            l["id"] = str(l["_id"])
+            del l["_id"]
+            liked.append(l)
+        
+        # History
+        history = []
+        async for h in database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).sort("playedAt", -1).limit(1000):
+            h["id"] = str(h["_id"])
+            del h["_id"]
+            if "userId" in h:
+                h["userId"] = str(h["userId"])
+            history.append(h)
+        
+        # Memories
+        memories = []
+        async for m in database["songMemories"].find({"userId": {"$in": possible_ids}}).sort("createdAt", -1):
+            m["id"] = str(m["_id"])
+            del m["_id"]
+            memories.append(m)
+        
+        return {
+            "success": True,
+            "data": {
+                "exportedAt": datetime.utcnow().isoformat(),
+                "profile": user_data,
+                "playlists": playlists,
+                "likedSongs": liked,
+                "listeningHistory": history,
+                "memories": memories,
+                "totalPlaylists": len(playlists),
+                "totalLikedSongs": len(liked),
+                "totalHistoryEntries": len(history),
+                "totalMemories": len(memories),
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error exporting user data: {str(e)}")
+        return {"success": False, "error": "Failed to export data."}
+
 
 @router.get("/replay")
 async def get_replay(current_user: dict = Depends(get_current_user)):

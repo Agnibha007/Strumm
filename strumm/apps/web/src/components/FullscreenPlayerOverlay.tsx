@@ -352,6 +352,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
         <button 
           onClick={onClose} 
           className="flex items-center gap-1.5 md:gap-2 text-muted hover:text-text cursor-pointer group transition flex-shrink-0"
+          aria-label="Minimize player"
         >
           <Minimize2 className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform" />
           <span className="text-[10px] md:text-xs uppercase tracking-wider font-semibold">Minimize</span>
@@ -388,6 +389,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                   ? "bg-primary border-primary text-text shadow-md box-glow"
                   : "bg-surface-elevated/40 border-border/30 text-muted hover:text-text hover:border-primary/50"
               }`}
+              aria-pressed={effectiveShowLyrics}
               title={effectiveShowLyrics ? "Hide Lyrics" : "Show Lyrics"}
             >
               <Mic2 className="w-3.5 h-3.5" />
@@ -402,6 +404,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 ? "bg-primary/20 border-primary text-primary shadow-md box-glow"
                 : "border-border/30 bg-surface-elevated/40 text-muted hover:text-primary hover:border-primary/50"
             }`}
+            aria-pressed={isLiked}
             title={isLiked ? "Unlike" : "Like"}
           >
             <Heart className={`w-3.5 h-3.5 ${isLiked ? "fill-current" : ""}`} />
@@ -525,11 +528,12 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                   >
                     <SkipBack className="w-5 h-5 fill-current" />
                   </button>
-                  <button 
-                    onClick={togglePlay} 
-                    className="p-3 bg-text text-background rounded-full hover:scale-110 cursor-pointer transition shadow-md flex items-center justify-center box-glow"
-                    title={isPlaying ? "Pause" : "Play"}
-                  >
+              <button 
+                onClick={togglePlay} 
+                className="p-3 bg-text text-background rounded-full hover:scale-110 cursor-pointer transition shadow-md flex items-center justify-center box-glow"
+                aria-label={isPlaying ? "Pause" : "Play"}
+                title={isPlaying ? "Pause" : "Play"}
+              >
                     {isPlaying ? <Pause className="w-4 h-4 fill-current text-background" /> : <Play className="w-4 h-4 fill-current translate-x-0.5 text-background" />}
                   </button>
                   <button 
@@ -727,6 +731,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <button
                 onClick={() => setShuffle(!isShuffle)}
                 className={`p-2 rounded-lg cursor-pointer transition hover:scale-105 ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
+                aria-pressed={isShuffle}
                 title="Shuffle"
               >
                 <Shuffle className="w-4 h-4" />
@@ -735,6 +740,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <button 
                 onClick={prev} 
                 className="p-2 text-muted hover:text-text cursor-pointer transition hover:scale-105"
+                aria-label="Previous track"
                 title="Previous"
               >
                 <SkipBack className="w-5 h-5 fill-current" />
@@ -755,6 +761,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <button 
                 onClick={next} 
                 className="p-2 text-muted hover:text-text cursor-pointer transition hover:scale-105"
+                aria-label="Next track"
                 title="Next"
               >
                 <SkipForward className="w-5 h-5 fill-current" />
@@ -763,6 +770,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}
                 className={`p-2 rounded-lg cursor-pointer relative transition hover:scale-105 ${repeatMode !== "none" ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
+                aria-label={`Repeat mode: ${repeatMode === "none" ? "off" : repeatMode === "all" ? "all" : "one"}`}
                 title="Repeat Mode"
               >
                 <Repeat className="w-4 h-4" />

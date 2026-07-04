@@ -2,15 +2,17 @@ import os
 import re
 import secrets
 import hashlib
+import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, Cookie
 from pydantic import BaseModel, EmailStr
 from bson import ObjectId
 from app.database import mongodb as db
+from app.routes.dependencies import get_current_user
 from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password
-from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_email
-from app.services.security import sanitize_text, sanitize_username, parse_object_id
+from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_email, send_password_changed_email, send_welcome_email, send_email_changed_email
+from app.services.security import sanitize_text, sanitize_username, parse_object_id, validate_password_strength
 import httpx
 import logging
 
@@ -69,6 +71,139 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     )
 
 
+
+# ─── Session management routes ───
+
+class ChangePasswordRequest(BaseModel):
+    currentPassword: str
+    newPassword: str
+
+class ChangeEmailRequest(BaseModel):
+    password: str
+    newEmail: str
+
+@router.get("/sessions")
+async def list_sessions(current_user: dict = Depends(get_current_user)):
+    """List all active sessions for the current user."""
+    try:
+        database = db.get_db()
+        user_id = current_user["id"]
+        cursor = database[db.SESSIONS].find(
+            {"userId": user_id, "expiresAt": {"$gt": datetime.utcnow()}}
+        ).sort("createdAt", -1)
+        sessions = []
+        async for doc in cursor:
+            sessions.append({
+                "_id": str(doc["_id"]),
+                "device": doc.get("device", "Unknown Device"),
+                "createdAt": doc.get("createdAt", datetime.utcnow()).isoformat(),
+                "expiresAt": doc.get("expiresAt", datetime.utcnow()).isoformat(),
+            })
+        return {"success": True, "data": {"sessions": sessions}}
+    except Exception as e:
+        logger.error(f"Error listing sessions: {str(e)}")
+        return {"success": False, "error": "Failed to list sessions."}
+
+@router.delete("/sessions/{session_id}")
+async def revoke_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Revoke a specific session."""
+    try:
+        database = db.get_db()
+        session_oid = parse_object_id(session_id)
+        session = await database[db.SESSIONS].find_one({"_id": session_oid, "userId": current_user["id"]})
+        if not session:
+            return {"success": False, "error": "Session not found."}
+        await database[db.SESSIONS].delete_one({"_id": session_oid})
+        return {"success": True, "data": {"message": "Session revoked."}}
+    except Exception as e:
+        logger.error(f"Error revoking session: {str(e)}")
+        return {"success": False, "error": "Failed to revoke session."}
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Change password with current password verification."""
+    try:
+        database = db.get_db()
+        user = await database[db.USERS].find_one({"_id": parse_object_id(current_user["id"])})
+        if not user:
+            return {"success": False, "error": "User not found."}
+        
+        hashed = user.get("password")
+        if not hashed:
+            return {"success": False, "error": "This account does not use password login."}
+        
+        if not verify_password(payload.currentPassword, hashed):
+            return {"success": False, "error": "Current password is incorrect."}
+        
+        validation = validate_password_strength(payload.newPassword)
+        if not validation["valid"]:
+            return {"success": False, "error": validation["message"]}
+        
+        new_hashed = hash_password(payload.newPassword)
+        await database[db.USERS].update_one(
+            {"_id": parse_object_id(current_user["id"])},
+            {"$set": {"password": new_hashed}}
+        )
+        
+        # Notify via email in background
+        asyncio.create_task(send_password_changed_email(user.get("email", "")))
+        
+        return {"success": True, "data": {"message": "Password changed successfully."}}
+    except Exception as e:
+        logger.error(f"Error changing password: {str(e)}")
+        return {"success": False, "error": "Failed to change password."}
+
+
+@router.post("/change-email")
+async def change_email(
+    payload: ChangeEmailRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Change email address with password verification."""
+    try:
+        database = db.get_db()
+        user = await database[db.USERS].find_one({"_id": parse_object_id(current_user["id"])})
+        if not user:
+            return {"success": False, "error": "User not found."}
+        
+        hashed = user.get("password")
+        if not hashed:
+            return {"success": False, "error": "This account does not use password login. Cannot change email via password verification."}
+        
+        if not verify_password(payload.password, hashed):
+            return {"success": False, "error": "Password is incorrect."}
+        
+        new_email = payload.newEmail.lower().strip()
+        if not new_email or "@" not in new_email:
+            return {"success": False, "error": "Invalid email address."}
+        
+        # Check that the new email isn't already taken
+        existing = await database[db.USERS].find_one(
+            {"email": new_email, "_id": {"$ne": parse_object_id(current_user["id"])}}
+        )
+        if existing:
+            return {"success": False, "error": "This email is already associated with another account."}
+        
+        old_email = user.get("email", "")
+        
+        # Update the email
+        await database[db.USERS].update_one(
+            {"_id": parse_object_id(current_user["id"])},
+            {"$set": {"email": new_email}}
+        )
+        
+        # Notify old email in background
+        asyncio.create_task(send_email_changed_email(old_email, new_email))
+        
+        logger.info(f"Email changed from {old_email} to {new_email} for user {current_user['id']}")
+        
+        return {"success": True, "data": {"message": "Email address changed successfully."}}
+    except Exception as e:
+        logger.error(f"Error changing email: {str(e)}")
+        return {"success": False, "error": "Failed to change email address."}
 
 
 class EmailLoginRequest(BaseModel):
@@ -216,6 +351,10 @@ async def send_signup_otp(request: EmailSignupRequest):
         hashed = hash_otp(otp_code)
         expiry = datetime.utcnow() + timedelta(minutes=10) # 10 mins validity
         
+        # Validate password strength before hashing
+        pw_validation = validate_password_strength(request.password)
+        if not pw_validation["valid"]:
+            return {"success": False, "error": pw_validation["message"]}
         hashed_pass = hash_password(request.password)
         # Upsert OTP document with metadata (storing username, displayName & password until OTP verifies)
         await database["otps"].update_one(
@@ -331,6 +470,8 @@ async def verify_otp(
             user_id = str(res.inserted_id)
             user = new_user
             user["_id"] = res.inserted_id
+            # Fire welcome email in background
+            asyncio.create_task(send_welcome_email(email, metadata["username"]))
         else:
             # We are in LOGIN flow
             if not user:
@@ -680,9 +821,10 @@ async def reset_password(
         if reset_doc.get("used"):
             return {"success": False, "error": "This reset link has already been used."}
         
-        # Validate password
-        if len(new_password) < 6:
-            return {"success": False, "error": "Password must be at least 6 characters long."}
+        # Validate password strength
+        validation = validate_password_strength(new_password)
+        if not validation["valid"]:
+            return {"success": False, "error": validation["message"]}
         
         # Hash new password
         from app.services.auth_utils import hash_password
@@ -701,6 +843,9 @@ async def reset_password(
         )
         
         logger.info(f"Password reset successful for {email}")
+        
+        # Fire password changed notification in background
+        asyncio.create_task(send_password_changed_email(email))
         
         return {
             "success": True,

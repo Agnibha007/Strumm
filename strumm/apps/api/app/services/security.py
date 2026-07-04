@@ -69,6 +69,23 @@ def escaped_regex(value: str) -> dict:
     return {"$regex": re.escape(sanitize_text(value, max_length=120)), "$options": "i"}
 
 
+def validate_password_strength(password: str) -> dict:
+    """Validate password strength.
+    Returns {"valid": True/False, "message": str}.
+    """
+    if len(password) < 8:
+        return {"valid": False, "message": "Password must be at least 8 characters long."}
+    if len(password) > 128:
+        return {"valid": False, "message": "Password must be no more than 128 characters long."}
+    if not re.search(r"[A-Z]", password):
+        return {"valid": False, "message": "Password must contain at least one uppercase letter."}
+    if not re.search(r"[a-z]", password):
+        return {"valid": False, "message": "Password must contain at least one lowercase letter."}
+    if not re.search(r"[0-9]", password):
+        return {"valid": False, "message": "Password must contain at least one number."}
+    return {"valid": True, "message": "Password meets strength requirements."}
+
+
 def parse_object_id(value: str) -> ObjectId:
     cleaned = sanitize_text(value, max_length=32)
     if not ObjectId.is_valid(cleaned):

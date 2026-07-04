@@ -1,5 +1,6 @@
 import os
 import time
+import uuid
 import shutil
 import asyncio
 from collections import OrderedDict
@@ -16,11 +17,24 @@ from app.services.realtime.websocket import router as realtime_router
 import logging
 
 # Setup Logging
+class RequestIDFilter(logging.Filter):
+    """Log filter that adds request_id from the current request context."""
+    def filter(self, record):
+        if not hasattr(record, 'request_id'):
+            record.request_id = getattr(thread_local, 'request_id', 'system')
+        return True
+
+import threading
+thread_local = threading.local()
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s [%(request_id)s]: %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIDFilter())
+
 logger = logging.getLogger("strumm-api")
 
 # Disk storage threshold
@@ -157,50 +171,106 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Efficient Rate Limiting Middleware using LRU with TTL
-class RateLimiter:
-    def __init__(self, max_requests: int = 100, window_seconds: int = 10, max_clients: int = 500):
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self._clients: OrderedDict[str, list[float]] = OrderedDict()
-        self._max_clients = max_clients
+# Per-endpoint rate limiting configuration
+RATE_LIMITS = [
+    # (path_prefix, max_requests, window_seconds)
+    (["/auth/login"], 5, 60),               # Login: 5 per minute
+    (["/auth/signup"], 3, 60),              # Signup: 3 per minute
+    (["/auth/forgot-password"], 3, 60),     # Forgot password: 3 per minute
+    (["/auth/email", "/auth/google"], 5, 60),  # OTP/Google auth: 5 per minute
+    (["/auth/verify"], 10, 60),             # OTP verify: 10 per minute
+    (["/auth/refresh", "/auth/logout"], 30, 60),  # Session ops: 30 per minute
+    (["/search"], 30, 60),                  # Search: 30 per minute
+    (["/recommend"], 20, 60),               # Recommendations: 20 per minute
+    (["/explore-chat"], 15, 60),            # AI Chat: 15 per minute
+    (["/playlist"], 30, 60),                # Playlist CRUD: 30 per minute
+    (["/friends"], 20, 60),                 # Friend requests: 20 per minute
+    (["/profile"], 20, 60),                 # Profile operations: 20 per minute
+]
 
-    def _cleanup(self, client_ip: str, current_time: float):
-        """Remove expired timestamps for a client."""
-        if client_ip in self._clients:
-            timestamps = self._clients[client_ip]
-            cutoff = current_time - self.window_seconds
-            self._clients[client_ip] = [t for t in timestamps if t > cutoff]
-            if not self._clients[client_ip]:
-                del self._clients[client_ip]
-                return True
-        return False
+# General API limit (fallback for all other routes)
+GENERAL_MAX = 100
+GENERAL_WINDOW = 10
+
+
+class PerEndpointRateLimiter:
+    """Per-endpoint rate limiter with separate quotas for different route prefixes.
+    Falls back to the general limit for unmatched routes.
+    Uses LRU eviction to limit memory usage.
+    """
+    def __init__(self, max_clients: int = 1000):
+        self._max_clients = max_clients
+        # Nested dict: {client_ip: {limit_key: [timestamps]}}
+        self._clients: dict[str, OrderedDict[str, list[float]]] = {}
+
+    def _get_limit_for_path(self, path: str) -> tuple[int, int]:
+        norm_path = path.rstrip("/")
+        for prefixes, max_req, window in RATE_LIMITS:
+            for prefix in prefixes:
+                if norm_path.startswith(prefix):
+                    return max_req, window
+        return GENERAL_MAX, GENERAL_WINDOW
+
+    def _cleanup(self, client_ip: str, limit_key: str, window_seconds: int, current_time: float):
+        """Remove expired timestamps for a specific client and limit."""
+        if client_ip in self._clients and limit_key in self._clients[client_ip]:
+            timestamps = self._clients[client_ip][limit_key]
+            cutoff = current_time - window_seconds
+            remaining = [t for t in timestamps if t > cutoff]
+            if remaining:
+                self._clients[client_ip][limit_key] = remaining
+                self._clients[client_ip].move_to_end(limit_key)
+            else:
+                del self._clients[client_ip][limit_key]
+                if not self._clients[client_ip]:
+                    del self._clients[client_ip]
 
     def _evict_if_full(self):
         while len(self._clients) > self._max_clients:
-            self._clients.popitem(last=False)
+            self._clients.pop(next(iter(self._clients)))
 
-    def is_rate_limited(self, client_ip: str) -> bool:
+    def is_rate_limited(self, client_ip: str, path: str) -> bool:
         current_time = time.time()
-        self._cleanup(client_ip, current_time)
+        max_requests, window_seconds = self._get_limit_for_path(path)
+        limit_key = f"{max_requests}/{window_seconds}"
 
-        timestamps = self._clients.get(client_ip, [])
-        if len(timestamps) >= self.max_requests:
+        self._cleanup(client_ip, limit_key, window_seconds, current_time)
+
+        if client_ip not in self._clients:
+            self._clients[client_ip] = OrderedDict()
+
+        timestamps = self._clients[client_ip].get(limit_key, [])
+        if len(timestamps) >= max_requests:
             return True
 
         timestamps.append(current_time)
-        self._clients[client_ip] = timestamps
-        self._clients.move_to_end(client_ip)
+        self._clients[client_ip][limit_key] = timestamps
+        self._clients[client_ip].move_to_end(limit_key)
         self._evict_if_full()
         return False
 
 
-rate_limiter = RateLimiter()
+rate_limiter = PerEndpointRateLimiter()
+
+# Request ID middleware — assigns a unique ID to every request for traceability
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    thread_local.request_id = request_id
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        thread_local.request_id = ""
 
 @app.middleware("http")
 async def rate_limiting_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "127.0.0.1"
-    if rate_limiter.is_rate_limited(client_ip):
+    path = request.url.path
+    if rate_limiter.is_rate_limited(client_ip, path):
+        req_id = request.headers.get("X-Request-ID", "unknown")
+        logger.warning(f"Rate limit exceeded for {client_ip} on {path} [req_id={req_id}]")
         return JSONResponse(
             status_code=429,
             content={"success": False, "error": "Rate limit exceeded. Please slow down."}
