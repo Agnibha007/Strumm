@@ -77,6 +77,7 @@ interface PlayerState {
   isRadio: boolean;
   radioSeed: string | null;
   radioSession: string | null;
+  radioHistory: string[];
   startRadio: (seedVideoId: string, initialSongs: Song[]) => void;
   stopRadio: () => void;
   fetchMoreRadio: () => Promise<void>;

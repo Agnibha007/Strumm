@@ -7,6 +7,7 @@
 import { Song } from "@strumm/types";
 import { apiFetch } from "web/lib/api-client";
 import { useAuthStore } from "web/store/useAuthStore";
+import { useNotificationStore } from "web/store/useNotificationStore";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,6 +17,7 @@ export interface RadioState {
   isRadio: boolean;
   radioSeed: string | null;
   radioSession: string | null;
+  radioHistory: string[];  // videoIds seen during current radio session
 }
 
 export interface RadioActions {
@@ -34,6 +36,7 @@ export const initialRadioState: RadioState = {
   isRadio: false,
   radioSeed: null,
   radioSession: null,
+  radioHistory: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -46,12 +49,17 @@ export function createRadioActions(
 ): RadioActions {
   return {
     startRadio: (seedVideoId, initialSongs) => {
+      const historyVids = [
+        seedVideoId,
+        ...initialSongs.map((s) => s.videoId),
+      ];
       set({
         queue: initialSongs,
         currentIndex: 0,
         isRadio: true,
         radioSeed: seedVideoId,
         radioSession: `radio_${seedVideoId}_${Date.now()}`,
+        radioHistory: historyVids.filter(Boolean) as string[],
         isShuffle: false,
         repeatMode: "none",
       });
@@ -63,7 +71,7 @@ export function createRadioActions(
     },
 
     stopRadio: () => {
-      set({ isRadio: false, radioSeed: null, radioSession: null });
+      set({ isRadio: false, radioSeed: null, radioSession: null, radioHistory: [] });
     },
 
     setRadioSession: (session) => {
@@ -71,44 +79,70 @@ export function createRadioActions(
     },
 
     triggerRadio: async (seedVideoId) => {
-      const { isRadio, radioSeed } = get();
+      const { isRadio, radioSeed, radioHistory } = get();
       if (isRadio && radioSeed === seedVideoId) return;
 
       try {
         const token = useAuthStore.getState().token;
+        // Pass session history as exclude so we don't repeat tracks
+        const excludeParam = radioHistory.length > 0
+          ? `&exclude=${radioHistory.join(",")}`
+          : "";
         const data = await apiFetch<{ songs: Song[] }>(
-          `/radio/${seedVideoId}?limit=20`,
+          `/radio/${seedVideoId}?limit=20${excludeParam}`,
           { token },
         );
         if (data?.songs?.length > 0) {
           get().startRadio(seedVideoId, data.songs);
+        } else {
+          useNotificationStore.getState().show(
+            "Couldn't find related tracks for this song.",
+            "warning",
+          );
         }
       } catch (e) {
         console.error("Failed to start radio:", e);
+        useNotificationStore.getState().show(
+          "Couldn't start radio — no related tracks found for this song.",
+          "error",
+        );
       }
     },
 
     fetchMoreRadio: async () => {
-      const { radioSeed, queue, isRadio } = get();
+      const { radioSeed, queue, isRadio, radioHistory } = get();
       if (!isRadio || !radioSeed) return;
 
       try {
         const token = useAuthStore.getState().token;
+        // Pass full session history as exclude so backend returns fresh tracks
+        const excludeParam = radioHistory.length > 0
+          ? `&exclude=${radioHistory.join(",")}`
+          : "";
         const data = await apiFetch<{ songs: Song[] }>(
-          `/radio/${radioSeed}?limit=20`,
+          `/radio/${radioSeed}?limit=20${excludeParam}`,
           { token },
         );
         if (data?.songs) {
           const existingVids = new Set(queue.map((s: Song) => s.videoId));
           const newSongs = data.songs.filter((s: Song) => !existingVids.has(s.videoId));
           if (newSongs.length > 0) {
-            set({ queue: [...queue, ...newSongs] });
+            // Add new song videoIds to radio history for future dedup
+            const newVids = newSongs.map((s: Song) => s.videoId).filter(Boolean) as string[];
+            set({
+              queue: [...queue, ...newSongs],
+              radioHistory: [...radioHistory, ...newVids],
+            });
           } else {
             console.warn("Radio: No new tracks available");
           }
         }
       } catch (e) {
         console.error("Failed to fetch more radio tracks:", e);
+        useNotificationStore.getState().show(
+          "Couldn't load more radio tracks.",
+          "warning",
+        );
       }
     },
   };

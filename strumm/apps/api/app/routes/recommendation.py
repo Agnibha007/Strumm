@@ -8,6 +8,7 @@ from app.services.ai.groq_provider import get_ai_provider
 from app.services.recommendation_engine import get_recommendation_engine
 import asyncio
 import logging
+import re
 
 logger = logging.getLogger("strumm-recommendation")
 router = APIRouter(tags=["recommendation"])
@@ -188,51 +189,190 @@ async def get_discover(
 async def get_radio(
     video_id: str = Path(..., description="Seed videoId to generate radio from"),
     limit: int = Query(20, ge=5, le=50, description="Number of radio tracks to return"),
+    exclude: str = Query("", description="Comma-separated videoIds to exclude (for session-level dedup)"),
     current_user: Optional[dict] = Depends(get_current_user),
 ):
     """Generate an infinite radio stream based on a seed song.
-    Uses the active music provider to fetch related tracks.
+
+    Excludes the seed videoId, any videoIds passed in the ``exclude`` param, and
+    recently recommended tracks from the user's ``radio_logs`` (for cross-session
+    freshness).  Logs new recommendations back to ``radio_logs`` when done.
+
+    Primary source: YTMusic watch playlist (most relevant related tracks).
+    Fallback 1:     Database lookup — songs by the same artist.
+    Fallback 2:     YTMusic search for the seed song title/artist.
+    Fallback 3:     Random database sampling as last resort.
     """
     try:
         from app.services.ytmusic import call_ytmusic_safe
+        from app.services.song_lookup import find_song_in_db
+        from datetime import datetime, timedelta
 
+        database = db.get_db()
+        radio_songs: list[dict] = []
+
+        # --- Build exclusion set ---
+        # 1. Always exclude the seed track
+        seen_vids: set[str] = {video_id}
+
+        # 2. Client-provided exclusions (within-session dedup)
+        if exclude:
+            for vid in exclude.split(","):
+                vid = vid.strip()
+                if vid:
+                    seen_vids.add(vid)
+
+        # 3. Cross-session freshness: exclude tracks recommended via radio
+        #    in the last 24 hours for this user
+        user_id: Optional[str] = None
+        if current_user:
+            user_id = current_user.get("id")
+            if user_id:
+                try:
+                    radio_log = await database["radio_logs"].find_one(
+                        {"userId": user_id},
+                        {"videoIds": 1, "_id": 0},
+                    )
+                    if radio_log and radio_log.get("videoIds"):
+                        seen_vids.update(radio_log["videoIds"])
+                except Exception:
+                    pass
+
+        # Look up seed song up front so fallbacks have access to title/artist
+        seed_song = await find_song_in_db(video_id)
+
+        # ------------------------------------------------------------------
+        # Primary source: YTMusic watch playlist
+        # ------------------------------------------------------------------
         watch = await asyncio.to_thread(lambda: call_ytmusic_safe(
             "get_watch_playlist",
             videoId=video_id,
             limit=limit
         ))
 
-        if not watch or not watch.get("tracks"):
-            return {"success": False, "error": "No related tracks found for this song."}
+        if watch and watch.get("tracks"):
+            tracks = watch["tracks"]
+            for track in tracks:
+                vid = track.get("videoId")
+                if not vid or vid in seen_vids:
+                    continue
+                seen_vids.add(vid)
 
-        tracks = watch["tracks"]
-        radio_songs = []
-        for track in tracks:
-            vid = track.get("videoId")
-            if not vid or vid == video_id:
-                continue
+                title = track.get("title", "Unknown")
+                artists_list = track.get("artists", [])
+                artist = ", ".join(
+                    [a.get("name", "") for a in artists_list if a.get("name")]
+                ) if artists_list else "Unknown Artist"
+                duration = track.get("length") or 200
+                thumbnails = track.get("thumbnail", [])
+                thumbnail = thumbnails[-1].get("url", "") if thumbnails else (
+                    f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"
+                )
 
-            title = track.get("title", "Unknown")
-            artists_list = track.get("artists", [])
-            artist = ", ".join(
-                [a.get("name", "") for a in artists_list if a.get("name")]
-            ) if artists_list else "Unknown Artist"
-            duration = track.get("length") or 200
-            thumbnails = track.get("thumbnail", [])
-            thumbnail = thumbnails[-1].get("url", "") if thumbnails else (
-                f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"
-            )
+                radio_songs.append({
+                    "videoId": vid,
+                    "title": title,
+                    "artist": artist,
+                    "thumbnail": thumbnail,
+                    "duration": duration
+                })
 
-            radio_songs.append({
-                "videoId": vid,
-                "title": title,
-                "artist": artist,
-                "thumbnail": thumbnail,
-                "duration": duration
-            })
+        # ------------------------------------------------------------------
+        # Fallback 1: Database — songs by the same artist
+        # ------------------------------------------------------------------
+        if not radio_songs and seed_song:
+            seed_artist = seed_song.get("artist", "")
+            if seed_artist:
+                cursor = database[db.PLAYLISTS].aggregate([
+                    {"$match": {"songs.artist": {"$regex": re.escape(seed_artist), "$options": "i"}}},
+                    {"$unwind": "$songs"},
+                    {"$sample": {"size": limit * 2}},
+                    {"$replaceRoot": {"newRoot": "$songs"}},
+                ])
+                async for song in cursor:
+                    vid = song.get("videoId")
+                    if vid and vid not in seen_vids:
+                        seen_vids.add(vid)
+                        radio_songs.append({
+                            "videoId": vid,
+                            "title": song.get("title", "Unknown"),
+                            "artist": song.get("artist", "Unknown Artist"),
+                            "thumbnail": song.get("thumbnail", f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"),
+                            "duration": song.get("duration", 200),
+                        })
+                        if len(radio_songs) >= limit:
+                            break
+
+        # ------------------------------------------------------------------
+        # Fallback 2: YTMusic search by seed song title
+        # ------------------------------------------------------------------
+        if not radio_songs and seed_song:
+            from app.routes.search import search_yt_music_songs
+            search_query = f"{seed_song.get('title', '')} {seed_song.get('artist', '')}"
+            search_results = await search_yt_music_songs(search_query)
+            if search_results:
+                for result in search_results:
+                    vid = result.get("videoId")
+                    if vid and vid not in seen_vids:
+                        seen_vids.add(vid)
+                        radio_songs.append({
+                            "videoId": vid,
+                            "title": result.get("title", "Unknown"),
+                            "artist": result.get("artist", "Unknown Artist"),
+                            "thumbnail": result.get("thumbnail", f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"),
+                            "duration": result.get("duration", 200),
+                        })
+                        if len(radio_songs) >= limit:
+                            break
+
+        # ------------------------------------------------------------------
+        # Fallback 3: Random DB sampling as last resort
+        # ------------------------------------------------------------------
+        if not radio_songs:
+            sample_cursor = database[db.PLAYLISTS].aggregate([
+                {"$unwind": "$songs"},
+                {"$sample": {"size": limit * 2}},
+                {"$replaceRoot": {"newRoot": "$songs"}},
+            ])
+            async for song in sample_cursor:
+                vid = song.get("videoId")
+                if vid and vid not in seen_vids:
+                    seen_vids.add(vid)
+                    radio_songs.append({
+                        "videoId": vid,
+                        "title": song.get("title", "Unknown"),
+                        "artist": song.get("artist", "Unknown Artist"),
+                        "thumbnail": song.get("thumbnail", f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"),
+                        "duration": song.get("duration", 200),
+                    })
+                    if len(radio_songs) >= limit:
+                        break
 
         if not radio_songs:
-            return {"success": False, "error": "No related tracks found."}
+            return {"success": False, "error": "No related tracks found for this song."}
+
+        # --- Persist recommendations for cross-session freshness ---
+        if user_id:
+            try:
+                await database["radio_logs"].update_one(
+                    {"userId": user_id},
+                    {
+                        "$push": {
+                            "videoIds": {
+                                "$each": [s["videoId"] for s in radio_songs],
+                                "$slice": -300,  # keep last 300 tracks
+                            },
+                        },
+                        "$set": {"updatedAt": datetime.utcnow()},
+                    },
+                    upsert=True,
+                )
+                # Clean up old logs (older than 7 days)
+                await database["radio_logs"].delete_many({
+                    "updatedAt": {"$lt": datetime.utcnow() - timedelta(days=7)},
+                })
+            except Exception:
+                pass
 
         return {
             "success": True,
