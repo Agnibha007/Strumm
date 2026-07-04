@@ -42,18 +42,21 @@ def connect_db():
     mongo_uri = MONGODB_URI
     db_instance.client = AsyncIOMotorClient(
         mongo_uri,
-        serverSelectionTimeoutMS=8000,
-        connectTimeoutMS=5000,
-        socketTimeoutMS=10000,
-        maxPoolSize=100,
-        minPoolSize=10,
-        maxIdleTimeMS=45000,
-        waitQueueTimeoutMS=5000,
+        # Cloud environments (HF Spaces) have slow/unstable connections to MongoDB Atlas.
+        # Use generous timeouts to avoid SSL handshake timeouts and pool thrashing.
+        serverSelectionTimeoutMS=15000,   # 15s to select a server
+        connectTimeoutMS=10000,            # 10s TCP connect
+        socketTimeoutMS=30000,             # 30s socket read/write
+        maxPoolSize=50,                    # max concurrent connections
+        minPoolSize=2,                     # keep 2 warm connections (reduced from 10)
+        maxIdleTimeMS=600000,              # 10 min before idle connection is recycled
+        waitQueueTimeoutMS=10000,          # 10s wait for a connection from pool
+        heartbeatFrequencyMS=60000,        # 1 min between health checks (default 10s)
         retryWrites=True,
         retryReads=True,
     )
     db_instance.db = db_instance.client[DB_NAME]
-    logger.info(f"Connected to MongoDB database: {DB_NAME} (pool: 100/10)")
+    logger.info(f"Connected to MongoDB database: {DB_NAME} (pool: 50/2)")
 
 def close_db():
     if db_instance.client:

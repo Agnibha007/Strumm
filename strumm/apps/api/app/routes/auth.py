@@ -32,7 +32,7 @@ async def create_device_session(user_id: str, email: str, username: str, request
     }
     access_token = create_access_token(access_token_payload, expires_delta=timedelta(minutes=15))
     
-    # Long expiry refresh token: 30 days
+    # Sliding session: valid for 7 days from last activity
     refresh_token = secrets.token_hex(32)
     refresh_token_hash = hash_refresh_token(refresh_token)
     
@@ -45,18 +45,23 @@ async def create_device_session(user_id: str, email: str, username: str, request
         "refreshTokenHash": refresh_token_hash,
         "device": device,
         "createdAt": datetime.utcnow(),
-        "expiresAt": datetime.utcnow() + timedelta(days=30)
+        "lastActiveAt": datetime.utcnow(),
+        "expiresAt": datetime.utcnow() + timedelta(days=7)
     }
     await database[db.SESSIONS].insert_one(session_doc)
     
     return access_token, refresh_token
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+    # Use 'lax' for development (HTTP) and 'none' for production (HTTPS)
+    is_secure = os.getenv("ENVIRONMENT", "development").lower() != "development" or os.getenv("FORCE_SECURE_COOKIES") == "true"
+    same_site = "none" if is_secure else "lax"
+    
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=is_secure,
+        samesite=same_site,
         max_age=15 * 60,  # 15 minutes
         path="/"
     )
@@ -64,9 +69,9 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=30 * 24 * 60 * 60,  # 30 days
+        secure=is_secure,
+        samesite=same_site,
+        max_age=7 * 24 * 60 * 60,  # 7 days (sliding)
         path="/"
     )
 
@@ -97,6 +102,7 @@ async def list_sessions(current_user: dict = Depends(get_current_user)):
                 "_id": str(doc["_id"]),
                 "device": doc.get("device", "Unknown Device"),
                 "createdAt": doc.get("createdAt", datetime.utcnow()).isoformat(),
+                "lastActiveAt": doc.get("lastActiveAt", doc.get("createdAt", datetime.utcnow())).isoformat(),
                 "expiresAt": doc.get("expiresAt", datetime.utcnow()).isoformat(),
             })
         return {"success": True, "data": {"sessions": sessions}}
@@ -118,6 +124,40 @@ async def revoke_session(session_id: str, current_user: dict = Depends(get_curre
     except Exception as e:
         logger.error(f"Error revoking session: {str(e)}")
         return {"success": False, "error": "Failed to revoke session."}
+
+@router.delete("/sessions")
+async def revoke_all_sessions(
+    current_user: dict = Depends(get_current_user),
+    refresh_token: Optional[str] = Cookie(None)
+):
+    """Revoke all sessions for the current user except the current one."""
+    try:
+        database = db.get_db()
+        user_id = current_user["id"]
+        
+        # Find the current session to exclude it
+        current_session_hash = None
+        if refresh_token:
+            current_session_hash = hash_refresh_token(refresh_token)
+        
+        # Delete all sessions for this user except the current one
+        filter_query = {"userId": user_id}
+        if current_session_hash:
+            filter_query["refreshTokenHash"] = {"$ne": current_session_hash}
+        
+        result = await database[db.SESSIONS].delete_many(filter_query)
+        
+        logger.info(f"Revoked {result.deleted_count} sessions for user {user_id}")
+        return {
+            "success": True,
+            "data": {
+                "message": f"Revoked {result.deleted_count} other session(s). Current session kept active.",
+                "revokedCount": result.deleted_count
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error revoking all sessions: {str(e)}")
+        return {"success": False, "error": "Failed to revoke sessions."}
 
 @router.post("/change-password")
 async def change_password(
@@ -683,13 +723,14 @@ async def refresh_session(
         new_refresh_token = secrets.token_hex(32)
         new_refresh_token_hash = hash_refresh_token(new_refresh_token)
         
+        # Sliding session: extend expiry to 7 days from now
         await database[db.SESSIONS].update_one(
             {"_id": session["_id"]},
             {
                 "$set": {
                     "refreshTokenHash": new_refresh_token_hash,
-                    "createdAt": datetime.utcnow(),
-                    "expiresAt": datetime.utcnow() + timedelta(days=30),
+                    "lastActiveAt": datetime.utcnow(),
+                    "expiresAt": datetime.utcnow() + timedelta(days=7),
                     "device": request.headers.get("user-agent", "Unknown Device")
                 }
             }

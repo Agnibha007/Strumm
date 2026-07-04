@@ -8,7 +8,7 @@ import ThemeSwitcher from "web/components/ThemeSwitcher";
 import {
   User, Image, Save, AlertCircle, CheckCircle2, Upload, Gauge, WifiLow, Zap,
   Shield, Key, Download, Trash2, Monitor, Smartphone, Eye, EyeOff,
-  AlertTriangle, RefreshCw, Mail
+  AlertTriangle, RefreshCw, Mail, LogOut
 } from "lucide-react";
 import { apiUrl, cleanText } from "web/lib/api";
 
@@ -22,6 +22,7 @@ interface Session {
   _id: string;
   device: string;
   createdAt: string;
+  lastActiveAt: string;
   expiresAt: string;
 }
 
@@ -58,6 +59,8 @@ export default function SettingsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [revokeAllLoading, setRevokeAllLoading] = useState(false);
+  const [revokeAllSuccess, setRevokeAllSuccess] = useState<string | null>(null);
 
   // Danger zone state
   const [confirmDelete, setConfirmDelete] = useState("");
@@ -210,6 +213,15 @@ export default function SettingsPage() {
   };
 
   const handleRevokeSession = async (sessionId: string) => {
+    const session = sessions.find((s) => s._id === sessionId);
+    const deviceLabel = session?.device
+      ? session.device.substring(0, 60)
+      : "this device";
+    const confirmed = window.confirm(
+      `Sign out from "${deviceLabel}"? The session will be revoked immediately.`
+    );
+    if (!confirmed) return;
+
     try {
       const response = await fetch(apiUrl(`/auth/sessions/${sessionId}`), {
         method: "DELETE",
@@ -221,6 +233,51 @@ export default function SettingsPage() {
       }
     } catch {
       setSessionsError("Failed to revoke session.");
+    }
+  };
+
+  const handleRevokeAllSessions = async () => {
+    const otherCount = sessions.length;
+    if (otherCount === 0) {
+      setRevokeAllSuccess("No other active sessions to revoke.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `This will sign out ${otherCount} other device(s). Your current session will remain active. Continue?`
+    );
+    if (!confirmed) return;
+
+    setRevokeAllLoading(true);
+    setRevokeAllSuccess(null);
+    setSessionsError(null);
+    try {
+      const response = await fetch(apiUrl("/auth/sessions"), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await response.json();
+      if (json.success && json.data) {
+        setRevokeAllSuccess(json.data.message || "Other sessions revoked.");
+      } else {
+        setSessionsError(json.error || "Failed to revoke sessions.");
+      }
+    } catch {
+      setSessionsError("Unable to connect to backend server.");
+    }
+
+    // Always refresh the sessions list after the operation
+    try {
+      const res = await fetch(apiUrl("/auth/sessions"), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const sessionsJson = await res.json();
+      if (sessionsJson.success && sessionsJson.data) {
+        setSessions(sessionsJson.data.sessions || []);
+      }
+    } catch {
+      // Silently fail on the refresh — the delete already succeeded
+    } finally {
+      setRevokeAllLoading(false);
     }
   };
 
@@ -477,6 +534,19 @@ export default function SettingsPage() {
                     const device = session.device || "Unknown Device";
                     const isMobile = /mobile|iphone|ipad|android/i.test(device);
                     const createdAt = new Date(session.createdAt).toLocaleDateString();
+                    const lastActive = new Date(session.lastActiveAt);
+                    const now = new Date();
+                    const hoursSinceActive = Math.floor((now.getTime() - lastActive.getTime()) / (1000 * 60 * 60));
+                    let lastActiveLabel: string;
+                    if (hoursSinceActive < 1) {
+                      lastActiveLabel = "Just now";
+                    } else if (hoursSinceActive < 24) {
+                      lastActiveLabel = `${hoursSinceActive}h ago`;
+                    } else if (hoursSinceActive < 24 * 7) {
+                      lastActiveLabel = `${Math.floor(hoursSinceActive / 24)}d ago`;
+                    } else {
+                      lastActiveLabel = lastActive.toLocaleDateString();
+                    }
                     return (
                       <div key={session._id} className="flex items-center justify-between p-3 bg-surface-elevated/20 border border-border/40 rounded-xl">
                         <div className="flex items-center gap-3 min-w-0">
@@ -486,6 +556,10 @@ export default function SettingsPage() {
                           <div className="min-w-0">
                             <p className="text-xs font-semibold text-text truncate max-w-[200px]">{device.substring(0, 60)}</p>
                             <p className="text-[10px] text-muted mt-0.5">Connected since {createdAt}</p>
+                            <p className="text-[10px] text-muted/60 mt-0.5 flex items-center gap-1">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                              Active {lastActiveLabel}
+                            </p>
                           </div>
                         </div>
                         <button onClick={() => handleRevokeSession(session._id)} className="px-3 py-1.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 text-[10px] font-bold rounded-lg transition cursor-pointer flex-shrink-0">
@@ -496,6 +570,19 @@ export default function SettingsPage() {
                   })}
                 </div>
               )}
+              {revokeAllSuccess && <SuccessBanner message={revokeAllSuccess} icon={CheckCircle2} />}
+
+              <div className="pt-2 border-t border-border/20">
+                <button
+                  onClick={handleRevokeAllSessions}
+                  disabled={revokeAllLoading || sessions.length === 0}
+                  className="w-full py-2.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <LogOut className="w-4 h-4" aria-hidden="true" />
+                  {revokeAllLoading ? "Revoking sessions..." : "Logout from all other devices"}
+                </button>
+              </div>
+
               {sessionsError && <ErrorBanner message={sessionsError} icon={AlertCircle} />}
             </div>
           )}

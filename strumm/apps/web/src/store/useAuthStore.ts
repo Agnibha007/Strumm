@@ -109,6 +109,8 @@ export const useAuthStore = create<AuthState>()(
 // Access token lifetime in ms (15 minutes)
 const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
 const REFRESH_BUFFER_MS = 60 * 1000; // refresh 60s before expiry
+// Periodic activity refresh: every 60 minutes to slide the session window
+const ACTIVITY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
 function scheduleRefresh() {
   if (typeof window === "undefined") return;
@@ -128,10 +130,53 @@ function scheduleRefresh() {
   }, delay);
 }
 
-// Start refresh cycle when module loads (if logged in)
-if (typeof window !== "undefined") {
-  const { token } = useAuthStore.getState();
-  if (token) {
+// Periodic activity-based refresh to slide the session window
+function scheduleActivityRefresh() {
+  if (typeof window === "undefined") return;
+  
+  // Clear existing timer
+  if ((window as any).__strummActivityTimer) {
+    clearTimeout((window as any).__strummActivityTimer);
+  }
+  
+  // Refresh every hour to keep the session sliding
+  (window as any).__strummActivityTimer = setTimeout(async () => {
+    const { token, silentRefresh } = useAuthStore.getState();
+    if (token) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        // Reschedule for another hour
+        scheduleActivityRefresh();
+      }
+    }
+  }, ACTIVITY_REFRESH_INTERVAL_MS);
+}
+
+// Attempt immediate silent refresh on page load to slide the session window,
+// then schedule the refresh cycle.
+async function initializeAuth() {
+  if (typeof window === "undefined") return;
+  
+  // Wait a tick for Zustand to rehydrate from localStorage
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  const { token, silentRefresh } = useAuthStore.getState();
+  if (!token) return;
+  
+  // Try a silent refresh immediately on page load to slide the session
+  // (silentRefresh internally calls scheduleRefresh() for access token renewal)
+  const refreshed = await silentRefresh();
+  if (refreshed) {
+    // If refresh succeeded, schedule the periodic activity refresh for sliding window
+    scheduleActivityRefresh();
+  } else {
+    // If immediate refresh failed, still schedule the access token refresh cycle
+    // so it retries later (e.g., if cookie wasn't immediately available)
     scheduleRefresh();
   }
+}
+
+// Initialize auth when module loads
+if (typeof window !== "undefined") {
+  initializeAuth();
 }
