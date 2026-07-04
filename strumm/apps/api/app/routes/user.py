@@ -11,11 +11,17 @@ from app.services.email_service import send_account_deleted_email
 from pydantic import BaseModel
 import asyncio
 import logging
+import math
 logger = logging.getLogger("strumm-user")
 router = APIRouter(tags=["user"])
 
 # Helper to calculate sound DNA
 def calculate_sound_dna(histories: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Calculate Sound DNA metrics from real listening patterns.
+    
+    All metrics are scaled 1-10 and represent actual listening behavior.
+    Uses only REAL history (never simulated entries).
+    """
     if not histories:
         return {
             "energy": 5,
@@ -25,76 +31,100 @@ def calculate_sound_dna(histories: List[Dict[str, Any]]) -> Dict[str, int]:
             "repeatRate": 5
         }
     
-    total_plays = len(histories)
+    total_listens = len(histories)
+    total_minutes = sum(h.get("listenDuration", 0) for h in histories) / 60
     
-    # 1. Energy
-    energy_score = 5
-    high_energy_count = 0
-    low_energy_count = 0
-    high_energy_keywords = {"funk", "remix", "dance", "rock", "hype", "party", "rap", "metal", "electronic", "funk mi camino", "illuminati"}
-    low_energy_keywords = {"lo-fi", "sleep", "binaural", "serenity", "delta", "theta", "gamma", "acoustic", "sad", "relax", "meditation"}
-    
-    # 2. Nostalgia
-    nostalgia_count = 0
-    nostalgia_keywords = {"classic", "retro", "19", "old", "vintage", "hemanta", "sandhya", "kishore", "lata", "rd burman", "antique", "ghazal"}
-    
-    # Unique tracks/artists
+    # Track metrics
     unique_songs = set()
     unique_artists = set()
-    song_counts = {}
+    song_play_counts = {}  # videoId -> play count
+    artist_play_counts = {}  # canonical_artist -> play count
+    
+    high_energy_count = 0
+    low_energy_count = 0
+    nostalgia_count = 0
+    
+    high_energy_keywords = {"funk", "remix", "dance", "rock", "hype", "party", "rap", "metal", "electronic", "techno", "edm"}
+    low_energy_keywords = {"lo-fi", "sleep", "binaural", "serenity", "delta", "theta", "acoustic", "sad", "relax", "meditation", "ambient"}
+    nostalgia_keywords = {"classic", "retro", "vintage", "old", "hemanta", "kishore", "lata", "ghazal", "90s", "80s", "70s"}
     
     for h in histories:
         song = h.get("song", {})
         title = str(song.get("title", "")).lower()
         artist = str(song.get("artist", "")).lower()
         vid = song.get("videoId")
+        
         if vid:
             unique_songs.add(vid)
-            song_counts[vid] = song_counts.get(vid, 0) + 1
+            song_play_counts[vid] = song_play_counts.get(vid, 0) + 1
+        
         if artist:
             import re
             processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
             artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
             for single_art in artists_list:
-                unique_artists.add(single_art)
-            
+                canonical_key = canonical_artist(single_art)
+                if canonical_key:
+                    unique_artists.add(single_art)
+                    artist_play_counts[canonical_key] = artist_play_counts.get(canonical_key, 0) + 1
+        
+        # Energy assessment
         if any(kw in title or kw in artist for kw in high_energy_keywords):
             high_energy_count += 1
         if any(kw in title or kw in artist for kw in low_energy_keywords):
             low_energy_count += 1
+        
+        # Nostalgia assessment
         if any(kw in title or kw in artist for kw in nostalgia_keywords):
             nostalgia_count += 1
-            
+    
+    # 1. Energy (1-10): Based on high vs low energy music ratio
     if high_energy_count + low_energy_count > 0:
-        energy_score = int(round((high_energy_count / (high_energy_count + low_energy_count)) * 10))
-        energy_score = max(1, min(10, energy_score))
-        
-    # 2. Discovery
-    discovery_score = int(round((len(unique_artists) / max(1, total_plays)) * 10))
+        energy_ratio = high_energy_count / (high_energy_count + low_energy_count)
+        energy_score = int(round(energy_ratio * 10))
+    else:
+        energy_score = 5  # Neutral if no energy keywords found
+    energy_score = max(1, min(10, energy_score))
+    
+    # 2. Discovery (1-10): Artist diversity - higher = more diverse
+    unique_artist_ratio = min(1.0, len(unique_artists) / max(1, total_listens / 5))
+    discovery_score = int(round(unique_artist_ratio * 10))
     discovery_score = max(1, min(10, discovery_score))
     
-    # 3. Nostalgia
-    nostalgia_score = int(round((nostalgia_count / total_plays) * 10))
+    # 3. Nostalgia (1-10): Proportion of classic/retro music
+    nostalgia_ratio = nostalgia_count / total_listens
+    nostalgia_score = int(round(nostalgia_ratio * 10))
     nostalgia_score = max(1, min(10, nostalgia_score))
     
-    # 4. Variety
-    variety_score = int(round((len(unique_songs) / max(1, total_plays)) * 10))
+    # 4. Variety (1-10): Song diversity - higher = more variety
+    unique_song_ratio = len(unique_songs) / max(1, total_listens)
+    variety_score = int(round(unique_song_ratio * 10))
     variety_score = max(1, min(10, variety_score))
     
-    # 5. Repeat Rate
-    repeated_songs = sum(1 for c in song_counts.values() if c > 1)
-    repeat_rate_score = int(round((repeated_songs / max(1, len(unique_songs))) * 10))
-    repeat_rate_score = max(1, min(10, repeat_rate_score))
+    # 5. Repeat Rate (1-10): How much user replays same songs (1=minimal repeats, 10=heavily repeated)
+    if len(unique_songs) > 0:
+        avg_plays_per_song = total_listens / len(unique_songs)
+        # Map avg_plays_per_song to 1-10 scale:
+        # 1 play per song = 1, 2 = ~3, 3 = ~4, 5 = ~6, 10 = ~8, 20+ = 10
+        # Using logarithmic scale for natural distribution
+        repeat_score = int(round(1 + 3 * math.log2(max(1, avg_plays_per_song))))
+    else:
+        repeat_score = 1
+    repeat_score = max(1, min(10, repeat_score))
     
     return {
         "energy": energy_score,
         "discovery": discovery_score,
         "nostalgia": nostalgia_score,
         "variety": variety_score,
-        "repeatRate": repeat_rate_score
+        "repeatRate": repeat_score
     }
 
 def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, int]) -> str:
+    """Classify the user's music personality from time-of-day patterns and Sound DNA.
+    
+    Uses all 5 DNA dimensions plus listening time for richer archetypes.
+    """
     if not histories:
         return "Novice Listener"
     
@@ -105,19 +135,59 @@ def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, 
             hour = played_at.hour
             if 0 <= hour < 6:
                 midnight_count += 1
-                
-    if midnight_count / len(histories) > 0.4:
+
+    midnight_ratio = midnight_count / len(histories) if histories else 0
+
+    energy = sound_dna.get("energy", 5)
+    discovery = sound_dna.get("discovery", 5)
+    nostalgia = sound_dna.get("nostalgia", 5)
+    variety = sound_dna.get("variety", 5)
+    repeat_rate = sound_dna.get("repeatRate", 5)
+
+    # Late-night listener
+    if midnight_ratio > 0.4:
         return "Midnight Explorer"
-        
-    if sound_dna["discovery"] > 7:
+
+    # High energy + high variety = high-octane explorer
+    if energy >= 7 and variety >= 7:
+        return "Adrenaline Seeker"
+
+    # High discovery + high variety = genre-hopping explorer
+    if discovery >= 7 and variety >= 7:
         return "Sonic Pathfinder"
-        
-    if sound_dna["repeatRate"] > 7:
+
+    # High repeat = creature of comfort
+    if repeat_rate >= 7 and nostalgia >= 6:
         return "Memory Collector"
-        
-    if sound_dna["nostalgia"] > 6:
+
+    # High nostalgia + low energy = vintage soul
+    if nostalgia >= 7 and energy <= 4:
         return "Retro Archivist"
-        
+
+    # High energy + high repeat = playlist loyalist
+    if energy >= 6 and repeat_rate >= 6:
+        return "Power Anthem Lover"
+
+    # High discovery + low repeat = fresh-chaser
+    if discovery >= 6 and repeat_rate <= 3:
+        return "New Release Hunter"
+
+    # High variety + moderate everything = eclectic curator
+    if variety >= 7:
+        return "Eclectic Curator"
+
+    # High nostalgia = classic soul
+    if nostalgia >= 6:
+        return "Retro Archivist"
+
+    # High repeat = loyal listener
+    if repeat_rate >= 6:
+        return "Memory Collector"
+
+    # High energy = vibe chaser
+    if energy >= 6:
+        return "Vibe Architect"
+
     return "Melody Harmonizer"
 
 
@@ -200,26 +270,39 @@ def get_effective_histories(histories: List[Dict[str, Any]], user_stats: Optiona
 
 # Helper to calculate user stats dynamically
 def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    user_stats = current_user_statistics or {}
-    effective_histories = get_effective_histories(histories, user_stats)
+    """Compute user stats from REAL playback histories only (no simulated data)."""
+    # Always use real histories only - never inject simulated entries
+    real_histories = histories
 
-    # 1. Total & Monthly seconds
-    total_seconds_hist = sum(h.get("listenDuration", 0) for h in histories)
-    
-    # Use max with user's stored statistics (in case of legacy/seeded stats)
-    total_seconds_user = user_stats.get("totalListeningTime", 0) or 0
-    total_seconds = max(total_seconds_user, total_seconds_hist)
+    # 1. Total & Monthly seconds — always computed from REAL history.
+    #    Stored stats are only used as a fallback when no history exists
+    #    (e.g. legacy/seeded accounts before playback histories were logged).
+    total_seconds_hist = sum(h.get("listenDuration", 0) for h in real_histories)
+    total_seconds_stored = (current_user_statistics or {}).get("totalListeningTime", 0) or 0
+
+    if total_seconds_hist > 0:
+        total_seconds = total_seconds_hist
+    else:
+        total_seconds = total_seconds_stored
     total_minutes = int(round(total_seconds / 60))
-    
+
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-    monthly_seconds_hist = sum(h.get("listenDuration", 0) for h in histories if h.get("playedAt", datetime.utcnow()) >= thirty_days_ago)
-    monthly_seconds_user = user_stats.get("monthlyListeningTime", 0) or 0
-    monthly_seconds = max(monthly_seconds_user, monthly_seconds_hist)
+    monthly_seconds_hist = sum(
+        h.get("listenDuration", 0)
+        for h in real_histories
+        if h.get("playedAt", datetime.utcnow()) >= thirty_days_ago
+    )
+    monthly_seconds_stored = (current_user_statistics or {}).get("monthlyListeningTime", 0) or 0
+
+    if monthly_seconds_hist > 0:
+        monthly_seconds = monthly_seconds_hist
+    else:
+        monthly_seconds = monthly_seconds_stored
     monthly_minutes = int(round(monthly_seconds / 60))
     
-    # 2. Top Songs
+    # 2. Top Songs from REAL data
     song_counts = {}
-    for h in effective_histories:
+    for h in real_histories:
         song = h.get("song", {})
         vid = song.get("videoId")
         duration = song.get("duration", 180) or 180
@@ -253,11 +336,11 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
     if not sorted_songs and user_stats.get("topSongs"):
         sorted_songs = user_stats.get("topSongs")
     
-    # 3. Top Artists — grouped by canonicalArtist to prevent duplicates
+    # 3. Top Artists from REAL data — grouped by canonicalArtist to prevent duplicates
     #    e.g. "Arijit Singh", "ARIJIT SINGH", "Arijit Singh Official" all collapse
     #    under the same canonical key.  The most-played display name wins.
     canonical_groups: dict = {}
-    for h in effective_histories:
+    for h in real_histories:
         artist = h.get("song", {}).get("artist", "Unknown Artist")
         thumbnail = h.get("song", {}).get("thumbnail", "")
         if artist:
@@ -332,9 +415,9 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
         if not art.get("canonicalName"):
             art["canonicalName"] = canonical_artist(art.get("artist", ""))
             
-    # 4. Sound DNA — use real histories (not effective with simulated entries)
-    # so metrics reflect actual listening patterns, not inflated from seeded stats
-    sound_dna = calculate_sound_dna(histories)
+    # 4. Sound DNA — always calculated from REAL histories only
+    # Never use simulated entries - sound DNA must reflect actual listening patterns
+    sound_dna = calculate_sound_dna(real_histories)
     
     return {
         "totalListeningTime": total_seconds,
@@ -711,20 +794,12 @@ async def register_play_event(
                 upsert=True
             )
         
-        # 2. Update user statistics (seconds listened)
-        # We increment: totalListeningTime, monthlyListeningTime
-        # And we track topSongs/topArtists
-        stats_inc = {
-            "statistics.totalListeningTime": duration_delta,
-            "statistics.monthlyListeningTime": duration_delta
-        }
-        
-        # Check if song is already in user's topSongs or artist in topArtists to increment count,
-        # or handle aggregation. For simplicity, we increment listening time directly
-        # and we can periodically aggregate top artists, or do it on-the-fly.
+        # 2. Update user statistics (totalListeningTime only)
+        # monthlyListeningTime is computed dynamically from history (30-day window)
+        # by compute_user_stats, so we only persist totalListeningTime here.
         await database[db.USERS].update_one(
             {"_id": parse_object_id(userId)},
-            {"$inc": stats_inc}
+            {"$inc": {"statistics.totalListeningTime": duration_delta}}
         )
         
         # Async updates of top artists (splitting multiple artists)
@@ -1133,25 +1208,32 @@ async def export_user_data(current_user: dict = Depends(get_current_user)):
 
 @router.get("/replay")
 async def get_replay(current_user: dict = Depends(get_current_user)):
+    """Get user's replay statistics (Strumm Wrapped equivalent).
+    
+    Always calculates from REAL playback history - never uses simulated data.
+    All metrics are dynamic and coherent.
+    """
     try:
         database = db.get_db()
         user_id = current_user["id"]
         possible_ids = [user_id, parse_object_id(user_id)]
+        
+        # Fetch ONLY real playback histories
         histories = await database[db.PLAYBACK_HISTORIES].find(
             {"userId": {"$in": possible_ids}},
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
         ).to_list(length=2000)
         
+        # Calculate all stats from REAL data with stored stats as fallback
         stats = compute_user_stats(histories, current_user.get("statistics"))
-        effective_histories = get_effective_histories(histories, current_user.get("statistics"))
         
-        personality = get_music_personality(effective_histories, stats["soundDNA"])
+        personality = get_music_personality(histories, stats["soundDNA"])
         discovery_score = stats["soundDNA"]["discovery"] * 10
         insufficient_history = stats["totalMinutes"] < 1
         
-        # Mapped top genres
+        # Mapped top genres - from REAL data only
         genres = {}
-        for h in effective_histories:
+        for h in histories:
             title = str(h.get("song", {}).get("title", "")).lower()
             artist = str(h.get("song", {}).get("artist", "")).lower()
             genre = classify_genre(artist, title)
@@ -1160,9 +1242,9 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         sorted_genres = sorted(genres.items(), key=lambda x: x[1], reverse=True)[:3]
         top_genres = [g[0] for g in sorted_genres] if sorted_genres else ["Pop & Indie"]
         
-        # Favorite Time
+        # Favorite Time - from REAL data only
         time_slots = {"Morning (6AM-12PM)": 0, "Afternoon (12PM-6PM)": 0, "Evening (6PM-12AM)": 0, "Midnight (12AM-6AM)": 0}
-        for h in effective_histories:
+        for h in histories:
             played_at = h.get("playedAt")
             if isinstance(played_at, datetime):
                 hour = played_at.hour
@@ -1174,7 +1256,7 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
                     time_slots["Evening (6PM-12AM)"] += 1
                 else:
                     time_slots["Midnight (12AM-6AM)"] += 1
-        favorite_time = max(time_slots, key=time_slots.get) if effective_histories else "Evening (6PM-12AM)"
+        favorite_time = max(time_slots, key=time_slots.get) if histories else "Evening (6PM-12AM)"
         
         return {
             "success": True,
