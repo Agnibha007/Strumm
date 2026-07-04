@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.3.5
+        version: 3.3.5
       pnpm:
         specifier: ^11.9.0
         version: 11.9.0
