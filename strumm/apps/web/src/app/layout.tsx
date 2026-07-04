@@ -211,7 +211,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${outfit.variable} ${playfair.variable} antialiased selection:bg-primary selection:text-white relative flex flex-col min-h-screen`}
+        className={`${outfit.variable} ${playfair.variable} antialiased selection:bg-primary selection:text-white relative flex flex-col min-h-screen pb-20 md:pb-24`}
       >
         <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[999] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-lg focus:text-sm focus:font-semibold focus:outline-none">
           Skip to content

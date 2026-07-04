@@ -14,7 +14,7 @@ export default function ContentWrapper({ children }: { children: React.ReactNode
     <main
       id="main-content"
       tabIndex={-1}
-      className={`outline-none flex-1 pt-14 md:pt-0 pb-24 md:pb-20 transition-all duration-300 ${sidebarOffset}`}
+      className={`outline-none flex-1 pt-14 md:pt-0 transition-all duration-300 ${sidebarOffset}`}
     >
       {children}
     </main>
