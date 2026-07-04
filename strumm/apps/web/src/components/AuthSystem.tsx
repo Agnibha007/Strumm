@@ -85,7 +85,7 @@ export default function AuthSystem() {
       
       const json = await response.json();
       if (json.success && json.data) {
-        login(json.data.token, json.data.user);
+        login(json.data.token, json.data.user, json.data.refreshToken);
       } else {
         setError(json.error || "Invalid email or password.");
       }
@@ -159,7 +159,7 @@ export default function AuthSystem() {
       
       const json = await response.json();
       if (json.success && json.data) {
-        login(json.data.token, json.data.user);
+        login(json.data.token, json.data.user, json.data.refreshToken);
       } else {
         setError(json.error || "Invalid validation code.");
       }

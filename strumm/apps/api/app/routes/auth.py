@@ -536,6 +536,7 @@ async def verify_otp(
             "success": True,
             "data": {
                 "token": access_token,
+                "refreshToken": refresh_token,
                 "user": user
             }
         }
@@ -618,6 +619,7 @@ async def google_login(
             "success": True,
             "data": {
                 "token": access_token,
+                "refreshToken": refresh_token,
                 "user": user
             }
         }
@@ -669,6 +671,7 @@ async def email_password_login(
             "success": True,
             "data": {
                 "token": access_token,
+                "refreshToken": refresh_token,
                 "user": user
             }
         }
@@ -761,11 +764,20 @@ async def refresh_session(
 @router.post("/logout")
 async def logout_session(
     response: Response,
+    request: Request,
     refresh_token: Optional[str] = Cookie(None)
 ):
     try:
-        if refresh_token:
-            token_hash = hash_refresh_token(refresh_token)
+        token = refresh_token
+        if not token:
+            try:
+                body = await request.json()
+                token = body.get("refreshToken") or body.get("refresh_token")
+            except Exception:
+                pass
+
+        if token:
+            token_hash = hash_refresh_token(token)
             database = db.get_db()
             await database[db.SESSIONS].delete_one({"refreshTokenHash": token_hash})
             

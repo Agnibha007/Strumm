@@ -43,6 +43,7 @@ const handler = NextAuth({
             const json = await response.json();
             if (json.success && json.data) {
               token.accessToken = json.data.token;
+              token.refreshToken = json.data.refreshToken;
               // Trim user object to avoid NextAuth cookie blooming over Vercel's 14KB limit
               token.strummUser = {
                 id: json.data.user.id,
@@ -68,6 +69,7 @@ const handler = NextAuth({
     async session({ session, token }) {
       // Expose custom token and backend user data to client components
       (session as any).accessToken = token.accessToken;
+      (session as any).refreshToken = token.refreshToken;
       if (token.strummUser) {
         session.user = token.strummUser as any;
       }

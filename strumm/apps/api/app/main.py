@@ -354,7 +354,11 @@ class PerEndpointRateLimiter:
         while len(self._clients) > self._max_clients:
             self._clients.pop(next(iter(self._clients)))
 
-    def is_rate_limited(self, client_ip: str, path: str) -> bool:
+    def check_rate_limit(self, client_ip: str, path: str) -> tuple[bool, int, int, int, float]:
+        """
+        Check if a request is rate limited.
+        Returns: (is_limited, max_requests, current_count, window_seconds, retry_after_seconds)
+        """
         current_time = time.time()
         max_requests, window_seconds = self._get_limit_for_path(path)
         limit_key = f"{max_requests}/{window_seconds}"
@@ -365,14 +369,19 @@ class PerEndpointRateLimiter:
             self._clients[client_ip] = OrderedDict()
 
         timestamps = self._clients[client_ip].get(limit_key, [])
-        if len(timestamps) >= max_requests:
-            return True
+        current_count = len(timestamps)
+        
+        if current_count >= max_requests:
+            # Calculate when the earliest request in the window expires
+            oldest = timestamps[0]
+            retry_after = int(window_seconds - (current_time - oldest)) + 1
+            return True, max_requests, current_count, window_seconds, max(retry_after, 1)
 
         timestamps.append(current_time)
         self._clients[client_ip][limit_key] = timestamps
         self._clients[client_ip].move_to_end(limit_key)
         self._evict_if_full()
-        return False
+        return False, max_requests, current_count + 1, window_seconds, 0.0
 
 
 rate_limiter = PerEndpointRateLimiter()
@@ -393,14 +402,27 @@ async def request_id_middleware(request: Request, call_next):
 async def rate_limiting_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "127.0.0.1"
     path = request.url.path
-    if rate_limiter.is_rate_limited(client_ip, path):
+    
+    is_limited, max_req, current, window, retry_after = rate_limiter.check_rate_limit(client_ip, path)
+    
+    if is_limited:
         req_id = request.headers.get("X-Request-ID", "unknown")
-        logger.warning(f"Rate limit exceeded for {client_ip} on {path} [req_id={req_id}]")
+        logger.warning(f"Rate limit exceeded for {client_ip} on {path} ({current}/{max_req} in {window}s) [req_id={req_id}]")
         return JSONResponse(
             status_code=429,
-            content={"success": False, "error": "Rate limit exceeded. Please slow down."}
+            content={"success": False, "error": "Rate limit exceeded. Please slow down."},
+            headers={
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(max_req),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(int(time.time() + retry_after)),
+            }
         )
+    
     response = await call_next(request)
+    remaining = max_req - current
+    response.headers["X-RateLimit-Limit"] = str(max_req)
+    response.headers["X-RateLimit-Remaining"] = str(max(remaining, 0))
     return response
 
 # Register Routers

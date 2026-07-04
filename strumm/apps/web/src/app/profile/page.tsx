@@ -1,16 +1,29 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
+import dynamic from "next/dynamic";
 import { useAuthStore } from "web/store/useAuthStore";
-import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, X, Loader2, Compass, History, Zap, Disc } from "lucide-react";
+import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, Loader2, Compass, History, Zap, Disc } from "lucide-react";
 import { Playlist } from "@strumm/types";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiUrl } from "web/lib/api";
 import { signOut } from "next-auth/react";
-import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import SongArtwork from "web/components/SongArtwork";
-import SoundDNAChart from "web/components/SoundDNAChart";
+
+const SoundDNAChart = dynamic(() => import("web/components/SoundDNAChart"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center py-10 text-muted">
+      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+    </div>
+  ),
+});
+
+const DeleteAccountModal = dynamic(
+  () => import("./DeleteAccountModal"),
+  { ssr: false }
+);
 
 function ProfilePageContent() {
   const { token, user: cachedUser, fetchProfile, logout } = useAuthStore();
@@ -38,7 +51,6 @@ function ProfilePageContent() {
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
   const [accountError, setAccountError] = useState<string | null>(null);
 
   const loadProfileData = async () => {
@@ -249,11 +261,6 @@ function ProfilePageContent() {
   };
 
   const triggerDeleteAccount = async () => {
-    if (deleteConfirmationInput.trim().toUpperCase() !== "DELETE") {
-      setAccountError("Please type DELETE to confirm account deletion.");
-      return;
-    }
-
     setDeleting(true);
     setAccountError(null);
     try {
@@ -272,7 +279,6 @@ function ProfilePageContent() {
       setAccountError("Unable to connect to backend server to process deletion.");
     } finally {
       setDeleting(false);
-      setDeleteConfirmationInput("");
       setIsDeleteModalOpen(false);
     }
   };
@@ -990,77 +996,12 @@ function ProfilePageContent() {
           </div>
         </div>
       </div>
-      <AnimatePresence>
-        {isDeleteModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsDeleteModalOpen(false)}
-              className="absolute inset-0 bg-background/80 backdrop-blur-md"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              transition={{ type: "spring", duration: 0.35 }}
-              className="relative w-full max-w-md bg-surface border border-border/80 rounded-xl p-6 shadow-2xl space-y-6 z-10"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-primary/15 border border-primary/25 text-primary rounded-lg">
-                    <Trash2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-editorial text-xl text-text font-bold leading-tight">Delete Account</h3>
-                    <p className="text-[10px] uppercase tracking-wider text-muted font-semibold mt-0.5">
-                      This action is irreversible
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded transition cursor-pointer"
-                >
-                  <X className="w-4.5 h-4.5" />
-                </button>
-              </div>
-
-              <div className="text-xs text-muted leading-relaxed space-y-2.5">
-                <p>Your profile, playlists, liked songs, history, stats, and player state will be permanently erased.</p>
-                <div className="bg-primary/5 border border-primary/10 rounded-lg p-3 text-primary">
-                  Type <span className="font-bold">DELETE</span> below to confirm.
-                </div>
-              </div>
-
-              <input
-                type="text"
-                placeholder="DELETE"
-                value={deleteConfirmationInput}
-                onChange={(e) => setDeleteConfirmationInput(e.target.value)}
-                className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition font-semibold tracking-wider text-center"
-              />
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setIsDeleteModalOpen(false)}
-                  className="flex-1 py-2.5 border border-border hover:bg-surface-elevated text-text text-xs font-semibold rounded-lg transition cursor-pointer select-none"
-                >
-                  Keep Account
-                </button>
-                <button
-                  onClick={triggerDeleteAccount}
-                  disabled={deleteConfirmationInput.trim().toUpperCase() !== "DELETE" || deleting}
-                  className="flex-1 py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg transition cursor-pointer select-none disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  Confirm Delete
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <DeleteAccountModal
+        isOpen={isDeleteModalOpen}
+        deleting={deleting}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={triggerDeleteAccount}
+      />
     </div>
   );
 }

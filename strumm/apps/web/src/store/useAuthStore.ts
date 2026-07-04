@@ -7,9 +7,10 @@ import { apiUrl } from "web/lib/api";
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
-  login: (token: string, user: User) => void;
+  login: (token: string, user: User, refreshToken?: string) => void;
   logout: () => void;
   fetchProfile: () => Promise<boolean>;
   silentRefresh: () => Promise<boolean>;
@@ -20,19 +21,34 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      refreshToken: null,
       
       setUser: (user) => set({ user }),
       setToken: (token) => set({ token }),
       
-      login: (token, user) => {
-        set({ token, user });
+      login: (token, user, refreshToken) => {
+        set({ token, user, refreshToken: refreshToken || null });
         if (typeof window !== "undefined") {
           localStorage.setItem("strumm-token", token);
         }
       },
       
       logout: () => {
-        set({ token: null, user: null });
+        const { refreshToken } = get();
+
+        // Revoke session on the server before clearing local state
+        if (typeof window !== "undefined" && refreshToken) {
+          fetch(apiUrl("/auth/logout"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ refreshToken }),
+          }).catch(() => {
+            // Fire-and-forget: don't block logout if the request fails
+          });
+        }
+
+        set({ token: null, user: null, refreshToken: null });
         if (typeof window !== "undefined") {
           localStorage.removeItem("strumm-token");
         }
@@ -45,13 +61,22 @@ export const useAuthStore = create<AuthState>()(
 
       silentRefresh: async () => {
         try {
+          const { refreshToken } = get();
+          if (!refreshToken) return false;
+
           const res = await fetch(apiUrl("/auth/refresh"), {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             credentials: "include",
+            body: JSON.stringify({ refreshToken }),
           });
           const json = await res.json();
           if (json.success && json.data?.token) {
-            set({ token: json.data.token, user: json.data.user });
+            set({
+              token: json.data.token,
+              user: json.data.user,
+              refreshToken: json.data.refreshToken || refreshToken,
+            });
             if (typeof window !== "undefined") {
               localStorage.setItem("strumm-token", json.data.token);
             }
@@ -101,6 +126,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         token: state.token,
         user: state.user,
+        refreshToken: state.refreshToken,
       }),
     }
   )
