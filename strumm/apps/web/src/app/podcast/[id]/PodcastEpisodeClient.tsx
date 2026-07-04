@@ -36,9 +36,8 @@ export default function PodcastEpisodeClient({ params }: PodcastEpisodeClientPro
             title: episode.title,
             artist: show?.title || "Unknown Podcast",
             thumbnail: show?.image || "",
-            duration: episode.duration,
-            hasVideo: Boolean(episode.videoAvailable),
-            metadata: {
+      duration: episode.duration,
+      metadata: {
               album: show?.title || "Podcasts",
               audioUrl: episode.audioUrl,
               audioVariants: episode.audioVariants,

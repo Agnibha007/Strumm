@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { usePlayerStore } from "web/store/usePlayerStore";
 
-// YT type is declared in YouTubeVideoPlayer.tsx — we only need the callback here.
 declare global {
   interface Window {
     onYouTubeIframeAPIReady?: () => void;
@@ -23,7 +22,6 @@ export default function AudioEngine() {
     setDuration,
     setPlayerRef,
     podcastMode,
-    videoMode,
     audioQuality,
     isRadio,
     queue,
@@ -345,16 +343,11 @@ export default function AudioEngine() {
     }
   }, [currentSong, isPlaying, pathname]);
 
-  // 2. Lazy Load YouTube API (only when NOT in videoMode — YouTubeVideoPlayer handles that)
+  // 2. Lazy Load YouTube API
   useEffect(() => {
-    // Skip loading the hidden YouTube player when video mode is active
-    if (videoMode) return;
-
     const isYTSong = currentSong && !currentSong.metadata?.audioUrl;
     if (!isYTSong || !isPlaying) return;
 
-    // The YouTube IFrame API script may already be loaded by YouTubeVideoPlayer.
-    // We rename our callback to avoid collision: only init if not already set up.
     usePlayerStore.getState().setPlayerLoading(true);
     usePlayerStore.getState().setPlayerError(null);
 
@@ -379,11 +372,8 @@ export default function AudioEngine() {
       return;
     }
 
-    // Set callback — but DON'T overwrite if already set by YouTubeVideoPlayer
-    // Use a shared callback approach: chain to existing
     const existingCallback = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
-      // Call existing callback first (YouTubeVideoPlayer's handler)
       if (typeof existingCallback === "function") {
         existingCallback();
       }
@@ -420,7 +410,7 @@ export default function AudioEngine() {
       }, 200);
       setTimeout(() => clearInterval(pollInterval), 10_000);
     }
-  }, [currentSong?.videoId, isPlaying, videoMode]);
+  }, [currentSong?.videoId, isPlaying]);
 
   useEffect(() => {
     return () => {
@@ -443,8 +433,7 @@ export default function AudioEngine() {
     if (!htmlAudioRef.current) return;
 
     const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
-    // Also yield when non-podcast video mode is active (YouTubeVideoPlayer takes over)
-    if (isPodcastVideo || videoMode) {
+    if (isPodcastVideo) {
       // Pause YouTube player
       if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
         try {
@@ -458,8 +447,6 @@ export default function AudioEngine() {
         htmlAudioRef.current.pause();
       } catch (e) {}
 
-      // Do NOT set playerRef here; VideoPlayer or YouTubeVideoPlayer component
-      // will register its own playerRef when it mounts
       return;
     }
 
@@ -584,12 +571,12 @@ export default function AudioEngine() {
         });
       }
     }
-  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality, videoMode]);
+  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality]);
 
   // 4. Watch for play/pause toggle from UI
   useEffect(() => {
     const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
-    if (isPodcastVideo || videoMode) return;
+    if (isPodcastVideo) return;
 
     if (currentSong?.metadata?.audioUrl) {
       if (htmlAudioRef.current) {
@@ -631,7 +618,7 @@ export default function AudioEngine() {
   // 5. Watch for volume changes from UI
   useEffect(() => {
     const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
-    if (isPodcastVideo || videoMode) return;
+    if (isPodcastVideo) return;
 
     if (currentSong?.metadata?.audioUrl) {
       if (htmlAudioRef.current) {

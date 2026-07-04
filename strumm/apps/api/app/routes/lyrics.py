@@ -50,14 +50,24 @@ def choose_lrclib_match(matches: list[dict], title: str, artist: str) -> Optiona
     return max(matches, key=score)
 
 async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = None, duration: Optional[int] = None) -> Optional[dict]:
+    from app.services.normalizer import clean_youtube_title, clean_youtube_artist
+
+    # Clean YouTube clutter from title/artist before searching LRCLIB.
+    # Raw YT titles like "Artist - Song (Official Video) ft. X [Lyrics]"
+    # fail LRCLIB lookup; cleaned titles like "Song" match properly.
+    clean_title = clean_youtube_title(title)
+    clean_artist = clean_youtube_artist(artist)
+
     params = {
-        "track_name": sanitize_text(title, max_length=160),
-        "artist_name": sanitize_text(artist, max_length=160),
+        "track_name": sanitize_text(clean_title, max_length=160),
+        "artist_name": sanitize_text(clean_artist, max_length=160),
     }
     if album:
         params["album_name"] = sanitize_text(album, max_length=160)
     if duration:
         params["duration"] = str(duration)
+
+    logger.debug(f"LRCLIB search: '{title}' → '{clean_title}' | '{artist}' → '{clean_artist}'")
 
     try:
         from app.services.http_client import get_http_client
@@ -68,7 +78,7 @@ async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = No
             timeout=5.0,
         )
         response.raise_for_status()
-        data = choose_lrclib_match(response.json(), title, artist)
+        data = choose_lrclib_match(response.json(), clean_title, clean_artist)
         if not data:
             return None
 
@@ -162,8 +172,10 @@ async def get_lyrics(
             return {"success": True, "data": cached}
         
         # 3. Check MongoDB lyrics cache
+        # Skip "unavailable" entries so previously-failed lookups get
+        # retried with the new cleaned title/artist logic.
         lyrics_cache = await database["lyrics_cache"].find_one({"videoId": id})
-        if lyrics_cache and lyrics_cache.get("source") in {"lrclib", "ytmusic"}:
+        if lyrics_cache and lyrics_cache.get("source") in {"lrclib", "ytmusic"} and lyrics_cache.get("plain"):
             result = {
                 "videoId": id,
                 "plain": lyrics_cache.get("plain"),

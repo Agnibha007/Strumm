@@ -72,7 +72,6 @@ export function toDisplaySong(ns: NormalizedSong): {
   artist: string;
   thumbnail: string;
   duration: number;
-  hasVideo: boolean;
 } {
   return {
     videoId: ns.videoId,
@@ -80,6 +79,5 @@ export function toDisplaySong(ns: NormalizedSong): {
     artist: ns.artist,
     thumbnail: ns.thumbnail,
     duration: ns.duration,
-    hasVideo: ns.hasVideo,
   };
 }

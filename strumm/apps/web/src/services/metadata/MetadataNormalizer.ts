@@ -260,9 +260,6 @@ export function normalizeSong(
   const canonicalTitleResult = canonicalString(cleanedTitle || rawTitle);
   const canonicalArtistResult = canonicalArtistStr(displayArtist);
 
-  // 5. All YouTube Data API results have a valid videoId — hasVideo is always true
-  const hasVideo = true;
-
   return {
     videoId,
     rawTitle,
@@ -271,7 +268,6 @@ export function normalizeSong(
     artist: displayArtist,
     canonicalTitle: canonicalTitleResult,
     canonicalArtist: canonicalArtistResult,
-    hasVideo,
     thumbnail,
     duration,
   };

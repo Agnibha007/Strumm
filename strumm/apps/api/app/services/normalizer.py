@@ -224,3 +224,121 @@ def generate_canonical_for_song(song: dict) -> str:
     title = song.get("title") or (song.get("song") or {}).get("title") or ""
     artist = song.get("artist") or (song.get("song") or {}).get("artist") or ""
     return canonical_song_key(str(title), str(artist))
+
+
+# ---------------------------------------------------------------------------
+# YouTube title / artist cleaning for external API searches (LRCLIB etc.)
+# ---------------------------------------------------------------------------
+
+# Ordered: longer / more specific patterns first so they match before
+# shorter overlapping patterns.
+_TITLE_CLUTTER_PATTERNS: list[re.Pattern] = [
+    # Full phrases with flexible delimiters
+    re.compile(
+        r"(?:^|\s|-|\||—|:)\s*"
+        r"(?:Official\s+(?:Music\s+)?Video|Official\s+Audio|Official\s+Lyric\s+Video)"
+        r"\s*(?=$|\s|-|\||—|:)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:^|\s|-|\||—|:)\s*Music\s+Video\s*(?=$|\s|-|\||—|:)", re.IGNORECASE),
+    re.compile(r"(?:^|\s|-|\||—|:)\s*Lyric\s+Video\s*(?=$|\s|-|\||—|:)", re.IGNORECASE),
+    re.compile(r"(?:^|\s|-|\||—|:)\s*Full\s+Song\s*(?=$|\s|-|\||—|:)", re.IGNORECASE),
+    re.compile(r"(?:^|\s|-|\||—|:)\s*Video\s+Song\s*(?=$|\s|-|\||—|:)", re.IGNORECASE),
+    # Single-word clutter
+    re.compile(r"\s*\(?\b(?:Lyrics?|Lyrical)\b\)?\s*", re.IGNORECASE),
+    re.compile(r"\s*\(?\b(?:HD|HQ|4K)\b\)?\s*", re.IGNORECASE),
+    re.compile(r"\s*\(?\bVisualizer\b\)?\s*", re.IGNORECASE),
+    re.compile(r"\s*\(?\bRemastered\b\)?\s*", re.IGNORECASE),
+    # Prefix patterns
+    re.compile(r"^(?:Lyrics?|Lyrical|Song|Video)\s*[:|-]\s*", re.IGNORECASE),
+]
+
+# Parenthesised / bracketed noise
+_BRACKET_NOISE_PATTERNS: list[re.Pattern] = [
+    re.compile(
+        r"\((?:\s*(?:Official|Music\s+Video|Audio|Lyrics?|Lyric\s+Video"
+        r"|HD|HQ|4K|Full\s+Song|Video\s+Song|Visualizer|Remastered)\s*)\)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\[(?:\s*(?:Official|Music\s+Video|Audio|Lyrics?|Lyric\s+Video"
+        r"|HD|HQ|4K|Full\s+Song|Video\s+Song|Visualizer|Remastered)\s*)\]",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\((?:\s*[Oo]fficial\s*)\)", re.IGNORECASE),
+    re.compile(r"\[(?:\s*[Oo]fficial\s*)\]", re.IGNORECASE),
+]
+
+# Pipe-separated channel suffix (e.g. "Song Title | ChannelName")
+# Leading / trailing delimiter runs
+_LEADING_DELIM_RE = re.compile(r"^[\s\-–—|:;.,/\\]+")
+_TRAILING_DELIM_RE = re.compile(r"[\s\-–—|:;.,/\\]+$")
+
+# Feat / ft patterns — used by both title and artist cleaning
+_FEAT_TITLE_RE = re.compile(
+    r"\s*[(\[]?\s*(?:feat\.?|ft\.?)\s+[^(\[]*$", re.IGNORECASE
+)
+
+def clean_youtube_title(title: str) -> str:
+    """
+    Clean a raw YouTube video title for use in external API searches
+    (e.g. LRCLIB lyrics lookup).
+
+    Mirrors the frontend ``MetadataNormalizer.cleanTitle()`` logic:
+      1. Remove bracketed noise
+      2. Remove known clutter phrases
+      3. Remove feat/ft suffixes (keep only main title)
+      4. Remove leading/trailing delimiters
+      5. Collapse whitespace
+    """
+    if not title:
+        return title
+
+    t = title
+
+    # 1. Bracketed noise
+    for pattern in _BRACKET_NOISE_PATTERNS:
+        t = pattern.sub("", t)
+
+    # 2. Known clutter phrases
+    for pattern in _TITLE_CLUTTER_PATTERNS:
+        t = pattern.sub(" ", t)
+
+    # 3. Strip feat/ft from title (keep only the main song name)
+    #    e.g. "Tum Hi Ho (feat. Arijit Singh)" → "Tum Hi Ho"
+    t = _FEAT_TITLE_RE.sub("", t)
+
+    # 4. Leading/trailing delimiters
+    t = _LEADING_DELIM_RE.sub("", t)
+    t = _TRAILING_DELIM_RE.sub("", t)
+
+    # 4b. Pipe-separated channel suffix
+    t = re.sub(r"\s*\|\s*\S[\s\S]*$", "", t)
+
+    # 5. Collapse whitespace
+    t = re.sub(r"\s+", " ", t).strip()
+
+    return t or title.strip()
+
+
+def clean_youtube_artist(artist: str) -> str:
+    """
+    Clean a raw YouTube artist / channel name for use in external API
+    searches (e.g. LRCLIB lyrics lookup).
+
+    Reuses existing ``ARTIST_SUFFIX_PATTERNS`` to strip channel suffixes
+    (VEVO, Topic, Official, etc.).
+    """
+    if not artist:
+        return artist
+
+    a = artist.strip()
+
+    # Strip known suffixes (reuse existing patterns)
+    for pattern in ARTIST_SUFFIX_PATTERNS:
+        a = pattern.sub("", a)
+
+    # camelCase VEVO → split "ArijitSinghVEVO" → "Arijit Singh"
+    a = re.sub(r"([a-z])([A-Z])", r"\1 \2", a)
+
+    return a.strip() or artist.strip()

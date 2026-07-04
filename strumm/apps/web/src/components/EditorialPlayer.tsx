@@ -62,8 +62,6 @@ export default function EditorialPlayer() {
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
   const sleepTimerDuration = usePlayerStore((s) => s.sleepTimerDuration);
   const sleepTimerEndTime = usePlayerStore((s) => s.sleepTimerEndTime);
-  const videoMode = usePlayerStore((s) => s.videoMode);
-  const toggleVideoMode = usePlayerStore((s) => s.toggleVideoMode);
   const lastAutoOpenedVideoId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -350,31 +348,6 @@ export default function EditorialPlayer() {
                   {sleepTimerDuration === "end-of-track" ? "♪" : String(sleepTimerDuration).slice(-1)}
                 </span>
               </div>
-            )}
-
-            {/* Watch Video toggle — opens fullscreen overlay */}
-            {currentSong?.hasVideo && (
-              <button
-                onClick={(e) => { e.stopPropagation(); toggleVideoMode(); setShowFullscreenMenu(true); }}
-                className={`p-2 rounded hover:bg-surface-elevated cursor-pointer transition text-xs font-bold ${
-                  videoMode
-                    ? "bg-primary/20 text-primary border border-primary/30 text-glow"
-                    : "text-muted hover:text-text"
-                }`}
-                title={videoMode ? "Switch to Audio" : "Watch Video"}
-              >
-                {videoMode ? (
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M11 5L6 9H2v6h4l5 4V5z" />
-                    <line x1="23" y1="9" x2="17" y2="15" />
-                    <line x1="17" y1="9" x2="23" y2="15" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polygon points="5 3 19 12 5 21 5 3" />
-                  </svg>
-                )}
-              </button>
             )}
 
             <button

@@ -78,9 +78,6 @@ export interface SongMetadata {
   syncedLyrics?: string;
   audioUrl?: string;
   audioVariants?: Partial<Record<'data-saver' | 'balanced' | 'high', string>>;
-  videoAvailable?: boolean;
-  videoUrl?: string | null;
-  mediaType?: "audio" | "video";
   description?: string;
 }
 
@@ -92,12 +89,6 @@ export interface Song {
   duration: number; // in seconds
   metadata?: SongMetadata;
 
-  /**
-   * Whether this song has a playable YouTube video.
-   * Always `true` for YouTube results (every videoId is playable).
-   * For podcasts or external audio, may be `false`.
-   */
-  hasVideo: boolean;
 }
 
 export interface Playlist {

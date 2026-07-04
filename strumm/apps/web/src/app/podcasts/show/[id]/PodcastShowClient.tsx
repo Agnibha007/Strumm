@@ -93,7 +93,6 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
       artist: show?.title || "Unknown Podcast",
       thumbnail: show?.image || "",
       duration: episode.duration,
-      hasVideo: Boolean(episode.videoAvailable),
       metadata: {
         album: show?.title || "Podcasts",
         audioUrl: episode.audioUrl,

@@ -17,9 +17,6 @@ export interface SongResult {
   thumbnail: string;
   duration: number; // seconds
 
-  /** Whether this song has a playable YouTube video. */
-  hasVideo: boolean;
-
   /**
    * Original YouTube video title (preserved by the Metadata Normalizer).
    * Undefined when the provider does not support normalisation.

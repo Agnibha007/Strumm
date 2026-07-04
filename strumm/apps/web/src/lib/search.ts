@@ -5,9 +5,9 @@
  * No CORS issues — the browser calls its own origin (www.strumm.me/api/search).
  * No external dependencies — all proxying happens server-side on Vercel.
  *
- * This file exposes `searchYouTube`, `getVideoDetails`, and
- * `getPlaylistItems` exports that the frontend uses to interact with the
- * YouTube Data API v3 via Next.js API route proxies.
+ * This file exposes `searchYouTube` and `getPlaylistItems` exports that the
+ * frontend uses to interact with the YouTube Data API v3 via Next.js API
+ * route proxies.
  */
 
 // ---------------------------------------------------------------------------
@@ -67,28 +67,6 @@ export async function searchYouTube(
   } catch (err) {
     console.warn("Search request failed:", err);
     return { songs: [], albums: [], artists: [] };
-  }
-}
-
-/**
- * Get full details for a single video (used by the song resolution page).
- * Proxied through a dedicated API route for consistency.
- */
-export async function getVideoDetails(
-  videoId: string,
-): Promise<import("@strumm/types").Song | null> {
-  try {
-    const res = await fetch(`/api/video-details?id=${encodeURIComponent(videoId)}`, {
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (json.success && json.data) {
-      return json.data;
-    }
-    return null;
-  } catch {
-    return null;
   }
 }
 
