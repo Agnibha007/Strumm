@@ -1,0 +1,490 @@
+import logging
+from datetime import datetime, timedelta
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException
+from app.database import mongodb as db
+from app.routes.dependencies import get_current_user
+from bson import ObjectId
+
+logger = logging.getLogger("strumm-statistics")
+router = APIRouter(prefix="/stats", tags=["statistics"])
+
+
+class StatisticsService:
+    """Service for computing user listening statistics."""
+    
+    @staticmethod
+    async def get_listening_time_stats(
+        user_id: str,
+        database,
+        days: int = 30
+    ) -> dict:
+        """Get listening time stats for the past N days."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        pipeline = [
+            {
+                "$match": {
+                    "userId": ObjectId(user_id),
+                    "playedAt": {"$gte": cutoff_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "date": {
+                            "$dateToString": {
+                                "format": "%Y-%m-%d",
+                                "date": "$playedAt"
+                            }
+                        }
+                    },
+                    "totalSeconds": {
+                        "$sum": "$durationSec"
+                    },
+                    "songCount": {"$sum": 1}
+                }
+            },
+            {
+                "$sort": {"_id.date": 1}
+            }
+        ]
+        
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
+        results = []
+        total_seconds = 0
+        
+        async for doc in cursor:
+            total_seconds += doc.get("totalSeconds", 0)
+            results.append({
+                "date": doc["_id"]["date"],
+                "minutesListened": doc["totalSeconds"] // 60,
+                "hoursListened": doc["totalSeconds"] / 3600,
+                "songCount": doc["songCount"]
+            })
+        
+        return {
+            "period_days": days,
+            "total_minutes": total_seconds // 60,
+            "total_hours": total_seconds / 3600,
+            "avg_daily_minutes": (total_seconds // 60) // max(days, 1),
+            "daily_breakdown": results
+        }
+    
+    @staticmethod
+    async def get_genre_stats(
+        user_id: str,
+        database,
+        days: int = 30
+    ) -> dict:
+        """Get genre breakdown of listening."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Get played songs with their metadata
+        pipeline = [
+            {
+                "$match": {
+                    "userId": ObjectId(user_id),
+                    "playedAt": {"$gte": cutoff_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$songId",
+                    "playCount": {"$sum": 1},
+                    "totalSeconds": {"$sum": "$durationSec"}
+                }
+            }
+        ]
+        
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
+        genre_map = {}
+        
+        async for history in cursor:
+            song_id = history["_id"]
+            if not song_id:
+                continue
+            
+            song = await database[db.SONGS].find_one({"_id": song_id})
+            if not song:
+                continue
+            
+            genres = song.get("genres", ["Unknown"])
+            if isinstance(genres, str):
+                genres = [genres]
+            
+            for genre in genres:
+                if genre not in genre_map:
+                    genre_map[genre] = {
+                        "plays": 0,
+                        "minutes": 0
+                    }
+                genre_map[genre]["plays"] += history["playCount"]
+                genre_map[genre]["minutes"] += history["totalSeconds"] // 60
+        
+        # Sort by listening time
+        sorted_genres = sorted(
+            genre_map.items(),
+            key=lambda x: x[1]["minutes"],
+            reverse=True
+        )
+        
+        return {
+            "top_genres": [
+                {
+                    "genre": g[0],
+                    "plays": g[1]["plays"],
+                    "minutes": g[1]["minutes"]
+                }
+                for g in sorted_genres[:15]
+            ],
+            "unique_genres": len(genre_map)
+        }
+    
+    @staticmethod
+    async def get_top_songs(
+        user_id: str,
+        database,
+        days: int = 30,
+        limit: int = 10
+    ) -> list:
+        """Get top played songs."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        pipeline = [
+            {
+                "$match": {
+                    "userId": ObjectId(user_id),
+                    "playedAt": {"$gte": cutoff_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$songId",
+                    "playCount": {"$sum": 1},
+                    "totalMinutes": {"$sum": {"$divide": ["$durationSec", 60]}}
+                }
+            },
+            {
+                "$sort": {"playCount": -1}
+            },
+            {
+                "$limit": limit
+            }
+        ]
+        
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
+        top_songs = []
+        
+        async for history in cursor:
+            song = await database[db.SONGS].find_one({"_id": history["_id"]})
+            if song:
+                top_songs.append({
+                    "songId": str(history["_id"]),
+                    "title": song.get("title"),
+                    "artist": song.get("artist"),
+                    "plays": history["playCount"],
+                    "totalMinutes": round(history["totalMinutes"], 2),
+                    "coverUrl": song.get("coverUrl")
+                })
+        
+        return top_songs
+    
+    @staticmethod
+    async def get_top_artists(
+        user_id: str,
+        database,
+        days: int = 30,
+        limit: int = 10
+    ) -> list:
+        """Get top artists by listening time."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        pipeline = [
+            {
+                "$match": {
+                    "userId": ObjectId(user_id),
+                    "playedAt": {"$gte": cutoff_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$songId",
+                    "totalSeconds": {"$sum": "$durationSec"},
+                    "playCount": {"$sum": 1}
+                }
+            }
+        ]
+        
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
+        artist_map = {}
+        
+        async for history in cursor:
+            song = await database[db.SONGS].find_one({"_id": history["_id"]})
+            if not song:
+                continue
+            
+            artist = song.get("artist", "Unknown")
+            if artist not in artist_map:
+                artist_map[artist] = {
+                    "plays": 0,
+                    "minutes": 0
+                }
+            artist_map[artist]["plays"] += history["playCount"]
+            artist_map[artist]["minutes"] += history["totalSeconds"] // 60
+        
+        # Sort by listening time
+        sorted_artists = sorted(
+            artist_map.items(),
+            key=lambda x: x[1]["minutes"],
+            reverse=True
+        )
+        
+        return [
+            {
+                "artist": a[0],
+                "plays": a[1]["plays"],
+                "minutes": a[1]["minutes"]
+            }
+            for a in sorted_artists[:limit]
+        ]
+    
+    @staticmethod
+    async def get_discovery_rate(
+        user_id: str,
+        database,
+        days: int = 30
+    ) -> dict:
+        """Calculate discovery rate (new songs vs repeats)."""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        
+        pipeline = [
+            {
+                "$match": {
+                    "userId": ObjectId(user_id),
+                    "playedAt": {"$gte": cutoff_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$songId",
+                    "playCount": {"$sum": 1}
+                }
+            }
+        ]
+        
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
+        new_songs = 0
+        repeat_plays = 0
+        
+        async for history in cursor:
+            if history["playCount"] == 1:
+                new_songs += 1
+            else:
+                repeat_plays += history["playCount"] - 1
+        
+        total_plays = new_songs + repeat_plays
+        discovery_rate = (new_songs / total_plays * 100) if total_plays > 0 else 0
+        
+        return {
+            "new_songs": new_songs,
+            "repeat_plays": repeat_plays,
+            "discovery_rate_percent": round(discovery_rate, 2),
+            "total_plays": total_plays
+        }
+
+
+@router.get("/listening-time")
+async def get_listening_time_stats(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get listening time statistics for the past N days."""
+    try:
+        database = db.get_db()
+        user_id = current_user["id"]
+        
+        stats = await StatisticsService.get_listening_time_stats(
+            user_id,
+            database,
+            days
+        )
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting listening time stats: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to retrieve listening time statistics."
+        }
+
+
+@router.get("/genres")
+async def get_genre_stats(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get genre breakdown of listening."""
+    try:
+        database = db.get_db()
+        user_id = current_user["id"]
+        
+        stats = await StatisticsService.get_genre_stats(
+            user_id,
+            database,
+            days
+        )
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting genre stats: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to retrieve genre statistics."
+        }
+
+
+@router.get("/top-songs")
+async def get_top_songs(
+    days: int = 30,
+    limit: int = 10,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get top played songs."""
+    try:
+        if limit > 50:
+            limit = 50
+        
+        database = db.get_db()
+        user_id = current_user["id"]
+        
+        songs = await StatisticsService.get_top_songs(
+            user_id,
+            database,
+            days,
+            limit
+        )
+        
+        return {
+            "success": True,
+            "data": songs
+        }
+    except Exception as e:
+        logger.error(f"Error getting top songs: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to retrieve top songs."
+        }
+
+
+@router.get("/top-artists")
+async def get_top_artists(
+    days: int = 30,
+    limit: int = 10,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get top artists by listening time."""
+    try:
+        if limit > 50:
+            limit = 50
+        
+        database = db.get_db()
+        user_id = current_user["id"]
+        
+        artists = await StatisticsService.get_top_artists(
+            user_id,
+            database,
+            days,
+            limit
+        )
+        
+        return {
+            "success": True,
+            "data": artists
+        }
+    except Exception as e:
+        logger.error(f"Error getting top artists: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to retrieve top artists."
+        }
+
+
+@router.get("/discovery-rate")
+async def get_discovery_rate(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get discovery rate (new songs vs repeats)."""
+    try:
+        database = db.get_db()
+        user_id = current_user["id"]
+        
+        stats = await StatisticsService.get_discovery_rate(
+            user_id,
+            database,
+            days
+        )
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting discovery rate: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to retrieve discovery rate statistics."
+        }
+
+
+@router.get("/dashboard")
+async def get_dashboard_stats(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all dashboard statistics in one call."""
+    try:
+        database = db.get_db()
+        user_id = current_user["id"]
+        
+        # Fetch all stats in parallel
+        listening_time = await StatisticsService.get_listening_time_stats(
+            user_id, database, days
+        )
+        genres = await StatisticsService.get_genre_stats(
+            user_id, database, days
+        )
+        top_songs = await StatisticsService.get_top_songs(
+            user_id, database, days, 5
+        )
+        top_artists = await StatisticsService.get_top_artists(
+            user_id, database, days, 5
+        )
+        discovery = await StatisticsService.get_discovery_rate(
+            user_id, database, days
+        )
+        
+        return {
+            "success": True,
+            "data": {
+                "listening_time": listening_time,
+                "genres": genres,
+                "top_songs": top_songs,
+                "top_artists": top_artists,
+                "discovery": discovery,
+                "period_days": days
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting dashboard stats: {str(e)}")
+        return {
+            "success": False,
+            "error": "Failed to retrieve dashboard statistics."
+        }
