@@ -345,10 +345,10 @@ export default function EditorialPlayer() {
               </div>
             )}
 
-            {/* Watch Video toggle — only for songs with YouTube video */}
+            {/* Watch Video toggle — opens fullscreen overlay */}
             {currentSong?.hasVideo && (
               <button
-                onClick={(e) => { e.stopPropagation(); toggleVideoMode(); }}
+                onClick={(e) => { e.stopPropagation(); toggleVideoMode(); setShowFullscreenMenu(true); }}
                 className={`p-2 rounded hover:bg-surface-elevated cursor-pointer transition text-xs font-bold ${
                   videoMode
                     ? "bg-primary/20 text-primary border border-primary/30 text-glow"

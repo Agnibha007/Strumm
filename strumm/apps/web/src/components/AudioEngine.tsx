@@ -281,7 +281,6 @@ export default function AudioEngine() {
       if (typeof existingCallback === "function") {
         existingCallback();
       }
-      console.log("AudioEngine: onYouTubeIframeAPIReady");
       if (!playerInstanceRef.current) {
         initPlayer();
       }
@@ -303,7 +302,6 @@ export default function AudioEngine() {
         }, 3000);
       };
       document.head.appendChild(tag);
-      console.log("AudioEngine: script element appended to head.");
     } else {
       // Script already loading — poll for API
       const pollInterval = setInterval(() => {
@@ -325,7 +323,7 @@ export default function AudioEngine() {
         try {
           playerInstanceRef.current.destroy();
         } catch (e) {
-          console.warn("Error destroying YT player:", e);
+          // Silently ignore cleanup errors
         }
       }
       if (containerRef.current) {
@@ -389,7 +387,9 @@ export default function AudioEngine() {
       }
 
       if (isPlaying) {
-        htmlAudioRef.current.play().catch((e) => console.log("HTML Audio play blocked:", e));
+        htmlAudioRef.current.play().catch(() => {
+          // Silently ignore autoplay policy restrictions
+        });
       } else {
         htmlAudioRef.current.pause();
       }
@@ -426,7 +426,6 @@ export default function AudioEngine() {
       if (playerInstanceRef.current && currentSong?.videoId) {
         const activeVideoId = currentSong.videoId;
         if (currentVideoIdRef.current !== activeVideoId) {
-          console.log("AudioEngine: Video ID changed from", currentVideoIdRef.current, "to", activeVideoId);
           currentVideoIdRef.current = activeVideoId;
           if (typeof playerInstanceRef.current.loadVideoById === "function") {
             try {
@@ -436,10 +435,10 @@ export default function AudioEngine() {
               });
               setPlaying(true);
             } catch (e) {
-              console.error("AudioEngine: loadVideoById exception:", e);
+              // Silently ignore video loading errors
             }
           } else {
-            console.warn("AudioEngine: player loadVideoById not available yet, queuing up next tick");
+            // loadVideoById not available yet, will retry on next sync
           }
         } else {
           if (isPlaying) {
@@ -560,9 +559,7 @@ export default function AudioEngine() {
   }, [audioQuality]);
 
   const initPlayer = () => {
-    console.log("AudioEngine: initPlayer called. currentSong videoId:", currentSong?.videoId);
     if (!window.YT || !window.YT.Player) {
-      console.error("AudioEngine: initPlayer failed because window.YT or window.YT.Player is undefined.");
       return;
     }
 
@@ -587,7 +584,6 @@ export default function AudioEngine() {
         },
         events: {
           onReady: (event: any) => {
-            console.log("AudioEngine: YT Player onReady event triggered!");
             usePlayerStore.getState().setPlayerLoading(false);
             const ytPlayer = event.target;
             if (!currentSong?.metadata?.audioUrl) {
@@ -612,7 +608,6 @@ export default function AudioEngine() {
               ytPlayer.setVolume(Math.round(volume * 100));
               if (currentSong?.videoId) {
                 currentVideoIdRef.current = currentSong.videoId;
-                console.log("AudioEngine: onReady loading/cueing videoId:", currentSong.videoId);
                 const targetStart = usePlayerStore.getState().currentTime || 0;
                 if (isPlaying) {
                   ytPlayer.playVideo();
@@ -629,7 +624,6 @@ export default function AudioEngine() {
             }
           },
           onStateChange: (event: any) => {
-            console.log("AudioEngine: YT Player state changed:", event.data);
             if (currentSong?.metadata?.audioUrl) return; // skip if playing podcast
 
             const state = event.data;
@@ -648,7 +642,6 @@ export default function AudioEngine() {
           },
           onError: (err: any) => {
             if (currentSong?.metadata?.audioUrl) return;
-            console.error("AudioEngine: YT Player error:", err);
             usePlayerStore.getState().setPlayerLoading(false);
             usePlayerStore.getState().setPlayerError("Playback failed or restricted. Skipping...");
             stopProgressTimer();
@@ -659,7 +652,6 @@ export default function AudioEngine() {
         },
       });
     } catch (e) {
-      console.error("AudioEngine: Exception while calling new window.YT.Player:", e);
       usePlayerStore.getState().setPlayerLoading(false);
       usePlayerStore.getState().setPlayerError("Failed to initialize player.");
     }

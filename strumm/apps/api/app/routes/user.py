@@ -11,7 +11,6 @@ from app.services.email_service import send_account_deleted_email
 from pydantic import BaseModel
 import asyncio
 import logging
-
 logger = logging.getLogger("strumm-user")
 router = APIRouter(tags=["user"])
 
@@ -456,7 +455,7 @@ async def update_profile(
 async def get_library(current_user: dict = Depends(get_current_user)):
     import traceback
     user_id_str = current_user["id"]
-    print(f"[DEBUG /library] Authenticated User ID: {user_id_str}")
+    logger.debug(f"[/library] Authenticated User ID: {user_id_str}")
     try:
         database = db.get_db()
         possible_ids = [user_id_str]
@@ -464,7 +463,7 @@ async def get_library(current_user: dict = Depends(get_current_user)):
             possible_ids.append(ObjectId(user_id_str))
             
         mongo_query = {"userId": {"$in": possible_ids}}
-        print(f"[DEBUG /library] Mongo Query for Playlists: {mongo_query}")
+        logger.debug(f"[/library] Mongo Query for Playlists: {mongo_query}")
         
         # 1. Playlists
         playlists_cursor = database[db.PLAYLISTS].find(mongo_query)
@@ -476,12 +475,12 @@ async def get_library(current_user: dict = Depends(get_current_user)):
             playlists.append(doc)
             
         playlist_count = len(playlists)
-        print(f"[DEBUG /library] Playlist count: {playlist_count}")
+        logger.debug(f"[/library] Playlist count: {playlist_count}")
         
         # 2. Liked Songs Count
         liked_query = {"userId": {"$in": possible_ids}}
         liked_count = await database[db.LIKED_SONGS].count_documents(liked_query)
-        print(f"[DEBUG /library] Liked songs count: {liked_count}")
+        logger.debug(f"[/library] Liked songs count: {liked_count}")
         
         return {
             "success": True,
@@ -492,7 +491,7 @@ async def get_library(current_user: dict = Depends(get_current_user)):
         }
     except Exception as e:
         tb_str = traceback.format_exc()
-        print(f"[ERROR /library] Exception traceback:\n{tb_str}")
+        logger.error(f"[/library] Exception traceback:\n{tb_str}")
         logger.error(f"Error fetching library: {str(e)}\n{tb_str}")
         return {"success": False, "error": f"Failed to fetch library: {str(e)}", "traceback": tb_str}
 

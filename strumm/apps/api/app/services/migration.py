@@ -1,8 +1,11 @@
 import os
 import json
+import logging
 from datetime import datetime
 from bson import ObjectId
 from app.database import mongodb as db
+
+logger = logging.getLogger("strumm-migration")
 
 # Default email domain for migrated users without an email
 # Override via STRUMM_EMAIL_DOMAIN env var in production (e.g. "strumm.me")
@@ -50,7 +53,7 @@ def convert_theme(old_theme: str) -> str:
 # Helper to load MongoDB-extended JSON exports safely
 def load_json_file(file_path: str):
     if not os.path.exists(file_path):
-        print(f"Migration: File not found {file_path}")
+        logger.warning(f"Migration: File not found {file_path}")
         return None
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)

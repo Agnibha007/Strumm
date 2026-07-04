@@ -1,10 +1,13 @@
 import os
+import logging
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import dns.resolver
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("strumm-database")
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = "strumm"
@@ -39,12 +42,12 @@ def connect_db():
     mongo_uri = MONGODB_URI
     db_instance.client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=8000)
     db_instance.db = db_instance.client[DB_NAME]
-    print(f"Connected to MongoDB database: {DB_NAME}")
+    logger.info(f"Connected to MongoDB database: {DB_NAME}")
 
 def close_db():
     if db_instance.client:
         db_instance.client.close()
-        print("MongoDB connection closed")
+        logger.info("MongoDB connection closed")
 
 # Collection name constants
 USERS = "users"
