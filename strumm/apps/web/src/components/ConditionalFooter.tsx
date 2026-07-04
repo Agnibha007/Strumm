@@ -18,7 +18,7 @@ export default function ConditionalFooter() {
   const sidebarOffset = token ? "md:ml-64" : "";
 
   return (
-    <footer className={`border-t border-border/40 bg-background/80 backdrop-blur-md ${sidebarOffset}`}>
+    <footer className={`border-t border-border/40 bg-background/80 backdrop-blur-md mt-auto ${sidebarOffset}`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
         <div className="flex flex-wrap items-center justify-center sm:justify-between gap-x-6 gap-y-2 text-[11px] text-muted">
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
