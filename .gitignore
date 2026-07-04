@@ -34,5 +34,11 @@ __pycache__/
 .env.test.local
 .env.production.local
 
+# Local analysis/audit files (not committed)
+REFACTORING_SUMMARY.md
+FEATURE_ROADMAP.md
+*_AUDIT_REPORT.md
+.analysis/
+
 ssh.txt.*
 ssh.txt
