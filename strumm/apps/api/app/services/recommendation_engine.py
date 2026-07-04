@@ -61,7 +61,7 @@ DEFAULT_MOODS = [
     "Rainy Day", "Creative", "Sleep", "Nostalgia", "Fresh",
 ]
 
-CANDIDATE_POOL_SIZE = 30
+CANDIDATE_POOL_SIZE = 50
 FINAL_PLAYLIST_SIZE = 15
 
 # ---------------------------------------------------------------------------
@@ -133,7 +133,11 @@ class RecommendationEngine:
         limit: int = 10,
     ) -> dict[str, Any]:
         """Generate a Discovery Mix (Home page)."""
-        cache_key = f"rec:discovery:{user_id}"
+        # Rotate the cache every 4 hours so the user doesn't see the same
+        # recommendations all day.  The seed changes which random nudge
+        # different candidates get, surfacing fresh variety.
+        slot = datetime.utcnow().hour // 4
+        cache_key = f"rec:discovery:{user_id}:{slot}"
         cached = get_cached_recommendation(cache_key)
         if cached:
             return cached
@@ -143,14 +147,21 @@ class RecommendationEngine:
             database, user_id
         )
 
+        # Collect recently recommended videoIds to exclude for freshness
+        recently_shown = self._get_recently_recommended(database, user_id)
+
         candidates = await self._build_candidates(
             database, user_id, likes, history, stats,
             top_artists, top_genres, mood="Fresh & Undiscovered",
-            exclude=set(),
+            exclude=recently_shown,
         )
 
+        # Track which songs we're recommending for future exclusion
+        await self._record_recommendations(database, user_id, candidates)
+
         scored = self._score_candidates(
-            candidates, likes, history, top_artists, "Fresh & Undiscovered"
+            candidates, likes, history, top_artists, "Fresh & Undiscovered",
+            discovery_boost=True,
         )
         final = self._diversify(scored, limit=limit)
 
@@ -384,14 +395,16 @@ class RecommendationEngine:
                     if len(candidates) >= CANDIDATE_POOL_SIZE:
                         break
 
-        # --- Source 5: YTMusic radio for the most-played liked song ---
-        if len(candidates) < 5 and likes:
+        # --- Source 5: YTMusic radio for fresh related tracks (always runs) ---
+        if likes:
             from app.services.ytmusic import call_ytmusic_safe
-            seed_vid = likes[0].get("song", {}).get("videoId")
+            # Pick a random liked song as seed for variety
+            seed_liked = random.choice(likes[:10])
+            seed_vid = seed_liked.get("song", {}).get("videoId")
             if seed_vid:
                 try:
                     watch = await asyncio.to_thread(
-                        lambda: call_ytmusic_safe("get_watch_playlist", videoId=seed_vid, limit=10)
+                        lambda: call_ytmusic_safe("get_watch_playlist", videoId=seed_vid, limit=15)
                     )
                     if watch and watch.get("tracks"):
                         for track in watch["tracks"]:
@@ -431,12 +444,18 @@ class RecommendationEngine:
         history: list,
         top_artists: list[str],
         mood: str,
+        discovery_boost: bool = False,
     ) -> list[tuple[dict, float]]:
-        """Score each candidate. Higher = better match."""
+        """Score each candidate. Higher = better match.
+
+        When ``discovery_boost`` is True (used by the Home page Discovery Mix),
+        the boost for known songs is lowered so that fresh/unfamiliar tracks
+        have a better chance of surfacing.
+        """
         liked_vids = {l.get("song", {}).get("videoId") for l in likes}
         history_vids = {h.get("song", {}).get("videoId") for h in history}
         history_artists = set()
-        for h in history:
+        for h in history[:30]:
             artist = h.get("song", {}).get("artist", "")
             if artist:
                 history_artists.add(canonical_artist(artist))
@@ -454,6 +473,12 @@ class RecommendationEngine:
         }
 
         keywords = mood_keywords.get(mood.lower(), set())
+
+        # Lower boost multipliers for discovery mode so new songs can surface
+        liked_boost = 1.0 if discovery_boost else 3.0
+        history_boost = 0.5 if discovery_boost else 1.0
+        artist_boost = 1.0 if discovery_boost else 2.0
+
         scored = []
         for c in candidates:
             score = 1.0  # base
@@ -463,25 +488,26 @@ class RecommendationEngine:
             artist_lower = (c.get("artist") or "").lower()
             artist_canonical = canonical_artist(c.get("artist", ""))
 
-            # +3 if liked
+            # Boost for liked songs (lowered in discovery mode)
             if vid in liked_vids:
-                score += 3.0
+                score += liked_boost
 
-            # +1 if recently played
+            # Small boost if recently played
             if vid in history_vids:
-                score += 1.0
+                score += history_boost
 
-            # +2 if artist is in top artists
+            # Boost if artist is in top artists
             if artist_canonical in [canonical_artist(a) for a in top_artists]:
-                score += 2.0
+                score += artist_boost
 
-            # +0.5 per keyword match in title or artist
+            # Mood/title keyword match
             for kw in keywords:
                 if kw in title_lower or kw in artist_lower:
-                    score += 0.5
+                    score += 0.3
 
-            # Small random nudge for diversity (±0.2)
-            score += random.uniform(-0.2, 0.2)
+            # Random nudge for diversity — wider range (+/- 1.0) so order
+            # fluctuates between cache rotations
+            score += random.uniform(-1.0, 1.0)
 
             scored.append((c, score))
 
@@ -491,29 +517,55 @@ class RecommendationEngine:
 
     def _diversify(self, scored: list[tuple[dict, float]], limit: int) -> list[dict]:
         """
-        Select top candidates while preventing consecutive same-artist stacking.
+        Select top candidates with multi-dimensional diversity:
+          - No more than 2 songs per artist
+          - Mix genres (when classifiable)
+          - Source variety (liked, played, discovery)
+          - Prevent same-artist stacking
         """
         selected: list[dict] = []
+        artist_counts: dict[str, int] = {}
         last_artist: str | None = None
         buffer: list[tuple[dict, float]] = list(scored)
+        max_per_artist = 2
 
         while len(selected) < limit and buffer:
-            # Find the best candidate whose artist differs from the last one
             found = False
             for i, (c, s) in enumerate(buffer):
                 artist = canonical_artist(c.get("artist", ""))
+                artist_count = artist_counts.get(artist, 0)
+
+                # Skip if this artist already has max_per_artist songs
+                if artist_count >= max_per_artist:
+                    continue
+
+                # Prefer a different artist from the last one for flow
                 if artist != last_artist or len(selected) == 0:
                     selected.append(c)
                     last_artist = artist
+                    artist_counts[artist] = artist_count + 1
                     buffer.pop(i)
                     found = True
                     break
 
             if not found:
-                # No artist variety — just take the best remaining
-                best, _ = buffer.pop(0)
-                selected.append(best)
-                last_artist = canonical_artist(best.get("artist", ""))
+                # No suitable candidate — take the best remaining that
+                # hasn't hit the artist cap
+                popped = False
+                for i, (c, s) in enumerate(buffer):
+                    artist = canonical_artist(c.get("artist", ""))
+                    if artist_counts.get(artist, 0) < max_per_artist:
+                        selected.append(c)
+                        last_artist = artist
+                        artist_counts[artist] = artist_counts.get(artist, 0) + 1
+                        buffer.pop(i)
+                        popped = True
+                        break
+                if not popped:
+                    # All remaining exceed the cap — just take the top
+                    best, _ = buffer.pop(0)
+                    selected.append(best)
+                    last_artist = canonical_artist(best.get("artist", ""))
 
         return selected[:limit]
 
@@ -540,6 +592,43 @@ class RecommendationEngine:
         return (
             f"A {mood.lower()} vibe with {count} tracks to set the mood."
         )
+
+    async def _get_recently_recommended(self, database, user_id: str) -> set:
+        """Return videoIds recommended to this user in the last 24 hours."""
+        try:
+            from bson import ObjectId
+            oid = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
+            cursor = database["recommendation_logs"].find(
+                {"userId": str(oid), "createdAt": {"$gt": datetime.utcnow() - timedelta(hours=24)}},
+                {"videoIds": 1, "_id": 0},
+            ).limit(5)
+            excluded = set()
+            async for doc in cursor:
+                for vid in doc.get("videoIds", []):
+                    excluded.add(vid)
+            return excluded
+        except Exception:
+            return set()
+
+    async def _record_recommendations(self, database, user_id: str, candidates: list[dict]) -> None:
+        """Record which videoIds were recommended for freshness rotation."""
+        try:
+            from bson import ObjectId
+            oid = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
+            video_ids = [c.get("videoId") for c in candidates if c.get("videoId")]
+            if video_ids:
+                await database["recommendation_logs"].insert_one({
+                    "userId": str(oid),
+                    "videoIds": video_ids,
+                    "createdAt": datetime.utcnow(),
+                })
+                # Expire old logs
+                await database["recommendation_logs"].delete_many({
+                    "userId": oid,
+                    "createdAt": {"$lt": datetime.utcnow() - timedelta(days=3)},
+                })
+        except Exception:
+            pass
 
     def _to_song_dict(self, song: dict) -> dict:
         """Normalize a song dict to a consistent shape."""
