@@ -15,9 +15,53 @@ router = APIRouter(tags=["recommendation"])
 ai = get_ai_provider()
 rec_engine = get_recommendation_engine()
 
-# Shared helper: resolve song suggestions into full song objects
-async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
-    """Resolve {title, artist} pairs from AI into full song objects."""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# Mood keyword map — used to extract a vibe from the user's free-text prompt
+# so the recommendation engine can generate context-aware candidates.
+_MOOD_KEYWORDS: dict[str, set[str]] = {
+    "Chill": {"chill", "relax", "calm", "lo-fi", "lofi", "mellow", "ambient", "smooth", "peaceful", "sleep", "wind down", "unwind", "take it easy", "de-stress", "laid back", "cozy", "soft", "gentle", "cool down", "downtempo"},
+    "Energetic": {"energetic", "hype", "pump", "workout", "work out", "working out", "gym", "exercise", "exercising", "running", "cardio", "active", "motivation", "pump up", "high energy", "intense", "fast", "amped", "turbo", "power", "explosive", "beast", "go hard"},
+    "Focus": {"focus", "study", "work", "concentrate", "deep focus", "deep work", "productivity", "reading", "instrumental", "coding", "programming", "homework", "brain", "mental", "clarify"},
+    "Happy": {"happy", "good mood", "mood booster", "cheer me up", "uplift", "feel good", "feel better", "joy", "cheerful", "sunny", "positive", "fun", "fun times", "celebrate", "good vibes", "happy", "brighten", "smile", "upbeat", "carefree"},
+    "Sad": {"sad", "melancholy", "cry", "emotional", "heartbreak", "breakup", "lonely", "rainy", "down", "blue", "gloomy", "depressed", "depressing", "moody", "somber", "mournful", "moving on", "let go"},
+    "Party": {"party", "dance", "club", "celebration", "festival", "party mix", "turn up", "night out", "weekend", "crowd", "banger"},
+    "Romantic": {"romantic", "love", "date", "date night", "slow dance", "couple", "valentine", "intimate", "sensual", "cuddle", "crush", "kiss", "passion"},
+    "Nostalgia": {"nostalgia", "nostalgic", "retro", "throwback", "old school", "classic", "90s", "80s", "70s", "vintage", "memories", "remember", "childhood", "golden oldies", "blast from the past"},
+    "Creative": {"creative", "inspire", "inspiration", "artistic", "imaginative", "dreamy", "experimental", "writing", "brainstorm", "imagination", "inventive", "innovative"},
+    "Travel": {"travel", "road trip", "roadtrip", "journey", "wanderlust", "explore", "summer", "vacation", "driving", "cruise", "adventure"},
+}
+
+
+def extract_mood_from_prompt(prompt: str) -> str:
+    """
+    Extract the most likely mood/vibe from a free-text user prompt.
+
+    Matches keywords in the prompt — case-insensitive — and returns the
+    best-matching mood.  Defaults to "Chill" if nothing matches.
+    """
+    prompt_lower = prompt.lower()
+    best_mood = "Chill"
+    best_score = 0
+
+    for mood, keywords in _MOOD_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in prompt_lower)
+        if score > best_score:
+            best_score = score
+            best_mood = mood
+
+    return best_mood
+
+
+async def resolve_suggestions(suggestions: list[dict]) -> list[dict]:
+    """Resolve {title, artist} pairs from AI into full song objects.
+
+    Searches the database and YouTube Music to find real songs matching the
+    AI's suggestions.  Never returns mock/hardcoded data — if a song can't
+    be found it is simply skipped.
+    """
     resolved = []
     database = db.get_db()
     from app.routes.search import search_yt_music_songs
@@ -27,7 +71,8 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
         artist = s.get("artist", "")
         if not title:
             return None
-            
+
+        # 1. Try DB match by title
         db_match = await database[db.PLAYLISTS].find_one(
             {"songs.title": escaped_regex(title)},
             {"songs.$": 1}
@@ -41,7 +86,8 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
                 "thumbnail": song["thumbnail"],
                 "duration": song["duration"]
             }
-        
+
+        # 2. Search YouTube Music with title + artist
         search_results = await search_yt_music_songs(f"{title} {artist}")
         if search_results:
             best_match = search_results[0]
@@ -52,28 +98,25 @@ async def resolve_suggestions(suggestions: List[dict]) -> List[dict]:
                 "thumbnail": best_match["thumbnail"],
                 "duration": best_match["duration"]
             }
-            
-        # Fallback mock
-        str_hash = f"{title}-{artist}".lower()
-        mock_id = "dQw4w9WgXcQ"
-        if "lofi" in str_hash:
-            mock_id = "jfKfPfyJRdk"
-        elif "classical" in str_hash:
-            mock_id = "jgpJVIgAmDY"
-        elif "focus" in str_hash:
-            mock_id = "5qap5aO4i9A"
-            
-        return {
-            "videoId": mock_id,
-            "title": title,
-            "artist": artist,
-            "thumbnail": f"https://img.youtube.com/vi/{mock_id}/hqdefault.jpg",
-            "duration": 210
-        }
+
+        # 3. Try broader search with just the title
+        broader_results = await search_yt_music_songs(title)
+        if broader_results:
+            best_match = broader_results[0]
+            return {
+                "videoId": best_match["videoId"],
+                "title": best_match["title"],
+                "artist": best_match["artist"],
+                "thumbnail": best_match["thumbnail"],
+                "duration": best_match["duration"]
+            }
+
+        # Could not find this song — skip it rather than returning a mock
+        return None
 
     tasks = [resolve_single(s) for s in suggestions]
     results = await asyncio.gather(*tasks)
-    
+
     seen_vids = set()
     unique_results = []
     for r in results:
@@ -301,10 +344,12 @@ async def explore_chat(
         playlists = [p async for p in playlists_cursor]
         playlist_summary = ", ".join([f"'{p['name']}' (ID: {str(p['_id'])})" for p in playlists])
         
-        # 2. Pre-generate engine candidates so AI enhances rather than generates from scratch
+        # 2. Extract mood from user prompt and generate context-aware engine candidates
+        prompt_mood = extract_mood_from_prompt(user_prompt)
+        logger.debug(f"Extracted mood '{prompt_mood}' from prompt: {user_prompt[:80]}")
         engine_candidates = await rec_engine.generate(
             user_id=userId,
-            mood="Chill",
+            mood=prompt_mood,
             limit=10,
             exclude_video_ids=set(),
         )
@@ -323,6 +368,7 @@ async def explore_chat(
             
         system_prompt = (
             "You are 'Strumm Flow', a premium, intelligent music curator assistant. Your goal is to help the user discover music, answer music-related questions, suggest tracks, build custom playlists, or edit existing playlists.\n"
+            f"The user is looking for a '{prompt_mood}' vibe. Tailor your suggestions to match this mood.\n"
             "You are provided with details about the user's music taste:\n"
             f"1. Liked songs: {likes_summary}\n"
             f"2. Listening history: {history_summary}\n"
