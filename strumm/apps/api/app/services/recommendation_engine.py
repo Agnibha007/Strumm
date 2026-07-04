@@ -204,13 +204,13 @@ class RecommendationEngine:
         ]
 
         prompt = (
-            f"You are curating a '{mood}' music playlist. "
+            f"You are curating a '{mood}' music playlist. The user wants a '{mood}' vibe — tailor the flow to match this mood.\n"
             f"Here are {len(songs_summary)} candidate songs already selected:\n"
             f"{str(songs_summary)}\n\n"
             "Please reorder them to create a smooth listening flow for the given mood. "
             "Return ONLY a JSON object with these keys:\n"
-            "- 'name': a creative playlist name (max 40 chars)\n"
-            "- 'description': a short description (1-2 sentences)\n"
+            "- 'name': a creative playlist name (max 40 chars) that reflects the mood\n"
+            "- 'description': a short description (1-2 sentences) describing the vibe\n"
             "- 'songs': the SAME songs list, but reordered as an array of {title, artist} objects\n\n"
             "Do NOT add or remove songs. Do NOT write markdown or notes. Just raw JSON."
         )

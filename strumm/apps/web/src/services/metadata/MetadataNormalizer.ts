@@ -120,6 +120,92 @@ const PIPE_SUFFIX_PATTERN = /\s*\|\s*\S[\s\S]*$/;
 const ARTIST_DASH_TITLE_PATTERN = /^([^\-]+?)\s*-\s*(.+)$/;
 
 // ---------------------------------------------------------------------------
+// Music label channel detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Known music label / record company channels that upload songs but are
+ * NOT the actual artist.  When a channel is a label, the artist name must
+ * come from the video title, never from the channel name.
+ *
+ * This set is case-insensitive (compared after toLowerCase()).
+ */
+const MUSIC_LABEL_CHANNELS = new Set([
+  // Indian labels
+  "t-series",
+  "tseries",
+  "sony music india",
+  "zee music company",
+  "tips official",
+  "tips music",
+  "wave music",
+  "speed records",
+  "times music",
+  "saregama music",
+  "saregama",
+  "venus music",
+  "venus records",
+  "t series",
+  "t-series official",
+  "sony music entertainment india",
+  "sony music india • best of",
+  "tseries music",
+  "tseries official",
+  "warnermusic india",
+  "warner music india",
+  // International labels
+  "vevo",
+  "umg",
+  "universal music group",
+  "wmg",
+  "warner music group",
+  "sony music entertainment",
+  "atlantic records",
+  "columbia records",
+  "epic records",
+  "capitol records",
+  "island records",
+  "interscope records",
+  "rca records",
+  "republic records",
+  "def jam",
+  "xfy",
+]);
+
+/**
+ * Regex patterns for channel names that strongly suggest a label/company
+ * rather than an individual artist.  Channel names matching these patterns
+ * should NOT be used as the artist name.
+ */
+const LABEL_CHANNEL_PATTERNS = [
+  /^(?:[\w\s.&'-]+)\s+(?:music|records?|recordings?|label|labels?|company|production|entertainment|official|network|digital|media|inc\.?|corp\.?|limited|ltd\.?)\s*$/i,
+  /^(?:the\s+)?(?:music|records?|label)\s+(?:factory|company|group|network|hub|studio)\s*$/i,
+];
+
+/** Check if a channel name belongs to a music label rather than an artist. */
+function isLabelChannel(channelTitle: string): boolean {
+  const lower = channelTitle.toLowerCase().trim();
+  if (MUSIC_LABEL_CHANNELS.has(lower)) return true;
+  for (const pattern of LABEL_CHANNEL_PATTERNS) {
+    if (pattern.test(channelTitle)) return true;
+  }
+  return false;
+}
+
+/**
+ * Heuristic: check whether a string looks like a reasonable artist name
+ * (as opposed to a song title).  Used to distinguish "Artist - Song" from
+ * "Song - Artist" in title patterns.
+ */
+function isReasonableArtist(candidate: string): boolean {
+  if (!candidate || candidate.length < 1 || candidate.length > 40) return false;
+  // Reject obvious clutter words
+  if (/^(?:Official|Lyrics?|Audio|Video|HD|HQ|4K|Full|Song|Music)$/i.test(candidate)) return false;
+  // Artists with special characters like commas are still valid (e.g. "Tyler, The Creator")
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Normalizer
 // ---------------------------------------------------------------------------
 
@@ -178,27 +264,52 @@ export function cleanTitle(rawTitle: string): string {
  * @returns The inferred artist name
  */
 export function inferArtist(title: string, channelTitle: string): string {
-  // --- Priority 1: Extract from title ---
-  // Only extract if the dash separator is followed by a non-trivial song name.
-  // Heuristic: the left side is likely an artist when it is short (≤ 40 chars),
-  // doesn't contain common song-preposition words, and the right side is longer
-  // or contains typical song-title structure.
+  // --- Priority 1: Extract from title (both "Artist - Song" and "Song - Artist") ---
   const dashMatch = title.match(ARTIST_DASH_TITLE_PATTERN);
   if (dashMatch) {
-    const extractedArtist = dashMatch[1].trim();
-    const extractedSong = dashMatch[2].trim();
-    // Valid artist indicators: short name, no song-like prepositions
-    const songLikePrepositions = /\b(?:feat\.?|ft\.?|with|and|vs\.?|from|in|on|at|of|the|a|an)\b/i;
-    if (
-      extractedArtist.length > 0 &&
-      extractedArtist.length <= 40 &&
-      extractedSong.length > 0 &&
-      !songLikePrepositions.test(extractedArtist) &&
-      !/^(?:Official|Lyrics|Audio|Video|HD|HQ|4K)$/i.test(extractedArtist) &&
-      // Prefer extraction when artist is shorter than song
-      extractedArtist.length < extractedSong.length
-    ) {
-      return extractedArtist;
+    const left = dashMatch[1].trim();
+    const right = dashMatch[2].trim();
+    const channelIsLabel = isLabelChannel(channelTitle);
+
+    // Score both sides for artist-likelihood.
+    // Key signals (strongest first):
+    //   1. Candidate appears in channel name  →  4 pts
+    //   2. Candidate has fewer words than the other side  →  3 pts
+    //      (artist names are typically 1-3 words; song titles are often longer phrases)
+    //   3. Candidate is shorter (chars) than the other side  →  1 pt
+    //   4. Channel is a label (so title is the only source of truth)  →  1 pt
+    const matchesChannel = (name: string) => {
+      const lowerChannel = channelTitle.toLowerCase();
+      const lowerName = name.toLowerCase();
+      // Word-boundary match first (prevents "series" matching "tseries")
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`\\b${escaped}\\b`, "i").test(channelTitle)) return true;
+      // Fallback: exact substring handles camelCase channels like "ArijitSingh"
+      return lowerChannel.includes(lowerName);
+    };
+    const countWords = (s: string) => s.trim().split(/\s+/).length;
+
+    const score = (candidate: string, other: string): number => {
+      let s = 0;
+      if (candidate.length < other.length) s += 1;
+      if (countWords(candidate) < countWords(other)) s += 3; // strong signal
+      if (countWords(candidate) === 1) s += 1;               // single word is very likely artist
+      if (matchesChannel(candidate)) s += 4;                 // strongest signal
+      if (channelIsLabel) s += 1;                             // label = trust title extraction
+      return s;
+    };
+
+    const normalValid = isReasonableArtist(left) && right.length > 0;
+    const reversedValid = isReasonableArtist(right) && left.length > 0;
+    const leftScore = normalValid ? score(left, right) : -1;
+    const rightScore = reversedValid ? score(right, left) : -1;
+
+    if (leftScore > 0 || rightScore > 0) {
+      if (leftScore > rightScore) return left;
+      if (rightScore > leftScore) return right;
+      // Tied — prefer right side for label channels ("Song - Artist" is common on labels),
+      // left side for non-label channels ("Artist - Song" is standard elsewhere).
+      return channelIsLabel ? right : left;
     }
   }
 
