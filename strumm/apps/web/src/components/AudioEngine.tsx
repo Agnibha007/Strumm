@@ -148,9 +148,88 @@ export default function AudioEngine() {
   }, []);
 
   // Media Session API for Lock-Screen Controls and Media Keys
+  // This handles hardware media buttons from headphones, keyboards, and lock screen
   useEffect(() => {
-    if ("mediaSession" in navigator && currentSong) {
-      // Force secure thumbnail to prevent mixed content issues
+    if (!("mediaSession" in navigator)) return;
+
+    // Update handlers more frequently to ensure they're always ready
+    const updateMediaSessionHandlers = () => {
+      try {
+        const ms = navigator.mediaSession;
+
+        // Set up action handlers for all media controls
+        ms.setActionHandler("play", () => {
+          const state = usePlayerStore.getState();
+          if (!state.isPlaying) {
+            state.togglePlay();
+          }
+        });
+
+        ms.setActionHandler("pause", () => {
+          const state = usePlayerStore.getState();
+          if (state.isPlaying) {
+            state.togglePlay();
+          }
+        });
+
+        ms.setActionHandler("previoustrack", () => {
+          const state = usePlayerStore.getState();
+          if (state.currentTime > 5) {
+            state.playerRef?.seekTo(0);
+            state.setCurrentTime(0);
+          } else {
+            state.prev();
+          }
+        });
+
+        ms.setActionHandler("nexttrack", () => {
+          usePlayerStore.getState().next();
+        });
+
+        ms.setActionHandler("seekto", (details) => {
+          if (details.seekTime !== undefined) {
+            const state = usePlayerStore.getState();
+            state.playerRef?.seekTo(details.seekTime);
+            state.setCurrentTime(details.seekTime);
+          }
+        });
+
+        ms.setActionHandler("seekbackward", (details) => {
+          const offset = details.seekOffset || 10;
+          const state = usePlayerStore.getState();
+          const targetTime = Math.max(0, state.currentTime - offset);
+          state.playerRef?.seekTo(targetTime);
+          state.setCurrentTime(targetTime);
+        });
+
+        ms.setActionHandler("seekforward", (details) => {
+          const offset = details.seekOffset || 10;
+          const state = usePlayerStore.getState();
+          const targetTime = Math.min(state.duration, state.currentTime + offset);
+          state.playerRef?.seekTo(targetTime);
+          state.setCurrentTime(targetTime);
+        });
+
+        ms.setActionHandler("skipad", () => {
+          usePlayerStore.getState().next();
+        });
+
+        ms.setActionHandler("stop", () => {
+          const state = usePlayerStore.getState();
+          if (state.isPlaying) {
+            state.togglePlay();
+          }
+        });
+      } catch (error) {
+        // Some actions may not be supported on all platforms
+      }
+    };
+
+    // Set up handlers immediately and on mount
+    updateMediaSessionHandlers();
+
+    // Update metadata and playback state whenever current song or playing status changes
+    if (currentSong) {
       let secureArtwork = currentSong.thumbnail;
       if (secureArtwork && secureArtwork.startsWith("http://")) {
         secureArtwork = secureArtwork.replace("http://", "https://");
@@ -166,162 +245,93 @@ export default function AudioEngine() {
           { src: secureArtwork || "", sizes: "512x512", type: "image/jpeg" },
         ],
       });
-
-      // Synchronize action handlers to control playback mechanisms
-      const updateHandlers = () => {
-        navigator.mediaSession.setActionHandler("play", () => {
-          const state = usePlayerStore.getState();
-          if (!state.isPlaying) {
-            state.togglePlay();
-          }
-        });
-        navigator.mediaSession.setActionHandler("pause", () => {
-          const state = usePlayerStore.getState();
-          if (state.isPlaying) {
-            state.togglePlay();
-          }
-        });
-        navigator.mediaSession.setActionHandler("previoustrack", () => {
-          const state = usePlayerStore.getState();
-          if (state.currentTime > 5) {
-            state.playerRef?.seekTo(0);
-            state.setCurrentTime(0);
-          } else {
-            state.prev();
-          }
-        });
-        navigator.mediaSession.setActionHandler("nexttrack", () => {
-          usePlayerStore.getState().next();
-        });
-        navigator.mediaSession.setActionHandler("seekto", (details) => {
-          if (details.seekTime !== undefined) {
-            const time = details.seekTime;
-            const state = usePlayerStore.getState();
-            state.playerRef?.seekTo(time);
-            state.setCurrentTime(time);
-          }
-        });
-        navigator.mediaSession.setActionHandler("seekbackward", (details) => {
-          const offset = details.seekOffset || 10;
-          const state = usePlayerStore.getState();
-          const targetTime = Math.max(0, state.currentTime - offset);
-          state.playerRef?.seekTo(targetTime);
-          state.setCurrentTime(targetTime);
-        });
-        navigator.mediaSession.setActionHandler("seekforward", (details) => {
-          const offset = details.seekOffset || 10;
-          const state = usePlayerStore.getState();
-          const targetTime = Math.min(state.duration, state.currentTime + offset);
-          state.playerRef?.seekTo(targetTime);
-          state.setCurrentTime(targetTime);
-        });
-
-        // Additional handlers for volume and skip-ad controls
-        try {
-          navigator.mediaSession.setActionHandler("skipad", () => {
-            usePlayerStore.getState().next();
-          });
-        } catch (e) {}
-
-        // Try to set playback rate handlers if supported
-        try {
-          const actions = ["togglecaptions"];
-          for (const action of actions) {
-            navigator.mediaSession.setActionHandler(action as any, null);
-          }
-        } catch (e) {}
-      };
-
-      updateHandlers();
+    } else {
+      navigator.mediaSession.metadata = null;
     }
 
+    // Always update playback state based on current isPlaying
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+
+    // Cleanup handlers on unmount
     return () => {
       if ("mediaSession" in navigator) {
-        const actions = ["play", "pause", "previoustrack", "nexttrack", "seekto", "seekbackward", "seekforward", "skipad"] as const;
+        const actions = [
+          "play",
+          "pause",
+          "previoustrack",
+          "nexttrack",
+          "seekto",
+          "seekbackward",
+          "seekforward",
+          "skipad",
+          "stop",
+        ] as const;
+        
         for (const action of actions) {
           try {
             navigator.mediaSession.setActionHandler(action, null);
-          } catch (e) {}
+          } catch (e) {
+            // Handler may not be supported
+          }
         }
       }
     };
   }, [currentSong, isPlaying]);
 
-  // Comprehensive keyboard listener for media keys (covers physical media buttons)
+
+
+  // Ensure media key routing is always active by keeping audio context alive
   useEffect(() => {
-    const handleMediaKeyboardEvent = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      ) {
-        return;
+    if (!htmlAudioRef.current) return;
+
+    const silentAudioSrc =
+      "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+
+    // If no song is playing, use silent audio to keep media keys responsive
+    if (!currentSong) {
+      if (htmlAudioRef.current.src !== silentAudioSrc) {
+        htmlAudioRef.current.src = silentAudioSrc;
+        htmlAudioRef.current.loop = true;
+        htmlAudioRef.current.volume = 0; // Ensure it's inaudible
       }
 
-      const state = usePlayerStore.getState();
+      // Keep silent audio playing so media keys are routed to us
+      if (htmlAudioRef.current.paused) {
+        htmlAudioRef.current.play().catch(() => {
+          // Autoplay policy restrictions
+        });
+      }
+    }
+  }, [currentSong]);
 
-      // Handle standard media key codes that come through as keyboard events
-      // Different browsers and OSes report them differently
-      switch (e.code) {
-        case "MediaPlayPause":
-        case "MediaTogglePlayPause":
-          e.preventDefault();
-          state.togglePlay();
-          break;
-        case "MediaPlay":
-          e.preventDefault();
-          if (!state.isPlaying) {
-            state.togglePlay();
-          }
-          break;
-        case "MediaPause":
-          e.preventDefault();
-          if (state.isPlaying) {
-            state.togglePlay();
-          }
-          break;
-        case "MediaNextTrack":
-        case "MediaTrackNext":
-          e.preventDefault();
-          state.next();
-          break;
-        case "MediaPreviousTrack":
-        case "MediaTrackPrevious":
-          e.preventDefault();
-          if (state.currentTime > 5) {
-            state.playerRef?.seekTo(0);
-            state.setCurrentTime(0);
-          } else {
-            state.prev();
-          }
-          break;
-        case "MediaStop":
-          e.preventDefault();
-          state.togglePlay();
-          break;
-        case "AudioVolumeUp":
-          e.preventDefault();
-          const newVolumeUp = Math.min(1, state.volume + 0.1);
-          state.setVolume(newVolumeUp);
-          break;
-        case "AudioVolumeDown":
-          e.preventDefault();
-          const newVolumeDown = Math.max(0, state.volume - 0.1);
-          state.setVolume(newVolumeDown);
-          break;
-        case "AudioVolumeMute":
-          e.preventDefault();
-          // Toggle mute by setting volume to 0 or restoring previous volume
-          const currentVolume = state.volume;
-          state.setVolume(currentVolume === 0 ? 0.5 : 0);
-          break;
+  // Synchronize Media Session position state with actual playback position
+  useEffect(() => {
+    if (!("mediaSession" in navigator) || !currentSong) return;
+
+    const syncPositionState = () => {
+      try {
+        const state = usePlayerStore.getState();
+        if (
+          typeof navigator.mediaSession.setPositionState === "function" &&
+          isFinite(state.duration) &&
+          state.duration > 0
+        ) {
+          navigator.mediaSession.setPositionState({
+            duration: state.duration,
+            position: state.currentTime,
+            playbackRate: 1.0,
+          });
+        }
+      } catch (e) {
+        // Position state update not supported
       }
     };
 
-    window.addEventListener("keydown", handleMediaKeyboardEvent);
-    return () => window.removeEventListener("keydown", handleMediaKeyboardEvent);
-  }, []);
+    syncPositionState();
+    const interval = setInterval(syncPositionState, 500);
+
+    return () => clearInterval(interval);
+  }, [currentSong]);
 
   // Dynamically update document title based on active track and playback state
   useEffect(() => {
