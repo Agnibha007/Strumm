@@ -1,4 +1,4 @@
-const CACHE_NAME = "strumm-shell-v4";
+const CACHE_NAME = "strumm-shell-v5";
 const SHELL_ASSETS = [
   "/",
   "/login",
@@ -58,23 +58,15 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first for navigation requests with offline fallback
+  // Network-only for navigation requests (never cache HTML — prevents stale RSC payload errors)
+  // Falls back to the offline page when the network is unavailable.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          if (response.ok) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => undefined);
-          }
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request).then((cached) => {
-            if (cached) return cached;
-            return caches.match(OFFLINE_URL);
-          });
-        }),
+      fetch(request).catch(() =>
+        caches.match(request).then((cached) =>
+          cached || caches.match(OFFLINE_URL)
+        )
+      ),
     );
     return;
   }

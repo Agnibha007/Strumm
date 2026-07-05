@@ -62,6 +62,7 @@ export default function ReplayPage() {
   const [recalculating, setRecalculating] = useState(false);
 
   const fetchReplay = useCallback(async () => {
+    setError(null);
     try {
       const response = await fetch(apiUrl("/replay"), {
         headers: {

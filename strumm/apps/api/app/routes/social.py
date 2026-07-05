@@ -54,11 +54,11 @@ async def batch_compute_taste_scores(my_id: str, user_ids: List[str]) -> Dict[st
         
         # Single query for all playback histories
         playback_cursor = database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}})
-        playback_data = await playback_cursor.to_list(length=2000)
+        playback_data = await playback_cursor.to_list(length=5000)
         
         # Single query for all liked songs
         likes_cursor = database[db.LIKED_SONGS].find({"userId": {"$in": possible_ids}})
-        likes_data = await likes_cursor.to_list(length=2000)
+        likes_data = await likes_cursor.to_list(length=5000)
         
         # Organize data by user ID
         user_artists: Dict[str, Set[str]] = {}

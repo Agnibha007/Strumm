@@ -442,7 +442,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         histories = await database[db.PLAYBACK_HISTORIES].find(
             {"userId": {"$in": possible_ids}},
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
-        ).to_list(length=2000)
+        ).sort("playedAt", -1).to_list(length=5000)
         stats = compute_user_stats(histories, current_user.get("statistics"))
         user_data = dict(current_user)
         user_data["soundDNA"] = stats["soundDNA"]
@@ -1055,7 +1055,7 @@ async def recalculate_user_stats_and_save(user_id: str) -> None:
         histories = await database[db.PLAYBACK_HISTORIES].find(
             {"userId": {"$in": possible_ids}},
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
-        ).to_list(length=2000)
+        ).sort("playedAt", -1).to_list(length=5000)
         
         # Fetch current user to get seeded statistics
         user_doc = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
@@ -1089,7 +1089,7 @@ async def recalculate_user_stats(current_user: dict = Depends(get_current_user))
         histories = await database[db.PLAYBACK_HISTORIES].find(
             {"userId": {"$in": possible_ids}},
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
-        ).to_list(length=2000)
+        ).sort("playedAt", -1).to_list(length=5000)
         stats = compute_user_stats(histories, current_user.get("statistics"))
         
         # Save to database
@@ -1200,11 +1200,11 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
         user_id = current_user["id"]
         possible_ids = [user_id, parse_object_id(user_id)]
         
-        # Fetch ONLY real playback histories
+        # Fetch ONLY real playback histories (most recent first)
         histories = await database[db.PLAYBACK_HISTORIES].find(
             {"userId": {"$in": possible_ids}},
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
-        ).to_list(length=2000)
+        ).sort("playedAt", -1).to_list(length=5000)
         
         # Calculate all stats from REAL data with stored stats as fallback
         stats = compute_user_stats(histories, current_user.get("statistics"))
@@ -1522,7 +1522,7 @@ async def get_public_profile(username: str):
                 m["createdAt"] = m["createdAt"].isoformat()
                 
         # Get stats
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=2000)
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=5000)
         for h in histories:
             if "userId" in h:
                 h["userId"] = str(h["userId"])
@@ -1589,7 +1589,7 @@ async def get_users_public_profile(username: str):
                 m["createdAt"] = m["createdAt"].isoformat()
                 
         # Get stats
-        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=2000)
+        histories = await database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": [user_id, ObjectId(user_id)]}}).to_list(length=5000)
         for h in histories:
             if "userId" in h:
                 h["userId"] = str(h["userId"])
