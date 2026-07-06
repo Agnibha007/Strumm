@@ -21,7 +21,7 @@ def sanitize_text(value: Optional[str], *, max_length: int = MAX_TEXT_LENGTH) ->
     if value is None:
         return ""
     cleaned = " ".join(str(value).replace("\x00", "").split())
-    cleaned = html.escape(cleaned, quote=False)
+    cleaned = html.escape(cleaned, quote=True)
     return cleaned[:max_length]
 
 
@@ -30,7 +30,7 @@ def sanitize_multiline_text(value: Optional[str], *, max_length: int = MAX_LONG_
         return ""
     cleaned = str(value).replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
     cleaned = "\n".join(" ".join(line.split()) for line in cleaned.split("\n"))
-    return html.escape(cleaned.strip(), quote=False)[:max_length]
+    return html.escape(cleaned.strip(), quote=True)[:max_length]
 
 
 def sanitize_username(value: str) -> str:

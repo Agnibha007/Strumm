@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { apiUrl } from "web/lib/api";
 import { Loader2, CheckCircle2, AlertCircle, Lock } from "lucide-react";
@@ -121,6 +121,15 @@ function ResetPasswordForm() {
 }
 
 export default function ResetPasswordPage() {
+  useEffect(() => {
+    // Prevent the reset token from leaking via Referer header
+    const meta = document.createElement("meta");
+    meta.name = "referrer";
+    meta.content = "no-referrer";
+    document.head.appendChild(meta);
+    return () => meta.remove();
+  }, []);
+
   return (
     <Suspense fallback={
       <div className="min-h-[70vh] flex items-center justify-center">

@@ -28,9 +28,8 @@ export const useAuthStore = create<AuthState>()(
       
       login: (token, user, refreshToken) => {
         set({ token, user, refreshToken: refreshToken || null });
-        if (typeof window !== "undefined") {
-          localStorage.setItem("strumm-token", token);
-        }
+        // Token is stored in httpOnly cookies for API auth
+        // Zustand persist middleware handles localStorage cache
       },
       
       logout: () => {
@@ -49,9 +48,6 @@ export const useAuthStore = create<AuthState>()(
         }
 
         set({ token: null, user: null, refreshToken: null });
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("strumm-token");
-        }
         // Clear refresh timer
         if (typeof window !== "undefined" && (window as any).__strummRefreshTimer) {
           clearTimeout((window as any).__strummRefreshTimer);
@@ -87,9 +83,7 @@ export const useAuthStore = create<AuthState>()(
               user: json.data.user,
               refreshToken: json.data.refreshToken || refreshToken,
             });
-            if (typeof window !== "undefined") {
-              localStorage.setItem("strumm-token", json.data.token);
-            }
+            // Token is stored in httpOnly cookies
             // Schedule next refresh
             scheduleRefresh();
             return true;

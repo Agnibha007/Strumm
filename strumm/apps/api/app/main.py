@@ -154,6 +154,7 @@ async def _create_indexes(database):
         ("sessions.refreshTokenHash", lambda: database[db.SESSIONS].create_index("refreshTokenHash", sparse=True)),
         ("sessions.userId", lambda: database[db.SESSIONS].create_index("userId", sparse=True)),
         ("otps.email", lambda: database["otps"].create_index("email", sparse=True)),
+        ("otps.expiry_ttl", lambda: database["otps"].create_index("expiry", expireAfterSeconds=0)),
         ("password_resets.email", lambda: database["password_resets"].create_index("email", sparse=True)),
         ("playerstates.userId_deviceId", lambda: database[db.PLAYER_STATES].create_index([("userId", 1), ("deviceId", 1)])),
         ("songMemories.userId", lambda: database["songMemories"].create_index("userId")),
