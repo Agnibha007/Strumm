@@ -16,7 +16,7 @@ interface AddToPlaylistMenuProps {
 }
 
 export default function AddToPlaylistMenu({ song, className = "", iconClassName = "w-4 h-4" }: AddToPlaylistMenuProps) {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,7 +29,7 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
   }, []);
 
   const fetchPlaylists = async () => {
-    if (!token) return;
+    if (!user) return;
     setLoading(true);
     try {
       const res = await fetch(apiUrl("/playlists"), {
@@ -76,7 +76,7 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
     }
   };
 
-  if (!token || !song) return null;
+  if (!user || !song) return null;
 
   return (
     <>

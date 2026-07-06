@@ -8,7 +8,7 @@ import { apiUrl, cleanText } from "web/lib/api";
 import SafePodcastImage from "web/components/SafePodcastImage";
 
 export default function PodcastHomePage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
 
   const [shows, setShows] = useState<PodcastShow[]>([]);
   const [followedShows, setFollowedShows] = useState<PodcastShow[]>([]);
@@ -43,8 +43,9 @@ export default function PodcastHomePage() {
       }
 
       // 2. Fetch followed shows
-      if (token) {
+      if (user) {
         const libraryResp = await fetch(apiUrl("/library"), {
+          credentials: "include",
           headers: { "Authorization": `Bearer ${token}` }
         });
         const libJson = await libraryResp.json().catch(() => null);
@@ -69,7 +70,7 @@ export default function PodcastHomePage() {
       loadPodcasts();
     }, podcastQuery.trim() ? 350 : 0);
     return () => window.clearTimeout(timer);
-  }, [token, podcastQuery]);
+  }, [user, podcastQuery]);
 
   const handleImportRss = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +83,7 @@ export default function PodcastHomePage() {
     try {
       const response = await fetch(apiUrl("/podcasts/import-rss"), {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`

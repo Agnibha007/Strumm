@@ -42,7 +42,7 @@ export default function FriendActivitySidebar({
   onToggleCollapse,
   onActiveChange
 }: FriendActivitySidebarProps) {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { playSong, currentSong } = usePlayerStore();
   const [friends, setFriends] = useState<FriendActivity[]>([]);
   const [activeRooms, setActiveRooms] = useState<ActiveRoom[]>([]);
@@ -56,9 +56,10 @@ export default function FriendActivitySidebar({
   const [shareError, setShareError] = useState<string | null>(null);
 
   const fetchActivity = useCallback(async () => {
-    if (!token) return;
+    if (!user) return;
     try {
       const fResp = await fetch(apiUrl("/social/circle"), {
+        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const fJson = await fResp.json();
@@ -67,6 +68,7 @@ export default function FriendActivitySidebar({
       }
 
       const rResp = await fetch(apiUrl("/social/rooms"), {
+        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const rJson = await rResp.json();
@@ -78,11 +80,11 @@ export default function FriendActivitySidebar({
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [user, token]);
 
   // Initial fetch on mount + subscribe to real-time updates
   useEffect(() => {
-    if (!token) return;
+    if (!user) return;
 
     fetchActivity();
 
@@ -131,6 +133,7 @@ export default function FriendActivitySidebar({
     // Also periodically refresh rooms list (rooms are not yet fully WS-driven)
     const refreshInterval = setInterval(() => {
       fetch(apiUrl("/social/rooms"), {
+        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       })
         .then(r => r.json())
@@ -148,9 +151,9 @@ export default function FriendActivitySidebar({
       unsubConnected();
       clearInterval(refreshInterval);
     };
-  }, [token, fetchActivity]);
+  }, [user, token, fetchActivity]);
 
-  const hasActivity = token && friends.length > 0;
+  const hasActivity = user && friends.length > 0;
 
   useEffect(() => {
     if (onActiveChange) {
@@ -167,12 +170,13 @@ export default function FriendActivitySidebar({
   };
 
   const handleSendShare = async () => {
-    if (!token || !sharingTarget) return;
+    if (!user || !sharingTarget) return;
     setSendingShare(true);
     setShareError(null);
     try {
       const response = await fetch(apiUrl("/social/message"), {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`

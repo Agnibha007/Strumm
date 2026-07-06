@@ -21,7 +21,7 @@ export default function FlowPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!token) {
+    if (!user) {
       router.push("/");
     }
   }, [token, router]);

@@ -7,8 +7,8 @@ import { useAuthStore } from "web/store/useAuthStore";
  * so the login page (which has no sidebar) isn't shifted right on desktop.
  */
 export default function ContentWrapper({ children }: { children: React.ReactNode }) {
-  const { token } = useAuthStore();
-  const sidebarOffset = token ? "md:ml-64" : "";
+  const { user } = useAuthStore();
+  const sidebarOffset = user ? "md:ml-64" : "";
 
   return (
     <main

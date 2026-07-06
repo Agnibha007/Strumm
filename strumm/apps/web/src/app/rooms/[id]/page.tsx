@@ -83,7 +83,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
 
   // Fetch Room Info
   const fetchRoomInfo = async () => {
-    if (!token) return;
+    if (!user) return;
     try {
       const response = await fetch(apiUrl(`/social/rooms/${id}`), {
         headers: { "Authorization": `Bearer ${token}` }

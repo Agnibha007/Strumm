@@ -14,7 +14,7 @@ import { Song } from "@strumm/types";
 import LoginPage from "./login/page";
 
 export default function HomePage() {
-  const { token } = useAuthStore();
+  const { user } = useAuthStore();
   const { playSong, isRadio, triggerRadio } = usePlayerStore();
   
   const [searchQuery, setSearchQuery] = useState("");
@@ -51,23 +51,23 @@ export default function HomePage() {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!user) return;
 
     const loadHomeData = async () => {
       setHomeLoading(true);
       try {
-        // Fetch AI recommendations
+        // Fetch AI recommendations — auth via httpOnly cookie (credentials: 'include')
         const discoverResp = await fetch(apiUrl("/explore-mix"), {
-          headers: { "Authorization": `Bearer ${token}` }
+          credentials: "include",
         });
         const discoverJson = await discoverResp.json();
         if (discoverJson.success && discoverJson.data) {
           setRecommendations(discoverJson.data.songs || []);
         }
 
-        // Fetch Liked Songs
+        // Fetch Liked Songs — auth via httpOnly cookie
         const likedResp = await fetch(apiUrl("/liked?limit=10"), {
-          headers: { "Authorization": `Bearer ${token}` }
+          credentials: "include",
         });
         const likedJson = await likedResp.json();
         if (likedJson.success && likedJson.data) {
@@ -81,9 +81,9 @@ export default function HomePage() {
     };
 
     loadHomeData();
-  }, [token]);
+  }, [user]);
 
-  if (!token) {
+  if (!user) {
     return <LoginPage />;
   }
 

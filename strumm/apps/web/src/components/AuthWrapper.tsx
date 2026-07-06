@@ -46,21 +46,21 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     }
   }, [session]);
 
-  // Sync profile details
+  // Sync profile details — auth is via httpOnly cookie, so we don't need token
   useEffect(() => {
     const init = async () => {
-      if (token) {
+      if (user) {
         await fetchProfile();
       }
       setLoading(false);
     };
     init();
-  }, [token]);
+  }, [user]);
 
   // Redirection guard logic
   useEffect(() => {
     if (!loading) {
-      const isAuthenticated = !!(user && token);
+      const isAuthenticated = !!user;
       const isPublic = isPublicRoute(pathname);
       if (!isAuthenticated && pathname !== "/login" && pathname !== "/" && !isPublic) {
         const currentSearch = window.location.search;
@@ -71,7 +71,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
         router.replace(redirectUrl);
       }
     }
-  }, [user, token, loading, pathname, router]);
+  }, [user, loading, pathname, router]);
 
   if (loading) {
     return (
@@ -82,7 +82,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     );
   }
 
-  const isAuthenticated = !!(user && token);
+  const isAuthenticated = !!user;
 
   if (!isAuthenticated) {
     if (pathname === "/login" || pathname === "/" || isPublicRoute(pathname)) {

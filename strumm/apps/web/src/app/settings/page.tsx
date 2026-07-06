@@ -111,7 +111,7 @@ export default function SettingsPage() {
 
   // Fetch sessions on mount
   useEffect(() => {
-    if (!token) return;
+    if (!user) return;
     const fetchSessions = async () => {
       setSessionsLoading(true);
       try {

@@ -53,7 +53,7 @@ const formatArtists = (artistStr: string) => {
 };
 
 export default function ReplayPage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { playSong } = usePlayerStore();
   const { isAnimated } = useThemeStore();
   const [data, setData] = useState<ReplayData | null>(null);
@@ -83,12 +83,12 @@ export default function ReplayPage() {
   }, [token]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!user) return;
     fetchReplay();
   }, [token, fetchReplay]);
 
   const handleRecalculateLive = async () => {
-    if (!token) return;
+    if (!user) return;
     setRecalculating(true);
     try {
       const response = await fetch(apiUrl("/profile/recalculate"), {

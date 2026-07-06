@@ -20,7 +20,7 @@ const PlaylistImport = dynamic(() => import("web/components/PlaylistImport"), {
 });
 
 export default function PlaylistsPage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const router = useRouter();
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +39,7 @@ export default function PlaylistsPage() {
   const loadPlaylists = async () => {
     try {
       const response = await fetch(apiUrl("/playlists"), {
+        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -54,7 +55,7 @@ export default function PlaylistsPage() {
 
   useEffect(() => {
     loadPlaylists();
-  }, [token]);
+  }, [user]);
 
   const handleCreateEmptyPlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +65,7 @@ export default function PlaylistsPage() {
     try {
       const response = await fetch(apiUrl("/playlists"), {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`

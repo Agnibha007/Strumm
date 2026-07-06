@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import mongodb as db
-from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration
+from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 from app.services.realtime.websocket import router as realtime_router
@@ -160,8 +160,12 @@ async def _create_indexes(database):
         ("songMemories.userId", lambda: database["songMemories"].create_index("userId")),
         ("songMemories.compound", lambda: database["songMemories"].create_index([("userId", 1), ("createdAt", -1)])),
         ("playlist_activity.playlistId", lambda: database["playlist_activity"].create_index("playlistId")),
+        ("login_attempts.expiry_ttl", lambda: database["login_attempts"].create_index("expiry", expireAfterSeconds=0)),
         ("playlist_activity.compound", lambda: database["playlist_activity"].create_index([("playlistId", 1), ("timestamp", -1)])),
         ("notifications.read_compound", lambda: database[db.NOTIFICATIONS].create_index([("userId", 1), ("read", 1)])),
+        ("feedback.createdAt", lambda: database["feedback"].create_index("createdAt")),
+        ("feedback.userId", lambda: database["feedback"].create_index("userId")),
+        ("feedback.status", lambda: database["feedback"].create_index("status")),
     ]
 
     created = 0
@@ -183,11 +187,23 @@ app = FastAPI(
 )
 
 def get_allowed_origins():
+    is_development = os.getenv("ENVIRONMENT", "development").lower() == "development"
     origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
     origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
     # App domain from env var (set on Render: https://strumm.me)
     app_origin = os.getenv("STRUMM_APP_URL", "http://localhost:3000").rstrip("/")
-    always_allowed = [app_origin, "http://localhost:5173", "http://localhost:3000"]
+
+    # Only add localhost origins in development mode
+    # This prevents CORS from accidentally exposing the API in production
+    if is_development:
+        local_origins = [app_origin, "http://localhost:5173", "http://localhost:3000"]
+        for origin in local_origins:
+            if origin not in origins:
+                origins.append(origin)
+    else:
+        # In production, only allow the configured app URL (no localhost)
+        if app_origin not in origins:
+            origins.append(app_origin)
 
     # Explicitly add production origins so CORS works regardless of env var configuration
     production_origins = [
@@ -213,9 +229,6 @@ def get_allowed_origins():
             bare_origin += f":{parsed.port}"
         if bare_origin not in origins:
             origins.append(bare_origin)
-    for origin in always_allowed:
-        if origin not in origins:
-            origins.append(origin)
 
     logger.debug("Allowed CORS origins: %s", origins)
     return origins
@@ -310,6 +323,7 @@ RATE_LIMITS = [
     (["/recommend"], 20, 60),               # Recommendations: 20 per minute
     (["/explore-chat"], 15, 60),            # AI Chat: 15 per minute
     (["/playlist"], 30, 60),                # Playlist CRUD: 30 per minute
+    (["/feedback"], 10, 60),               # Feedback: 10 per minute
     (["/friends"], 20, 60),                 # Friend requests: 20 per minute
     (["/profile"], 20, 60),                 # Profile operations: 20 per minute
 ]
@@ -438,6 +452,7 @@ app.include_router(share.router)
 app.include_router(social.router)
 app.include_router(statistics.router)
 app.include_router(collaboration.router)
+app.include_router(feedback.router)
 
 # WebSocket realtime router (global connection at /ws)
 app.include_router(realtime_router)

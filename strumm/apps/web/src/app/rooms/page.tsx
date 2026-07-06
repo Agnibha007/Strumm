@@ -21,7 +21,7 @@ interface Room {
 }
 
 export default function RoomsPage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const router = useRouter();
   
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -33,9 +33,10 @@ export default function RoomsPage() {
   const [, setError] = useState<string | null>(null);
 
   const fetchRooms = async () => {
-    if (!token) return;
+    if (!user) return;
     try {
       const response = await fetch(apiUrl("/social/rooms"), {
+        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -50,19 +51,20 @@ export default function RoomsPage() {
   };
 
   useEffect(() => {
-    if (token) {
+    if (user) {
       fetchRooms();
     }
-  }, [token]);
+  }, [user]);
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRoomName.trim() || !token) return;
+    if (!newRoomName.trim() || !user) return;
     
     setCreating(true);
     try {
       const response = await fetch(apiUrl("/social/rooms"), {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
@@ -85,7 +87,7 @@ export default function RoomsPage() {
     }
   };
 
-  if (!token) {
+  if (!user) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 gap-4">
         <Radio className="w-12 h-12 text-primary opacity-50" />

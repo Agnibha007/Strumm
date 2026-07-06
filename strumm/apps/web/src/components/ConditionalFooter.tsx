@@ -15,8 +15,8 @@ const footerLinks = [
 ];
 
 export default function ConditionalFooter() {
-  const { token } = useAuthStore();
-  const sidebarOffset = token ? "md:ml-64" : "";
+  const { user } = useAuthStore();
+  const sidebarOffset = user ? "md:ml-64" : "";
 
   return (
     <footer className={`border-t border-border/40 bg-background/80 backdrop-blur-md mt-auto ${sidebarOffset}`}>

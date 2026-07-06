@@ -21,7 +21,7 @@ import { EventDispatcher, WS_CONNECTED } from "web/services/realtime";
  *   - Still REST-ores state from the server on initial login.
  */
 export default function PlayerStateSync() {
-  const { token } = useAuthStore();
+  const { user } = useAuthStore();
   const restoredRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -39,12 +39,13 @@ export default function PlayerStateSync() {
   // Initial restore: fetch saved state from server once
   // -------------------------------------------------------------------
   useEffect(() => {
-    if (!token || restoredRef.current) return;
+    if (!user || restoredRef.current) return;
 
     const restore = async () => {
       try {
+        // Auth is handled via httpOnly cookie with credentials: 'include'
         const response = await fetch(apiUrl("/player-state"), {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
         });
         const json = await response.json();
         if (json.success && json.data?.currentSong) {
@@ -67,21 +68,22 @@ export default function PlayerStateSync() {
     };
 
     restore();
-  }, [token, restorePlayerState]);
+  }, [user, restorePlayerState]);
 
   // -------------------------------------------------------------------
   // Save to server only on SIGNIFICANT events (debounced)
   // -------------------------------------------------------------------
   const saveState = useCallback(async () => {
-    if (!token || !restoredRef.current) return;
+    if (!user || !restoredRef.current) return;
     const state = usePlayerStore.getState();
     try {
+      // Auth via httpOnly cookie with credentials: 'include'
       await fetch(apiUrl("/player-state"), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
+        credentials: "include",
         body: JSON.stringify({
           deviceId: "primary",
           currentSong: state.currentSong,
@@ -98,7 +100,7 @@ export default function PlayerStateSync() {
     } catch {
       console.warn("Unable to save cross-device player state.");
     }
-  }, [token]);
+  }, [user]);
 
   // Significant event keys — changes to these trigger a server save
   const significantKeys = [
@@ -111,7 +113,7 @@ export default function PlayerStateSync() {
   ];
 
   useEffect(() => {
-    if (!token || !restoredRef.current) return;
+    if (!user || !restoredRef.current) return;
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -124,7 +126,7 @@ export default function PlayerStateSync() {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [token, ...significantKeys, saveState]);
+  }, [user, ...significantKeys, saveState]);
 
   // -------------------------------------------------------------------
   // Re-save state when WebSocket reconnects (new device may have joined)

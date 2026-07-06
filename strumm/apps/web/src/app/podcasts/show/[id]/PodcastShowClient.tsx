@@ -15,7 +15,7 @@ interface PodcastShowPageProps {
 
 export default function PodcastShowClient({ params }: PodcastShowPageProps) {
   const { id } = use(params);
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { playSong, setPodcastMode } = usePlayerStore();
   const router = useRouter();
 
@@ -70,6 +70,7 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
     try {
       const response = await fetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}/follow`), {
         method: "POST",
+        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json().catch(() => null);

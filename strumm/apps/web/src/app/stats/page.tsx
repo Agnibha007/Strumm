@@ -59,14 +59,14 @@ interface DashboardData {
 }
 
 export default function StatsPage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { show: showNotification } = useNotificationStore();
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(30);
   const [data, setData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!user) return;
     fetchStats();
   }, [token, period]);
 
@@ -95,7 +95,7 @@ export default function StatsPage() {
     }
   };
 
-  if (!token) {
+  if (!user) {
     return (
       <div className="pt-20 pb-8 text-center">
         <p className="text-muted mb-4">Please log in to view your statistics</p>

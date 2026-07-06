@@ -22,7 +22,7 @@ import {
  * Place this inside the AuthWrapper so it has access to the token.
  */
 export default function RealTimeProvider({ children }: { children: React.ReactNode }) {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
 
   const wsClient = WebSocketClient.getInstance();
   const dispatch = EventDispatcher.getInstance();
@@ -33,7 +33,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
 
   // ---- Connect / disconnect on auth state change ----
   useEffect(() => {
-    if (token) {
+    if (user && token) {
       wsClient.connect(token);
     } else {
       wsClient.disconnect();
@@ -43,7 +43,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
     return () => {
       // Don't disconnect on unmount — keep alive across navigations
     };
-  }, [token, wsClient, dispatch]);
+  }, [user, token, wsClient, dispatch]);
 
   // ---- Presence: send listening state when player changes ----
   const sendListeningState = useCallback(() => {
@@ -112,7 +112,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
     if (syncTimer.current) clearTimeout(syncTimer.current);
 
     syncTimer.current = setTimeout(() => {
-      if (!token) return;
+      if (!user) return;
       const state = usePlayerStore.getState();
       wsClient.send("player:sync", {
         currentSong: state.currentSong,
@@ -126,7 +126,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
         playbackRate: state.playbackRate,
       });
     }, 400);
-  }, [token, wsClient]);
+  }, [user, token, wsClient]);
 
   useEffect(() => {
     sendPlayerSync();

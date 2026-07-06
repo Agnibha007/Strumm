@@ -77,7 +77,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     setSleepTimer,
     clearSleepTimer,
   } = usePlayerStore();
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
 
 
@@ -274,7 +274,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   };
 
   const handleSaveMemory = async () => {
-    if (!currentSong || !token) return;
+    if (!currentSong || !user) return;
     setMemorySaving(true);
     try {
       const response = await fetch(apiUrl("/memories"), {

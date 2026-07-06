@@ -162,7 +162,8 @@ async def revoke_all_sessions(
 @router.post("/change-password")
 async def change_password(
     payload: ChangePasswordRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    refresh_token: Optional[str] = Cookie(None)
 ):
     """Change password with current password verification."""
     try:
@@ -188,6 +189,18 @@ async def change_password(
             {"$set": {"password": new_hashed}}
         )
         
+        # Invalidate all sessions except the current one
+        # Password change should log out other devices for security
+        if refresh_token:
+            current_hash = hash_refresh_token(refresh_token)
+            await database[db.SESSIONS].delete_many({
+                "userId": current_user["id"],
+                "refreshTokenHash": {"$ne": current_hash}
+            })
+        else:
+            # If no refresh token cookie, invalidate all sessions
+            await database[db.SESSIONS].delete_many({"userId": current_user["id"]})
+        
         # Notify via email in background
         asyncio.create_task(send_password_changed_email(user.get("email", "")))
         
@@ -200,7 +213,8 @@ async def change_password(
 @router.post("/change-email")
 async def change_email(
     payload: ChangeEmailRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    refresh_token: Optional[str] = Cookie(None)
 ):
     """Change email address with password verification."""
     try:
@@ -237,6 +251,14 @@ async def change_email(
         
         # Notify old email in background
         asyncio.create_task(send_email_changed_email(old_email, new_email))
+        
+        # Invalidate all sessions except the current one (email is a sensitive change)
+        if refresh_token:
+            current_hash = hash_refresh_token(refresh_token)
+            await database[db.SESSIONS].delete_many({
+                "userId": current_user["id"],
+                "refreshTokenHash": {"$ne": current_hash}
+            })
         
         logger.info(f"Email changed from {old_email} to {new_email} for user {current_user['id']}")
         
@@ -535,8 +557,6 @@ async def verify_otp(
         return {
             "success": True,
             "data": {
-                "token": access_token,
-                "refreshToken": refresh_token,
                 "user": user
             }
         }
@@ -618,8 +638,6 @@ async def google_login(
         return {
             "success": True,
             "data": {
-                "token": access_token,
-                "refreshToken": refresh_token,
                 "user": user
             }
         }
@@ -641,6 +659,21 @@ async def email_password_login(
         password = payload.password
         
         database = db.get_db()
+        
+        # Per-user rate limiting: track failed attempts
+        rate_key = f"login_attempts:{email}"
+        rate_doc = await database["login_attempts"].find_one({"email": email})
+        if rate_doc and rate_doc.get("attempts", 0) >= 5:
+            cooldown_remaining = (rate_doc["expiry"] - datetime.utcnow()).total_seconds()
+            if cooldown_remaining > 0:
+                return {
+                    "success": False,
+                    "error": f"Too many login attempts. Please try again in {int(cooldown_remaining)} seconds."
+                }
+            else:
+                # Cooldown expired, reset
+                await database["login_attempts"].delete_one({"email": email})
+        
         user = await database[db.USERS].find_one({"email": email})
         if not user:
             return {"success": False, "error": "Invalid email or password."}
@@ -650,8 +683,21 @@ async def email_password_login(
             return {"success": False, "error": "This account does not use password login. Try logging in with another method."}
             
         if not verify_password(password, hashed_password):
+            # Track failed attempt
+            await database["login_attempts"].update_one(
+                {"email": email},
+                {
+                    "$inc": {"attempts": 1},
+                    "$set": {"email": email, "expiry": datetime.utcnow() + timedelta(minutes=15)},
+                    "$setOnInsert": {"createdAt": datetime.utcnow()}
+                },
+                upsert=True
+            )
             return {"success": False, "error": "Invalid email or password."}
-            
+        
+        # Success — clear any rate limiting
+        await database["login_attempts"].delete_one({"email": email})
+        
         user_id = str(user["_id"])
         
         # Generate cookies and sessions
@@ -670,8 +716,6 @@ async def email_password_login(
         return {
             "success": True,
             "data": {
-                "token": access_token,
-                "refreshToken": refresh_token,
                 "user": user
             }
         }
@@ -750,8 +794,6 @@ async def refresh_session(
         return {
             "success": True,
             "data": {
-                "token": new_access_token,
-                "refreshToken": new_refresh_token,
                 "user": user
             }
         }
@@ -824,7 +866,7 @@ async def forgot_password(request: ForgotPasswordRequest):
             upsert=True
         )
         
-        logger.info(f"Generated password reset token for {email}")
+        logger.info(f"Generated password reset token for {email} (token_hash={reset_token_hash[:8]}...)")
         
         frontend_url = os.getenv('FRONTEND_URL') or os.getenv('STRUMM_APP_URL', 'https://strumm.me')
         reset_link = f"{frontend_url}/reset-password?token={reset_token}&email={email}"
@@ -900,6 +942,11 @@ async def reset_password(
         
         # Fire password changed notification in background
         asyncio.create_task(send_password_changed_email(email))
+        
+        # Invalidate ALL existing sessions for this user (security: password changed via reset)
+        user_doc = await database[db.USERS].find_one({"email": email})
+        if user_doc:
+            await database[db.SESSIONS].delete_many({"userId": str(user_doc["_id"])})
         
         return {
             "success": True,

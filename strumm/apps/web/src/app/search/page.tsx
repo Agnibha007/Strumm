@@ -13,7 +13,7 @@ import { useNotificationStore } from "web/store/useNotificationStore";
 import Link from "next/link";
 
 export default function SearchPage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { playSong, addToQueue, queue, isRadio, triggerRadio } = usePlayerStore();
   const { show } = useNotificationStore();
   
@@ -87,7 +87,7 @@ export default function SearchPage() {
   };
 
   const loadUserPlaylists = async () => {
-    if (!token) return;
+    if (!user) return;
     try {
       const response = await fetch(apiUrl("/playlists"), {
         headers: { "Authorization": `Bearer ${token}` }

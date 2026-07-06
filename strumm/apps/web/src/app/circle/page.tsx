@@ -57,7 +57,7 @@ interface NotificationItem {
 }
 
 export default function CirclePage() {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { playSong } = usePlayerStore();
   
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -117,7 +117,7 @@ export default function CirclePage() {
   };
 
   const loadCircleData = useCallback(async () => {
-    if (!token) return;
+    if (!user) return;
     try {
       // Use combined endpoint for better performance
       const resp = await fetch(apiUrl("/social/circle/all"), {
@@ -139,14 +139,14 @@ export default function CirclePage() {
   }, [token]);
 
   const handleManualRefresh = useCallback(async () => {
-    if (!token) return;
+    if (!user) return;
     setLoading(true);
     await loadCircleData();
     refreshCountRef.current = 0;
   }, [loadCircleData, token]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!user) return;
 
     // Initial fetch
     loadCircleData();
@@ -219,7 +219,7 @@ export default function CirclePage() {
   }, [token, loadCircleData]);
 
   const handleAccept = async (requestId: string) => {
-    if (!token) return;
+    if (!user) return;
     setActionLoading(requestId);
     try {
       const res = await fetch(apiUrl(`/social/accept/${requestId}`), {
@@ -239,7 +239,7 @@ export default function CirclePage() {
   };
 
   const handleRemove = async (friendId: string) => {
-    if (!token) return;
+    if (!user) return;
     setActionLoading(friendId);
     try {
       const res = await fetch(apiUrl(`/social/remove/${friendId}`), {
@@ -258,7 +258,7 @@ export default function CirclePage() {
   };
 
   const handleCreateBlend = async (friendId: string) => {
-    if (!token) return;
+    if (!user) return;
     setActionLoading(friendId + "-blend");
     try {
       const res = await fetch(apiUrl(`/social/blend/${friendId}`), {
@@ -280,7 +280,7 @@ export default function CirclePage() {
   };
 
   const handleClearNotifications = async () => {
-    if (!token) return;
+    if (!user) return;
     try {
       await fetch(apiUrl("/social/notifications/clear"), {
         method: "POST",
@@ -293,7 +293,7 @@ export default function CirclePage() {
   };
 
   const handleDeleteAllNotifications = async () => {
-    if (!token) return;
+    if (!user) return;
     if (!confirm("Are you sure you want to permanently delete all notifications?")) return;
     try {
       await fetch(apiUrl("/social/notifications"), {
@@ -398,7 +398,7 @@ export default function CirclePage() {
     );
   };
 
-  if (!token) {
+  if (!user) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 gap-4">
         <Users className="w-12 h-12 text-primary opacity-50" />

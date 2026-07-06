@@ -79,3 +79,52 @@ async def get_current_user(
         else:
             user["createdAt"] = str(user["createdAt"])
     return user
+
+
+async def get_optional_user(
+    background_tasks: BackgroundTasks,
+    authorization: str = Header(None),
+    access_token: Optional[str] = Cookie(None)
+):
+    """Like get_current_user, but returns None instead of raising on missing/invalid token.
+    Useful for endpoints where auth is optional (e.g., feedback submission).
+    """
+    token = None
+    if access_token:
+        token = access_token
+    elif authorization:
+        try:
+            parts = authorization.split(" ")
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+        except ValueError:
+            pass
+
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+
+    database = db.get_db()
+    try:
+        user = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
+    except PyMongoError:
+        return None
+
+    if not user:
+        return None
+
+    user["id"] = str(user["_id"])
+    del user["_id"]
+    if "createdAt" in user and user["createdAt"]:
+        if hasattr(user["createdAt"], "isoformat"):
+            user["createdAt"] = user["createdAt"].isoformat()
+        else:
+            user["createdAt"] = str(user["createdAt"])
+    return user

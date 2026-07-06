@@ -820,7 +820,34 @@ async def send_direct_message(
 
 # Room WebSocket Signaling and Sync Endpoint
 @router.websocket("/rooms/{roomId}/ws")
-async def room_websocket_endpoint(websocket: WebSocket, roomId: str, token: str):
+async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
+    # Authenticate via JWT access token from Sec-WebSocket-Protocol header
+    # Using the subprotocol header instead of query parameter to prevent
+    # token leakage in server access logs and Referer headers.
+    token = None
+    # Read token from the first subprotocol offered by the client
+    protocols = websocket.headers.get("sec-websocket-protocol", "")
+    if protocols:
+        # The client sends "authorization, <token>" as subprotocol
+        for p in protocols.split(","):
+            p = p.strip()
+            if p and p != "authorization":
+                token = p
+                break
+    
+    if not token:
+        # Fallback: check query parameter (backward compatibility)
+        from starlette.datastructures import QueryParams
+        query_string = websocket.url.query
+        if query_string:
+            params = QueryParams(query_string)
+            token = params.get("token")
+    
+    if not token:
+        logger.warning("Room WS rejected — no token provided (roomId=%s)", roomId)
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication required")
+        return
+        
     # Authenticate via JWT access token
     payload = decode_access_token(token)
     if not payload:

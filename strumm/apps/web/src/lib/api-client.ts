@@ -19,6 +19,8 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   const { token, headers: customHeaders, ...rest } = options;
 
   const headers = new Headers(customHeaders);
+  // Prefer httpOnly cookie-based auth by always including credentials
+  // Token-based Authorization header is kept as a fallback for backward compatibility
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -26,7 +28,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(apiUrl(path), { ...rest, headers });
+  const response = await fetch(apiUrl(path), {
+    ...rest,
+    headers,
+    credentials: "include",
+  });
   const json = (await response.json()) as ApiResponse<T>;
 
   if (!json.success) {

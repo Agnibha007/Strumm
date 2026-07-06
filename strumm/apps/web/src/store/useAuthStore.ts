@@ -27,16 +27,19 @@ export const useAuthStore = create<AuthState>()(
       setToken: (token) => set({ token }),
       
       login: (token, user, refreshToken) => {
-        set({ token, user, refreshToken: refreshToken || null });
-        // Token is stored in httpOnly cookies for API auth
-        // Zustand persist middleware handles localStorage cache
+        // Auth is handled via httpOnly cookies set by the server.
+        // Token and refreshToken from the response body are deprecated.
+        // We store them here for backward compatibility with the API client,
+        // but the primary auth mechanism is now the httpOnly cookie.
+        set({ token: token || null, user, refreshToken: refreshToken || null });
       },
       
       logout: () => {
         const { refreshToken } = get();
 
         // Revoke session on the server before clearing local state
-        if (typeof window !== "undefined" && refreshToken) {
+        // The httpOnly cookie is sent automatically with credentials: 'include'
+        if (typeof window !== "undefined") {
           fetch(apiUrl("/auth/logout"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -67,23 +70,19 @@ export const useAuthStore = create<AuthState>()(
 
       silentRefresh: async () => {
         try {
-          const { refreshToken } = get();
-          if (!refreshToken) return false;
-
+          // The httpOnly refresh_token cookie is sent automatically
+          // via credentials: 'include'. No need to send it in the body.
           const res = await fetch(apiUrl("/auth/refresh"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ refreshToken }),
           });
           const json = await res.json();
-          if (json.success && json.data?.token) {
+          if (json.success && json.data?.user) {
             set({
-              token: json.data.token,
               user: json.data.user,
-              refreshToken: json.data.refreshToken || refreshToken,
             });
-            // Token is stored in httpOnly cookies
+            // New access/refresh tokens are set as httpOnly cookies by the server
             // Schedule next refresh
             scheduleRefresh();
             return true;
@@ -95,21 +94,19 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchProfile: async () => {
-        const { token } = get();
-        if (!token) return false;
-        
         try {
-          const data = await apiFetch<any>("/profile", { token });
+          // Auth is handled via httpOnly cookies with credentials: 'include'
+          const data = await apiFetch<any>("/profile");
           set({ user: data });
           return true;
         } catch (e) {
-          // If 401/403, try silent refresh first
+          // If 401/403, try silent refresh first (cookie will be sent automatically)
           if (e instanceof ApiError && e.status && [401, 403].includes(e.status)) {
             const refreshed = await get().silentRefresh();
             if (refreshed) {
-              // Retry fetchProfile with new token
+              // Retry fetchProfile — cookie is already refreshed
               try {
-                const data = await apiFetch<any>("/profile", { token: get().token });
+                const data = await apiFetch<any>("/profile");
                 set({ user: data });
                 return true;
               } catch {
@@ -149,6 +146,9 @@ const REFRESH_RETRY_MAX_INTERVAL_MS = 5 * 60 * 1000; // cap at 5 minutes
  * Schedule the next access token refresh, with retry on failure.
  * Uses exponential backoff up to a cap.
  */
+/** Guard to prevent concurrent refreshes (e.g., timer + visibility firing at the same time). */
+let _refreshing = false;
+
 function scheduleRefresh(attempt = 0) {
   if (typeof window === "undefined") return;
 
@@ -168,17 +168,18 @@ function scheduleRefresh(attempt = 0) {
   (window as any).__strummRefreshTimer = setTimeout(async () => {
     if (_refreshing) return; // skip if already refreshing
 
-    const { token, silentRefresh } = useAuthStore.getState();
-    if (token) {
-      _refreshing = true;
-      const ok = await silentRefresh();
-      _refreshing = false;
-      if (!ok) {
-        // Refresh failed — schedule a retry with backoff
-        scheduleRefresh(attempt + 1);
-      }
-      // On success, silentRefresh() already called scheduleRefresh(0) internally
+    const { user, silentRefresh } = useAuthStore.getState();
+    // Only attempt refresh if we have a logged-in user (auth is via httpOnly cookie)
+    if (!user) return;
+
+    _refreshing = true;
+    const ok = await silentRefresh();
+    _refreshing = false;
+    if (!ok) {
+      // Refresh failed — schedule a retry with backoff
+      scheduleRefresh(attempt + 1);
     }
+    // On success, silentRefresh() already called scheduleRefresh(0) internally
   }, delay);
 }
 
@@ -193,15 +194,15 @@ function scheduleActivityRefresh() {
 
   // Refresh every hour to keep the session sliding
   (window as any).__strummActivityTimer = setTimeout(async () => {
-    const { token, silentRefresh } = useAuthStore.getState();
-    if (token) {
-      const refreshed = await silentRefresh();
-      if (refreshed) {
-        // Reschedule for another hour
-        scheduleActivityRefresh();
-      }
-      // If refresh fails here, scheduleRefresh's retry mechanism handles it
+    const { user, silentRefresh } = useAuthStore.getState();
+    if (!user) return;
+
+    const refreshed = await silentRefresh();
+    if (refreshed) {
+      // Reschedule for another hour
+      scheduleActivityRefresh();
     }
+    // If refresh fails here, scheduleRefresh's retry mechanism handles it
   }, ACTIVITY_REFRESH_INTERVAL_MS);
 }
 
@@ -210,9 +211,6 @@ function scheduleActivityRefresh() {
  * Browsers throttle timers in background tabs, so this ensures we refresh promptly
  * when the user comes back, before the token can expire.
  */
-/** Guard to prevent concurrent refreshes (e.g., timer + visibility firing at the same time). */
-let _refreshing = false;
-
 function setupVisibilityRefresh() {
   if (typeof window === "undefined") return;
 
@@ -220,21 +218,15 @@ function setupVisibilityRefresh() {
     if (document.visibilityState !== "visible") return;
     if (_refreshing) return; // skip if already refreshing
 
-    const { token } = useAuthStore.getState();
-    if (!token) return;
+    const { user } = useAuthStore.getState();
+    if (!user) return;
 
-    // Decode the JWT to check remaining time without a network call
-    const payload = decodeJwtPayload(token);
-    if (!payload?.exp) return;      const expiresAt = Number(payload.exp) * 1000;
-      const remaining = expiresAt - Date.now();
-
-    // If less than 5 minutes remain, refresh proactively
-    if (remaining < 5 * 60 * 1000) {
-      _refreshing = true;
-      const { silentRefresh } = useAuthStore.getState();
-      await silentRefresh();
-      _refreshing = false;
-    }
+    // Always attempt a silent refresh on visibility change if we have a user
+    // The httpOnly cookie is sent automatically, no need to decode JWTs client-side
+    _refreshing = true;
+    const { silentRefresh } = useAuthStore.getState();
+    await silentRefresh();
+    _refreshing = false;
   };
 
   document.addEventListener("visibilitychange", handler);
@@ -242,34 +234,23 @@ function setupVisibilityRefresh() {
   (window as any).__strummVisibilityHandler = handler;
 }
 
-/** Decode a JWT's payload (base64url) without verification — client-side expiry check only. */
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = parts[1];
-    const decoded = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(decoded);
-  } catch {
-    return null;
-  }
-}
-
 // Attempt immediate silent refresh on page load to slide the session window,
 // then schedule the refresh cycle.
+// Uses httpOnly cookie for auth — no local token needed.
 async function initializeAuth() {
   if (typeof window === "undefined") return;
 
   // Wait a tick for Zustand to rehydrate from localStorage
   await new Promise(resolve => setTimeout(resolve, 50));
 
-  const { token, silentRefresh } = useAuthStore.getState();
-  if (!token) return;
+  const { user, silentRefresh } = useAuthStore.getState();
+  if (!user) return;
 
   // Set up the visibility listener once
   setupVisibilityRefresh();
 
   // Try a silent refresh immediately on page load to slide the session
+  // The httpOnly refresh_token cookie is sent automatically with credentials: 'include'
   const refreshed = await silentRefresh();
   if (refreshed) {
     // If refresh succeeded, schedule the periodic activity refresh for sliding window
