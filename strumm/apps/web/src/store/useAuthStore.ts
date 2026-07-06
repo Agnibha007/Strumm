@@ -57,6 +57,16 @@ export const useAuthStore = create<AuthState>()(
           clearTimeout((window as any).__strummRefreshTimer);
           (window as any).__strummRefreshTimer = null;
         }
+        // Clear activity timer
+        if (typeof window !== "undefined" && (window as any).__strummActivityTimer) {
+          clearTimeout((window as any).__strummActivityTimer);
+          (window as any).__strummActivityTimer = null;
+        }
+        // Remove visibility listener
+        if (typeof window !== "undefined" && (window as any).__strummVisibilityHandler) {
+          document.removeEventListener("visibilitychange", (window as any).__strummVisibilityHandler);
+          (window as any).__strummVisibilityHandler = null;
+        }
       },
 
       silentRefresh: async () => {
@@ -134,24 +144,46 @@ export const useAuthStore = create<AuthState>()(
 
 // Access token lifetime in ms (15 minutes)
 const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
-const REFRESH_BUFFER_MS = 60 * 1000; // refresh 60s before expiry
+const REFRESH_BUFFER_MS = 3 * 60 * 1000; // refresh 3 minutes before expiry for reliability
 // Periodic activity refresh: every 60 minutes to slide the session window
 const ACTIVITY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+// Retry interval for failed refreshes (with exponential backoff)
+const REFRESH_RETRY_INTERVAL_MS = 30 * 1000; // 30 seconds
+const REFRESH_RETRY_MAX_INTERVAL_MS = 5 * 60 * 1000; // cap at 5 minutes
 
-function scheduleRefresh() {
+/**
+ * Schedule the next access token refresh, with retry on failure.
+ * Uses exponential backoff up to a cap.
+ */
+function scheduleRefresh(attempt = 0) {
   if (typeof window === "undefined") return;
-  
+
   // Clear existing timer
   if ((window as any).__strummRefreshTimer) {
     clearTimeout((window as any).__strummRefreshTimer);
   }
-  
-  // Schedule refresh for (lifetime - buffer) from now
-  const delay = ACCESS_TOKEN_LIFETIME_MS - REFRESH_BUFFER_MS;
+
+  // Compute delay: normal schedule on first attempt, backoff on retries
+  const normalDelay = ACCESS_TOKEN_LIFETIME_MS - REFRESH_BUFFER_MS;
+  const retryDelay = Math.min(
+    REFRESH_RETRY_INTERVAL_MS * Math.pow(2, attempt - 1),
+    REFRESH_RETRY_MAX_INTERVAL_MS
+  );
+  const delay = attempt === 0 ? normalDelay : retryDelay;
+
   (window as any).__strummRefreshTimer = setTimeout(async () => {
+    if (_refreshing) return; // skip if already refreshing
+
     const { token, silentRefresh } = useAuthStore.getState();
     if (token) {
-      await silentRefresh();
+      _refreshing = true;
+      const ok = await silentRefresh();
+      _refreshing = false;
+      if (!ok) {
+        // Refresh failed — schedule a retry with backoff
+        scheduleRefresh(attempt + 1);
+      }
+      // On success, silentRefresh() already called scheduleRefresh(0) internally
     }
   }, delay);
 }
@@ -159,12 +191,12 @@ function scheduleRefresh() {
 // Periodic activity-based refresh to slide the session window
 function scheduleActivityRefresh() {
   if (typeof window === "undefined") return;
-  
+
   // Clear existing timer
   if ((window as any).__strummActivityTimer) {
     clearTimeout((window as any).__strummActivityTimer);
   }
-  
+
   // Refresh every hour to keep the session sliding
   (window as any).__strummActivityTimer = setTimeout(async () => {
     const { token, silentRefresh } = useAuthStore.getState();
@@ -174,31 +206,83 @@ function scheduleActivityRefresh() {
         // Reschedule for another hour
         scheduleActivityRefresh();
       }
+      // If refresh fails here, scheduleRefresh's retry mechanism handles it
     }
   }, ACTIVITY_REFRESH_INTERVAL_MS);
+}
+
+/**
+ * Listen for the user returning to the tab (e.g., phone in pocket, then picked up).
+ * Browsers throttle timers in background tabs, so this ensures we refresh promptly
+ * when the user comes back, before the token can expire.
+ */
+/** Guard to prevent concurrent refreshes (e.g., timer + visibility firing at the same time). */
+let _refreshing = false;
+
+function setupVisibilityRefresh() {
+  if (typeof window === "undefined") return;
+
+  const handler = async () => {
+    if (document.visibilityState !== "visible") return;
+    if (_refreshing) return; // skip if already refreshing
+
+    const { token } = useAuthStore.getState();
+    if (!token) return;
+
+    // Decode the JWT to check remaining time without a network call
+    const payload = decodeJwtPayload(token);
+    if (!payload?.exp) return;      const expiresAt = Number(payload.exp) * 1000;
+      const remaining = expiresAt - Date.now();
+
+    // If less than 5 minutes remain, refresh proactively
+    if (remaining < 5 * 60 * 1000) {
+      _refreshing = true;
+      const { silentRefresh } = useAuthStore.getState();
+      await silentRefresh();
+      _refreshing = false;
+    }
+  };
+
+  document.addEventListener("visibilitychange", handler);
+  // Store reference for cleanup on logout
+  (window as any).__strummVisibilityHandler = handler;
+}
+
+/** Decode a JWT's payload (base64url) without verification — client-side expiry check only. */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = parts[1];
+    const decoded = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
 }
 
 // Attempt immediate silent refresh on page load to slide the session window,
 // then schedule the refresh cycle.
 async function initializeAuth() {
   if (typeof window === "undefined") return;
-  
+
   // Wait a tick for Zustand to rehydrate from localStorage
   await new Promise(resolve => setTimeout(resolve, 50));
-  
+
   const { token, silentRefresh } = useAuthStore.getState();
   if (!token) return;
-  
+
+  // Set up the visibility listener once
+  setupVisibilityRefresh();
+
   // Try a silent refresh immediately on page load to slide the session
-  // (silentRefresh internally calls scheduleRefresh() for access token renewal)
   const refreshed = await silentRefresh();
   if (refreshed) {
     // If refresh succeeded, schedule the periodic activity refresh for sliding window
     scheduleActivityRefresh();
   } else {
-    // If immediate refresh failed, still schedule the access token refresh cycle
-    // so it retries later (e.g., if cookie wasn't immediately available)
-    scheduleRefresh();
+    // If immediate refresh failed, schedule the access token refresh cycle with retry
+    scheduleRefresh(0);
   }
 }
 
