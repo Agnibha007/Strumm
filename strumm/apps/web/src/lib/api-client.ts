@@ -37,7 +37,6 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   const response = await fetch(apiUrl(path), {
     ...rest,
     headers,
-    credentials: "include",
   });
   const json = (await response.json()) as ApiResponse<T>;
 
