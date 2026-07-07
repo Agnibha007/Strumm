@@ -293,7 +293,7 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="space-y-10 max-w-6xl mx-auto">
+    <div className="space-y-10 max-w-6xl">
       {/* Header */}
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">

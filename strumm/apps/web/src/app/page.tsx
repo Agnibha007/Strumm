@@ -89,7 +89,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="space-y-10 max-w-7xl mx-auto pb-10">
+    <div className="space-y-10 max-w-7xl pb-10">
       {/* Editorial Header */}
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">

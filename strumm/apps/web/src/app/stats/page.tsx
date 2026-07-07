@@ -107,7 +107,7 @@ export default function StatsPage() {
   }
 
   return (
-    <div className="pt-20 pb-8 px-4 sm:px-6 max-w-7xl mx-auto">
+    <div className="pt-20 pb-8 px-4 sm:px-6 max-w-7xl">
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2">Your Listening Stats</h1>
         <p className="text-muted">Discover your music taste and habits</p>

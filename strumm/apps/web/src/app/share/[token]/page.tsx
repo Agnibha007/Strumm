@@ -109,7 +109,7 @@ export default function SharePage({ params }: SharePageProps) {
       <div className="absolute inset-0 bg-black/80" />
 
       {/* Main card */}
-      <div className="relative z-10 w-full max-w-lg bg-surface border border-border/80 rounded-xl p-8 shadow-2xl space-y-6 text-center">
+      <div className="relative z-10 w-full max-w-lg bg-surface border border-border/80 rounded-xl p-8 shadow-2xl space-y-6 text-center mr-auto">
         {/* Branding header */}
         <div className="flex flex-col items-center text-center space-y-2">
           <BrandLogo variant="mark" size="md" priority />

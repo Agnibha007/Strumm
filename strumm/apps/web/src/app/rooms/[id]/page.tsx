@@ -503,7 +503,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   if (!room) return null;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-12 w-full px-4 md:px-0 min-w-0">
+    <div className="max-w-6xl space-y-8 pb-12 w-full px-4 md:px-0 min-w-0">
       {/* Title */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 min-w-0 border-b border-border/20 pb-4">
         <div className="min-w-0">

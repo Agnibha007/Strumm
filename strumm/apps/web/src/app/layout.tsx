@@ -6,7 +6,6 @@ import AuthWrapper from "web/components/AuthWrapper";
 import PersistentPlayerWrapper from "web/components/PersistentPlayerWrapper";
 import NotificationToast from "web/components/NotificationToast";
 import { RealTimeProvider } from "web/services/realtime";
-import ContentWrapper from "web/components/ContentWrapper";
 import ConditionalFooter from "web/components/ConditionalFooter";
 import FeedbackButton from "web/components/FeedbackButton";
 
@@ -221,9 +220,7 @@ export default function RootLayout({
         <Providers>
           <AuthWrapper>
             <RealTimeProvider>
-              <ContentWrapper>
-                {children}
-              </ContentWrapper>
+              {children}
             </RealTimeProvider>
           </AuthWrapper>
           <PersistentPlayerWrapper />

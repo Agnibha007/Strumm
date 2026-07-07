@@ -234,7 +234,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
 
   if (loading) {
     return (
-      <div className="space-y-10 max-w-5xl mx-auto">
+      <div className="space-y-10 max-w-5xl">
         <div className="h-4 w-32 rounded bg-border/50 animate-pulse" />
         <div className="flex flex-col md:flex-row items-center md:items-end gap-8 pb-4">
           <div className="w-48 h-48 md:w-56 md:h-56 rounded-xl bg-border/40 animate-pulse flex-shrink-0" />

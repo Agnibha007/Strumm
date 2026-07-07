@@ -153,7 +153,7 @@ export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean
 
   return (
     <div className={`bg-surface/30 border border-border/40 rounded-2xl p-5 flex flex-col shadow-sm backdrop-blur-md ${
-      fullPage ? "h-[70vh] w-full max-w-4xl mx-auto" : "h-[400px] mt-4"
+      fullPage ? "h-[70vh] w-full max-w-4xl" : "h-[400px] mt-4"
     }`}>
       <div className="flex items-center gap-2 border-b border-border/20 pb-3 mb-3">
         <Sparkles className="w-4 h-4 text-primary animate-pulse" />

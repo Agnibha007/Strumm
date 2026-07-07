@@ -168,7 +168,7 @@ export default function ReplayPage() {
   const childAnimatedProps = isAnimated ? { variants: itemVariants } : {};
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
+    <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
       {/* Editorial Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 min-w-0">
         <div className="min-w-0 flex-1">

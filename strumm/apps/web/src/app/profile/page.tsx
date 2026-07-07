@@ -475,7 +475,7 @@ function ProfilePageContent() {
   const passportNumber = `№ ST-${((displayedUser.createdAt || "").substring(2, 4)) || "26"}${((displayedUser.id || displayedUser.username || "0000").substring(0, 4)).toUpperCase()}`;
 
   return (
-    <div className="space-y-10 max-w-5xl mx-auto soft-enter">
+    <div className="space-y-10 max-w-5xl soft-enter">
       {/* Header */}
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">

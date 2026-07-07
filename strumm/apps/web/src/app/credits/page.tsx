@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function CreditsPage() {
   return (
-    <div className="max-w-3xl mx-auto py-12 px-4 md:px-0 soft-enter">
+    <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Acknowledgments</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-8">Credits</h1>
       <div className="space-y-8">

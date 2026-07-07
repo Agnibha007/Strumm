@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function ContentRemovalPage() {
   return (
-    <div className="max-w-3xl mx-auto py-12 px-4 md:px-0 soft-enter">
+    <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <div className="mb-10">
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Legal</span>
         <h1 className="text-4xl font-editorial text-text font-bold tracking-tight">Content Removal Policy</h1>

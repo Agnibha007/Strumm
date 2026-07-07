@@ -144,7 +144,7 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
   }
 
   return (
-    <div className="space-y-10 max-w-5xl mx-auto">
+    <div className="space-y-10 max-w-5xl">
       {/* Back button */}
       <button
         onClick={() => router.push("/podcasts")}

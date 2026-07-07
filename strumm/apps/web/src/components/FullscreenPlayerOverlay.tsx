@@ -431,7 +431,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       </div>
 
       {/* Audio/Lyrics Mode View */}
-        <div className={`w-full flex-1 mt-3 md:mt-6 min-h-0 z-10 mx-auto max-w-7xl transition-all duration-500 ${
+        <div className={`w-full flex-1 mt-3 md:mt-6 min-h-0 z-10 max-w-7xl transition-all duration-500 ${
           effectiveShowLyrics 
             ? "flex flex-col lg:grid lg:grid-cols-2 gap-3 lg:gap-8 xl:gap-16 h-full min-h-0" 
             : "flex flex-col items-center justify-center max-w-xl"

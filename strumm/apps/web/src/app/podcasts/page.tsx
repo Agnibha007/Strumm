@@ -107,7 +107,7 @@ export default function PodcastHomePage() {
   };
 
   return (
-    <div className="space-y-10 max-w-6xl mx-auto">
+    <div className="space-y-10 max-w-6xl">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>

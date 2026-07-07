@@ -145,7 +145,7 @@ export default function FeedbackPage() {
   }
 
   return (
-    <div className="space-y-10 max-w-4xl mx-auto pb-10">
+    <div className="space-y-10 max-w-4xl pb-10">
       {/* Header */}
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">

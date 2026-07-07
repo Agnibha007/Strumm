@@ -199,7 +199,7 @@ export default function EditorialPlayer() {
           />
         </div>
         
-        <div className="max-w-7xl mx-auto flex md:grid md:grid-cols-[minmax(0,1fr)_minmax(280px,1.2fr)_minmax(0,1fr)] items-center justify-between gap-3 md:gap-4">
+        <div className="max-w-7xl flex md:grid md:grid-cols-[minmax(0,1fr)_minmax(280px,1.2fr)_minmax(0,1fr)] items-center justify-between gap-3 md:gap-4">
           
           {/* Left: Song details */}
           <div 

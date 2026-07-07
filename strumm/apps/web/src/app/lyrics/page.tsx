@@ -168,7 +168,7 @@ export default function LyricsPage() {
       {/* Lyrics container */}
       <div 
         ref={scrollContainerRef}
-        className="relative z-10 flex-1 overflow-y-auto py-12 scrollbar-none my-6 text-center max-w-4xl mx-auto w-full space-y-6 md:space-y-8 px-4 flex flex-col justify-center"
+        className="relative z-10 flex-1 overflow-y-auto py-12 scrollbar-none my-6 text-center max-w-4xl w-full space-y-6 md:space-y-8 px-4 flex flex-col justify-center"
       >
         {!currentSong ? (
           <div className="flex flex-col items-center justify-center text-muted gap-4 max-w-sm mx-auto p-8 bg-surface/40 border border-border/50 rounded-2xl shadow-xl backdrop-blur-md">

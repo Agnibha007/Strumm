@@ -159,9 +159,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 // Access token lifetime in ms (15 minutes)
 const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
-const REFRESH_BUFFER_MS = 3 * 60 * 1000; // refresh 3 minutes before expiry for reliability
-// Periodic activity refresh: every 60 minutes to slide the session window
-const ACTIVITY_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const REFRESH_BUFFER_MS = 5 * 60 * 1000; // refresh 5 minutes before expiry for reliability
+// Periodic activity refresh: every 10 minutes to slide the session window during active use
+const ACTIVITY_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 // Retry interval for failed refreshes (with exponential backoff)
 const REFRESH_RETRY_INTERVAL_MS = 30 * 1000; // 30 seconds
 const REFRESH_RETRY_MAX_INTERVAL_MS = 5 * 60 * 1000; // cap at 5 minutes
