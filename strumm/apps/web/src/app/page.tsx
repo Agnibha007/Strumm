@@ -82,7 +82,7 @@ export default function HomePage() {
     };
 
     loadHomeData();
-  }, [user]);
+  }, [user?.id]);
 
   if (!user) {
     return <LoginPage />;

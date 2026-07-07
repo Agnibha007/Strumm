@@ -55,7 +55,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       setLoading(false);
     };
     init();
-  }, [user]);
+  }, [user?.id]);
 
   // Redirection guard logic
   useEffect(() => {
@@ -71,7 +71,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
         router.replace(redirectUrl);
       }
     }
-  }, [user, loading, pathname, router]);
+  }, [user?.id, loading, pathname, router]);
 
   if (loading) {
     return (
