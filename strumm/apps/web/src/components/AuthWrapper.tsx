@@ -122,7 +122,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       <Navigation />
       
       {/* Main route contents */}
-      <main id="main-content" className={`min-h-screen md:ml-64 outline-none relative z-10 px-4 pt-14 pb-40 sm:px-6 sm:pt-16 sm:pb-44 md:pl-0 md:pr-6 md:pt-10 md:pb-48 transition-all duration-300 ${
+      <main id="main-content" className={`min-h-screen md:ml-64 outline-none relative z-10 px-4 pt-14 pb-40 sm:px-6 sm:pt-16 sm:pb-44 md:pl-6 md:pr-6 md:pt-10 md:pb-48 transition-all duration-300 ${
         isCircleCollapsed ? "xl:mr-16" : "xl:mr-80"
       }`}>
         {children}
