@@ -557,7 +557,9 @@ async def verify_otp(
         return {
             "success": True,
             "data": {
-                "user": user
+                "user": user,
+                "token": access_token,
+                "refreshToken": refresh_token
             }
         }
     except Exception as e:
@@ -638,7 +640,9 @@ async def google_login(
         return {
             "success": True,
             "data": {
-                "user": user
+                "user": user,
+                "token": access_token,
+                "refreshToken": refresh_token
             }
         }
     except Exception as e:
@@ -716,7 +720,9 @@ async def email_password_login(
         return {
             "success": True,
             "data": {
-                "user": user
+                "user": user,
+                "token": access_token,
+                "refreshToken": refresh_token
             }
         }
     except Exception as e:
@@ -794,7 +800,9 @@ async def refresh_session(
         return {
             "success": True,
             "data": {
-                "user": user
+                "user": user,
+                "token": new_access_token,
+                "refreshToken": new_refresh_token
             }
         }
     except HTTPException as he:

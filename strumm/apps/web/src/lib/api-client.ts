@@ -19,10 +19,16 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   const { token, headers: customHeaders, ...rest } = options;
 
   const headers = new Headers(customHeaders);
-  // Prefer httpOnly cookie-based auth by always including credentials
-  // Token-based Authorization header is kept as a fallback for backward compatibility
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+  // Use explicitly passed token, or fall back to the token stored in Zustand
+  // (which comes from the login response body as a safety net alongside httpOnly cookies)
+  // Lazy import to avoid circular dependency with useAuthStore -> apiFetch
+  let effectiveToken = token;
+  if (!effectiveToken) {
+    const store = await import("web/store/useAuthStore");
+    effectiveToken = store.useAuthStore.getState().token;
+  }
+  if (effectiveToken) {
+    headers.set("Authorization", `Bearer ${effectiveToken}`);
   }
   if (rest.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
