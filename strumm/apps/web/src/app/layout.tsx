@@ -172,43 +172,7 @@ export default function RootLayout({
             })
           }}
         />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              // Global image error recovery: catch all broken images via event delegation
-              document.addEventListener('error', function(e) {
-                var img = e.target;
-                if (img.tagName !== 'IMG' || img.dataset.strummFixed) return;
-                img.dataset.strummFixed = '1';
-                img.style.opacity = '0';
-                // Try replacing http with https to fix mixed-content issues
-                var src = img.getAttribute('src') || '';
-                var retryCount = parseInt(img.dataset.strummRetry || '0');
-                if (retryCount === 0 && src.startsWith('http://')) {
-                  img.dataset.strummRetry = '1';
-                  img.src = src.replace('http://', 'https://');
-                  return;
-                }
-                if (retryCount <= 2 && src.includes('i.ytimg.com')) {
-                  img.dataset.strummRetry = String(retryCount + 1);
-                  var fallbacks = [
-                    src.replace(/maxresdefault/, 'hqdefault'),
-                    src.replace(/sddefault/, 'hqdefault'),
-                    src.replace(/mqdefault/, 'hqdefault'),
-                    src.replace(/i\.ytimg\.com/, 'img.youtube.com').replace(/\/[^\/]+(?:\.jpg)?$/, '/hqdefault.jpg')
-                  ];
-                  if (retryCount - 1 < fallbacks.length) {
-                    img.src = fallbacks[retryCount - 1];
-                    return;
-                  }
-                }
-                // Final fallback: hide the broken image and show parent's fallback element
-                img.style.display = 'none';
-                img.dataset.strummFixed = '2';
-              }, true);
-            `
-          }}
-        />
+
       </head>
       <body
         className={`${outfit.variable} ${playfair.variable} antialiased selection:bg-primary selection:text-white relative flex flex-col min-h-screen pb-20 md:pb-24`}

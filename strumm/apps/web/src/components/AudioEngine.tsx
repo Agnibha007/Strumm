@@ -442,9 +442,9 @@ export default function AudioEngine() {
           // Silently ignore cleanup errors
         }
       }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
+      // No need to manually remove children — the container div has no React children
+      // and React removes it from the DOM on unmount. The browser GC handles all
+      // descendants (including the YouTube iframe and any script tags).
     };
   }, []);
 
