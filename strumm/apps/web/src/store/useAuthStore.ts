@@ -149,6 +149,16 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+}
+
 // Access token lifetime in ms (15 minutes)
 const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
 const REFRESH_BUFFER_MS = 3 * 60 * 1000; // refresh 3 minutes before expiry for reliability
