@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
 import { searchYouTube, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
+import SafePodcastImage from "web/components/SafePodcastImage";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import Link from "next/link";
 
@@ -601,7 +602,11 @@ export default function SearchPage() {
                       className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
                     >
                       <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative">
-                        <img src={podcast.image} alt={podcast.title} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                        <SafePodcastImage
+                          src={podcast.image}
+                          alt={podcast.title}
+                          className="w-full h-full object-cover"
+                        />
                         <div className="absolute right-2 bottom-2 p-1.5 bg-black/60 rounded-full">
                           <Radio className="w-3.5 h-3.5 text-primary" />
                         </div>

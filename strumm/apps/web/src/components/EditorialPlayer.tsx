@@ -474,10 +474,10 @@ export default function EditorialPlayer() {
       <AnimatePresence>
         {showFullscreenMenu && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ type: "spring", duration: 0.4, bounce: 0.12 }}
             className="fixed inset-0 z-[9999]"
           >
             <FullscreenPlayerOverlay onClose={() => setShowFullscreenMenu(false)} />

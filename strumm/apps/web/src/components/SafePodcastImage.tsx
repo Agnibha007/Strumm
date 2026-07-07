@@ -7,14 +7,20 @@ type SafePodcastImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & 
   src?: string;
 };
 
+/** Upgrade http:// URLs to https:// to prevent Mixed Content warnings. */
+function toSecureUrl(url: string | undefined | null): string | null {
+  if (!url) return null;
+  return url.startsWith("http://") ? `https://${url.slice(7)}` : url;
+}
+
 export default function SafePodcastImage({ src, alt, className, ...props }: SafePodcastImageProps) {
-  const [currentSrc, setCurrentSrc] = useState<string | null>(null);
+  const [currentSrc, setCurrentSrc] = useState<string | null>(() => toSecureUrl(src));
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const attemptsRef = useRef(0);
 
   useEffect(() => {
-    setCurrentSrc(src || null);
+    setCurrentSrc(toSecureUrl(src));
     setLoaded(false);
     setErrored(false);
     attemptsRef.current = 0;
@@ -55,6 +61,7 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
           alt={alt || "Podcast artwork"}
           loading="lazy"
           decoding="async"
+          referrerPolicy="no-referrer"
           onLoad={handleLoad}
           onError={handleError}
           className={`absolute inset-0 w-full h-full object-cover ${

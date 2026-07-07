@@ -82,6 +82,20 @@ export default function AudioEngine() {
     htmlAudioRef.current = new Audio();
     const audio = htmlAudioRef.current;
 
+    const handleAudioError = () => {
+      const mediaError = audio.error;
+      if (mediaError) {
+        console.warn(
+          `AudioEngine: Media error — code=${mediaError.code}, message="${mediaError.message}"`,
+        );
+      }
+      // Reset src so the element isn't stuck in an error state
+      if (audio.src && !audio.src.startsWith("data:audio")) {
+        audio.removeAttribute("src");
+        audio.load();
+      }
+    };
+
     const updatePositionState = () => {
       if ("mediaSession" in navigator && typeof navigator.mediaSession.setPositionState === "function") {
         try {
@@ -134,6 +148,7 @@ export default function AudioEngine() {
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("durationchange", onDurationChange);
     audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", handleAudioError);
 
     return () => {
       audio.removeEventListener("play", onPlay);
@@ -141,6 +156,7 @@ export default function AudioEngine() {
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("durationchange", onDurationChange);
       audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", handleAudioError);
       audio.pause();
     };
   }, [handleTrackEnded, setCurrentTime, setDuration, setPlaying]);
@@ -485,11 +501,29 @@ export default function AudioEngine() {
         currentSong.metadata.audioVariants?.high ||
         currentSong.metadata.audioUrl ||
         "";
+
+      // Guard: skip if audio URL is empty to prevent NotSupportedError
+      if (!audioUrl) {
+        console.warn("AudioEngine: Cannot play podcast episode — no audio URL available.");
+        setPlayerRef({
+          playVideo: () => {},
+          pauseVideo: () => {},
+          seekTo: () => {},
+          setVolume: () => {},
+          setPlaybackRate: () => {},
+        });
+        return;
+      }
+
       const isSrcChanged = htmlAudioRef.current.src !== audioUrl;
       htmlAudioRef.current.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
       if (isSrcChanged) {
-        htmlAudioRef.current.src = audioUrl;
-        htmlAudioRef.current.load();
+        try {
+          htmlAudioRef.current.src = audioUrl;
+          htmlAudioRef.current.load();
+        } catch (e) {
+          console.warn("AudioEngine: Failed to load audio source:", e);
+        }
       }
       htmlAudioRef.current.volume = volume;
 

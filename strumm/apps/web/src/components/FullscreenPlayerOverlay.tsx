@@ -339,7 +339,12 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
   };
 
   return (
-    <div className={`fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl flex flex-col p-4 md:p-6 lg:p-8 xl:p-12 text-text overflow-x-hidden select-none transition-all ${effectiveShowLyrics ? "overflow-y-hidden" : "overflow-y-auto"}`}>
+    <motion.div
+        initial={{ backdropFilter: "blur(0px)" }}
+        animate={{ backdropFilter: "blur(24px)" }}
+        transition={{ duration: 0.35, ease: "easeOut" }}
+        className={`fixed inset-0 z-50 bg-background/95 flex flex-col p-4 md:p-6 lg:p-8 xl:p-12 text-text overflow-x-hidden select-none transition-all ${effectiveShowLyrics ? "overflow-y-hidden" : "overflow-y-auto"}`}
+      >
       {/* Header bar */}        <div className="flex justify-between items-start md:items-center z-10 flex-shrink-0 border-b border-border/20 pb-3 md:pb-4 gap-2">
         <button 
           onClick={onClose} 
@@ -440,8 +445,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           {/* Left Side: Song Details & Controls */}
           <div className={`flex flex-col items-center w-full transition-all duration-500 ${
             effectiveShowLyrics 
-              ? "gap-2 lg:gap-4 xl:gap-6 lg:items-start text-center lg:text-left flex-shrink-0" 
-              : "gap-6 h-full items-center text-center"
+              ? "gap-2 lg:gap-4 xl:gap-6 lg:items-center text-center flex-shrink-0" 
+              : "gap-6 items-center text-center"
           }`}>
             
             {/* Album Cover Card */}
@@ -479,7 +484,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
             {/* Playback speed selector */}
             <div className={`flex flex-col items-center gap-1.5 w-full transition-all ${
-              effectiveShowLyrics ? "hidden lg:flex lg:items-start" : "flex items-center"
+              effectiveShowLyrics ? "hidden lg:flex lg:items-center" : "flex items-center"
             }`}>
               <span className="text-[10px] tracking-wider uppercase font-semibold text-muted/60">Speed Control</span>
               <div className="flex items-center gap-1 bg-surface-elevated/40 border border-border/30 p-1 rounded-full w-fit backdrop-blur-md">
@@ -529,7 +534,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
             {/* Player controls */}
             <div className={`flex items-center justify-center gap-5 md:gap-7 w-full mt-1 transition-all ${
-              effectiveShowLyrics ? "lg:justify-start" : "justify-center"
+              effectiveShowLyrics ? "lg:justify-center" : "justify-center"
             }`}>
               <button
                 onClick={() => setShuffle(!isShuffle)}
@@ -585,7 +590,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
             {/* Secondary Action controls */}
             <div className={`flex items-center justify-center gap-6 w-full mt-2 transition-all ${
-              effectiveShowLyrics ? "hidden lg:flex lg:justify-start" : "flex justify-center"
+              effectiveShowLyrics ? "hidden lg:flex lg:justify-center" : "flex justify-center"
             }`}>
 
               <button
@@ -646,7 +651,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
 
             {/* Volume control */}
             <div className={`flex items-center gap-3 w-full max-w-[200px] mt-1 justify-center transition-all ${
-              effectiveShowLyrics ? "hidden lg:flex lg:justify-start" : "flex justify-center"
+              effectiveShowLyrics ? "hidden lg:flex lg:justify-center" : "flex justify-center"
             }`}>
               <Volume2 className="w-4 h-4 text-muted" />
               <input
@@ -729,18 +734,26 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
       {/* Queue Modal overlay */}
       <AnimatePresence>
         {showQueue && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+          >
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
               onClick={() => setShowQueue(false)}
               className="absolute inset-0 bg-black/85 backdrop-blur-md"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+              exit={{ opacity: 0, scale: 0.92 }}
+              transition={{ duration: 0.2 }}
               className="relative w-full max-w-md bg-surface border border-border/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10 p-5 md:p-6"
             >
               <div className="border-b border-border/20 pb-3 mb-3 flex justify-between items-center">
@@ -837,7 +850,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 )}
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -1062,6 +1075,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
