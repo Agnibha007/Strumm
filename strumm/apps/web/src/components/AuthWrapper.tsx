@@ -125,7 +125,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       <main className={`min-h-screen md:ml-64 overflow-y-auto relative z-10 px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48 transition-all duration-300 ${
         isCircleCollapsed ? "xl:mr-16" : "xl:mr-80"
       }`}>
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl">
           {children}
         </div>
       </main>
