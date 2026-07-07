@@ -554,13 +554,49 @@ def _mark_matched(song_item: dict):
 
 
 def _build_song_item(song: dict) -> dict:
-    """Build a consistent song item dict from a DB or API result."""
+    """Build a consistent song item dict from a DB or API result.
+    
+    Handles both ``artist`` (singular string) and ``artists`` (list of dicts)
+    formats. Joins multiple artists with ``, ``.
+    """
+    artist = song.get("artist", "")
+    if not artist:
+        raw_artists = song.get("artists") or []
+        if raw_artists and isinstance(raw_artists, list):
+            parts = []
+            for a in raw_artists:
+                if isinstance(a, dict):
+                    parts.append(a.get("name", ""))
+                elif isinstance(a, str):
+                    parts.append(a)
+            artist = ", ".join(p for p in parts if p)
+
+    # Convert duration from string ("3:45") to seconds if needed
+    duration = song.get("duration", 0)
+    if isinstance(duration, str) and ":" in duration:
+        parts = duration.split(":")
+        try:
+            if len(parts) == 2:
+                duration = int(parts[0]) * 60 + int(parts[1])
+            elif len(parts) == 3:
+                duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        except (ValueError, IndexError):
+            duration = 0
+
+    # Thumbnail: handle both ``thumbnail`` and nested ``thumbnails`` list
+    thumbnail = song.get("thumbnail", "")
+    if not thumbnail:
+        raw_thumbs = song.get("thumbnails") or []
+        if raw_thumbs and isinstance(raw_thumbs, list) and len(raw_thumbs) > 0:
+            last = raw_thumbs[-1]
+            thumbnail = last.get("url", "") if isinstance(last, dict) else ""
+
     return {
         "videoId": song.get("videoId", ""),
         "title": song.get("title", ""),
-        "artist": song.get("artist", ""),
-        "thumbnail": song.get("thumbnail", ""),
-        "duration": song.get("duration", 0),
+        "artist": artist,
+        "thumbnail": thumbnail,
+        "duration": duration or 0,
     }
 
 
