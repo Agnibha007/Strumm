@@ -75,6 +75,7 @@ interface PlayerState {
    
   // Radio Mode
   isRadio: boolean;
+  isRadioLoading: boolean;
   radioSeed: string | null;
   radioSession: string | null;
   radioHistory: string[];

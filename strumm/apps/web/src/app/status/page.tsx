@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
 export const metadata: Metadata = {
   title: "Status",
@@ -20,6 +21,11 @@ export default function StatusPage() {
   ];
 
   return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Status", href: "/status" },
+      ]} />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">System</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Service Status</h1>
@@ -48,5 +54,6 @@ export default function StatusPage() {
         <p className="text-xs text-muted mt-1">For real-time issues, contact <a href="mailto:support@strumm.me" className="text-primary hover:underline">support@strumm.me</a></p>
       </div>
     </div>
+    </>
   );
 }

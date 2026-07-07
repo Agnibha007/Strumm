@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import PodcastEpisodeClient from "./PodcastEpisodeClient";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -68,6 +69,21 @@ export async function generateMetadata({ params }: PodcastEpisodePageProps): Pro
   };
 }
 
-export default function PodcastEpisodePage({ params }: PodcastEpisodePageProps) {
-  return <PodcastEpisodeClient params={params} />;
+export default async function PodcastEpisodePage({ params }: PodcastEpisodePageProps) {
+  const { id } = await params;
+  const data = await fetchPodcastEpisode(id);
+  const showTitle = data?.show?.title || "Podcast Show";
+  const episodeTitle = data?.episode?.title || "Episode";
+
+  return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Podcasts", href: "/podcasts" },
+        { name: showTitle, href: "/podcasts" },
+        { name: episodeTitle, href: `/podcast/${id}` },
+      ]} />
+      <PodcastEpisodeClient params={params} />
+    </>
+  );
 }

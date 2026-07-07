@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
 export const metadata: Metadata = {
   title: "Security",
@@ -22,6 +23,11 @@ const practices = [
 
 export default function SecurityPage() {
   return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Security", href: "/security" },
+      ]} />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Trust</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Security</h1>
@@ -46,5 +52,6 @@ export default function SecurityPage() {
         </section>
       </div>
     </div>
+    </>
   );
 }

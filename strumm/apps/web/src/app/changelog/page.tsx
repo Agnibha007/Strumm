@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
 export const metadata: Metadata = {
   title: "Changelog",
@@ -76,6 +77,11 @@ const entries = [
 
 export default function ChangelogPage() {
   return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Changelog", href: "/changelog" },
+      ]} />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Updates</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Changelog</h1>
@@ -99,5 +105,6 @@ export default function ChangelogPage() {
         ))}
       </div>
     </div>
+    </>
   );
 }

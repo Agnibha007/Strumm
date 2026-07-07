@@ -1,9 +1,9 @@
 import { MetadataRoute } from "next";
 
-// Use the same env var resolution as the rest of the frontend.
-// IMPORTANT: For production builds, set NEXT_PUBLIC_APP_URL (frontend URL)
-// and NEXT_PUBLIC_API_URL (backend API URL) so dynamic entries resolve correctly.
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:8000";
 
 interface SitemapSong {
   videoId: string;
@@ -38,19 +38,40 @@ interface SitemapResponse {
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-  // 1. Static routes
+  // Static routes — ordered by priority
   const staticRoutes: Array<{
     path: string;
     changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"];
     priority: number;
   }> = [
     { path: "", changeFrequency: "daily", priority: 1.0 },
-    { path: "/search", changeFrequency: "daily", priority: 0.8 },
+    { path: "/search", changeFrequency: "daily", priority: 0.9 },
+    { path: "/flow", changeFrequency: "daily", priority: 0.8 },
     { path: "/podcasts", changeFrequency: "daily", priority: 0.8 },
     { path: "/playlists", changeFrequency: "weekly", priority: 0.7 },
+    { path: "/replay", changeFrequency: "weekly", priority: 0.6 },
+    { path: "/circle", changeFrequency: "weekly", priority: 0.6 },
     { path: "/library", changeFrequency: "weekly", priority: 0.5 },
     { path: "/lyrics", changeFrequency: "weekly", priority: 0.5 },
-    { path: "/login", changeFrequency: "monthly", priority: 0.4 },
+    { path: "/rooms", changeFrequency: "weekly", priority: 0.5 },
+    { path: "/about", changeFrequency: "monthly", priority: 0.4 },
+    { path: "/faq", changeFrequency: "monthly", priority: 0.4 },
+    { path: "/contact", changeFrequency: "monthly", priority: 0.3 },
+    { path: "/privacy", changeFrequency: "monthly", priority: 0.3 },
+    { path: "/terms", changeFrequency: "monthly", priority: 0.3 },
+    { path: "/cookies", changeFrequency: "monthly", priority: 0.2 },
+    { path: "/dmca", changeFrequency: "monthly", priority: 0.2 },
+    { path: "/security", changeFrequency: "monthly", priority: 0.2 },
+    { path: "/credits", changeFrequency: "monthly", priority: 0.1 },
+    { path: "/changelog", changeFrequency: "monthly", priority: 0.1 },
+    { path: "/status", changeFrequency: "daily", priority: 0.3 },
+    { path: "/login", changeFrequency: "monthly", priority: 0.2 },
+    { path: "/feedback", changeFrequency: "monthly", priority: 0.2 },
+    { path: "/feature-request", changeFrequency: "monthly", priority: 0.1 },
+    { path: "/report-bug", changeFrequency: "monthly", priority: 0.1 },
+    { path: "/content-removal", changeFrequency: "monthly", priority: 0.1 },
+    { path: "/roadmap", changeFrequency: "weekly", priority: 0.4 },
+    { path: "/licenses", changeFrequency: "monthly", priority: 0.1 },
   ];
 
   const entries: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
@@ -60,7 +81,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: route.priority,
   }));
 
-  // 2. Dynamic routes — fetch from backend API
+  // Dynamic routes — fetch from backend API
   try {
     const response = await fetch(`${BACKEND_URL}/sitemap`, {
       signal: AbortSignal.timeout(8000),
@@ -72,7 +93,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       if (json.success && json.data) {
         const { songs, playlists, podcasts, users } = json.data;
 
-        // Song pages: /song/{videoId}
         for (const song of songs) {
           entries.push({
             url: `${baseUrl}/song/${song.videoId}`,
@@ -82,7 +102,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           });
         }
 
-        // Public playlist pages: /playlist/{id}
         for (const playlist of playlists) {
           entries.push({
             url: `${baseUrl}/playlist/${playlist.id}`,
@@ -92,7 +111,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           });
         }
 
-        // Podcast show pages: /podcasts/show/{id}
         for (const podcast of podcasts) {
           entries.push({
             url: `${baseUrl}/podcasts/show/${podcast.id}`,
@@ -102,7 +120,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           });
         }
 
-        // User profile pages: /public/{username}
         for (const user of users) {
           entries.push({
             url: `${baseUrl}/public/${user.username}`,
@@ -114,32 +131,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch {
-    // Backend unreachable at build time — fallback to static + known-default entries
-    // so the sitemap always has dynamic content for Google to crawl
-    entries.push({
-      url: `${baseUrl}/flow`,
-      lastModified: new Date(),
-      changeFrequency: "weekly" as const,
-      priority: 0.6,
-    });
-    entries.push({
-      url: `${baseUrl}/replay`,
-      lastModified: new Date(),
-      changeFrequency: "weekly" as const,
-      priority: 0.5,
-    });
-    entries.push({
-      url: `${baseUrl}/circle`,
-      lastModified: new Date(),
-      changeFrequency: "weekly" as const,
-      priority: 0.5,
-    });
-    entries.push({
-      url: `${baseUrl}/rooms`,
-      lastModified: new Date(),
-      changeFrequency: "weekly" as const,
-      priority: 0.4,
-    });
+    // Backend unreachable — dynamic entries already have static fallbacks above
   }
 
   return entries;

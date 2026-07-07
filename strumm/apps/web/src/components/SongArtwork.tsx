@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates } from "web/lib/media";
@@ -26,11 +26,11 @@ export default function SongArtwork({
   priority = false,
   sizes,
 }: SongArtworkProps) {
-  // For priority (hero) images, generate optimized proxy URLs
-  const candidates = useMemo(
-    () => getArtworkCandidates(song, priority),
-    [song?.videoId, song?.thumbnail, priority],
-  );
+  // NOTE: useMemo intentionally omitted. This is a trivial array/string computation;
+  // removing the hook was a defensive measure against a production
+  // "Rendered more hooks than during the previous render" error (Sentry ed36292a)
+  // where the stack trace pointed at useMemo inside this component.
+  const candidates = getArtworkCandidates(song, priority);
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);

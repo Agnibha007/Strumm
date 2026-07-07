@@ -1,12 +1,23 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "Strumm Privacy Policy — how we collect, use, and protect your data.",
+  description: "Strumm Privacy Policy — how we collect, use, and protect your personal data and listening history.",
   openGraph: {
     title: "Privacy Policy | Strumm",
     description: "How Strumm handles your personal data, listening history, and privacy rights.",
+    url: "/privacy",
+  },
+  alternates: {
+    canonical: `${appUrl}/privacy`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -135,7 +146,33 @@ const sections = [
 
 export default function PrivacyPage() {
   return (
-    <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Privacy Policy", href: "/privacy" },
+      ]} />
+      {/* PrivacyPolicy structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "PrivacyPolicy",
+            "@id": `${appUrl}/privacy#policy`,
+            name: "Strumm Privacy Policy",
+            description:
+              "How Strumm collects, uses, and protects your personal data and listening history.",
+            publisher: {
+              "@type": "Organization",
+              name: "Strumm",
+              url: appUrl,
+            },
+            url: `${appUrl}/privacy`,
+            isPartOf: { "@id": `${appUrl}#website` },
+          }),
+        }}
+      />
+      <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <div className="mb-10">
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Legal</span>
         <h1 className="text-4xl font-editorial text-text font-bold tracking-tight">Privacy Policy</h1>
@@ -167,5 +204,6 @@ export default function PrivacyPage() {
         <Link href="/dmca" className="text-sm text-primary hover:underline">DMCA Policy</Link>
       </div>
     </div>
+    </>
   );
 }

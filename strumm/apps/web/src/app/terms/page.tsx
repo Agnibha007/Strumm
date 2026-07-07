@@ -1,12 +1,23 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "Strumm Terms of Service — the rules and guidelines for using the Strumm music platform.",
+  description: "Strumm Terms of Service — the rules, guidelines, and terms for using the Strumm music platform.",
   openGraph: {
     title: "Terms of Service | Strumm",
-    description: "Please read these terms carefully before using Strumm.",
+    description: "Please read these terms carefully before using Strumm — a free, ad-free music ecosystem.",
+    url: "/terms",
+  },
+  alternates: {
+    canonical: `${appUrl}/terms`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -116,7 +127,33 @@ const sections = [
 
 export default function TermsPage() {
   return (
-    <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Terms of Service", href: "/terms" },
+      ]} />
+      {/* TermsOfService structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "TermsOfService",
+            "@id": `${appUrl}/terms#terms`,
+            name: "Strumm Terms of Service",
+            description:
+              "The rules, guidelines, and terms for using the Strumm music platform.",
+            publisher: {
+              "@type": "Organization",
+              name: "Strumm",
+              url: appUrl,
+            },
+            url: `${appUrl}/terms`,
+            isPartOf: { "@id": `${appUrl}#website` },
+          }),
+        }}
+      />
+      <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <div className="mb-10">
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Legal</span>
         <h1 className="text-4xl font-editorial text-text font-bold tracking-tight">Terms of Service</h1>
@@ -144,5 +181,6 @@ export default function TermsPage() {
         <Link href="/dmca" className="text-sm text-primary hover:underline">DMCA Policy</Link>
       </div>
     </div>
+    </>
   );
 }

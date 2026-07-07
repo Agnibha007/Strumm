@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
 export const metadata: Metadata = {
   title: "Credits",
@@ -12,6 +13,11 @@ export const metadata: Metadata = {
 
 export default function CreditsPage() {
   return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Credits", href: "/credits" },
+      ]} />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Acknowledgments</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-8">Credits</h1>
@@ -50,5 +56,6 @@ export default function CreditsPage() {
         </section>
       </div>
     </div>
+    </>
   );
 }

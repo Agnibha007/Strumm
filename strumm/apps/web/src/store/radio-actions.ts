@@ -15,6 +15,7 @@ import { useNotificationStore } from "web/store/useNotificationStore";
 
 export interface RadioState {
   isRadio: boolean;
+  isRadioLoading: boolean;
   radioSeed: string | null;
   radioSession: string | null;
   radioHistory: string[];  // videoIds seen during current radio session
@@ -34,6 +35,7 @@ export interface RadioActions {
 
 export const initialRadioState: RadioState = {
   isRadio: false,
+  isRadioLoading: false,
   radioSeed: null,
   radioSession: null,
   radioHistory: [],
@@ -49,29 +51,39 @@ export function createRadioActions(
 ): RadioActions {
   return {
     startRadio: (seedVideoId, initialSongs) => {
+      const { currentSong } = get();
       const historyVids = [
         seedVideoId,
         ...initialSongs.map((s) => s.videoId),
       ];
+
+      // Keep the current song as the first queue item so playback doesn't stop.
+      // If the current song matches the seed, don't duplicate it.
+      let queue = initialSongs;
+      if (currentSong && currentSong.videoId !== seedVideoId) {
+        queue = [currentSong, ...initialSongs];
+      }
+
       set({
-        queue: initialSongs,
+        queue,
         currentIndex: 0,
         isRadio: true,
+        isRadioLoading: false,
         radioSeed: seedVideoId,
         radioSession: `radio_${seedVideoId}_${Date.now()}`,
         radioHistory: historyVids.filter(Boolean) as string[],
         isShuffle: false,
         repeatMode: "none",
       });
-      if (initialSongs.length > 0) {
-        const song = initialSongs[0];
+      if (queue.length > 0) {
+        const song = queue[0];
         set({ currentSong: song, isPlaying: true, currentTime: 0 });
         get().updateMediaSession(song);
       }
     },
 
     stopRadio: () => {
-      set({ isRadio: false, radioSeed: null, radioSession: null, radioHistory: [] });
+      set({ isRadio: false, isRadioLoading: false, radioSeed: null, radioSession: null, radioHistory: [] });
     },
 
     setRadioSession: (session) => {
@@ -81,6 +93,8 @@ export function createRadioActions(
     triggerRadio: async (seedVideoId) => {
       const { isRadio, radioSeed, radioHistory } = get();
       if (isRadio && radioSeed === seedVideoId) return;
+
+      set({ isRadioLoading: true });
 
       try {
         const token = useAuthStore.getState().token;
@@ -95,12 +109,14 @@ export function createRadioActions(
         if (data?.songs?.length > 0) {
           get().startRadio(seedVideoId, data.songs);
         } else {
+          set({ isRadioLoading: false });
           useNotificationStore.getState().show(
             "Couldn't find related tracks for this song.",
             "warning",
           );
         }
       } catch (e) {
+        set({ isRadioLoading: false });
         console.error("Failed to start radio:", e);
         useNotificationStore.getState().show(
           "Couldn't start radio — no related tracks found for this song.",

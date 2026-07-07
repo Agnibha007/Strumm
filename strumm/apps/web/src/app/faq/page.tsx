@@ -1,12 +1,23 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "FAQ",
-  description: "Frequently asked questions about Strumm.",
+  description: "Frequently asked questions about Strumm — the ad-free, AI-powered music ecosystem with playlists, podcasts, and listening analytics.",
   openGraph: {
     title: "FAQ | Strumm",
-    description: "Find answers to common questions about Strumm.",
+    description: "Find answers to common questions about Strumm — how playback works, privacy, account features, and more.",
+    url: "/faq",
+  },
+  alternates: {
+    canonical: `${appUrl}/faq`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -63,25 +74,56 @@ const faqs = [
 
 export default function FAQPage() {
   return (
-    <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
-      <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Support</span>
-      <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-8">Frequently Asked Questions</h1>
-      <div className="space-y-4">
-        {faqs.map((faq, i) => (
-          <details key={i} className="bg-surface/40 border border-border/60 rounded-xl overflow-hidden group">
-            <summary className="px-5 py-4 cursor-pointer text-sm font-semibold text-text hover:text-primary transition flex items-center justify-between select-none">
-              <span>{faq.q}</span>
-              <span className="text-muted text-xs group-open:rotate-180 transition-transform">▼</span>
-            </summary>
-            <div className="px-5 pb-4 text-sm text-muted leading-relaxed border-t border-border/40 pt-3">
-              {faq.a}
-            </div>
-          </details>
-        ))}
-      </div>
-      <div className="mt-10 text-center">
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "FAQ", href: "/faq" },
+      ]} />
+      {/* FAQPage structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "@id": `${appUrl}/faq#faq`,
+            name: "Strumm FAQ",
+            description: "Frequently asked questions about Strumm music ecosystem.",
+            mainEntity: faqs.map((faq) => ({
+              "@type": "Question",
+              name: faq.q,
+              acceptedAnswer: {
+                "@type": "Answer",
+                text: faq.a,
+              },
+            })),
+          }),
+        }}
+      />
+      <section aria-label="Frequently asked questions" className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
+      <header>
+        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Support</span>
+        <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-8">Frequently Asked Questions</h1>
+      </header>
+      <section aria-label="Questions and answers">
+        <div className="space-y-4">
+          {faqs.map((faq, i) => (
+            <details key={i} className="bg-surface/40 border border-border/60 rounded-xl overflow-hidden group">
+              <summary className="px-5 py-4 cursor-pointer text-sm font-semibold text-text hover:text-primary transition flex items-center justify-between select-none">
+                <span>{faq.q}</span>
+                <span className="text-muted text-xs group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              <div className="px-5 pb-4 text-sm text-muted leading-relaxed border-t border-border/40 pt-3">
+                {faq.a}
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+      <footer className="mt-10 text-center">
         <p className="text-sm text-muted">Still have questions? <a href="/contact" className="text-primary hover:underline">Contact us</a></p>
-      </div>
-    </div>
+      </footer>
+    </section>
+    </>
   );
 }

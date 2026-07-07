@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import PodcastShowClient from "./PodcastShowClient";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 interface PodcastShowData {
   show: {
@@ -60,6 +62,61 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   };
 }
 
-export default function Page({ params }: { params: Promise<{ id: string }> }) {
-  return <PodcastShowClient params={params} />;
+async function fetchPodcastShow(id: string): Promise<PodcastShowData | null> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/podcasts/shows/${encodeURIComponent(id)}`, {
+      signal: AbortSignal.timeout(4000),
+    });
+    const json = await res.json();
+    if (json.success && json.data) return json.data as PodcastShowData;
+  } catch {
+    // Backend unreachable
+  }
+  return null;
+}
+
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const canonicalUrl = `${baseUrl}/podcasts/show/${id}`;
+  const data = await fetchPodcastShow(id);
+
+  return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Podcasts", href: "/podcasts" },
+        { name: data?.show?.title || "Podcast Show", href: `/podcasts/show/${id}` },
+      ]} />
+      {data && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "PodcastSeries",
+              "@id": canonicalUrl,
+              name: data.show.title,
+              url: canonicalUrl,
+              description: data.show.description
+                ? data.show.description.replace(/<[^>]*>/g, "").slice(0, 500)
+                : `Listen to "${data.show.title}" on Strumm.`,
+              image: data.show.image
+                ? { "@type": "ImageObject", url: data.show.image }
+                : undefined,
+              author: {
+                "@type": "Person",
+                name: data.show.author,
+              },
+              ...(data.episodes?.length > 0
+                ? {
+                    numberOfEpisodes: data.episodes.length,
+                  }
+                : {}),
+            }),
+          }}
+        />
+      )}
+      <PodcastShowClient params={params} />
+    </>
+  );
 }
