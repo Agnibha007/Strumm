@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Set
 
 # ---------------------------------------------------------------------------
@@ -32,6 +33,25 @@ NOISE_WORDS: Set[str] = {
     "full song",
     "song",
     "music video",
+}
+
+# Additional noise words for matching normalization (more aggressive)
+MATCH_NOISE_WORDS: Set[str] = {
+    "official audio",
+    "official video",
+    "official music video",
+    "official lyric video",
+    "lyric video",
+    "audio",
+    "video",
+    "hd",
+    "hq",
+    "4k",
+    "visualizer",
+    "full song",
+    "song",
+    "music video",
+    "official",
 }
 
 # ---------------------------------------------------------------------------
@@ -76,6 +96,12 @@ ARTIST_SUFFIX_PATTERNS = [
 ARTIST_NOISE_WORDS = {
     "official", "artist", "vevo", "topic", "music", "records", "channel", "subject",
 }
+
+# ---------------------------------------------------------------------------
+# Feat / ft patterns
+# ---------------------------------------------------------------------------
+
+FEAT_RE = re.compile(r"\b(?:feat\.|ft\.|featuring)\b", re.IGNORECASE)
 
 
 def normalize_artist(artist: str) -> str:
@@ -177,6 +203,104 @@ def canonical_string(raw: str) -> str:
 def canonical_song_key(title: str, artist: str) -> str:
     """Build a dedup key: ``canonicalTitle|canonicalArtist``."""
     return f"{canonical_string(title)}|{canonical_artist(artist)}"
+
+
+# ---------------------------------------------------------------------------
+# Enhanced normalization for matching (more aggressive than canonical)
+# ---------------------------------------------------------------------------
+
+
+def normalize_title_for_match(raw: str) -> str:
+    """
+    Aggressively normalize a song title for fuzzy matching.
+
+    Performs all ``canonical_string`` steps plus:
+      1. Normalize brackets: ``(burnt)`` → ``- burnt``, ``[burnt]`` → ``(burnt)``
+      2. Replace ``&`` with ``and``
+      3. Normalize ``feat.`` / ``ft.`` / ``featuring`` → ``feat``
+      4. Remove additional match noise words
+      5. Collapse repeated spaces again
+    """
+    s = _normalize_title_for_match(raw)
+    return s
+
+
+@lru_cache(maxsize=4096)
+def _normalize_title_for_match(raw: str) -> str:
+    if not raw:
+        return raw
+
+    s = unicodedata.normalize("NFC", raw)
+
+    # 1. Normalize brackets: [burnt] → (burnt)
+    s = re.sub(r"[\[{]", "(", s)
+    s = re.sub(r"[\}\]}]", ")", s)
+
+    # 2. Convert parenthetical to dash notation: (burnt) → - burnt
+    s = re.sub(r"\(\s*(.+?)\s*\)", r"- \1", s)
+
+    # 3. Lowercase
+    s = s.lower()
+
+    # 4. Strip emojis
+    s = EMOJI_RE.sub("", s)
+
+    # 5. Replace & with and
+    s = re.sub(r"\s*&\s*", " and ", s)
+
+    # 6. Normalize feat/ft
+    s = FEAT_RE.sub("feat", s)
+
+    # 7. Remove noise words
+    noise_pattern = r"\b(?:{})\b".format("|".join(re.escape(w) for w in MATCH_NOISE_WORDS))
+    s = re.sub(noise_pattern, "", s, flags=re.IGNORECASE)
+
+    # 8. Remove all punctuation (no hyphens kept — more aggressive)
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+
+    # 9. Collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+
+    # 10. Strip diacritics
+    decomposed = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+    return s
+
+
+@lru_cache(maxsize=2048)
+def normalize_artist_for_match(raw: str) -> str:
+    """
+    Aggressively normalize an artist name for fuzzy matching.
+    Strips YouTube suffixes, noise words, and applies canonical normalization.
+    """
+    if not raw:
+        return raw
+
+    s = unicodedata.normalize("NFC", raw)
+    s = s.lower()
+    s = EMOJI_RE.sub("", s)
+
+    # Strip YouTube suffixes
+    for pattern in ARTIST_SUFFIX_PATTERNS:
+        s = pattern.sub("", s)
+    s = re.sub(r"([a-z])([A-Z])", r"\1 \2", s)
+
+    # Remove noise words
+    noise_pattern = r"\b(?:{})\b".format("|".join(re.escape(w) for w in ARTIST_NOISE_WORDS))
+    s = re.sub(noise_pattern, "", s, flags=re.IGNORECASE)
+
+    # Remove punctuation
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+
+    # Collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+
+    # Strip diacritics
+    decomposed = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+    return s
 
 
 # ---------------------------------------------------------------------------

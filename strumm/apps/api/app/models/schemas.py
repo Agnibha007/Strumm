@@ -220,6 +220,32 @@ class PodcastEpisodeSchema(BaseModel):
     description: str
     publishedAt: Optional[datetime] = None
 
+# --- Import Result Types ---
+class ImportMatchResult(BaseModel):
+    """A matched song in import results with optional confidence scoring."""
+    videoId: str
+    title: str
+    artist: str
+    thumbnail: str
+    duration: int
+    match_type: str = "exact"  # "exact" | "similar" | "fuzzy"
+    confidence: Optional[float] = None  # 0.0 - 1.0
+
+class ImportNotFoundResult(BaseModel):
+    title: str
+    artist: str
+    album: Optional[str] = None
+    candidates: Optional[List[Dict[str, Any]]] = None  # possible matches for user to choose
+
+class ImportResponse(BaseModel):
+    matched: List[ImportMatchResult]
+    similar_matches: List[ImportMatchResult]
+    not_found: List[ImportNotFoundResult]
+    duplicates: List[ImportMatchResult]
+    total_matched: int
+    total_similar: int
+    total_failed: int
+
 # --- API Response Format ---
 class APIResponse(BaseModel):
     success: bool

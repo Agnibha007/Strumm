@@ -19,9 +19,11 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<{
     matched: Song[];
-    not_found: Array<{ title: string; artist: string; album?: string }>;
+    similar_matches: Array<Song & { match_type?: string; confidence?: number }>;
+    not_found: Array<{ title: string; artist: string; album?: string; candidates?: any[] }>;
     duplicates: Song[];
     total_matched: number;
+    total_similar: number;
     total_failed: number;
   } | null>(null);
   
@@ -69,10 +71,14 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     }
   };
 
+  const allMatchedSongs = results
+    ? [...results.matched, ...results.similar_matches]
+    : [];
+
   const playImported = () => {
-    if (results && results.matched.length > 0) {
-      setQueue(results.matched);
-      playSong(results.matched[0], results.matched);
+    if (allMatchedSongs.length > 0) {
+      setQueue(allMatchedSongs);
+      playSong(allMatchedSongs[0], allMatchedSongs);
     }
   };
 
@@ -165,7 +171,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
         <div className="border-t border-border/40 pt-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-editorial text-base text-text">Resolution Summary</h3>
-            {results.matched.length > 0 && (
+            {(results.matched.length > 0 || results.similar_matches.length > 0) && (
               <button
                 onClick={playImported}
                 className="flex items-center gap-1.5 text-xs text-primary font-semibold hover:underline cursor-pointer"
@@ -176,10 +182,14 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div className="bg-surface-elevated border border-border/40 p-3 rounded text-center">
               <div className="text-lg font-bold text-emerald-500">{results.total_matched}</div>
-              <div className="text-[10px] uppercase text-muted">Matched</div>
+              <div className="text-[10px] uppercase text-muted">Exact</div>
+            </div>
+            <div className="bg-surface-elevated border border-border/40 p-3 rounded text-center">
+              <div className="text-lg font-bold text-cyan-500">{results.total_similar}</div>
+              <div className="text-[10px] uppercase text-muted">Similar</div>
             </div>
             <div className="bg-surface-elevated border border-border/40 p-3 rounded text-center">
               <div className="text-lg font-bold text-amber-500">{results.duplicates.length}</div>
@@ -200,6 +210,24 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
                 <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-semibold uppercase">
                   <Check className="w-3 h-3" /> Resolved
                 </span>
+              </div>
+            ))}
+
+            {results.similar_matches.map((s, idx) => (
+              <div key={s.videoId + "-sim-" + idx} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
+                <span className="text-text font-medium truncate max-w-[60%]">
+                  {s.title} <span className="text-muted text-[10px]">by {s.artist}</span>
+                </span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {s.confidence != null && (
+                    <span className="text-[9px] text-cyan-600 font-mono">
+                      {Math.round(s.confidence * 100)}%
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1 text-[10px] text-cyan-500 font-semibold uppercase">
+                    <Check className="w-3 h-3" /> Smart Match
+                  </span>
+                </div>
               </div>
             ))}
             

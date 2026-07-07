@@ -9,7 +9,7 @@ from app.routes.dependencies import get_current_user
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from app.services.cache import cache_search, get_cached_search
-from app.services.normalizer import canonical_song_key
+from app.services.normalizer import canonical_song_key, normalize_title_for_match, normalize_artist_for_match
 from pydantic import BaseModel
 import logging
 
@@ -504,13 +504,289 @@ async def extract_ytmusic_playlist(url: str) -> list:
         return []
 
 
+# ---------------------------------------------------------------------------
+# Progressive Song Matching Pipeline
+# ---------------------------------------------------------------------------
+
+# Confidence thresholds
+EXACT_MATCH_CONFIDENCE = 1.0
+HIGH_CONFIDENCE_THRESHOLD = 0.92
+SIMILAR_MATCH_THRESHOLD = 0.75
+FUZZY_MATCH_THRESHOLD = 0.60
+
+_imported_video_ids: set = set()
+_imported_canonical_keys: set = set()
+_searched_queries: set = set()
+
+
+def _reset_import_caches():
+    """Reset per-import dedup and search caches."""
+    global _imported_video_ids, _imported_canonical_keys, _searched_queries
+    _imported_video_ids = set()
+    _imported_canonical_keys = set()
+    _searched_queries = set()
+
+
+def _is_duplicate(song_item: dict) -> bool:
+    """Check if a song is already in the matched list (by videoId or canonical key)."""
+    vid = song_item.get("videoId", "")
+    if vid and vid in _imported_video_ids:
+        return True
+    key = canonical_song_key(
+        song_item.get("title", ""),
+        song_item.get("artist", ""),
+    )
+    if key in _imported_canonical_keys:
+        return True
+    return False
+
+
+def _mark_matched(song_item: dict):
+    """Add a song to the dedup tracking sets."""
+    vid = song_item.get("videoId", "")
+    if vid:
+        _imported_video_ids.add(vid)
+    key = canonical_song_key(
+        song_item.get("title", ""),
+        song_item.get("artist", ""),
+    )
+    _imported_canonical_keys.add(key)
+
+
+def _build_song_item(song: dict) -> dict:
+    """Build a consistent song item dict from a DB or API result."""
+    return {
+        "videoId": song.get("videoId", ""),
+        "title": song.get("title", ""),
+        "artist": song.get("artist", ""),
+        "thumbnail": song.get("thumbnail", ""),
+        "duration": song.get("duration", 0),
+    }
+
+
+def _compute_fuzzy_score(title_a: str, artist_a: str, title_b: str, artist_b: str) -> float:
+    """
+    Compute a weighted fuzzy similarity score between two song identities.
+    Returns a float 0.0 - 1.0.
+    """
+    from rapidfuzz import fuzz
+
+    t_norm_a = normalize_title_for_match(title_a)
+    t_norm_b = normalize_title_for_match(title_b)
+    a_norm_a = normalize_artist_for_match(artist_a)
+    a_norm_b = normalize_artist_for_match(artist_b)
+
+    # Title similarity: weighted combination of multiple ratio methods
+    title_ratio = fuzz.ratio(t_norm_a, t_norm_b) / 100.0
+    title_token_sort = fuzz.token_sort_ratio(t_norm_a, t_norm_b) / 100.0
+    title_token_set = fuzz.token_set_ratio(t_norm_a, t_norm_b) / 100.0
+    title_partial = fuzz.partial_ratio(t_norm_a, t_norm_b) / 100.0
+
+    title_score = (
+        title_ratio * 0.35
+        + title_token_sort * 0.25
+        + title_token_set * 0.25
+        + title_partial * 0.15
+    )
+
+    # Artist similarity
+    artist_ratio = fuzz.ratio(a_norm_a, a_norm_b) / 100.0
+    artist_token_set = fuzz.token_set_ratio(a_norm_a, a_norm_b) / 100.0
+
+    if not artist_a or not artist_b:
+        artist_score = 1.0  # No artist to compare — don't penalize
+    else:
+        artist_score = artist_ratio * 0.5 + artist_token_set * 0.5
+
+    # Weighted combined: title (0.6) + artist (0.4)
+    combined = title_score * 0.6 + artist_score * 0.4
+    return min(combined, 1.0)
+
+
+def _duration_similarity(dur_a: int, dur_b: int) -> float:
+    """Compute duration similarity as a fraction 0.0 - 1.0."""
+    if not dur_a or not dur_b:
+        return 1.0  # No duration to compare — neutral
+    ratio = min(dur_a, dur_b) / max(dur_a, dur_b)
+    return ratio
+
+
+def _rank_candidates(imported_track: dict, candidates: list) -> list:
+    """
+    Rank search candidates by combined similarity to the imported track.
+    Returns list of (song_item, score) tuples sorted by score descending.
+    """
+    scored = []
+    for candidate in candidates:
+        title_score = _compute_fuzzy_score(
+            imported_track.get("title", ""),
+            imported_track.get("artist", ""),
+            candidate.get("title", ""),
+            candidate.get("artist", ""),
+        )
+        dur_score = _duration_similarity(
+            imported_track.get("duration", 0),
+            candidate.get("duration", 0),
+        )
+        # Combined: fuzzy text (0.8) + duration (0.2)
+        combined = title_score * 0.8 + dur_score * 0.2
+        scored.append((_build_song_item(candidate), combined))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored
+
+
+async def _search_candidates(title: str, artist: str, duration: int = 0) -> list:
+    """
+    Search for song candidates via the music provider.
+    Results are cached per import to avoid duplicate searches.
+    """
+    from app.routes.search import search_yt_music_songs
+
+    search_query = f"{title} {artist}".strip()
+    cache_key = search_query.lower().strip()
+
+    if cache_key in _searched_queries:
+        return []
+    _searched_queries.add(cache_key)
+
+    results = await search_yt_music_songs(search_query)
+    if not results:
+        return []
+
+    # Return top 10 candidates
+    return results[:10]
+
+
+async def _match_track(track: dict) -> dict:
+    """
+    Run the progressive matching pipeline for a single imported track.
+    Returns a dict with keys: match, match_type, confidence, candidates (optional).
+    """
+    title = track.get("title", "")
+    artist = track.get("artist", "")
+
+    if not title:
+        return {"match": None, "match_type": "none", "confidence": 0.0}
+
+    # ---- Stage 1: Exact Match ----
+    video_id = track.get("videoId")
+    if video_id:
+        candidate = _build_song_item(track)
+        return {
+            "match": candidate,
+            "match_type": "exact",
+            "confidence": EXACT_MATCH_CONFIDENCE,
+        }
+
+    # ---- Stage 2: Title Normalization + DB Lookup ----
+    norm_title = normalize_title_for_match(title)
+    norm_artist = normalize_artist_for_match(artist)
+
+    database = db.get_db()
+
+    # Search liked songs with normalized comparison
+    liked_cursor = database[db.LIKED_SONGS].find(
+        {},
+        {"song": 1, "_id": 0},
+    )
+    best_match = None
+    best_score = 0.0
+    best_match_type = "none"
+    candidates_list = []
+
+    async for doc in liked_cursor:
+        song = doc.get("song", {})
+        score = _compute_fuzzy_score(
+            title, artist,
+            song.get("title", ""), song.get("artist", ""),
+        )
+        if score > best_score:
+            best_score = score
+            best_match = song
+            best_match_type = "fuzzy"
+
+    # Also search playlist songs
+    playlist_cursor = database[db.PLAYLISTS].find(
+        {},
+        {"songs": 1, "_id": 0},
+    )
+    async for doc in playlist_cursor:
+        for song in doc.get("songs", []):
+            score = _compute_fuzzy_score(
+                title, artist,
+                song.get("title", ""), song.get("artist", ""),
+            )
+            if score > best_score:
+                best_score = score
+                best_match = song
+                best_match_type = "fuzzy"
+
+    # Check if we have a high-confidence DB match
+    if best_match and best_score >= HIGH_CONFIDENCE_THRESHOLD:
+        return {
+            "match": _build_song_item(best_match),
+            "match_type": "similar" if best_score < 1.0 else "exact",
+            "confidence": round(best_score, 4),
+        }
+
+    # ---- Stage 5: Search Candidates ----
+    candidates = await _search_candidates(title, artist, track.get("duration", 0))
+    if candidates:
+        ranked = _rank_candidates(track, candidates)
+        candidates_list = [item for item, _ in ranked[:5]]
+
+        if ranked:
+            top_match, top_score = ranked[0]
+            if top_score >= HIGH_CONFIDENCE_THRESHOLD:
+                return {
+                    "match": top_match,
+                    "match_type": "similar",
+                    "confidence": round(top_score, 4),
+                }
+            elif top_score >= SIMILAR_MATCH_THRESHOLD:
+                # Accept as similar but return candidates for potential user review
+                return {
+                    "match": top_match,
+                    "match_type": "similar",
+                    "confidence": round(top_score, 4),
+                    "candidates": candidates_list,
+                }
+            elif top_score >= FUZZY_MATCH_THRESHOLD and best_match:
+                # Use the best DB match even if lower confidence
+                return {
+                    "match": _build_song_item(best_match),
+                    "match_type": "similar",
+                    "confidence": round(best_score, 4),
+                    "candidates": candidates_list,
+                }
+
+    # ---- Stage 6: AI Fallback (not implemented yet - returns best-effort) ----
+    # Accept best DB or search result above threshold
+    if best_match and best_score >= SIMILAR_MATCH_THRESHOLD:
+        return {
+            "match": _build_song_item(best_match),
+            "match_type": "similar",
+            "confidence": round(best_score, 4),
+            "candidates": candidates_list,
+        }
+
+    # No good match found
+    return {
+        "match": None,
+        "match_type": "none",
+        "confidence": 0.0,
+        "candidates": candidates_list if candidates_list else None,
+    }
+
+
 @router.post("/import")
 async def import_playlist(
     payload: ImportRequest,
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        from app.routes.search import search_yt_music_songs
+        _reset_import_caches()
         database = db.get_db()
         source = sanitize_enum(payload.source, {"csv", "spotify", "youtube"}, "csv")
         import_name = sanitize_text(payload.name, max_length=120)
@@ -518,6 +794,7 @@ async def import_playlist(
 
         parsed_rows = []
         matched = []
+        similar_match = []
         not_found = []
         duplicates = []
 
@@ -577,118 +854,59 @@ async def import_playlist(
                     "error": "No tracks found in the provided import data. Check your format and try again."
                 }
 
+        # Run the progressive matching pipeline for each track
         for track in parsed_rows:
-            title = track["title"]
+            title = track.get("title", "")
             artist = track.get("artist", "")
             if not title:
                 continue
 
-            if "videoId" in track:
-                song_item = {
-                    "videoId": track["videoId"],
-                    "title": track["title"],
-                    "artist": track["artist"],
-                    "thumbnail": track["thumbnail"],
-                    "duration": track["duration"]
-                }
-                # Rule 1: videoId dedup
-                if any(x["videoId"] == song_item["videoId"] for x in matched):
+            if track.get("videoId"):
+                song_item = _build_song_item(track)
+                if _is_duplicate(song_item):
                     duplicates.append(song_item)
-                    continue
-                # Rule 2: canonical dedup
-                incoming_key = canonical_song_key(
-                    song_item.get("title", ""),
-                    song_item.get("artist", ""),
-                )
-                if any(
-                    canonical_song_key(x.get("title", ""), x.get("artist", "")) == incoming_key
-                    for x in matched
-                ):
-                    duplicates.append(song_item)
-                    continue
-                matched.append(song_item)
+                else:
+                    _mark_matched(song_item)
+                    matched.append(song_item)
                 continue
 
-            regex_title = escaped_regex(title)
-            regex_artist = escaped_regex(artist) if artist else None
+            result = await _match_track(track)
 
-            query = {"song.title": regex_title}
-            if regex_artist:
-                query["song.artist"] = regex_artist
-
-            match_doc = await database[db.LIKED_SONGS].find_one(query)
-            if not match_doc:
-                query = {"songs.title": regex_title}
-                if regex_artist:
-                    query["songs.artist"] = regex_artist
-                match_doc = await database[db.PLAYLISTS].find_one(query, {"songs.$": 1})
-
-            if match_doc:
-                song = match_doc["song"] if "song" in match_doc else match_doc["songs"][0]
-                song_item = {
-                    "videoId": song["videoId"],
-                    "title": song["title"],
-                    "artist": song["artist"],
-                    "thumbnail": song["thumbnail"],
-                    "duration": song["duration"]
-                }
-                # Rule 1: videoId dedup
-                if any(x["videoId"] == song_item["videoId"] for x in matched):
-                    duplicates.append(song_item)
-                    continue
-                # Rule 2: canonical dedup
-                incoming_key = canonical_song_key(
-                    song_item.get("title", ""),
-                    song_item.get("artist", ""),
-                )
-                if any(
-                    canonical_song_key(x.get("title", ""), x.get("artist", "")) == incoming_key
-                    for x in matched
-                ):
-                    duplicates.append(song_item)
-                    continue
-                matched.append(song_item)
-            else:
-                search_query = f"{title} {artist}".strip()
-                search_matches = await search_yt_music_songs(search_query)
-                if search_matches:
-                    song = search_matches[0]
-                    song_item = {
-                        "videoId": song["videoId"],
-                        "title": song["title"],
-                        "artist": song["artist"],
-                        "thumbnail": song["thumbnail"],
-                        "duration": song["duration"]
-                    }
-                    # Rule 1: videoId dedup
-                    if any(x["videoId"] == song_item["videoId"] for x in matched):
-                        duplicates.append(song_item)
-                        continue
-                    # Rule 2: canonical dedup
-                    incoming_key = canonical_song_key(
-                        song_item.get("title", ""),
-                        song_item.get("artist", ""),
-                    )
-                    if any(
-                        canonical_song_key(x.get("title", ""), x.get("artist", "")) == incoming_key
-                        for x in matched
-                    ):
-                        duplicates.append(song_item)
-                        continue
-                    matched.append(song_item)
+            if result["match"] and result["confidence"] >= HIGH_CONFIDENCE_THRESHOLD:
+                if _is_duplicate(result["match"]):
+                    duplicates.append(result["match"])
                 else:
-                    not_found.append({
-                        "title": title,
-                        "artist": artist,
-                        "album": track.get("album", "")
-                    })
+                    _mark_matched(result["match"])
+                    if result["match_type"] == "exact":
+                        matched.append(result["match"])
+                    else:
+                        result["match"]["match_type"] = result["match_type"]
+                        result["match"]["confidence"] = result["confidence"]
+                        similar_match.append(result["match"])
+            elif result["match"] and result["confidence"] >= SIMILAR_MATCH_THRESHOLD:
+                if _is_duplicate(result["match"]):
+                    duplicates.append(result["match"])
+                else:
+                    _mark_matched(result["match"])
+                    result["match"]["match_type"] = "similar"
+                    result["match"]["confidence"] = result["confidence"]
+                    similar_match.append(result["match"])
+            else:
+                not_found.append({
+                    "title": title,
+                    "artist": artist,
+                    "album": track.get("album", ""),
+                    "candidates": result.get("candidates"),
+                })
 
-        if matched:
+        all_matched = matched + similar_match
+
+        if all_matched:
             new_playlist = {
                 "userId": ObjectId(current_user["id"]),
                 "name": f"Imported: {import_name}",
                 "description": f"Imported from {source} on {datetime.utcnow().strftime('%Y-%m-%d')}",
-                "songs": matched,
+                "songs": all_matched,
                 "visibility": "private",
                 "followers": 0,
                 "collaborators": [],
@@ -700,10 +918,12 @@ async def import_playlist(
             "success": True,
             "data": {
                 "matched": matched,
+                "similar_matches": similar_match,
                 "not_found": not_found,
                 "duplicates": duplicates,
                 "total_matched": len(matched),
-                "total_failed": len(not_found)
+                "total_similar": len(similar_match),
+                "total_failed": len(not_found),
             }
         }
     except Exception as e:
