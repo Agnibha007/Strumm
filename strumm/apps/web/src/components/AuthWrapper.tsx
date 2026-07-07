@@ -112,31 +112,29 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
           ? { backgroundImage: `url(${customImage})`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed" }
           : undefined
       }
-      className="flex flex-col md:flex-row min-h-screen bg-background text-text relative"
+      className="min-h-screen bg-background text-text relative"
     >
       {customImage && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-[20px] pointer-events-none z-0" />
       )}
       
       {/* Global Sidebar Navigation */}
-      <div className="relative z-50 md:z-10">
-        <Navigation />
-      </div>
+      <Navigation />
       
       {/* Main route contents */}
-      <main className={`flex-1 max-w-7xl overflow-y-auto min-h-[calc(100vh-65px)] md:min-h-screen md:ml-64 relative z-10 px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48 transition-all duration-300 ${
+      <main className={`min-h-screen md:ml-64 overflow-y-auto relative z-10 px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48 transition-all duration-300 ${
         isCircleCollapsed ? "xl:mr-16" : "xl:mr-80"
       }`}>
-        {children}
+        <div className="max-w-6xl mx-auto">
+          {children}
+        </div>
       </main>
 
       {/* Circle activity sidebar */}
-      <div className="relative z-10">
-        <FriendActivitySidebar
-          isCollapsed={isCircleCollapsed}
-          onToggleCollapse={() => setIsCircleCollapsed(!isCircleCollapsed)}
-        />
-      </div>
+      <FriendActivitySidebar
+        isCollapsed={isCircleCollapsed}
+        onToggleCollapse={() => setIsCircleCollapsed(!isCircleCollapsed)}
+      />
     </div>
   );
 }
