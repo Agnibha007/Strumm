@@ -18,7 +18,7 @@
  */
 
 import { EventDispatcher } from "./EventDispatcher";
-import { PING, PONG, WS_CONNECTED } from "./types";
+import { PING, PONG, AUTHENTICATE, WS_CONNECTED } from "./types";
 import { apiUrl } from "web/lib/api";
 import { useAuthStore } from "web/store/useAuthStore";
 
@@ -131,9 +131,9 @@ export class WebSocketClient {
     this._setState(this._reconnectAttempt > 0 ? "reconnecting" : "connecting");
     this._closeWs();
 
-    // Build the WS URL from the API base URL
+    // Build the WS URL from the API base URL — no token in query string!
     const baseUrl = apiUrl("").replace(/^http/, "ws").replace(/\/+$/, "");
-    const wsUrl = `${baseUrl}/ws?token=${encodeURIComponent(this._token)}`;
+    const wsUrl = `${baseUrl}/ws`;
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -154,6 +154,10 @@ export class WebSocketClient {
 
   private _onOpen(): void {
     this._reconnectAttempt = 0;
+
+    // Send authenticate event with JWT as the first message
+    this.send(AUTHENTICATE, { token: this._token });
+
     this._setState("connected");
     this._startHeartbeat();
 

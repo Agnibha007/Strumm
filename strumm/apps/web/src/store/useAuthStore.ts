@@ -4,6 +4,17 @@ import { User } from "@strumm/types";
 import { apiFetch, ApiError } from "web/lib/api-client";
 import { apiUrl } from "web/lib/api";
 
+// ---------------------------------------------------------------------------
+// Typed global window extensions for auth timers and visibility handler
+// ---------------------------------------------------------------------------
+declare global {
+  interface Window {
+    __strummRefreshTimer?: ReturnType<typeof setTimeout> | null;
+    __strummActivityTimer?: ReturnType<typeof setTimeout> | null;
+    __strummVisibilityHandler?: (() => Promise<void>) | null;
+  }
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -52,19 +63,19 @@ export const useAuthStore = create<AuthState>()(
 
         set({ token: null, user: null, refreshToken: null });
         // Clear refresh timer
-        if (typeof window !== "undefined" && (window as any).__strummRefreshTimer) {
-          clearTimeout((window as any).__strummRefreshTimer);
-          (window as any).__strummRefreshTimer = null;
+        if (typeof window !== "undefined" && window.__strummRefreshTimer) {
+          clearTimeout(window.__strummRefreshTimer);
+          window.__strummRefreshTimer = null;
         }
         // Clear activity timer
-        if (typeof window !== "undefined" && (window as any).__strummActivityTimer) {
-          clearTimeout((window as any).__strummActivityTimer);
-          (window as any).__strummActivityTimer = null;
+        if (typeof window !== "undefined" && window.__strummActivityTimer) {
+          clearTimeout(window.__strummActivityTimer);
+          window.__strummActivityTimer = null;
         }
         // Remove visibility listener
-        if (typeof window !== "undefined" && (window as any).__strummVisibilityHandler) {
-          document.removeEventListener("visibilitychange", (window as any).__strummVisibilityHandler);
-          (window as any).__strummVisibilityHandler = null;
+        if (typeof window !== "undefined" && window.__strummVisibilityHandler) {
+          document.removeEventListener("visibilitychange", window.__strummVisibilityHandler);
+          window.__strummVisibilityHandler = null;
         }
       },
 
@@ -153,8 +164,8 @@ function scheduleRefresh(attempt = 0) {
   if (typeof window === "undefined") return;
 
   // Clear existing timer
-  if ((window as any).__strummRefreshTimer) {
-    clearTimeout((window as any).__strummRefreshTimer);
+  if (window.__strummRefreshTimer) {
+    clearTimeout(window.__strummRefreshTimer);
   }
 
   // Compute delay: normal schedule on first attempt, backoff on retries
@@ -165,7 +176,7 @@ function scheduleRefresh(attempt = 0) {
   );
   const delay = attempt === 0 ? normalDelay : retryDelay;
 
-  (window as any).__strummRefreshTimer = setTimeout(async () => {
+  window.__strummRefreshTimer = setTimeout(async () => {
     if (_refreshing) return; // skip if already refreshing
 
     const { user, silentRefresh } = useAuthStore.getState();
@@ -188,12 +199,12 @@ function scheduleActivityRefresh() {
   if (typeof window === "undefined") return;
 
   // Clear existing timer
-  if ((window as any).__strummActivityTimer) {
-    clearTimeout((window as any).__strummActivityTimer);
+  if (window.__strummActivityTimer) {
+    clearTimeout(window.__strummActivityTimer);
   }
 
   // Refresh every hour to keep the session sliding
-  (window as any).__strummActivityTimer = setTimeout(async () => {
+  window.__strummActivityTimer = setTimeout(async () => {
     const { user, silentRefresh } = useAuthStore.getState();
     if (!user) return;
 
@@ -231,7 +242,7 @@ function setupVisibilityRefresh() {
 
   document.addEventListener("visibilitychange", handler);
   // Store reference for cleanup on logout
-  (window as any).__strummVisibilityHandler = handler;
+  window.__strummVisibilityHandler = handler;
 }
 
 // Attempt immediate silent refresh on page load to slide the session window,

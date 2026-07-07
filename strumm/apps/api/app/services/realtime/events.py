@@ -63,3 +63,4 @@ PING = "ping"
 PONG = "pong"
 ERROR = "error"
 RECONNECT = "reconnect"
+AUTHENTICATE = "authenticate"        # First message: carry JWT token

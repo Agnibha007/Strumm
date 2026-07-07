@@ -63,6 +63,7 @@ export const NOTIFICATION_CREATED = "notification:created";
 
 export const PING = "ping";
 export const PONG = "pong";
+export const AUTHENTICATE = "authenticate";  // First message: carries JWT token
 export const WS_ERROR = "error";
 export const WS_CONNECTED = "connected";
 export const WS_DISCONNECTED = "disconnected";

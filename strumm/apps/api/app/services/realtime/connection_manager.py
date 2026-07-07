@@ -61,8 +61,11 @@ class ConnectionManager:
     # ------------------------------------------------------------------
 
     async def connect_user(self, user_id: str, websocket: WebSocket) -> None:
-        """Accept and register a global WebSocket for a user."""
-        await websocket.accept()
+        """Register a global WebSocket for a user.
+        
+        Note: The caller is responsible for calling ``await websocket.accept()``
+        before calling this function (e.g. after authentication).
+        """
         if user_id not in self._user_connections:
             self._user_connections[user_id] = []
         self._user_connections[user_id].append(websocket)
@@ -92,8 +95,11 @@ class ConnectionManager:
     # ------------------------------------------------------------------
 
     async def connect_room(self, room_id: str, user_id: str, websocket: WebSocket) -> None:
-        """Accept and register a room-scoped WebSocket."""
-        await websocket.accept()
+        """Register a room-scoped WebSocket.
+        
+        Note: The caller is responsible for calling ``await websocket.accept()``
+        before calling this function (e.g. after authentication).
+        """
         if room_id not in self._room_connections:
             self._room_connections[room_id] = []
         self._room_connections[room_id].append((user_id, websocket))

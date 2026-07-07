@@ -14,10 +14,12 @@ from app.services.realtime.events import (
     ROOM_DELETED,
     ROOM_JOINED,
     ROOM_LEFT,
+    AUTHENTICATE,
     CIRCLE_ACTIVITY_UPDATED,
     NOTIFICATION_CREATED,
 )
 from pydantic import BaseModel
+import asyncio
 import logging
 import json
 import hashlib
@@ -28,13 +30,36 @@ router = APIRouter(prefix="/social", tags=["social"])
 
 
 # In-memory cache for taste match scores (in production, use Redis)
-_taste_score_cache: Dict[str, int] = {}
-_CACHE_TTL_SECONDS = 3600  # 1 hour
+# Uses OrderedDict with max size and time-based eviction to prevent memory leaks.
+from collections import OrderedDict as _OrderedDict
+import time as _time
+
+_taste_score_cache: _OrderedDict[str, int] = _OrderedDict()
+_CACHE_MAX_SIZE = 10_000   # Max 10k entries
+_CACHE_TTL_SECONDS = 3600  # 1 hour TTL
 
 def _cache_key(user_a: str, user_b: str) -> str:
     """Generate consistent cache key for two users."""
     a, b = sorted([str(user_a), str(user_b)])
     return hashlib.sha256(f"{a}:{b}".encode()).hexdigest()[:32]
+
+
+def _cache_get(key: str) -> int | None:
+    """Get a cached taste score, evicting if expired."""
+    if key not in _taste_score_cache:
+        return None
+    # Touch the entry (move to end == most recently used)
+    val = _taste_score_cache.pop(key)
+    _taste_score_cache[key] = val
+    return val
+
+
+def _cache_put(key: str, value: int) -> None:
+    """Store a taste score with LRU eviction."""
+    # Enforce max size — pop oldest (first) entry
+    while len(_taste_score_cache) >= _CACHE_MAX_SIZE:
+        _taste_score_cache.popitem(last=False)
+    _taste_score_cache[key] = value
 
 async def batch_compute_taste_scores(my_id: str, user_ids: List[str]) -> Dict[str, int]:
     """
@@ -98,8 +123,9 @@ async def batch_compute_taste_scores(my_id: str, user_ids: List[str]) -> Dict[st
             cache_key = _cache_key(my_id_str, target_str)
             
             # Check cache first
-            if cache_key in _taste_score_cache:
-                results[target_str] = _taste_score_cache[cache_key]
+            cached = _cache_get(cache_key)
+            if cached is not None:
+                results[target_str] = cached
                 continue
             
             target_artists = user_artists.get(target_str, set())
@@ -121,7 +147,7 @@ async def batch_compute_taste_scores(my_id: str, user_ids: List[str]) -> Dict[st
                 score = max(15, min(98, score))
             
             # Cache the result
-            _taste_score_cache[cache_key] = score
+            _cache_put(cache_key, score)
             results[target_str] = score
         
         return results
@@ -139,8 +165,9 @@ async def compute_taste_match_score(user_a_id: str, user_b_id: str) -> int:
         cache_key = _cache_key(user_a_id, user_b_id)
         
         # Check cache first
-        if cache_key in _taste_score_cache:
-            return _taste_score_cache[cache_key]
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
         
         # Fallback to individual computation
         user_a_str = str(user_a_id)
@@ -195,7 +222,7 @@ async def compute_taste_match_score(user_a_id: str, user_b_id: str) -> int:
         score = max(15, min(98, match_percentage))
         
         # Cache the result
-        _taste_score_cache[cache_key] = score
+        _cache_put(cache_key, score)
         return score
     except Exception:
         return 50
@@ -848,7 +875,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication required")
         return
         
-    # Authenticate via JWT access token
+    payload = decode_access_token(token)
     payload = decode_access_token(token)
     if not payload:
         logger.warning("Room WS rejected — invalid token (roomId=%s)", roomId)

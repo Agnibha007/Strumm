@@ -23,15 +23,16 @@ async def get_current_user(
     access_token: Optional[str] = Cookie(None)
 ):
     token = None
-    if access_token:
-        token = access_token
-    elif authorization:
+    if authorization:
         try:
             parts = authorization.split(" ")
             if len(parts) == 2 and parts[0].lower() == "bearer":
                 token = parts[1]
         except ValueError:
             pass
+
+    if not token and access_token:
+        token = access_token
 
     if not token:
         raise HTTPException(

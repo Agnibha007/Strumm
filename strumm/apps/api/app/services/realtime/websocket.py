@@ -10,8 +10,9 @@ This endpoint is mounted at ``/ws`` and serves:
 
 Authentication
 --------------
-The client sends the JWT as a query parameter ``?token=...`` on connect.
-The connection is rejected if the token is invalid or expired.
+The client sends an ``authenticate`` event as its first message carrying
+the JWT.  The connection is rejected if authentication fails or no message
+is received within 10 seconds.
 
 Room-scoped WebSocket connections (for synced playback + WebRTC) live
 under ``/social/rooms/{roomId}/ws`` and are handled in ``social.py``.
@@ -19,6 +20,7 @@ under ``/social/rooms/{roomId}/ws`` and are handled in ``social.py``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -33,6 +35,7 @@ from app.services.realtime.connection_manager import manager
 from app.services.realtime.events import (
     PING,
     PONG,
+    AUTHENTICATE,
     USER_ONLINE,
     USER_OFFLINE,
     USER_LISTENING,
@@ -111,17 +114,47 @@ async def _broadcast_presence(user_id: str, event: str, user_data: dict) -> None
 @router.websocket("/ws")
 async def global_websocket_endpoint(
     websocket: WebSocket,
-    token: str = "",
 ):
     """
-    Global WebSocket — authenticated via ``?token=`` query parameter.
+    Global WebSocket — authenticated via the first message (``authenticate`` event).
+
+    The client must send an ``authenticate`` event with ``{"event": "authenticate",
+    "data": {"token": "<JWT>"}}`` as its first message within 10 seconds of
+    connecting.  If authentication fails or no message is received within the
+    timeout, the connection is closed.
 
     Once connected the client receives presence, activity, and notification
     events in real time.  The server sends ``ping`` every 30 seconds; the
     client must respond with ``pong`` within 10 seconds or the connection
     is closed.
     """
-    # 1. Authenticate
+    # 1. Accept the connection first
+    await websocket.accept()
+
+    # 2. Wait for the authenticate message (10s timeout)
+    token = None
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        if msg.get("event") != AUTHENTICATE:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        token = msg.get("data", {}).get("token")
+        if not token:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+    except asyncio.TimeoutError:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        logger.warning("WS rejected — no authenticate message received within 10s")
+        return
+
+    # 3. Authenticate
     payload = await _verify_token(token)
     if payload is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

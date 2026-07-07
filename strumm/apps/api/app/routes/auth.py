@@ -332,12 +332,14 @@ async def send_otp(request: EmailLoginRequest):
         email = request.email.lower()
         database = db.get_db()
         
-        # 1. Enforce login check: prevent login if user doesn't exist
+        # Check if user exists; don't reveal existence for security
         user = await database[db.USERS].find_one({"email": email})
+        
+        # Always return same message to prevent email enumeration
         if not user:
             return {
-                "success": False,
-                "error": "No account found with this email. Please sign up first."
+                "success": True,
+                "message": "If an account exists with this email, a verification code has been sent."
             }
         
         # Generate a 6-digit OTP code
@@ -370,7 +372,7 @@ async def send_otp(request: EmailLoginRequest):
         return {
             "success": True,
             "data": {
-                "message": "OTP generated successfully. Check email if SMTP configured.",
+                "message": "If an account exists with this email, a verification code has been sent.",
                 "dev_otp": otp_code if should_expose_dev_otp() else None,
                 "email_sent": email_sent
             }

@@ -12,6 +12,8 @@ from pydantic import BaseModel
 import asyncio
 import logging
 import math
+import re
+import traceback as _traceback
 logger = logging.getLogger("strumm-user")
 router = APIRouter(tags=["user"])
 
@@ -59,7 +61,6 @@ def calculate_sound_dna(histories: List[Dict[str, Any]]) -> Dict[str, int]:
             song_play_counts[vid] = song_play_counts.get(vid, 0) + 1
         
         if artist:
-            import re
             processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
             artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
             for single_art in artists_list:
@@ -191,83 +192,6 @@ def get_music_personality(histories: List[Dict[str, Any]], sound_dna: Dict[str, 
     return "Melody Harmonizer"
 
 
-# Helper to get effective histories (merging actual playback history with seeded stats)
-def get_effective_histories(histories: List[Dict[str, Any]], user_stats: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    effective = list(histories)
-    if not user_stats:
-        return effective
-        
-    top_artists = user_stats.get("topArtists") or []
-    if not top_artists:
-        return effective
-        
-    # Count plays per artist in actual histories
-    actual_artist_counts = {}
-    for h in histories:
-        artist = h.get("song", {}).get("artist", "Unknown Artist")
-        if artist:
-            import re
-            processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
-            artists_list = [a.strip().lower() for a in processed_artist.split(',') if a.strip()]
-            for single_art in artists_list:
-                actual_artist_counts[single_art] = actual_artist_counts.get(single_art, 0) + 1
-                
-    # Check each seeded artist, splitting multi-artist entries
-    expanded_seeded_artists = {}
-    for art in top_artists:
-        artist_name = art.get("name") or art.get("artist") or ""
-        if not artist_name:
-            continue
-        seeded_plays = art.get("playCount") or art.get("plays") or 0
-        if seeded_plays <= 0:
-            continue
-            
-        import re
-        name_clean = artist_name.replace("&amp;", ",")
-        split_names = [a.strip() for a in re.split(r'\s*(?:,|&|\bfeat\.?|\bft\.?|\band\b)\s*', name_clean, flags=re.IGNORECASE) if a.strip()]
-        for split_name in split_names:
-            key = split_name.lower()
-            if key not in expanded_seeded_artists:
-                expanded_seeded_artists[key] = {
-                    "name": split_name,
-                    "playCount": 0
-                }
-            expanded_seeded_artists[key]["playCount"] += seeded_plays
-
-    for key, art_data in expanded_seeded_artists.items():
-        artist_name = art_data["name"]
-        seeded_plays = art_data["playCount"]
-        
-        actual_plays = actual_artist_counts.get(key, 0)
-        missing_plays = seeded_plays - actual_plays
-        
-        if missing_plays > 0:
-            # Generate simulated entries to match the seeded play count
-            loops = min(150, missing_plays)
-            for i in range(loops):
-                title = "Classic Melody"
-                top_songs = user_stats.get("topSongs") or []
-                matching_songs = [s for s in top_songs if s.get("artist", "").lower() == artist_name.lower()]
-                if matching_songs:
-                    title = matching_songs[i % len(matching_songs)].get("title", "Classic Melody")
-                else:
-                    if any(x in artist_name.lower() for x in ["hemant", "mukherjee", "kishore", "lata"]):
-                        title = "Classic Melody"
-                    else:
-                        title = "Hit Song"
-                
-                effective.append({
-                    "song": {
-                        "title": title,
-                        "artist": artist_name,
-                        "videoId": f"simulated-{artist_name}-{i}"
-                    },
-                    "listenDuration": 180,
-                    "playedAt": datetime.utcnow().replace(hour=20, minute=0)
-                })
-                
-    return effective
-
 # Helper to calculate user stats dynamically
 def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Compute user stats from REAL playback histories only (no simulated data)."""
@@ -330,11 +254,9 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
         if "totalSeconds" in sc:
             del sc["totalSeconds"]
             
-    # Ignore simulated songs from sorted_songs list
-    real_song_counts = {vid: sc for vid, sc in song_counts.items() if not vid.startswith("simulated-")}
-    sorted_songs = sorted(real_song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
-    if not sorted_songs and user_stats.get("topSongs"):
-        sorted_songs = user_stats.get("topSongs")
+    sorted_songs = sorted(song_counts.values(), key=lambda x: x["plays"], reverse=True)[:5]
+    if not sorted_songs and current_user_statistics and current_user_statistics.get("topSongs"):
+        sorted_songs = current_user_statistics.get("topSongs")
     
     # 3. Top Artists from REAL data — grouped by canonicalArtist to prevent duplicates
     #    e.g. "Arijit Singh", "ARIJIT SINGH", "Arijit Singh Official" all collapse
@@ -344,7 +266,6 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
         artist = h.get("song", {}).get("artist", "Unknown Artist")
         thumbnail = h.get("song", {}).get("thumbnail", "")
         if artist:
-            import re
             processed_artist = re.sub(r'\s+(?:&|feat\.?|ft\.?|and)\s+', ',', artist)
             artists_list = [a.strip() for a in processed_artist.split(',') if a.strip()]
             for single_art in artists_list:
@@ -379,7 +300,6 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
                 
     # Sum up artist plays based on their songs' calculated plays
     for canonical_key, ac in canonical_groups.items():
-        import re
         artist_plays = 0
         for s in song_counts.values():
             song_artist = s.get("artist", "")
@@ -399,9 +319,9 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
             ac.pop(field, None)
             
     sorted_artists = sorted(canonical_groups.values(), key=lambda x: x["plays"], reverse=True)[:5]
-    if not sorted_artists and user_stats.get("topArtists"):
+    if not sorted_artists and current_user_statistics and current_user_statistics.get("topArtists"):
         sorted_artists = []
-        for art in user_stats.get("topArtists"):
+        for art in current_user_statistics.get("topArtists"):
             sorted_artists.append({
                 "artist": art.get("name", "Unknown Artist"),
                 "plays": art.get("playCount", 0),
@@ -457,8 +377,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             "data": user_data
         }
     except Exception as e:
-        import traceback
-        logger.error(f"Error calculating soundDNA for profile: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error calculating soundDNA for profile: {e}\n{_traceback.format_exc()}")
         current_user["soundDNA"] = {
             "energy": 5, "discovery": 5, "nostalgia": 5, "variety": 5, "repeatRate": 5
         }
@@ -483,7 +402,6 @@ async def update_profile(
             cleaned_username = sanitize_text(username, max_length=50).strip().lower()
             if not cleaned_username:
                 return {"success": False, "error": "Username cannot be empty."}
-            import re
             if not re.match(r"^[a-z0-9_-]+$", cleaned_username):
                 return {"success": False, "error": "Username can only contain lowercase letters, numbers, underscores, and dashes."}
             existing = await database[db.USERS].find_one({
@@ -536,7 +454,6 @@ async def update_profile(
 # Library Aggregator
 @router.get("/library")
 async def get_library(current_user: dict = Depends(get_current_user)):
-    import traceback
     user_id_str = current_user["id"]
     logger.debug(f"[/library] Authenticated User ID: {user_id_str}")
     try:
@@ -573,7 +490,7 @@ async def get_library(current_user: dict = Depends(get_current_user)):
             }
         }
     except Exception as e:
-        tb_str = traceback.format_exc()
+        tb_str = _traceback.format_exc()
         logger.error(f"[/library] Exception traceback:\n{tb_str}")
         logger.error(f"Error fetching library: {str(e)}\n{tb_str}")
         return {"success": False, "error": "An internal error occurred."}
@@ -766,7 +683,6 @@ async def _debounced_recalc(user_id: str) -> None:
 
 async def _check_podcast_badges(user_id: str, video_id: str) -> None:
     """Check and award podcast badges in background (off the hot path)."""
-    import re as _re
     try:
         database = db.get_db()
         user_oid = parse_object_id(user_id)
@@ -1046,7 +962,6 @@ class MemoryCreateRequest(BaseModel):
 
 async def recalculate_user_stats_and_save(user_id: str) -> None:
     """Recalculate a single user's stats from raw playback histories and save to their document."""
-    import asyncio
     try:
         database = db.get_db()
         possible_ids = [user_id]
