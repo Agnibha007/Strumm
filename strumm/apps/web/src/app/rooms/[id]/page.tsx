@@ -702,7 +702,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                 .map((m) => (
                 <div key={m.id} className="flex items-center gap-2 p-1.5 bg-surface-elevated/40 border border-border/40 rounded-xl max-w-full">
                   {m.avatar ? (
-                    <img src={m.avatar} alt="" loading="lazy" decoding="async" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                    <img src={m.avatar} alt={m.displayName} loading="lazy" decoding="async" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-surface border border-border flex items-center justify-center flex-shrink-0">
                       <Users className="w-3.5 h-3.5 text-accent" />

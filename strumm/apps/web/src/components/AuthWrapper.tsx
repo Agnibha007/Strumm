@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useSession } from "next-auth/react";
-import Navigation from "web/components/Navigation";
 import { useThemeStore } from "web/store/useThemeStore";
 import { usePathname, useRouter } from "next/navigation";
 import BrandLogo from "web/components/BrandLogo";
 import dynamic from "next/dynamic";
 import { isPublicRoute } from "web/lib/routes";
+
+const Navigation = dynamic(() => import("web/components/Navigation"), {
+  ssr: false,
+});
 
 const FriendActivitySidebar = dynamic(() => import("web/components/FriendActivitySidebar"), {
   ssr: false,

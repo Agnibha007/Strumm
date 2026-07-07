@@ -221,6 +221,8 @@ export default function StatsPage() {
                       <img
                         src={song.coverUrl}
                         alt={song.title}
+                        loading="lazy"
+                        decoding="async"
                         className="w-12 h-12 rounded object-cover"
                       />
                     )}

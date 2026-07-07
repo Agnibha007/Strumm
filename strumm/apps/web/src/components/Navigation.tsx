@@ -7,7 +7,11 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { signOut } from "next-auth/react";
 import { Home, Library, ListMusic, Settings, LogOut, User as UserIcon, Search, Radio, Menu, X, Sparkles, Users, Tv, MessageSquareText } from "lucide-react";
 import BrandLogo from "web/components/BrandLogo";
-import { AnimatePresence, motion } from "framer-motion";
+import dynamic from "next/dynamic";
+
+const MobileNavOverlay = dynamic(() => import("./MobileNavOverlay"), {
+  ssr: false,
+});
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -113,7 +117,7 @@ export default function Navigation() {
         <div className="p-4 border-t border-border/40 bg-surface/30 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {user.avatar ? (
-              <img src={user.avatar} loading="lazy" decoding="async" className="w-8 h-8 rounded-full object-cover shadow border border-border/40" />
+              <img src={user.avatar} alt={user.displayName} loading="lazy" decoding="async" className="w-8 h-8 rounded-full object-cover shadow border border-border/40" />
             ) : (
               <div className="w-8 h-8 rounded-full bg-surface-elevated border border-border flex items-center justify-center">
                 <UserIcon className="w-4 h-4 text-accent" />
@@ -157,29 +161,9 @@ export default function Navigation() {
         {navContent}
       </aside>
 
-      <AnimatePresence>
-        {isOpen && (
-          <>
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsOpen(false)}
-              className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm md:hidden"
-              aria-label="Close navigation"
-            />
-            <motion.aside
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed inset-y-0 left-0 z-50 w-[82vw] max-w-80 bg-surface border-r border-border/70 flex flex-col justify-between shadow-2xl md:hidden"
-            >
-              {navContent}
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+      <MobileNavOverlay isOpen={isOpen} onClose={() => setIsOpen(false)}>
+        {navContent}
+      </MobileNavOverlay>
     </>
   );
 }

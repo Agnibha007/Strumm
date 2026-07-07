@@ -121,30 +121,30 @@ export default function SharePage({ params }: SharePageProps) {
         {/* Thumbnail art */}
         <div className="w-40 h-40 rounded-xl overflow-hidden shadow-2xl border border-border/80 mx-auto relative group">
           {isSong ? (
-            <img src={item.thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+            <img src={item.thumbnail} alt={item.title || "Shared song"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
           ) : isPlaylist && item.songs && item.songs.length === 1 ? (
-            <img src={item.songs[0].thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+            <img src={item.songs[0].thumbnail} alt={item.songs[0].title || "Song thumbnail"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
           ) : isPlaylist && item.songs && item.songs.length === 2 ? (
             <div className="grid grid-cols-2 w-full h-full">
-              <img src={item.songs[0].thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
-              <img src={item.songs[1].thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+              <img src={item.songs[0].thumbnail} alt={item.songs[0].title || "Song thumbnail"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+              <img src={item.songs[1].thumbnail} alt={item.songs[1].title || "Song thumbnail"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
             </div>
           ) : isPlaylist && item.songs && item.songs.length === 3 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               <div className="col-span-2 row-span-1 w-full h-full overflow-hidden">
-                <img src={item.songs[0].thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                <img src={item.songs[0].thumbnail} alt={item.songs[0].title || "Song thumbnail"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <img src={item.songs[1].thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                <img src={item.songs[1].thumbnail} alt={item.songs[1].title || "Song thumbnail"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <img src={item.songs[2].thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                <img src={item.songs[2].thumbnail} alt={item.songs[2].title || "Song thumbnail"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               </div>
             </div>
           ) : isPlaylist && item.songs && item.songs.length >= 4 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               {item.songs.slice(0, 4).map((s: Song, idx: number) => (
-                <img key={idx} src={s.thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                <img key={idx} src={s.thumbnail} alt={s.title || "Song thumbnail"} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               ))}
             </div>
           ) : (

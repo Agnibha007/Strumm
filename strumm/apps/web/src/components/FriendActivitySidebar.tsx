@@ -266,8 +266,10 @@ export default function FriendActivitySidebar({
                       <div className="flex items-center gap-1.5">
                         <img 
                           src={friend.currentActivity!.song.thumbnail} 
+                          alt={friend.currentActivity!.song.title}
+                          loading="lazy"
+                          decoding="async"
                           className="w-6 h-6 rounded object-cover" 
-                          alt="" 
                         />
                         <div className="min-w-0 flex-1">
                           <div className="text-[9px] font-bold text-text truncate leading-snug">{friend.currentActivity!.song.title}</div>
@@ -341,7 +343,7 @@ export default function FriendActivitySidebar({
                 </div>
                 {includeSong && (
                   <div className="p-2 bg-background/30 border border-border/20 rounded-lg flex items-center gap-2 min-w-0">
-                    <img src={currentSong.thumbnail} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                    <img src={currentSong.thumbnail} alt={currentSong.title} loading="lazy" decoding="async" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                     <div className="min-w-0 flex-1">
                       <span className="text-[10px] text-text font-semibold block truncate leading-snug">{currentSong.title}</span>
                       <span className="text-[9px] text-muted block truncate">{currentSong.artist}</span>
@@ -415,7 +417,7 @@ export default function FriendActivitySidebar({
                   <div className="flex items-center justify-between gap-2.5 min-w-0">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       {friend.avatar ? (
-                        <img src={friend.avatar} alt="" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border" />
+                        <img src={friend.avatar} alt={friend.displayName} loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border" />
                       ) : (
                         <div className="w-7 h-7 rounded-full bg-surface-elevated flex items-center justify-center flex-shrink-0 border border-border">
                           <Music className="w-3.5 h-3.5 text-accent" />
@@ -451,7 +453,7 @@ export default function FriendActivitySidebar({
                       <div className="p-2 bg-primary/5 border border-primary/10 rounded-lg flex items-center gap-2 min-w-0">
                         <img 
                           src={friend.currentActivity!.song.thumbnail} 
-                          alt="" 
+                          alt={friend.currentActivity!.song.title}
                           loading="lazy"
                           decoding="async"
                           className="w-8 h-8 rounded object-cover flex-shrink-0" 

@@ -357,7 +357,7 @@ export default function CirclePage() {
                 </div>
                 {includeSong && (
                   <div className="p-2 bg-background/30 border border-border/20 rounded-lg flex items-center gap-2 min-w-0">
-                    <img src={currentSong.thumbnail} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                    <img src={currentSong.thumbnail} alt={currentSong.title} loading="lazy" decoding="async" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                     <div className="min-w-0 flex-1">
                       <span className="text-[10px] text-text font-semibold block truncate leading-snug">{currentSong.title}</span>
                       <span className="text-[9px] text-muted block truncate">{currentSong.artist}</span>
@@ -477,7 +477,7 @@ export default function CirclePage() {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {req.sender?.avatar ? (
-                        <img src={req.sender.avatar} alt="" loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
+                        <img src={req.sender.avatar} alt={req.sender?.displayName || "User"} loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-surface-elevated border border-border flex items-center justify-center flex-shrink-0">
                           <Users className="w-5 h-5 text-accent" />
@@ -541,7 +541,7 @@ export default function CirclePage() {
                     <div className="flex items-start justify-between min-w-0 gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {friend.avatar ? (
-                          <img src={friend.avatar} alt="" loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
+                          <img src={friend.avatar} alt={friend.displayName} loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shadow border border-border/40 flex-shrink-0" />
                         ) : (
                           <div className="w-10 h-10 rounded-full bg-surface-elevated border border-border flex items-center justify-center flex-shrink-0">
                             <Users className="w-5 h-5 text-accent" />
@@ -644,7 +644,7 @@ export default function CirclePage() {
                     }`}
                   >
                     {notif.senderAvatar ? (
-                      <img src={notif.senderAvatar} alt="" loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                      <img src={notif.senderAvatar} alt={notif.senderName} loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
                     ) : (
                       <div className="w-7 h-7 rounded-full bg-surface border border-border flex items-center justify-center flex-shrink-0">
                         <Users className="w-3.5 h-3.5 text-accent" />
@@ -664,7 +664,9 @@ export default function CirclePage() {
                               <div className="p-2 bg-surface border border-border/40 rounded-lg flex items-center gap-2 min-w-0">
                                 <img 
                                   src={notif.song.thumbnail} 
-                                  alt="" 
+                                  alt={notif.song.title}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="w-8 h-8 rounded object-cover flex-shrink-0" 
                                 />
                                 <div className="min-w-0 flex-1">
