@@ -150,13 +150,11 @@ export default function FriendActivitySidebar({
     };
   }, [user, token, fetchActivity]);
 
-  const hasActivity = user && friends.length > 0;
-
   useEffect(() => {
     if (onActiveChange) {
-      onActiveChange(!!hasActivity);
+      onActiveChange(!!user);
     }
-  }, [hasActivity, onActiveChange]);
+  }, [user, onActiveChange]);
 
   const closeShareModal = () => {
     setSharingTarget(null);
@@ -197,7 +195,7 @@ export default function FriendActivitySidebar({
     }
   };
 
-  if (!hasActivity) return null;
+  if (!user) return null;
 
   if (isCollapsed) {
     return (
