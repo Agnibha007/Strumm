@@ -3,7 +3,6 @@ import time
 import uuid
 import shutil
 import asyncio
-import gzip
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 
@@ -256,82 +255,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
-
-
-# --- GZip Compression Middleware ---
-class GZipMiddleware(BaseHTTPMiddleware):
-    """Minimal GZip compression for responses > 500 bytes.
-    Preserves ALL response headers including multiple Set-Cookie entries.
-    """
-    MIN_SIZE = 500
-
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        # Only compress if client accepts gzip and response is large enough
-        accept_encoding = request.headers.get("accept-encoding", "")
-        if "gzip" not in accept_encoding:
-            return response
-
-        # Check Content-Length before consuming the body to avoid
-        # unnecessary processing for small responses.
-        # Also preserves httpOnly cookies for small responses since
-        # we return the original response without creating a new one.
-        raw_headers = response.raw_headers
-        content_length = None
-        for k, v in raw_headers:
-            if k.lower() == b"content-length":
-                try:
-                    content_length = int(v)
-                except (ValueError, TypeError):
-                    pass
-                break
-
-        if content_length is not None and content_length < self.MIN_SIZE:
-            return response  # Original response — cookies and all headers intact
-
-        body = b""
-        async for chunk in response.body_iterator:
-            if isinstance(chunk, str):
-                body += chunk.encode("utf-8")
-            else:
-                body += chunk
-
-        if len(body) < self.MIN_SIZE:
-            # Body is small but we already consumed response.body_iterator.
-            # Return a new Response with the same body and all raw_headers preserved.
-            # This ensures cookies are NOT lost (unlike dict(response.headers)).
-            small_resp = Response(
-                content=body,
-                status_code=response.status_code,
-                media_type=response.media_type,
-            )
-            small_resp.raw_headers = list(response.raw_headers)
-            return small_resp
-
-        compressed = gzip.compress(body, compresslevel=6)
-
-        # Build a new Response with the compressed body.
-        # Manually copy raw_headers to preserve ALL headers including
-        # duplicate Set-Cookie entries (dict headers would collapse them).
-        # We set raw_headers directly to bypass Starlette's init_headers
-        # which calls .items() and only works with dict-like objects.
-        new_response = Response(
-            content=compressed,
-            status_code=response.status_code,
-            media_type=response.media_type,
-        )
-        # Copy all original headers, replacing content-encoding and content-length
-        new_raw_headers = [
-            (k, v) for k, v in raw_headers
-            if k.lower() not in (b"content-encoding", b"content-length")
-        ]
-        new_raw_headers.append((b"content-encoding", b"gzip"))
-        new_raw_headers.append((b"content-length", str(len(compressed)).encode()))
-        new_raw_headers.append((b"vary", b"Accept-Encoding"))
-        new_response.raw_headers = new_raw_headers
-        return new_response
-
-app.add_middleware(GZipMiddleware)
 
 
 # --- Global Exception Handler (prevents leaking internal details) ---
