@@ -14,6 +14,7 @@
 
 import type { SearchProvider, SearchResults, SongResult, AlbumResult, ArtistResult } from "./SearchProvider";
 import { normalizeSong } from "../metadata/MetadataNormalizer";
+import { decodeHtml } from "web/lib/api";
 
 // ---------------------------------------------------------------------------
 // Piped instance discovery
@@ -250,8 +251,8 @@ function pipedStreamToSong(item: PipedStreamItem): SongResult | null {
   if (!videoId) return null;
   return normalizeSong(
     videoId,
-    item.title ?? "Untitled",
-    item.uploaderName ?? "Unknown Artist",
+    decodeHtml(item.title) ?? "Untitled",
+    decodeHtml(item.uploaderName) ?? "Unknown Artist",
     item.thumbnail,
     item.duration ?? 0,
   );
@@ -262,8 +263,8 @@ function pipedPlaylistToAlbum(item: PipedPlaylistItem): AlbumResult | null {
   if (!id) return null;
   return {
     id,
-    title: item.name ?? "Untitled",
-    artist: item.uploaderName ?? "Unknown Artist",
+    title: decodeHtml(item.name) ?? "Untitled",
+    artist: decodeHtml(item.uploaderName) ?? "Unknown Artist",
     thumbnail: item.thumbnail,
     year: "",
   };
@@ -274,7 +275,7 @@ function pipedChannelToArtist(item: PipedChannelItem): ArtistResult | null {
   if (!id) return null;
   return {
     id,
-    name: item.name ?? "Unknown",
+    name: decodeHtml(item.name) ?? "Unknown",
     thumbnail: item.thumbnail,
   };
 }
@@ -337,8 +338,8 @@ export const invidiousProvider: SearchProvider = {
       if (!videoId) return null;
       return normalizeSong(
         videoId,
-        v.title ?? "Untitled",
-        v.uploaderName ?? "Unknown Artist",
+        decodeHtml(v.title) ?? "Untitled",
+        decodeHtml(v.uploaderName) ?? "Unknown Artist",
         v.thumbnail,
         v.duration ?? 0,
       );

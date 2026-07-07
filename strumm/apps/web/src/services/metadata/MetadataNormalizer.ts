@@ -25,6 +25,7 @@
 import type { NormalizedSong } from "./types";
 import { canonicalString } from "./canonical";
 import { canonicalArtist as canonicalArtistStr, normalizeArtist } from "./ArtistNormalizer";
+import { decodeHtml } from "web/lib/api";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -355,14 +356,14 @@ export function normalizeSong(
   thumbnail: string,
   duration: number,
 ): NormalizedSong {
-  const rawTitle = title;
-  const rawChannel = channelTitle;
+  const rawTitle = decodeHtml(title);
+  const rawChannel = decodeHtml(channelTitle);
 
   // 1. Clean the title
-  const cleanedTitle = cleanTitle(title);
+  const cleanedTitle = cleanTitle(rawTitle);
 
   // 2. Infer the artist
-  const artist = inferArtist(cleanedTitle || title, channelTitle);
+  const artist = inferArtist(cleanedTitle || rawTitle, rawChannel);
 
   // 3. Apply artist-specific normalisation (strip Topic/VEVO/Official suffixes)
   const displayArtist = normalizeArtist(artist || "Unknown Artist");
