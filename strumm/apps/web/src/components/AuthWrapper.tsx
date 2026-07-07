@@ -124,7 +124,9 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       </div>
       
       {/* Main route contents */}
-      <main className="flex-1 max-w-7xl overflow-y-auto min-h-[calc(100vh-65px)] md:min-h-screen md:ml-64 relative z-10 px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48 transition-all duration-300">
+      <main className={`flex-1 max-w-7xl overflow-y-auto min-h-[calc(100vh-65px)] md:min-h-screen md:ml-64 relative z-10 px-4 pt-4 pb-40 sm:px-6 sm:pt-6 sm:pb-44 md:px-10 md:pt-10 md:pb-48 transition-all duration-300 ${
+        isCircleCollapsed ? "xl:mr-16" : "xl:mr-80"
+      }`}>
         {children}
       </main>
 
