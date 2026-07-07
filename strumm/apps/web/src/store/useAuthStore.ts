@@ -48,12 +48,10 @@ export const useAuthStore = create<AuthState>()(
         const { refreshToken } = get();
 
         // Revoke session on the server before clearing local state
-        // The httpOnly cookie is sent automatically with credentials: 'include'
         if (typeof window !== "undefined") {
           fetch(apiUrl("/auth/logout"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify({ refreshToken }),
           }).catch(() => {
             // Fire-and-forget: don't block logout if the request fails

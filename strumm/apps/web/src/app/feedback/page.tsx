@@ -74,8 +74,9 @@ export default function FeedbackPage() {
       const params = new URLSearchParams({ page: String(page), limit: "20" });
       if (statusFilter !== "all") params.set("status", statusFilter);
 
+      const { token } = useAuthStore.getState();
       const response = await fetch(apiUrl(`/feedback?${params}`), {
-        credentials: "include",
+        headers: token ? { "Authorization": `Bearer ${token}` } : undefined,
       });
       const json = await response.json();
       if (json.success) {
@@ -103,10 +104,12 @@ export default function FeedbackPage() {
 
     setSubmitting(true);
     try {
+      const { token } = useAuthStore.getState();
+      const fbHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) fbHeaders["Authorization"] = `Bearer ${token}`;
       const response = await fetch(apiUrl("/feedback"), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: fbHeaders,
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim(),

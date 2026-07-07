@@ -45,7 +45,6 @@ export default function PodcastHomePage() {
       // 2. Fetch followed shows
       if (user) {
         const libraryResp = await fetch(apiUrl("/library"), {
-          credentials: "include",
           headers: { "Authorization": `Bearer ${token}` }
         });
         const libJson = await libraryResp.json().catch(() => null);
@@ -83,7 +82,6 @@ export default function PodcastHomePage() {
     try {
       const response = await fetch(apiUrl("/podcasts/import-rss"), {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`

@@ -36,7 +36,6 @@ export default function RoomsPage() {
     if (!user) return;
     try {
       const response = await fetch(apiUrl("/social/rooms"), {
-        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -64,7 +63,6 @@ export default function RoomsPage() {
     try {
       const response = await fetch(apiUrl("/social/rooms"), {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`

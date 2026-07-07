@@ -70,7 +70,6 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
     try {
       const response = await fetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}/follow`), {
         method: "POST",
-        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json().catch(() => null);

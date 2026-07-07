@@ -43,9 +43,9 @@ export default function PlayerStateSync() {
 
     const restore = async () => {
       try {
-        // Auth is handled via httpOnly cookie with credentials: 'include'
+        const { token } = useAuthStore.getState();
         const response = await fetch(apiUrl("/player-state"), {
-          credentials: "include",
+          headers: token ? { "Authorization": `Bearer ${token}` } : undefined,
         });
         const json = await response.json();
         if (json.success && json.data?.currentSong) {
@@ -77,13 +77,14 @@ export default function PlayerStateSync() {
     if (!user || !restoredRef.current) return;
     const state = usePlayerStore.getState();
     try {
-      // Auth via httpOnly cookie with credentials: 'include'
+      const { token } = useAuthStore.getState();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       await fetch(apiUrl("/player-state"), {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
+        headers,
         body: JSON.stringify({
           deviceId: "primary",
           currentSong: state.currentSong,

@@ -56,18 +56,19 @@ export default function HomePage() {
     const loadHomeData = async () => {
       setHomeLoading(true);
       try {
-        // Fetch AI recommendations — auth via httpOnly cookie (credentials: 'include')
+        const { token } = useAuthStore.getState();
+        // Fetch AI recommendations
         const discoverResp = await fetch(apiUrl("/explore-mix"), {
-          credentials: "include",
+          headers: token ? { "Authorization": `Bearer ${token}` } : undefined,
         });
         const discoverJson = await discoverResp.json();
         if (discoverJson.success && discoverJson.data) {
           setRecommendations(discoverJson.data.songs || []);
         }
 
-        // Fetch Liked Songs — auth via httpOnly cookie
+        // Fetch Liked Songs
         const likedResp = await fetch(apiUrl("/liked?limit=10"), {
-          credentials: "include",
+          headers: token ? { "Authorization": `Bearer ${token}` } : undefined,
         });
         const likedJson = await likedResp.json();
         if (likedJson.success && likedJson.data) {

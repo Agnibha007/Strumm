@@ -39,7 +39,6 @@ export default function PlaylistsPage() {
   const loadPlaylists = async () => {
     try {
       const response = await fetch(apiUrl("/playlists"), {
-        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -65,7 +64,6 @@ export default function PlaylistsPage() {
     try {
       const response = await fetch(apiUrl("/playlists"), {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`

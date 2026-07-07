@@ -50,10 +50,12 @@ export default function FeedbackButton() {
 
     setSubmitting(true);
     try {
+      const { token } = useAuthStore.getState();
+      const fbHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) fbHeaders["Authorization"] = `Bearer ${token}`;
       const response = await fetch(apiUrl("/feedback"), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: fbHeaders,
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim(),

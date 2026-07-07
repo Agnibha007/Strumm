@@ -59,7 +59,6 @@ export default function FriendActivitySidebar({
     if (!user) return;
     try {
       const fResp = await fetch(apiUrl("/social/circle"), {
-        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const fJson = await fResp.json();
@@ -68,7 +67,6 @@ export default function FriendActivitySidebar({
       }
 
       const rResp = await fetch(apiUrl("/social/rooms"), {
-        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       });
       const rJson = await rResp.json();
@@ -133,7 +131,6 @@ export default function FriendActivitySidebar({
     // Also periodically refresh rooms list (rooms are not yet fully WS-driven)
     const refreshInterval = setInterval(() => {
       fetch(apiUrl("/social/rooms"), {
-        credentials: "include",
         headers: { "Authorization": `Bearer ${token}` }
       })
         .then(r => r.json())
@@ -176,7 +173,6 @@ export default function FriendActivitySidebar({
     try {
       const response = await fetch(apiUrl("/social/message"), {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
