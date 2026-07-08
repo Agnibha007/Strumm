@@ -1,5 +1,4 @@
 import { Metadata } from "next";
-import Link from "next/link";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";

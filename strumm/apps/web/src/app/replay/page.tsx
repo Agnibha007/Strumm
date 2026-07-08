@@ -110,6 +110,17 @@ export default function ReplayPage() {
     }
   };
 
+  // Memoized MusicGroup JSON-LD for top artist results (MUST be before early returns)
+  const artistSchemas = useMemo(() =>
+    data?.topArtists?.map((artist) => ({
+      "@context": "https://schema.org",
+      "@type": "MusicGroup",
+      name: artist.artist,
+      ...(artist.thumbnail ? { image: { "@type": "ImageObject", url: artist.thumbnail } } : {}),
+    })) || [],
+    [data?.topArtists]
+  );
+
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
@@ -166,17 +177,6 @@ export default function ReplayPage() {
 
   const animatedProps = isAnimated ? { initial: "hidden", animate: "show", variants: containerVariants } : {};
   const childAnimatedProps = isAnimated ? { variants: itemVariants } : {};
-
-  // Memoized MusicGroup JSON-LD for top artist results
-  const artistSchemas = useMemo(() =>
-    data?.topArtists?.map((artist) => ({
-      "@context": "https://schema.org",
-      "@type": "MusicGroup",
-      name: artist.artist,
-      ...(artist.thumbnail ? { image: { "@type": "ImageObject", url: artist.thumbnail } } : {}),
-    })) || [],
-    [data?.topArtists]
-  );
 
   return (
     <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
