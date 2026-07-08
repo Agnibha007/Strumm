@@ -1,12 +1,12 @@
 /**
- * InvidiousProvider — searches YouTube via a public Piped instance.
+ * InvidiousProvider — searches YouTube via public Piped instances.
  *
  * Piped is a privacy-friendly YouTube frontend with a public JSON API.
- * We dynamically fetch the official instance list at runtime to find
- * working instances, so no hardcoded list gets stale.
+ * We try hardcoded known‑good instances FIRST so searches are fast,
+ * then refresh the official instance list in the background for future use.
  *
- * This provider acts as a zero-cost fallback when the YouTube Data API
- * key is unavailable or quota-exceeded.
+ * This provider acts as a zero‑cost fallback when the YouTube Data API
+ * key is unavailable or quota‑exceeded.
  *
  * API docs: https://docs.piped.video/docs/api-documentation/
  * Instances: https://piped-instances.kavin.rocks/
@@ -17,8 +17,20 @@ import { normalizeSong } from "../metadata/MetadataNormalizer";
 import { decodeHtml } from "web/lib/api";
 
 // ---------------------------------------------------------------------------
-// Piped instance discovery
+// Piped instances — tried in order
 // ---------------------------------------------------------------------------
+
+/**
+ * Known‑good Piped instances checked periodically.
+ * These are tried FIRST so searches don't block on the instance‑list fetch.
+ */
+const HARDCODED_INSTANCES: string[] = [
+  "https://pipedapi.adminforge.de",
+  "https://api.piped.private.coffee",
+  "https://pipedapi.smnz.de",
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.r4fo.com",
+];
 
 const INSTANCE_LIST_URL = "https://piped-instances.kavin.rocks/";
 
@@ -40,31 +52,169 @@ interface PipedInstanceEntry {
   uptime_30d: number | null;
 }
 
-// Hardcoded fallback instances in case the instance list fetch fails
-const FALLBACK_INSTANCES = [
-  "https://api.piped.private.coffee",
-];
-
 /** Cache for the discovered instance list (refreshed every 10 minutes). */
-let cachedInstances: { apiUrls: string[]; fetchedAt: number } | null = null;
+let cachedInstances: {
+  apiUrls: string[];
+  fetchedAt: number;
+  /** URLs that have been verified healthy via a ping. */
+  healthyUrls: Set<string>;
+} | null = null;
 const INSTANCE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 // Promise cache to deduplicate concurrent fetchInstanceList calls
 let pendingInstanceFetch: Promise<string[]> | null = null;
 
-async function fetchInstanceList(): Promise<string[]> {
-  const apiUrls: string[] = [];
+// Health-check state
+let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+const HEALTH_CHECK_INTERVAL = 30 * 60 * 1000; // 30 minutes
+const HEALTH_CHECK_TIMEOUT = 4_000; // 4s per instance
 
-  // Check user-configured instance first
+/**
+ * Ping a Piped instance to verify it is responsive.
+ * Uses the health endpoint; falls back to a HEAD request on the base URL.
+ */
+async function checkInstanceHealth(baseUrl: string): Promise<boolean> {
+  // Try the dedicated /healthz endpoint first
+  for (const path of ["/healthz", "/health", "/"]) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+      const res = await fetch(`${baseUrl}${path}`, {
+        method: "HEAD",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok || res.status === 404) {
+        // 404 means the endpoint doesn't exist but the server is alive
+        return true;
+      }
+    } catch {
+      // Try the next path
+    }
+  }
+  return false;
+}
+
+/**
+ * Run a health check on all known instances and update the healthy set.
+ * Removes any unresponsive instances from the healthy set.
+ */
+async function runHealthCheck(): Promise<void> {
+  if (!cachedInstances) return;
+
+  const current = cachedInstances.apiUrls;
+  const results = await Promise.allSettled(
+    current.map(async (url) => {
+      const healthy = await checkInstanceHealth(url);
+      return { url, healthy };
+    }),
+  );
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      const { url, healthy } = result.value;
+      if (healthy) {
+        cachedInstances!.healthyUrls.add(url);
+      } else {
+        cachedInstances!.healthyUrls.delete(url);
+      }
+    }
+  }
+}
+
+/**
+ * Start the periodic health‑check background loop.
+ * Runs immediately (non‑blocking) and then every HEALTH_CHECK_INTERVAL.
+ */
+function startHealthChecks(): void {
+  if (healthCheckInterval) return; // already running
+
+  // Run first check after a short delay so initial search isn't blocked
+  const initialDelay = setTimeout(() => {
+    runHealthCheck().catch(() => {});
+    clearTimeout(initialDelay);
+  }, 5_000);
+
+  healthCheckInterval = setInterval(() => {
+    runHealthCheck().catch(() => {});
+  }, HEALTH_CHECK_INTERVAL);
+}
+
+/**
+ * Returns the list of Piped instance API URLs to try, in order.
+ * Hardcoded instances come first (always available, no fetch needed),
+ * followed by user‑configured and dynamically‑discovered instances.
+ */
+async function discoverInstances(): Promise<string[]> {
+  // Return cached list if still fresh (includes hardcoded ones)
+  if (cachedInstances && Date.now() - cachedInstances.fetchedAt < INSTANCE_CACHE_TTL) {
+    // Filter out any instances health checks have marked unhealthy
+    const healthy = cachedInstances.healthyUrls;
+    return healthy.size > 0
+      ? cachedInstances.apiUrls.filter((url) => healthy.has(url))
+      : cachedInstances.apiUrls;
+  }
+
+  // Build the full list: hardcoded → user‑configured → live discovery
+  const apiUrls = [...HARDCODED_INSTANCES];
+
+  // Check user‑configured instance via env var
   const userInstance = typeof process !== "undefined" && process.env
     ? (process.env as Record<string, string | undefined>).NEXT_PUBLIC_INVIDIOUS_INSTANCE
     : undefined;
 
   if (userInstance && typeof userInstance === "string" && userInstance.trim()) {
-    apiUrls.push(userInstance.trim().replace(/\/+$/, ""));
+    const cleaned = userInstance.trim().replace(/\/+$/, "");
+    if (!apiUrls.includes(cleaned)) apiUrls.push(cleaned);
   }
 
-  // Fetch the official instance list
+  // Immediately cache the hardcoded list so searches don't block
+  if (!cachedInstances) {
+    cachedInstances = {
+      apiUrls,
+      fetchedAt: Date.now(),
+      // Seed the healthy set with all instances initially
+      healthyUrls: new Set(apiUrls),
+    };
+    // Start background health checks
+    startHealthChecks();
+  }
+
+  // Fetch the official instance list in the BACKGROUND — don't await it
+  if (!pendingInstanceFetch) {
+    pendingInstanceFetch = fetchLiveInstances().then((liveUrls) => {
+      // Merge live URLs (append after hardcoded ones)
+      const merged = [...HARDCODED_INSTANCES];
+      if (userInstance?.trim()) {
+        const cleaned = userInstance.trim().replace(/\/+$/, "");
+        if (!merged.includes(cleaned)) merged.push(cleaned);
+      }
+      for (const url of liveUrls) {
+        if (!merged.includes(url)) merged.push(url);
+      }
+      cachedInstances = {
+        apiUrls: merged,
+        fetchedAt: Date.now(),
+        // Preserve healthy set; new live instances start as healthy
+        healthyUrls: new Set([...cachedInstances!.healthyUrls, ...liveUrls]),
+      };
+      pendingInstanceFetch = null;
+      return merged;
+    }).catch(() => {
+      pendingInstanceFetch = null;
+      return cachedInstances?.apiUrls ?? HARDCODED_INSTANCES;
+    });
+  }
+
+  // Return only healthy instances (or all if health check hasn't run yet)
+  if (cachedInstances.healthyUrls.size > 0) {
+    return apiUrls.filter((url) => cachedInstances!.healthyUrls.has(url));
+  }
+  return apiUrls;
+}
+
+/** Fetch the official Piped instance list and return healthy API URLs. */
+async function fetchLiveInstances(): Promise<string[]> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5_000);
@@ -73,59 +223,17 @@ async function fetchInstanceList(): Promise<string[]> {
 
     if (res.ok) {
       const entries: PipedInstanceEntry[] = await res.json();
-      // Only include instances with good uptime and an api_url
-      for (const entry of entries) {
-        const uptime = entry.uptime_24h ?? 0;
-        if (uptime >= 90 && entry.api_url) {
-          const url = entry.api_url.replace(/\/+$/, "");
-          if (!apiUrls.includes(url)) {
-            apiUrls.push(url);
-          }
-        }
-      }
+      return entries
+        .filter((e) => (e.uptime_24h ?? 0) >= 90 && e.api_url)
+        .map((e) => e.api_url.replace(/\/+$/, ""));
     }
   } catch {
-    // Instance list fetch failed — use fallbacks
+    // Instance list fetch failed — use hardcoded ones
   }
-
-  // Add hardcoded fallbacks only if we ended up with nothing
-  if (apiUrls.length === 0) {
-    for (const fallback of FALLBACK_INSTANCES) {
-      if (!apiUrls.includes(fallback)) apiUrls.push(fallback);
-    }
-  }
-
-  return apiUrls;
+  return [];
 }
 
-async function discoverInstances(): Promise<string[]> {
-  // Return cached list if still fresh
-  if (cachedInstances && Date.now() - cachedInstances.fetchedAt < INSTANCE_CACHE_TTL) {
-    return cachedInstances.apiUrls;
-  }
-
-  // Deduplicate concurrent fetchInstanceList calls
-  if (!pendingInstanceFetch) {
-    pendingInstanceFetch = fetchInstanceList().then((apiUrls) => {
-      cachedInstances = { apiUrls, fetchedAt: Date.now() };
-      pendingInstanceFetch = null;
-      return apiUrls;
-    }).catch((err) => {
-      pendingInstanceFetch = null;
-      // If the fetch fails and we have no cached list, fall through to fallbacks
-      if (!cachedInstances) {
-        const urls = [...FALLBACK_INSTANCES];
-        cachedInstances = { apiUrls: urls, fetchedAt: Date.now() };
-        return urls;
-      }
-      return cachedInstances.apiUrls;
-    });
-  }
-
-  return pendingInstanceFetch;
-}
-
-/** Invalidate the instance cache so the next call re-fetches the list. */
+/** Invalidate the instance cache so the next call re‑fetches the list. */
 export function refreshInstances(): void {
   cachedInstances = null;
 }
@@ -147,9 +255,9 @@ async function fetchPiped<T>(path: string, timeoutMs = 8_000): Promise<T | null>
       clearTimeout(timeout);
       if (!res.ok) {
         console.warn(`PipedProvider: HTTP ${res.status} from ${base}${path}`);
-        continue; // try next instance
+        continue;
       }
-      return await res.json() as T;
+      return (await res.json()) as T;
     } catch (err: any) {
       console.warn(`PipedProvider: Network error for ${base}${path}:`, err?.message ?? err);
     }
@@ -163,7 +271,7 @@ async function fetchPiped<T>(path: string, timeoutMs = 8_000): Promise<T | null>
 // ---------------------------------------------------------------------------
 
 interface PipedStreamItem {
-  url: string;               // "/watch?v=VIDEOID"
+  url: string;
   type: "stream";
   title: string;
   thumbnail: string;
@@ -172,15 +280,15 @@ interface PipedStreamItem {
   uploaderAvatar: string;
   uploadedDate: string;
   shortDescription: string;
-  duration: number;          // seconds
+  duration: number;
   views: number;
-  uploaded: number;          // epoch ms
+  uploaded: number;
   uploaderVerified: boolean;
   isShort: boolean;
 }
 
 interface PipedChannelItem {
-  url: string;               // "/channel/CHANNELID"
+  url: string;
   type: "channel";
   name: string;
   thumbnail: string;
@@ -190,7 +298,7 @@ interface PipedChannelItem {
 }
 
 interface PipedPlaylistItem {
-  url: string;               // "/playlist?list=PLAYLISTID"
+  url: string;
   type: "playlist";
   name: string;
   thumbnail: string;
@@ -207,7 +315,7 @@ interface PipedSearchResponse {
 
 interface PipedPlaylistDetail {
   videos: Array<{
-    url: string;             // "/watch?v=VIDEOID"
+    url: string;
     title: string;
     thumbnail: string;
     uploaderName: string;
@@ -224,19 +332,16 @@ interface PipedPlaylistDetail {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Extract YouTube video ID from a Piped URL like "/watch?v=VIDEOID". */
 function extractVideoId(url: string): string | null {
   const m = url.match(/[?&]v=([^&]+)/);
   return m ? m[1] : null;
 }
 
-/** Extract channel ID from a Piped URL like "/channel/CHANNELID". */
 function extractChannelId(url: string): string | null {
   const m = url.match(/\/channel\/([^/?&]+)/);
   return m ? m[1] : null;
 }
 
-/** Extract playlist ID from a Piped URL like "/playlist?list=PLAYLISTID". */
 function extractPlaylistId(url: string): string | null {
   const m = url.match(/[?&]list=([^&]+)/);
   return m ? m[1] : null;
@@ -288,15 +393,16 @@ export const invidiousProvider: SearchProvider = {
   name: "Piped (fallback)",
 
   async search(q: string, type: string): Promise<SearchResults> {
-    // Piped filter: "all", "videos", "channels", "playlists", "music_songs", etc.
-    const filter = type === "all" ? "all"
+    const filter =
+      type === "all" ? "all"
       : type === "video" ? "videos"
-        : type === "channel" ? "channels"
-          : type === "playlist" ? "playlists"
-            : "all";
+      : type === "channel" ? "channels"
+      : type === "playlist" ? "playlists"
+      : "all";
 
     const data = await fetchPiped<PipedSearchResponse>(
       `/search?q=${encodeURIComponent(q)}&filter=${filter}`,
+      10_000, // slightly longer timeout for search
     );
 
     const results: SearchResults = { songs: [], albums: [], artists: [] };
@@ -320,8 +426,6 @@ export const invidiousProvider: SearchProvider = {
   },
 
   async getVideoDetails(_videoId: string): Promise<SongResult | null> {
-    // Piped has a /streams/:videoId endpoint but we keep this simple
-    // since the primary provider (YouTube Data API) handles details.
     return null;
   },
 
@@ -333,16 +437,18 @@ export const invidiousProvider: SearchProvider = {
 
     if (!data || !Array.isArray(data.videos)) return [];
 
-    return data.videos.map((v) => {
-      const videoId = extractVideoId(v.url);
-      if (!videoId) return null;
-      return normalizeSong(
-        videoId,
-        decodeHtml(v.title) ?? "Untitled",
-        decodeHtml(v.uploaderName) ?? "Unknown Artist",
-        v.thumbnail,
-        v.duration ?? 0,
-      );
-    }).filter(Boolean) as SongResult[];
+    return data.videos
+      .map((v) => {
+        const videoId = extractVideoId(v.url);
+        if (!videoId) return null;
+        return normalizeSong(
+          videoId,
+          decodeHtml(v.title) ?? "Untitled",
+          decodeHtml(v.uploaderName) ?? "Unknown Artist",
+          v.thumbnail,
+          v.duration ?? 0,
+        );
+      })
+      .filter(Boolean) as SongResult[];
   },
 };
