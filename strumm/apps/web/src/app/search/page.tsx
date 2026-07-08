@@ -42,6 +42,7 @@ export default function SearchPage() {
   });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchFailedNotified = useRef(false);
 
   // Playlist addition states & effects
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
@@ -212,6 +213,25 @@ export default function SearchPage() {
                 playlists = plJson.data || [];
               }
             } catch { /* playlist search offline */ }
+          }
+
+          // Detect external search failure (YouTube + Invidious both returned empty)
+          const hasExternalResults =
+            (youtubeResults.songs && youtubeResults.songs.length > 0) ||
+            (youtubeResults.artists && youtubeResults.artists.length > 0) ||
+            (youtubeResults.albums && youtubeResults.albums.length > 0);
+
+          if (
+            !hasExternalResults &&
+            (activeFilter === "All" || activeFilter === "Songs" || activeFilter === "Artists" || activeFilter === "Albums") &&
+            !searchFailedNotified.current
+          ) {
+            searchFailedNotified.current = true;
+            show(
+              "YouTube search is temporarily unavailable — song, artist, and album results may be limited. Podcasts and playlists are unaffected.",
+              "warning",
+              6000,
+            );
           }
 
           const fetchedResults = {

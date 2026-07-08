@@ -60,6 +60,10 @@ export async function searchYouTube(
 
     if (res.ok) {
       const json = await res.json();
+      // Surface any warning from the server (e.g., YouTube fallback active)
+      if (json.warning) {
+        console.warn("Search API warning:", json.warning);
+      }
       if (json.success && json.data) {
         return {
           songs: json.data.songs || [],
