@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
@@ -167,8 +167,28 @@ export default function ReplayPage() {
   const animatedProps = isAnimated ? { initial: "hidden", animate: "show", variants: containerVariants } : {};
   const childAnimatedProps = isAnimated ? { variants: itemVariants } : {};
 
+  // Memoized MusicGroup JSON-LD for top artist results
+  const artistSchemas = useMemo(() =>
+    data?.topArtists?.map((artist) => ({
+      "@context": "https://schema.org",
+      "@type": "MusicGroup",
+      name: artist.artist,
+      ...(artist.thumbnail ? { image: { "@type": "ImageObject", url: artist.thumbnail } } : {}),
+    })) || [],
+    [data?.topArtists]
+  );
+
   return (
     <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
+      {/* Individual JSON-LD script tags for each top artist */}
+      {artistSchemas.map((schema, i) => (
+        <script
+          key={`top-artist-ld-${i}`}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+        />
+      ))}
+
       {/* Editorial Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 min-w-0">
         <div className="min-w-0 flex-1">

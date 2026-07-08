@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus, Shuffle, Check } from "lucide-react";
@@ -293,9 +293,52 @@ export default function SearchPage() {
     }
   };
 
+  // Memoized MusicGroup JSON-LD for artist results — individual <script> per artist
+  const artistSchemas = useMemo(() =>
+    results.artists.map((artist: any) => ({
+      "@context": "https://schema.org",
+      "@type": "MusicGroup",
+      name: artist.name,
+      ...(artist.thumbnail ? { image: { "@type": "ImageObject", url: artist.thumbnail } } : {}),
+    })),
+    [results.artists]
+  );
+
+  // Memoized MusicAlbum JSON-LD for album results — individual <script> per album
+  const albumSchemas = useMemo(() =>
+    results.albums.map((album: any) => ({
+      "@context": "https://schema.org",
+      "@type": "MusicAlbum",
+      name: album.title || album.name,
+      byArtist: {
+        "@type": "MusicGroup",
+        name: album.artist,
+      },
+      ...(album.thumbnail ? { image: { "@type": "ImageObject", url: album.thumbnail } } : {}),
+      ...(album.year ? { datePublished: album.year } : {}),
+    })),
+    [results.albums]
+  );
+
   return (
     <div className="space-y-10 max-w-6xl">
-      {/* Header */}
+      {/* Individual JSON-LD script tags for each artist */}
+      {artistSchemas.map((schema: any, i: number) => (
+        <script
+          key={`artist-ld-${i}`}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+        />
+      ))}
+      {/* Individual JSON-LD script tags for each album */}
+      {albumSchemas.map((schema: any, i: number) => (
+        <script
+          key={`album-ld-${i}`}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+        />
+      ))}
+
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
           Universal Portal
