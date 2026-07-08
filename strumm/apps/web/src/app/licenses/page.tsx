@@ -1,9 +1,23 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
   title: "Open Source Licenses",
-  description: "Open source licenses used by Strumm.",
+  description: "Open source software licenses used by Strumm — Next.js, React, FastAPI, MongoDB, Tailwind CSS, Framer Motion, and more.",
+  openGraph: {
+    title: "Open Source Licenses | Strumm",
+    description: "Strumm is built on open source — view the licenses for Next.js, React, FastAPI, MongoDB, Tailwind CSS, Framer Motion, and 18 other packages.",
+    url: "/licenses",
+  },
+  alternates: {
+    canonical: `${appUrl}/licenses`,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 const licenses = [

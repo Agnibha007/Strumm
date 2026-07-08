@@ -1,12 +1,22 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
   title: "Security",
-  description: "Strumm security practices and vulnerability disclosure.",
+  description: "Strumm security practices and vulnerability disclosure — bcrypt password hashing, JWT authentication, HTTPS, CSP, rate limiting, and how to report security issues.",
   openGraph: {
     title: "Security | Strumm",
-    description: "How Strumm protects your data and how to report vulnerabilities.",
+    description: "How Strumm protects your data — bcrypt password hashing, JWT authentication, HTTPS everywhere, Content Security Policy, rate limiting, and responsible vulnerability disclosure.",
+    url: "/security",
+  },
+  alternates: {
+    canonical: `${appUrl}/security`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -28,6 +38,24 @@ export default function SecurityPage() {
         { name: "Home", href: "/" },
         { name: "Security", href: "/security" },
       ]} />
+
+      {/* WebPage structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "@id": `${appUrl}/security#webpage`,
+            name: "Strumm Security Practices",
+            description:
+              "Security practices, data protection measures, and vulnerability disclosure policy for Strumm music ecosystem.",
+            url: `${appUrl}/security`,
+            isPartOf: { "@id": `${appUrl}#website` },
+          }),
+        }}
+      />
+
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Trust</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Security</h1>

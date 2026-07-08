@@ -1,13 +1,33 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "Feature Request",
-  description: "Suggest a feature for Strumm.",
+  description: "Suggest a new feature for Strumm — share your ideas for playlists, AI curation, podcasts, analytics, and more. We review every submission.",
+  openGraph: {
+    title: "Feature Request | Strumm",
+    description: "Have an idea for Strumm? Submit a feature request and help shape the future of the music ecosystem.",
+    url: "/feature-request",
+  },
+  alternates: {
+    canonical: `${appUrl}/feature-request`,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function FeatureRequestPage() {
   return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Feature Request", href: "/feature-request" },
+      ]} />
     <main className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Community</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Feature Request</h1>
@@ -21,5 +41,6 @@ export default function FeatureRequestPage() {
         </div>
       </div>
     </main>
+    </>
   );
 }

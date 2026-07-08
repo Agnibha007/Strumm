@@ -44,6 +44,51 @@ export async function generateMetadata({ params }: { params: Promise<{ username:
   };
 }
 
-export default function Page({ params }: { params: Promise<{ username: string }> }) {
-  return <PublicProfileClient params={params} />;
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+export default async function Page({ params }: { params: Promise<{ username: string }> }) {
+  const { username } = await params;
+  const cleanUsername = decodeURIComponent(username).replace(/^@/, "");
+  const canonicalUrl = `${baseUrl}/public/${cleanUsername}`;
+
+  // Fetch profile data for Person schema
+  let profile: { displayName?: string; avatar?: string; totalMinutes?: number } | null = null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/public/${encodeURIComponent(cleanUsername)}`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    const json = await res.json();
+    if (json.success && json.data) profile = json.data;
+  } catch {
+    // Backend unreachable — Person schema still uses username
+  }
+
+  const displayName = profile?.displayName || cleanUsername;
+
+  return (
+    <>
+      {/* Person/Profile structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Person",
+            "@id": canonicalUrl,
+            name: displayName,
+            url: canonicalUrl,
+            ...(profile?.avatar
+              ? { image: { "@type": "ImageObject", url: profile.avatar } }
+              : {}),
+            description: `${displayName}'s Strumm music passport — ${profile?.totalMinutes || 0} minutes listened, curated playlists, and Sound DNA.`,
+            memberOf: {
+              "@type": "Organization",
+              name: "Strumm",
+            },
+          }),
+        }}
+      />
+      <PublicProfileClient params={params} />
+    </>
+  );
 }

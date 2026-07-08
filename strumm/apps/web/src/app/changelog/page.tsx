@@ -1,12 +1,22 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
   title: "Changelog",
-  description: "Strumm release history and changelog.",
+  description: "Strumm release history and changelog — every release documented with version history, feature updates, and improvements.",
   openGraph: {
     title: "Changelog | Strumm",
-    description: "What's new in Strumm.",
+    description: "Track every Strumm release — from v1.0.0 to v2.0.0, including AI curation, Sound DNA, podcasts, social features, and more.",
+    url: "/changelog",
+  },
+  alternates: {
+    canonical: `${appUrl}/changelog`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -82,6 +92,37 @@ export default function ChangelogPage() {
         { name: "Home", href: "/" },
         { name: "Changelog", href: "/changelog" },
       ]} />
+
+      {/* Article structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Article",
+            "@id": `${appUrl}/changelog#article`,
+            name: "Strumm Changelog",
+            headline: "Strumm Release History — Every Version Documented",
+            description:
+              "Complete release history and changelog for Strumm music ecosystem, from v1.0.0 through v2.0.0, including AI features, podcast support, social features, and more.",
+            url: `${appUrl}/changelog`,
+            dateModified: "2026-07-03",
+            datePublished: "2026-03-01",
+            author: {
+              "@type": "Organization",
+              name: "Strumm",
+              url: appUrl,
+            },
+            publisher: {
+              "@type": "Organization",
+              name: "Strumm",
+              url: appUrl,
+            },
+            isPartOf: { "@id": `${appUrl}#website` },
+          }),
+        }}
+      />
+
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Updates</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Changelog</h1>

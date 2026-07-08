@@ -1,12 +1,22 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
   title: "Roadmap",
-  description: "Strumm product roadmap and upcoming features.",
+  description: "Strumm product roadmap and upcoming features — mobile app, offline mode, collaborative playlists, advanced audio equalizer, and more.",
   openGraph: {
     title: "Roadmap | Strumm",
-    description: "See what's coming next to Strumm.",
+    description: "See what's coming next to Strumm — from mobile native apps and offline mode to AI-powered sleep timers and public APIs.",
+    url: "/roadmap",
+  },
+  alternates: {
+    canonical: `${appUrl}/roadmap`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -28,6 +38,24 @@ export default function RoadmapPage() {
         { name: "Home", href: "/" },
         { name: "Roadmap", href: "/roadmap" },
       ]} />
+
+      {/* WebPage structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "@id": `${appUrl}/roadmap#webpage`,
+            name: "Strumm Product Roadmap",
+            description:
+              "Upcoming features and product direction for Strumm music ecosystem — mobile apps, offline mode, collaborative playlists, and more.",
+            url: `${appUrl}/roadmap`,
+            isPartOf: { "@id": `${appUrl}#website` },
+          }),
+        }}
+      />
+
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Future</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Roadmap</h1>

@@ -1,12 +1,32 @@
 import { Metadata } from "next";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "Report a Bug",
-  description: "Report a bug or issue with Strumm.",
+  description: "Report a bug or technical issue with Strumm — help us improve the music ecosystem by reporting problems you encounter.",
+  openGraph: {
+    title: "Report a Bug | Strumm",
+    description: "Found something broken in Strumm? Submit a bug report with reproduction steps to help us fix it.",
+    url: "/report-bug",
+  },
+  alternates: {
+    canonical: `${appUrl}/report-bug`,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function ReportBugPage() {
   return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Report a Bug", href: "/report-bug" },
+      ]} />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Support</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Report a Bug</h1>
@@ -29,5 +49,6 @@ export default function ReportBugPage() {
         <p className="text-xs text-muted leading-relaxed">For security vulnerabilities, please use our <a href="/security" className="text-primary hover:underline">Security page</a> instead.</p>
       </div>
     </div>
+    </>
   );
 }

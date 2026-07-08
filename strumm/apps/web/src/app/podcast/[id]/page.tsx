@@ -83,6 +83,40 @@ export default async function PodcastEpisodePage({ params }: PodcastEpisodePageP
         { name: showTitle, href: "/podcasts" },
         { name: episodeTitle, href: `/podcast/${id}` },
       ]} />
+
+      {/* PodcastEpisode structured data */}
+      {data && data.episode && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "PodcastEpisode",
+              name: data.episode.title || episodeTitle,
+              url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/podcast/${id}`,
+              description: data.episode.description
+                ? data.episode.description.replace(/<[^>]*>/g, "").slice(0, 500)
+                : `Listen to ${episodeTitle} from ${showTitle} on Strumm.`,
+              ...(data.show?.image
+                ? { image: { "@type": "ImageObject", url: data.show.image } }
+                : {}),
+              partOfSeries: {
+                "@type": "PodcastSeries",
+                name: showTitle,
+              },
+              ...(data.show?.author
+                ? {
+                    author: {
+                      "@type": "Person",
+                      name: data.show.author,
+                    },
+                  }
+                : {}),
+            }),
+          }}
+        />
+      )}
+
       <PodcastEpisodeClient params={params} />
     </>
   );

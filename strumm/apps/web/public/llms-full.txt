@@ -1,0 +1,207 @@
+# Strumm — Music Ecosystem (Full)
+
+> Strumm is a premium, handcrafted music ecosystem. AI-powered playlists, podcast support, synced lyrics, listening analytics, and social music discovery — all ad-free and private.
+
+## Architecture
+
+Strumm is a full-stack web application using a monorepo structure with Turborepo:
+
+- **strumm/apps/web**: Next.js 15 frontend (app router, React 19, TypeScript)
+- **strumm/apps/api**: Python FastAPI backend with MongoDB
+- **strumm/packages/types**: Shared TypeScript types
+- **strumm/packages/database**: Shared database utilities
+- **strumm/packages/ui**: Shared UI components
+- **strumm/packages/config**: Shared configuration (ESLint, TypeScript)
+
+## Core Features
+
+### Music Playback
+Streams music through YouTube's iframe API. Users search for songs, Strumm resolves YouTube video IDs and plays through the embedded YouTube player. No audio files are hosted or stored on Strumm servers.
+
+### Playlists
+Users can create, edit, and delete playlists. Playlists can be curated manually or via Strumm Flow AI. Users can also import playlists from YouTube. Playlists support privacy settings (public, private, circle-only).
+
+### AI-Powered Features
+Two distinct AI features, both optional via Groq:
+- **Strumm Flow**: Chat-based AI assistant that builds smart playlists from natural language prompts
+- **Discovery Mix**: AI-curated music discovery recommendations based on listening history
+
+### Podcasts
+RSS feed-based podcast subscription and streaming. Users can search for shows, browse episodes, and stream directly.
+
+### Lyrics
+Synced lyrics fetched from LRCLIB public API. Displays time-synced lyrics during playback with karaoke-style highlighting.
+
+### Strumm Replay
+Personalized listening analytics dashboard:
+- Total listening minutes and daily averages
+- Top songs, artists, and genres
+- Music personality archetype (computed from listening patterns)
+- Sound DNA (5-dimensional analysis: Energy, Discovery, Nostalgia, Variety, Repeat Rate)
+- Listening time heatmap (favorite listening time)
+
+### Strumm Circle
+Social layer connecting users through music:
+- Friend requests and connections
+- Real-time listening activity (opt-in)
+- Collaborative Blend playlists
+- Shared listening Rooms
+
+### Themes
+8 handcrafted dark themes with dynamic accent color extraction:
+Obsidian, Black Cherry, Ocean Drive, Vinyl Classic, Monochrome, Aurora, Sunset Blvd, Rose Garden, Cyberpunk
+
+### Authentication
+- Email/password with JWT tokens (15min access + 30-day refresh)
+- Google OAuth integration
+- httpOnly, Secure, SameSite=None cookies
+- bcrypt password hashing
+
+### PWA
+Progressive Web App with:
+- Web app manifest and install prompt
+- Service worker caching for app shell
+- Offline support for static assets
+- Cross-device player state sync
+
+## Key Pages and Routes
+
+### Static Pages
+| Route | Description |
+|-------|-------------|
+| / | Home with search and discovery section |
+| /search | Universal search (songs, artists, albums, playlists, podcasts, profiles) |
+| /flow | Strumm Flow AI curator |
+| /podcasts | Podcast directory |
+| /playlists | User's playlist collection |
+| /replay | Listening analytics dashboard |
+| /circle | Social connections and circle management |
+| /library | Liked songs, listening history, top artists |
+| /lyrics | Synced lyrics viewer |
+| /rooms | Collaborative listening rooms |
+| /settings | Account, audio, appearance settings |
+| /profile | Profile and account management |
+| /stats | Detailed listening statistics |
+
+### Dynamic Routes
+| Route | Description |
+|-------|-------------|
+| /song/[id] | Song detail page with MusicRecording schema |
+| /playlist/[id] | Playlist detail page with MusicPlaylist schema |
+| /podcasts/show/[id] | Podcast show page with PodcastSeries schema |
+| /podcast/[id] | Podcast episode page with PodcastEpisode schema |
+| /public/[username] | Public user profile page with Person schema |
+| /share/[token] | Shared content page |
+| /rooms/[id] | Specific listening room |
+
+### Informational Pages
+| Route | Description |
+|-------|-------------|
+| /about | About Strumm |
+| /faq | Frequently asked questions |
+| /changelog | Version history |
+| /roadmap | Upcoming features |
+| /contact | Contact information |
+| /status | Service status |
+| /privacy | Privacy Policy |
+| /terms | Terms of Service |
+| /cookies | Cookie Policy |
+| /dmca | DMCA / Copyright Policy |
+| /content-removal | Content Removal Policy |
+| /security | Security practices |
+| /credits | Credits and acknowledgments |
+| /licenses | Open source licenses |
+
+## API Endpoints
+
+Major API routes (FastAPI backend at `/api/...`):
+
+- `POST /auth/signup` - Create account
+- `POST /auth/login` - Login
+- `POST /auth/google` - Google OAuth
+- `POST /auth/refresh` - Refresh JWT token
+- `GET /auth/me` - Current user profile
+- `GET /search` - Search songs/artists/albums/playlists/podcasts/users
+- `GET /resolve/{videoId}` - Resolve YouTube video metadata
+- `GET /lyrics/{videoId}` - Get synced lyrics
+- `GET/POST/PUT/DELETE /playlists` - CRUD playlists
+- `GET /podcasts` - List podcasts
+- `GET /podcasts/shows` - Search podcast shows
+- `GET /podcasts/shows/{id}` - Podcast show detail
+- `GET /podcasts/episode/{id}` - Podcast episode detail
+- `GET /stats/dashboard` - Listening statistics dashboard
+- `GET /replay` - Strumm Replay data
+- `GET /recommendations` - AI recommendations
+- `GET /flow/generate` - Generate AI playlist
+- `GET/POST /circle` - Social circle management
+- `GET /rooms` - Collaborative rooms
+- `GET/POST /feedback` - Feedback submissions
+- `GET /sitemap` - Dynamic sitemap data
+
+## Structured Data (Schema.org)
+
+Strumm implements comprehensive JSON-LD structured data:
+- **Organization** - Global organization schema in root layout
+- **WebSite** - With SearchAction for site search
+- **WebApplication** - With feature list and pricing
+- **FAQPage** - On /faq with Question/Answer pairs
+- **ContactPage** - On /contact with ContactPoints
+- **AboutPage** - On /about
+- **PrivacyPolicy** - On /privacy
+- **TermsOfService** - On /terms
+- **BreadcrumbList** - Breadcrumbs on all major pages
+- **MusicRecording** - On song detail pages
+- **MusicPlaylist** - On playlist detail pages
+- **PodcastSeries** - On podcast show pages
+- **PodcastEpisode** - On podcast episode pages
+- **Person** - On public user profile pages
+- **Article** - On changelog page
+- **WebPage** - On informational pages
+
+## Configuration
+
+### Environment Variables (Frontend)
+- `NEXT_PUBLIC_APP_URL` - Public URL of the app
+- `NEXT_PUBLIC_API_URL` - Backend API URL
+- `NEXT_PUBLIC_INVIDIOUS_URL` - Invidious instance URL (optional)
+- `NEXT_PUBLIC_SENTRY_DSN` - Sentry error tracking (optional)
+
+### Environment Variables (Backend)
+- `MONGODB_URL` - MongoDB connection string
+- `SECRET_KEY` - JWT signing key
+- `JWT_SECRET` - Alternative JWT secret
+- `JWT_ALGORITHM` - JWT algorithm (default: HS256)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` - Access token expiry (default: 15)
+- `REFRESH_TOKEN_EXPIRE_DAYS` - Refresh token expiry (default: 30)
+- `GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `GROQ_API_KEY` - Groq AI API key
+- `RESEND_API_KEY` - Resend email API key
+- `YOUTUBE_API_KEY` - YouTube Data API key
+- `PODCAST_INDEX_API_KEY` - Podcast Index API key
+- `PODCAST_INDEX_API_SECRET` - Podcast Index API secret
+- `CORS_ORIGINS` - Allowed CORS origins
+
+## Data Privacy
+
+- No advertising, no tracking pixels, no third-party analytics
+- Listening data is used only for in-app features (Replay, Sound DNA, recommendations)
+- Passwords hashed with bcrypt
+- JWT tokens with auto-refresh
+- Users can delete their account and all associated data
+- No data selling or sharing with third parties
+- Full privacy policy at /privacy
+
+## License
+
+Strumm is open source under the MIT License. See /licenses for third-party licenses.
+
+## Contact Information
+
+- General Inquiries: hello@strumm.me
+- Technical Support: support@strumm.me
+- Privacy Concerns: privacy@strumm.me
+- DMCA / Copyright: dmca@strumm.me
+- Security Vulnerabilities: security@strumm.me
+- Content Removal: abuse@strumm.me
+- Feature Requests: feedback@strumm.me
+- Legal: legal@strumm.me

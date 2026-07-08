@@ -1,17 +1,49 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "Content Removal Policy",
-  description: "Strumm Content Removal Policy — request removal of content from the platform.",
+  description: "Strumm Content Removal Policy — request removal of inappropriate, abusive, or policy-violating content from the platform.",
   openGraph: {
     title: "Content Removal Policy | Strumm",
-    description: "Learn how to request removal of content from Strumm.",
+    description: "Learn how to request removal of content from Strumm — including harassment, hate speech, copyright infringement, and policy violations.",
+    url: "/content-removal",
+  },
+  alternates: {
+    canonical: `${appUrl}/content-removal`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
 export default function ContentRemovalPage() {
   return (
+    <>
+      <BreadcrumbJsonLd items={[
+        { name: "Home", href: "/" },
+        { name: "Content Removal Policy", href: "/content-removal" },
+      ]} />
+      {/* WebPage structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "@id": `${appUrl}/content-removal#webpage`,
+            name: "Strumm Content Removal Policy",
+            description:
+              "Request removal of inappropriate, abusive, or copyright-infringing content from Strumm.",
+            url: `${appUrl}/content-removal`,
+            isPartOf: { "@id": `${appUrl}#website` },
+          }),
+        }}
+      />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <div className="mb-10">
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Legal</span>
@@ -95,5 +127,6 @@ export default function ContentRemovalPage() {
         <Link href="/dmca" className="text-sm text-primary hover:underline">DMCA Policy</Link>
       </div>
     </div>
+    </>
   );
 }

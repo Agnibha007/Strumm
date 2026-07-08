@@ -1,12 +1,22 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
   title: "Status",
-  description: "Strumm service status and uptime.",
+  description: "Strumm service status and uptime — real-time operational status for API, database, YouTube streaming, AI recommendations, and more.",
   openGraph: {
     title: "Status | Strumm",
-    description: "Service status for the Strumm music ecosystem.",
+    description: "Real-time service status for the Strumm music ecosystem — check if all systems are operational.",
+    url: "/status",
+  },
+  alternates: {
+    canonical: `${appUrl}/status`,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -26,6 +36,24 @@ export default function StatusPage() {
         { name: "Home", href: "/" },
         { name: "Status", href: "/status" },
       ]} />
+
+      {/* WebPage structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "@id": `${appUrl}/status#webpage`,
+            name: "Strumm Service Status",
+            description:
+              "Real-time operational status for the Strumm music ecosystem — API, database, YouTube streaming, Groq AI, email delivery, and WebSocket services.",
+            url: `${appUrl}/status`,
+            isPartOf: { "@id": `${appUrl}#website` },
+          }),
+        }}
+      />
+
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">System</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Service Status</h1>

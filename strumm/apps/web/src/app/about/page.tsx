@@ -28,6 +28,33 @@ export default function AboutPage() {
         { name: "Home", href: "/" },
         { name: "About", href: "/about" },
       ]} />
+
+      {/* AboutPage structured data */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "AboutPage",
+            "@id": `${appUrl}/about#about`,
+            name: "About Strumm",
+            description:
+              "About Strumm — a premium, handcrafted music ecosystem with AI playlists, podcast support, and listening analytics.",
+            url: `${appUrl}/about`,
+            isPartOf: { "@id": `${appUrl}#website` },
+            mainEntity: {
+              "@type": "Organization",
+              name: "Strumm",
+              description:
+                "A premium music ecosystem with AI-powered recommendations, custom playlists, podcast support, and listening analytics.",
+              foundingDate: "2024",
+              email: "hello@strumm.me",
+              url: appUrl,
+            },
+          }),
+        }}
+      />
+
     <article className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <header>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">About</span>

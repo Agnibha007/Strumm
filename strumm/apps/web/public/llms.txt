@@ -1,0 +1,57 @@
+# Strumm — Music Ecosystem
+
+> Strumm is a premium, handcrafted music ecosystem. AI-powered playlists, podcast support, synced lyrics, listening analytics, and social music discovery — ad-free and private.
+
+## Key Features
+
+- **Strumm Flow**: AI-powered music curation and smart playlist builder
+- **Strumm Replay**: Personalized listening dashboard with Sound DNA (Energy, Discovery, Nostalgia, Variety, Repeat Rate)
+- **Sound DNA**: Five-dimensional analysis of listening patterns
+- **Playlists**: Create, curate, and import playlists from YouTube
+- **Podcasts**: Subscribe to RSS podcast feeds and stream episodes
+- **Lyrics**: Synced lyrics display via LRCLIB
+- **Circle**: Social music connections with friend activity, shared listening, and blend playlists
+- **Rooms**: Collaborative shared listening rooms
+- **Discovery Mix**: AI-curated recommendations via Groq
+- **Dynamic Themes**: 8 handcrafted themes (Obsidian, Black Cherry, Ocean Drive, Vinyl Classic, Monochrome, Aurora, Sunset Blvd, Rose Garden, Cyberpunk)
+- **PWA**: Progressive Web App with install support
+- **Player Sync**: Cross-device player state synchronization
+- **Privacy**: No ads, no tracking, no data selling
+
+## Important Pages
+
+- Home: https://strumm.me
+- Search: https://strumm.me/search
+- Flow (AI Curation): https://strumm.me/flow
+- Podcasts: https://strumm.me/podcasts
+- Playlists: https://strumm.me/playlists
+- Replay (Analytics): https://strumm.me/replay
+- Circle (Social): https://strumm.me/circle
+- Library: https://strumm.me/library
+- Lyrics: https://strumm.me/lyrics
+- Rooms: https://strumm.me/rooms
+- FAQ: https://strumm.me/faq
+- About: https://strumm.me/about
+- Changelog: https://strumm.me/changelog
+- Status: https://strumm.me/status
+- Privacy Policy: https://strumm.me/privacy
+- Terms of Service: https://strumm.me/terms
+
+## Technical Stack
+
+- **Frontend**: Next.js 15 (React), TypeScript, Tailwind CSS, Framer Motion, Zustand
+- **Backend**: Python FastAPI with MongoDB (via Motor)
+- **AI**: Groq API for music recommendations
+- **Streaming**: YouTube iframe API
+- **Auth**: JWT tokens (bcrypt-hashed passwords) + Google OAuth
+- **Email**: Resend / SMTP
+- **Real-time**: WebSocket connections
+- **Hosting**: Render (backend), Vercel/Cloudflare (frontend)
+
+## Contact
+
+- Support: support@strumm.me
+- Privacy: privacy@strumm.me
+- DMCA: dmca@strumm.me
+- Security: security@strumm.me
+- General: hello@strumm.me
