@@ -105,7 +105,7 @@ export default function RoomsPage() {
   }
 
   return (
-    <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
+    <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden soft-enter">
       {/* Header */}
       <div className="flex justify-between items-start min-w-0">
         <div className="min-w-0">

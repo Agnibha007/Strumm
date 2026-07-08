@@ -100,7 +100,7 @@ export default function SharePage({ params }: SharePageProps) {
   const item = shareData.content;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden soft-enter">
       {/* Blurred thumbnail backdrop */}
       <div 
         className="absolute inset-0 bg-cover bg-center filter blur-3xl opacity-20 transition-all duration-1000 scale-110"

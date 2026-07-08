@@ -8,7 +8,7 @@ export default function NotificationToast() {
   const { notifications, dismiss } = useNotificationStore();
 
   return (
-    <div className="fixed bottom-24 right-6 z-[100000] flex flex-col gap-3 w-full max-w-sm pointer-events-none px-4 md:px-0">
+    <div className="fixed bottom-[136px] md:bottom-24 right-6 z-[100000] flex flex-col gap-3 w-full max-w-sm pointer-events-none px-4 md:px-0">
       <AnimatePresence>
         {notifications.map((n) => {
           let bgColor = "bg-surface/90 border-border/40 text-text";

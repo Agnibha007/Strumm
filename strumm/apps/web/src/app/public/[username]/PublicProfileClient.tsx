@@ -269,7 +269,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
   }
 
   return (
-    <div className="max-w-6xl space-y-12 pb-12">
+    <div className="max-w-6xl space-y-12 pb-12 soft-enter">
       {/* Profile Passport Header */}
       <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6 bg-surface/30 border border-border/60 rounded-3xl p-6 md:p-8 backdrop-blur-md relative overflow-hidden">
         <div className="flex flex-col md:flex-row items-center gap-6 z-10 text-center md:text-left">

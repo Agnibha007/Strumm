@@ -62,6 +62,7 @@ class GroqProvider:
         temperature: float = 0.6,
         max_tokens: int = 1024,
         timeout: float = 8.0,
+        response_format: Optional[dict] = None,
     ) -> Optional[str]:
         """Send a chat-completion request and return the assistant's text content."""
         if not self.configured:
@@ -78,6 +79,8 @@ class GroqProvider:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if response_format:
+            payload["response_format"] = response_format
 
         try:
             from app.services.http_client import get_http_client
@@ -113,17 +116,21 @@ class GroqProvider:
         self,
         messages: list[dict[str, str]],
         *,
-        temperature: float = 0.6,
-        timeout: float = 10.0,
+        temperature: float = 0.1,
+        timeout: float = 15.0,
     ) -> Optional[Any]:
         """Request JSON output from the model and parse it.
 
-        The caller's prompt should instruct the model to return raw JSON.
-        Groq supports the OpenAI `response_format` parameter, so we pass
-        `{ "type": "json_object" }` to improve reliability.
+        Uses Groq's JSON mode (response_format: json_object) to constrain
+        the model to produce valid JSON, eliminating parsing failures.
+        For structured / extraction tasks, temperature should be kept low
+        (default 0.1) to maximize determinism.
         """
         content = await self.chat_completion(
-            messages, temperature=temperature, timeout=timeout
+            messages,
+            temperature=temperature,
+            timeout=timeout,
+            response_format={"type": "json_object"},
         )
         if not content:
             return None

@@ -293,6 +293,31 @@ export default function SearchPage() {
     }
   };
 
+  // Stagger animation variants for search result grids
+  const staggerContainerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.06,
+        delayChildren: 0.05,
+      },
+    },
+  };
+
+  const staggerItemVariants = {
+    hidden: { opacity: 0, y: 12 },
+    show: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        type: "spring" as const,
+        stiffness: 200,
+        damping: 20,
+      },
+    },
+  };
+
   // Memoized MusicGroup JSON-LD for artist results — individual <script> per artist
   const artistSchemas = useMemo(() =>
     results.artists.map((artist: any) => ({
@@ -321,7 +346,7 @@ export default function SearchPage() {
   );
 
   return (
-    <div className="space-y-10 max-w-6xl">
+    <div className="space-y-10 max-w-6xl soft-enter">
       {/* Individual JSON-LD script tags for each artist */}
       {artistSchemas.map((schema: any, i: number) => (
         <script
@@ -483,10 +508,16 @@ export default function SearchPage() {
                 <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Song Results
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <motion.div 
+                  variants={staggerContainerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="grid grid-cols-1 md:grid-cols-2 gap-3.5"
+                >
                   {results.songs.map((song) => (
-                    <div
+                    <motion.div
                       key={song.videoId}
+                      variants={staggerItemVariants}
                       className="flex items-center gap-4 p-3 bg-surface/40 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition group relative"
                     >
                       <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 shadow">
@@ -537,9 +568,9 @@ export default function SearchPage() {
                           <FolderPlus className="w-4 h-4" />
                         </button>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </div>
             )}
 
@@ -549,10 +580,16 @@ export default function SearchPage() {
                 <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Artists
                 </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                <motion.div
+                  variants={staggerContainerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4"
+                >
                   {results.artists.map((artist) => (
-                    <div
+                    <motion.div
                       key={artist.id}
+                      variants={staggerItemVariants}
                       className="p-4 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-center"
                     >
                       <div className="w-16 h-16 rounded-full bg-surface-elevated overflow-hidden border border-border/60 mx-auto relative shadow flex items-center justify-center">
@@ -565,9 +602,9 @@ export default function SearchPage() {
                       <div className="text-xs font-semibold text-text mt-3.5 truncate leading-tight">
                         {artist.name}
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </div>
             )}
 
@@ -577,10 +614,16 @@ export default function SearchPage() {
                 <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Albums
                 </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                <motion.div
+                  variants={staggerContainerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4"
+                >
                   {results.albums.map((album) => (
-                    <div
+                    <motion.div
                       key={album.id}
+                      variants={staggerItemVariants}
                       onClick={() => setSelectedAlbum(album)}
                       className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left font-sans cursor-pointer"
                     >
@@ -597,9 +640,9 @@ export default function SearchPage() {
                       <div className="text-[10px] text-muted truncate mt-1">
                         By {album.artist} {album.year ? `• ${album.year}` : ""}
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </div>
             )}
 
@@ -609,13 +652,21 @@ export default function SearchPage() {
                 <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Shared Playlists
                 </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                <motion.div
+                  variants={staggerContainerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4"
+                >
                   {results.playlists.map((playlist) => (
-                    <Link
+                    <motion.div
                       key={playlist.id}
-                      href={`/playlist/${playlist.id}`}
-                      className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
+                      variants={staggerItemVariants}
                     >
+                      <Link
+                        href={`/playlist/${playlist.id}`}
+                        className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
+                      >
                       <div className="w-full aspect-square rounded-lg bg-surface-elevated flex items-center justify-center border border-border/40 overflow-hidden relative shadow">
                         <FolderHeart className="w-8 h-8 text-accent/60" />
                       </div>
@@ -625,9 +676,10 @@ export default function SearchPage() {
                       <div className="text-[10px] text-muted truncate mt-1">
                         {playlist.followers || 0} followers
                       </div>
-                    </Link>
+                      </Link>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </div>
             )}
 
@@ -637,13 +689,21 @@ export default function SearchPage() {
                 <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Podcast Feeds
                 </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                <motion.div
+                  variants={staggerContainerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4"
+                >
                   {results.podcasts.map((podcast) => (
-                    <Link
+                    <motion.div
                       key={podcast.id}
-                      href={`/podcasts/show/${podcast.id}`}
-                      className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
+                      variants={staggerItemVariants}
                     >
+                      <Link
+                        href={`/podcasts/show/${podcast.id}`}
+                        className="p-3 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-left block"
+                      >
                       <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative">
                         <SafePodcastImage
                           src={podcast.image}
@@ -660,9 +720,10 @@ export default function SearchPage() {
                       <div className="text-[10px] text-muted truncate mt-1">
                         By {podcast.author}
                       </div>
-                    </Link>
+                      </Link>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </div>
             )}
 
@@ -672,13 +733,21 @@ export default function SearchPage() {
                 <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Strumm Curators
                 </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                <motion.div
+                  variants={staggerContainerVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4"
+                >
                   {results.users.map((curator) => (
-                    <Link
+                    <motion.div
                       key={curator.id}
-                      href={`/profile?username=${curator.username}`}
-                      className="p-4 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-center block"
+                      variants={staggerItemVariants}
                     >
+                      <Link
+                        href={`/profile?username=${curator.username}`}
+                        className="p-4 bg-surface/30 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition text-center block"
+                      >
                       <div className="w-16 h-16 rounded-full bg-surface-elevated overflow-hidden border border-border/60 mx-auto relative shadow flex items-center justify-center">
                         {curator.avatar ? (
                           <img src={curator.avatar} alt={curator.displayName} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
@@ -692,9 +761,10 @@ export default function SearchPage() {
                       <div className="text-[9px] text-muted truncate mt-0.5">
                         @{curator.username}
                       </div>
-                    </Link>
+                      </Link>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               </div>
             )}
           </motion.div>

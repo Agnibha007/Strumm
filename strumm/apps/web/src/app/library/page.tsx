@@ -54,7 +54,6 @@ export default function LibraryPage() {
   };
 
   const handlePlayLiked = (song: Song) => {
-    // Extract standard song shapes from liked models
     const songList = likedSongs.map((l) => l.song);
     playSong(song, songList);
   };
@@ -82,7 +81,7 @@ export default function LibraryPage() {
   );
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 soft-enter">
       {/* Header */}
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
@@ -138,6 +137,7 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      {/* Liked Songs + Top Artists row */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left: Liked songs list */}
         <div className="lg:col-span-8 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
@@ -204,90 +204,7 @@ export default function LibraryPage() {
           )}
         </div>
 
-        {/* Listening History */}
-        <div className="lg:col-span-8 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-border/20 pb-2">
-            <h2 className="font-editorial text-xl text-text">
-              Listening History
-            </h2>
-            {history.length > 0 && (
-              <button 
-                onClick={handleDeleteHistory}
-                className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-400 transition"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Clear History
-              </button>
-            )}
-          </div>
-
-          {loading ? (
-            <div className="space-y-2 py-2">
-              {Array.from({ length: 4 }).map((_, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-border/20 bg-background/20">
-                  <div className="w-9 h-9 rounded bg-border/50 animate-pulse" />
-                  <div className="space-y-2">
-                    <div className="h-3 w-44 rounded bg-border/50 animate-pulse" />
-                    <div className="h-2.5 w-28 rounded bg-border/40 animate-pulse" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : history.length === 0 ? (
-            <p className="text-xs text-muted italic py-6">Your listening history is empty.</p>
-          ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 scrollbar-none">
-              {history.map((item, idx) => {
-                const s = item.song;
-                return (
-                  <div
-                    key={`${s.videoId}-${idx}`}
-                    className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-elevated text-left w-full transition border border-transparent hover:border-border/40 group"
-                  >
-                    <button
-                      onClick={() => playSong(s)}
-                      className="flex items-center gap-3 min-w-0 flex-grow text-left cursor-pointer"
-                    >
-                      <SongArtwork song={s} className="w-9 h-9 rounded shadow flex-shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-text truncate leading-tight">{s.title}</div>
-                        <div className="text-xs text-muted truncate mt-0.5">{s.artist}</div>
-                      </div>
-                    </button>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                      <span className="text-[10px] text-muted mr-1">
-                        {new Date(item.playedAt).toLocaleDateString()}
-                      </span>
-                      <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-                        <button
-                          onClick={() => playSong(s)}
-                          className="p-1.5 hover:bg-surface text-primary rounded-lg transition"
-                          title="Play"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                        </button>
-                        {(() => {
-                          const isInQueue = queue.some((item) => item.videoId === s.videoId);
-                          return (
-                            <button
-                              onClick={() => !isInQueue && addToQueue(s)}
-                              className={`p-1.5 rounded-lg transition ${isInQueue ? "text-muted/40 cursor-default" : "hover:bg-surface text-muted hover:text-text cursor-pointer"}`}
-                              title={isInQueue ? "Added to queue" : "Add to queue"}
-                            >
-                              {isInQueue ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                            </button>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        
-        {/* Right: Top Artists widgets */}
+        {/* Right: Top Artists */}
         <div className="lg:col-span-4 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
           <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
             Top Artists
@@ -315,6 +232,89 @@ export default function LibraryPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Listening History (full width below) */}
+      <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-border/20 pb-2">
+          <h2 className="font-editorial text-xl text-text">
+            Listening History
+          </h2>
+          {history.length > 0 && (
+            <button 
+              onClick={handleDeleteHistory}
+              className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-400 transition"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear History
+            </button>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="space-y-2 py-2">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-border/20 bg-background/20">
+                <div className="w-9 h-9 rounded bg-border/50 animate-pulse" />
+                <div className="space-y-2">
+                  <div className="h-3 w-44 rounded bg-border/50 animate-pulse" />
+                  <div className="h-2.5 w-28 rounded bg-border/40 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-xs text-muted italic py-6">Your listening history is empty.</p>
+        ) : (
+          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 scrollbar-none">
+            {history.map((item, idx) => {
+              const s = item.song;
+              return (
+                <div
+                  key={`${s.videoId}-${idx}`}
+                  className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-elevated text-left w-full transition border border-transparent hover:border-border/40 group"
+                >
+                  <button
+                    onClick={() => playSong(s)}
+                    className="flex items-center gap-3 min-w-0 flex-grow text-left cursor-pointer"
+                  >
+                    <SongArtwork song={s} className="w-9 h-9 rounded shadow flex-shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-text truncate leading-tight">{s.title}</div>
+                      <div className="text-xs text-muted truncate mt-0.5">{s.artist}</div>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                    <span className="text-[10px] text-muted mr-1">
+                      {new Date(item.playedAt).toLocaleDateString()}
+                    </span>
+                    <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                      <button
+                        onClick={() => playSong(s)}
+                        className="p-1.5 hover:bg-surface text-primary rounded-lg transition"
+                        title="Play"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                      </button>
+                      {(() => {
+                        const isInQueue = queue.some((item) => item.videoId === s.videoId);
+                        return (
+                          <button
+                            onClick={() => !isInQueue && addToQueue(s)}
+                            className={`p-1.5 rounded-lg transition ${isInQueue ? "text-muted/40 cursor-default" : "hover:bg-surface text-muted hover:text-text cursor-pointer"}`}
+                            title={isInQueue ? "Added to queue" : "Add to queue"}
+                          >
+                            {isInQueue ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                          </button>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

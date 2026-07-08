@@ -536,27 +536,33 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             <div className={`flex items-center justify-center gap-5 md:gap-7 w-full mt-1 transition-all ${
               effectiveShowLyrics ? "lg:justify-center" : "justify-center"
             }`}>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.85 }}
                 onClick={() => setShuffle(!isShuffle)}
-                className={`p-2 rounded-lg cursor-pointer transition hover:scale-105 ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
+                className={`p-2 rounded-lg cursor-pointer transition ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
                 aria-pressed={isShuffle}
                 title="Shuffle"
               >
                 <Shuffle className="w-4 h-4" />
-              </button>
+              </motion.button>
               
-              <button 
+              <motion.button 
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.85 }}
                 onClick={prev} 
-                className="p-2 text-muted hover:text-text cursor-pointer transition hover:scale-105"
+                className="p-2 text-muted hover:text-text cursor-pointer transition"
                 aria-label="Previous track"
                 title="Previous"
               >
                 <SkipBack className="w-5 h-5 fill-current" />
-              </button>
+              </motion.button>
               
-              <button 
+              <motion.button 
+                whileHover={{ scale: 1.12 }}
+                whileTap={{ scale: 0.88 }}
                 onClick={togglePlay} 
-                className="p-4 bg-text text-background rounded-full hover:scale-110 cursor-pointer transition shadow-xl flex items-center justify-center box-glow"
+                className="p-4 bg-text text-background rounded-full cursor-pointer transition shadow-xl flex items-center justify-center box-glow"
                 title={isPlaying ? "Pause" : "Play"}
               >
                 {isPlaying ? (
@@ -564,16 +570,18 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 ) : (
                   <Play className="w-5 h-5 fill-current translate-x-0.5 text-background" />
                 )}
-              </button>
+              </motion.button>
               
-              <button 
+              <motion.button 
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.85 }}
                 onClick={next} 
-                className="p-2 text-muted hover:text-text cursor-pointer transition hover:scale-105"
+                className="p-2 text-muted hover:text-text cursor-pointer transition"
                 aria-label="Next track"
                 title="Next"
               >
                 <SkipForward className="w-5 h-5 fill-current" />
-              </button>
+              </motion.button>
               
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}

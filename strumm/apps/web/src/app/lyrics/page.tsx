@@ -126,7 +126,7 @@ export default function LyricsPage() {
   }, [activeIndex]);
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden flex flex-col justify-between p-6 md:p-12 text-white bg-black">
+    <div className="relative min-h-screen w-full overflow-hidden flex flex-col justify-between p-6 md:p-12 text-white bg-black soft-enter">
       {/* Blurred album backdrop */}
       <div 
         className="absolute inset-0 bg-cover bg-center filter blur-3xl opacity-30 transition-all duration-1000 scale-110"

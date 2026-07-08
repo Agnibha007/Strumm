@@ -177,6 +177,7 @@ export default function ReplayPage() {
 
   const animatedProps = isAnimated ? { initial: "hidden", animate: "show", variants: containerVariants } : {};
   const childAnimatedProps = isAnimated ? { variants: itemVariants } : {};
+  const staggerGridProps = isAnimated ? { initial: "hidden", animate: "show", variants: containerVariants } : {};
 
   return (
     <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
@@ -300,9 +301,12 @@ export default function ReplayPage() {
         </motion.div>
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 min-w-0">
+      <motion.div
+        {...staggerGridProps}
+        className="grid grid-cols-1 lg:grid-cols-2 gap-8 min-w-0"
+      >
         {/* Sound DNA Breakdown */}
-        <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-6 min-w-0 overflow-hidden">
+        <motion.div variants={itemVariants} className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-6 min-w-0 overflow-hidden">
           <div>
             <h2 className="font-editorial text-2xl text-text font-bold">Sound DNA</h2>
             <p className="text-xs text-muted line-clamp-2 overflow-hidden">Visual representation of structural song tags computed from play patterns.</p>
@@ -314,11 +318,10 @@ export default function ReplayPage() {
             </div>
           ) : (
             <SoundDNAChart soundDNA={data.soundDNA} />
-          )}
-        </div>
+          )}        </motion.div>
 
         {/* Top Genres and Details */}
-        <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 flex flex-col justify-between gap-6 min-w-0 overflow-hidden">
+        <motion.div variants={itemVariants} className="bg-surface/30 border border-border/60 rounded-2xl p-6 flex flex-col justify-between gap-6 min-w-0 overflow-hidden">
           <div>
             <h2 className="font-editorial text-2xl text-text font-bold">Top Genres</h2>
             <p className="text-xs text-muted line-clamp-2 overflow-hidden">The emotional frequency bands you tune into the most.</p>
@@ -338,19 +341,27 @@ export default function ReplayPage() {
             <span className="truncate">Automatic refresh daily</span>
             <span className="truncate">Based on histories</span>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Top Songs */}
       <div className="space-y-4 min-w-0">
         <h2 className="font-editorial text-2xl text-text font-bold">Your Heavy Rotation</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+        <motion.div
+          {...staggerGridProps}
+          className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0"
+        >
           {data.topSongs.map((song, idx) => (
-            <button
+            <motion.div
               key={song.videoId}
-              onClick={() => playSong(song as any, data.topSongs as any)}
-              className="flex items-center justify-between p-4 bg-surface/40 hover:bg-surface-elevated/50 border border-border/60 rounded-xl text-left w-full cursor-pointer transition border border-transparent hover:border-primary/30 min-w-0 overflow-hidden"
+              variants={itemVariants}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
             >
+              <button
+                onClick={() => playSong(song as any, data.topSongs as any)}
+                className="w-full flex items-center justify-between p-4 bg-surface/40 hover:bg-surface-elevated/50 border border-border/60 rounded-xl text-left cursor-pointer transition hover:border-primary/30 min-w-0 overflow-hidden"
+              >
               <div className="flex items-center gap-4 min-w-0 flex-1">
                 <span className="text-sm font-mono text-muted w-5 flex-shrink-0">0{idx + 1}</span>
                 <SongArtwork song={song} className="w-12 h-12 rounded shadow flex-shrink-0" />
@@ -370,19 +381,25 @@ export default function ReplayPage() {
                   </span>
                 </div>
                 <Play className="w-4 h-4 text-muted fill-current hover:text-primary transition flex-shrink-0" />
-              </div>
-            </button>
+              </div>              </button>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </div>
 
       {/* Top Artists */}
       <div className="space-y-4 min-w-0">
         <h2 className="font-editorial text-2xl text-text font-bold">Top Artists</h2>
-        <div className="flex overflow-x-auto pb-4 gap-4 md:grid md:grid-cols-5 md:overflow-visible md:pb-0 scrollbar-thin min-w-0">
+        <motion.div
+          {...staggerGridProps}
+          className="flex overflow-x-auto pb-4 gap-4 md:grid md:grid-cols-5 md:overflow-visible md:pb-0 scrollbar-thin min-w-0"
+        >
           {data.topArtists.map((artist) => (
-            <div
+            <motion.div
               key={artist.artist}
+              variants={itemVariants}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
               className="p-4 bg-surface/40 border border-border/60 rounded-xl text-center flex flex-col items-center gap-3 hover:border-primary/30 transition min-w-[140px] md:min-w-0 overflow-hidden flex-shrink-0 md:flex-shrink"
             >
               {artist.thumbnail ? (
@@ -400,9 +417,9 @@ export default function ReplayPage() {
                   {artist.plays ? (artist.plays === 1 ? "1 play" : `${artist.plays} plays`) : "Recently played"}
                 </p>
               </div>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </div>
     </div>
   );

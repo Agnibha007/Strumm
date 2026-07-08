@@ -85,7 +85,7 @@ export default function FeedbackButton() {
       {/* Floating trigger button */}
       <button
         onClick={handleOpen}
-        className="fixed bottom-6 right-6 z-[9999] w-14 h-14 rounded-full bg-primary hover:bg-primary-hover text-white shadow-2xl flex items-center justify-center cursor-pointer transition-all hover:scale-110 active:scale-95 border border-primary/30 box-glow"
+        className="fixed bottom-[140px] md:bottom-28 right-6 z-[9999] w-14 h-14 rounded-full bg-primary hover:bg-primary-hover text-white shadow-2xl flex items-center justify-center cursor-pointer transition-all hover:scale-110 active:scale-95 border border-primary/30 box-glow"
         title="Give Feedback"
         aria-label="Open feedback form"
       >

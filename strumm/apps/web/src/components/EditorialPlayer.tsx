@@ -187,7 +187,7 @@ export default function EditorialPlayer() {
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
+      <div className="fixed bottom-[64px] md:bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
         {/* Mobile thin top playbar */}
         <div 
           onClick={handleProgressClick}
@@ -240,29 +240,34 @@ export default function EditorialPlayer() {
           {/* Middle: Controls & progress */}
           <div className="flex flex-col items-center gap-2 flex-shrink-0 md:w-full">
             <div className="flex items-center justify-center gap-4 sm:gap-5">
-              <button
+              <motion.button
+                whileTap={{ scale: 0.9 }}
                 onClick={() => setShuffle(!isShuffle)}
                 title={isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
                 className={`hidden md:block p-1.5 rounded-lg cursor-pointer transition ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
               >
                 <Shuffle className="w-3.5 h-3.5" />
-              </button>
+              </motion.button>
               
-              <button 
+              <motion.button 
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.9 }}
                 onClick={prev} 
                 title="Previous Track"
                 className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition"
               >
                 <SkipBack className="w-4 h-4 fill-current" />
-              </button>
+              </motion.button>
               
-              <button 
+              <motion.button 
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
                 onClick={togglePlay} 
                 title={isPlaying ? "Pause" : "Play"}
-                className="p-3 bg-text text-background rounded-full hover:scale-105 cursor-pointer transition shadow-md"
+                className="p-3 bg-text text-background rounded-full cursor-pointer transition shadow-md"
               >
                 {isPlaying ? <Pause className="w-4 h-4 fill-current text-background" /> : <Play className="w-4 h-4 fill-current translate-x-0.5 text-background" />}
-              </button>
+              </motion.button>
 
               <button
                 onClick={(e) => { e.stopPropagation(); setShowQueue(!showQueue); }}
@@ -272,13 +277,15 @@ export default function EditorialPlayer() {
                 <ListMusic className="w-4.5 h-4.5" />
               </button>
               
-              <button 
+              <motion.button 
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.9 }}
                 onClick={next} 
                 title="Next Track"
                 className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition"
               >
                 <SkipForward className="w-4 h-4 fill-current" />
-              </button>
+              </motion.button>
 
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}

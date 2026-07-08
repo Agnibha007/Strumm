@@ -29,7 +29,7 @@ export default function FlowPage() {
   if (!token || !user) return null;
 
   return (
-    <div className="space-y-6 max-w-5xl px-4 md:px-0 py-6">
+    <div className="space-y-6 max-w-5xl px-4 md:px-0 py-6 soft-enter">
       {/* Header / Breadcrumb */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/20 pb-4">
         <div className="flex items-center gap-3">
