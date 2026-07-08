@@ -175,9 +175,9 @@ export default function ReplayPage() {
           <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
             Strumm Replay
           </span>
-          <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1 truncate max-w-full">
+          <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1 truncate max-w-full">
             Your Music DNA. Always On.
-          </h2>
+          </h1>
           <p className="text-sm text-muted mt-2 max-w-2xl line-clamp-2 overflow-hidden">
             An evolutionary analysis of your listening habits, mood fluctuations, and acoustic preference compiled in real-time.
           </p>
@@ -211,9 +211,9 @@ export default function ReplayPage() {
             <span className="text-[9px] tracking-widest uppercase font-semibold text-primary block">
               Music Personality
             </span>
-            <h3 className="font-editorial text-3xl font-bold text-text leading-tight truncate max-w-full">
+            <h2 className="font-editorial text-3xl font-bold text-text leading-tight truncate max-w-full">
               {data.personality}
-            </h3>
+            </h2>
             <p className="text-xs text-muted leading-relaxed line-clamp-2 overflow-hidden">
               Your listening timeline maps closely to this archetype. Keep exploring to evolve your profile.
             </p>
@@ -284,7 +284,7 @@ export default function ReplayPage() {
         {/* Sound DNA Breakdown */}
         <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-6 min-w-0 overflow-hidden">
           <div>
-            <h3 className="font-editorial text-2xl text-text font-bold">Sound DNA</h3>
+            <h2 className="font-editorial text-2xl text-text font-bold">Sound DNA</h2>
             <p className="text-xs text-muted line-clamp-2 overflow-hidden">Visual representation of structural song tags computed from play patterns.</p>
           </div>
           {data.insufficientHistory ? (
@@ -300,7 +300,7 @@ export default function ReplayPage() {
         {/* Top Genres and Details */}
         <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 flex flex-col justify-between gap-6 min-w-0 overflow-hidden">
           <div>
-            <h3 className="font-editorial text-2xl text-text font-bold">Top Genres</h3>
+            <h2 className="font-editorial text-2xl text-text font-bold">Top Genres</h2>
             <p className="text-xs text-muted line-clamp-2 overflow-hidden">The emotional frequency bands you tune into the most.</p>
           </div>
           <div className="grid grid-cols-1 gap-3 min-w-0">
@@ -323,7 +323,7 @@ export default function ReplayPage() {
 
       {/* Top Songs */}
       <div className="space-y-4 min-w-0">
-        <h3 className="font-editorial text-2xl text-text font-bold">Your Heavy Rotation</h3>
+        <h2 className="font-editorial text-2xl text-text font-bold">Your Heavy Rotation</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
           {data.topSongs.map((song, idx) => (
             <button
@@ -335,9 +335,9 @@ export default function ReplayPage() {
                 <span className="text-sm font-mono text-muted w-5 flex-shrink-0">0{idx + 1}</span>
                 <SongArtwork song={song} className="w-12 h-12 rounded shadow flex-shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-bold text-text line-clamp-2 md:line-clamp-1 md:truncate overflow-hidden leading-snug max-w-full">
+                  <h3 className="text-sm font-bold text-text line-clamp-2 md:line-clamp-1 md:truncate overflow-hidden leading-snug max-w-full">
                     {song.title}
-                  </h4>
+                  </h3>
                   <p className="text-xs text-muted truncate mt-0.5 max-w-full">
                     {formatArtists(song.artist)}
                   </p>
@@ -358,7 +358,7 @@ export default function ReplayPage() {
 
       {/* Top Artists */}
       <div className="space-y-4 min-w-0">
-        <h3 className="font-editorial text-2xl text-text font-bold">Top Artists</h3>
+        <h2 className="font-editorial text-2xl text-text font-bold">Top Artists</h2>
         <div className="flex overflow-x-auto pb-4 gap-4 md:grid md:grid-cols-5 md:overflow-visible md:pb-0 scrollbar-thin min-w-0">
           {data.topArtists.map((artist) => (
             <div
@@ -373,9 +373,9 @@ export default function ReplayPage() {
                 </div>
               )}
               <div className="min-w-0 w-full flex-1">
-                <h4 className="text-sm font-bold text-text truncate leading-tight w-full px-2">
+                <h3 className="text-sm font-bold text-text truncate leading-tight w-full px-2">
                   {formatArtists(artist.artist)}
-                </h4>
+                </h3>
                 <p className="text-xs text-muted mt-1 font-semibold truncate">
                   {artist.plays ? (artist.plays === 1 ? "1 play" : `${artist.plays} plays`) : "Recently played"}
                 </p>

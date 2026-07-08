@@ -402,7 +402,7 @@ export default function CirclePage() {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 gap-4">
         <Users className="w-12 h-12 text-primary opacity-50" />
-        <h3 className="font-editorial text-2xl text-text font-bold">Circle Locked</h3>
+        <h1 className="font-editorial text-2xl text-text font-bold">Circle Locked</h1>
         <p className="text-sm text-muted">Please log in to manage your Strumm Circle.</p>
       </div>
     );
@@ -425,9 +425,9 @@ export default function CirclePage() {
           <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
             Strumm Social
           </span>
-          <h2 className="text-3xl sm:text-4xl font-editorial text-text tracking-tight font-bold mt-1">
+          <h1 className="text-3xl sm:text-4xl font-editorial text-text tracking-tight font-bold mt-1">
             Your Circle
-          </h2>
+          </h1>
           <p className="text-sm text-muted mt-2 max-w-xl line-clamp-2">
             Social space strictly built around music identity, shared memories, and joint listening.
           </p>
@@ -466,9 +466,9 @@ export default function CirclePage() {
           {/* Incoming invitations */}
           {incomingRequests.length > 0 && (
             <div className="space-y-4 min-w-0">
-              <h3 className="font-editorial text-xl text-text font-bold border-b border-border/20 pb-2">
+              <h2 className="font-editorial text-xl text-text font-bold border-b border-border/20 pb-2">
                 Incoming Invitations ({incomingRequests.length})
-              </h3>
+              </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {incomingRequests.map((req) => (
                   <div
@@ -520,13 +520,13 @@ export default function CirclePage() {
 
           {/* Circle connections list */}
           <div className="space-y-4 min-w-0">
-            <h3 className="font-editorial text-xl text-text font-bold border-b border-border/20 pb-2">
+            <h2 className="font-editorial text-xl text-text font-bold border-b border-border/20 pb-2">
               Circle Members ({friends.length})
-            </h3>
+            </h2>
             {friends.length === 0 ? (
               <div className="p-8 border border-dashed border-border/60 rounded-2xl text-center bg-surface/20 space-y-2">
                 <Users className="w-8 h-8 text-muted mx-auto opacity-70" />
-                <h4 className="font-editorial text-base text-text font-bold">Your Circle is quiet</h4>
+                <h3 className="font-editorial text-base text-text font-bold">Your Circle is quiet</h3>
                 <p className="text-xs text-muted max-w-sm mx-auto">
                   Find user passports via Search directory or share your passport handle to build your music connection circle.
                 </p>
@@ -618,9 +618,9 @@ export default function CirclePage() {
         <div className="lg:col-span-4 space-y-6 min-w-0">
           <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
             <div className="flex items-center justify-between border-b border-border/20 pb-2">
-              <h3 className="font-editorial text-lg text-text font-bold">
+              <h2 className="font-editorial text-lg text-text font-bold">
                 Circle Alerts
-              </h3>
+              </h2>
               {notifications.length > 0 && (
                 <button
                   onClick={handleDeleteAllNotifications}

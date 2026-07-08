@@ -352,9 +352,9 @@ export default function SettingsPage() {
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
           Control Panel
         </span>
-        <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
+        <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
           Settings
-        </h2>
+        </h1>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
@@ -386,7 +386,7 @@ export default function SettingsPage() {
           {activeSection === "profile" && (
             <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-6 soft-enter">
               <div>
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">Profile Manager</h3>
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">Profile Manager</h2>
               </div>
               <form onSubmit={handleSaveProfile} className="space-y-4">
                 <div>
@@ -435,10 +435,10 @@ export default function SettingsPage() {
           {activeSection === "security" && (
             <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-6 soft-enter">
               <div>
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
                   <Shield className="w-5 h-5 text-primary" aria-hidden="true" />
                   Security
-                </h3>
+                </h2>
               </div>
 
               {/* Email Change */}
@@ -511,10 +511,10 @@ export default function SettingsPage() {
           {activeSection === "sessions" && (
             <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-6 soft-enter">
               <div>
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
                   <Monitor className="w-5 h-5 text-primary" aria-hidden="true" />
                   Active Sessions
-                </h3>
+                </h2>
                 <p className="text-xs text-muted mt-2">Manage devices where you&apos;re signed in to Strumm.</p>
               </div>
 
@@ -591,10 +591,10 @@ export default function SettingsPage() {
           {activeSection === "audio" && (
             <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-5 soft-enter">
               <div>
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
                   <Gauge className="w-5 h-5 text-primary" aria-hidden="true" />
                   Audio Quality
-                </h3>
+                </h2>
               </div>
               <div className="grid gap-3">
                 {QUALITY_OPTIONS.map((option) => {
@@ -626,10 +626,10 @@ export default function SettingsPage() {
           {activeSection === "appearance" && (
             <div className="bg-surface border border-border/60 rounded-xl p-6 soft-enter">
               <div>
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
                   <Eye className="w-5 h-5 text-primary" aria-hidden="true" />
                   Appearance
-                </h3>
+                </h2>
               </div>
               <div className="mt-5">
                 <ThemeSwitcher />
@@ -641,10 +641,10 @@ export default function SettingsPage() {
           {activeSection === "export" && (
             <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-5 soft-enter">
               <div>
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2 flex items-center gap-2">
                   <Download className="w-5 h-5 text-primary" aria-hidden="true" />
                   Export Your Data
-                </h3>
+                </h2>
                 <p className="text-xs text-muted mt-2">
                   Download a copy of your Strumm data, including your profile, playlists, listening history, and settings.
                 </p>
@@ -665,10 +665,10 @@ export default function SettingsPage() {
           {activeSection === "danger" && (
             <div className="bg-surface border border-red-500/30 rounded-xl p-6 space-y-5 soft-enter">
               <div>
-                <h3 className="font-editorial text-xl text-red-400 border-b border-red-500/20 pb-2 flex items-center gap-2">
+                <h2 className="font-editorial text-xl text-red-400 border-b border-red-500/20 pb-2 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" aria-hidden="true" />
                   Danger Zone
-                </h3>
+                </h2>
                 <p className="text-xs text-muted mt-2">
                   Irreversible actions that will permanently affect your account.
                 </p>
@@ -678,7 +678,7 @@ export default function SettingsPage() {
                 <div className="flex items-start gap-3">
                   <Trash2 className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" aria-hidden="true" />
                   <div>
-                    <h4 className="text-sm font-bold text-red-400">Delete Account</h4>
+                    <h3 className="text-sm font-bold text-red-400">Delete Account</h3>
                     <p className="text-xs text-muted mt-1 leading-relaxed">
                       This will permanently delete your account, playlists, listening history, and all associated data. This action cannot be undone.
                     </p>

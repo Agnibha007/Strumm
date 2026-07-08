@@ -133,6 +133,7 @@ export default function Navigation() {
             onClick={handleLogout}
             className="p-1.5 hover:bg-surface-elevated text-primary rounded cursor-pointer transition"
             title="Sign out session"
+            aria-label={`Sign out ${user.displayName}`}
           >
             <LogOut className="w-4.5 h-4.5" />
           </button>

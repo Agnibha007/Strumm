@@ -88,9 +88,9 @@ export default function LibraryPage() {
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
           Your Collection
         </span>
-        <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
+        <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
           Music Library
-        </h2>
+        </h1>
       </div>
 
       {/* Stats Widgets */}
@@ -98,9 +98,9 @@ export default function LibraryPage() {
         {/* Playback time stats */}
         <div className="bg-surface border border-border/60 rounded-xl p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-full blur-2xl" />
-          <h3 className="font-editorial text-lg text-text border-b border-border/20 pb-2 mb-4">
+          <h2 className="font-editorial text-lg text-text border-b border-border/20 pb-2 mb-4">
             Listening Minutes
-          </h3>
+          </h2>
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded border border-primary/20">
               <Clock className="w-5 h-5 text-primary" />
@@ -119,9 +119,9 @@ export default function LibraryPage() {
         {/* Liked count stats */}
         <div className="bg-surface border border-border/60 rounded-xl p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-20 h-20 bg-accent/5 rounded-full blur-2xl" />
-          <h3 className="font-editorial text-lg text-text border-b border-border/20 pb-2 mb-4">
+          <h2 className="font-editorial text-lg text-text border-b border-border/20 pb-2 mb-4">
             Liked Records
-          </h3>
+          </h2>
           <div className="flex items-center gap-3">
             <div className="p-2 bg-accent/10 rounded border border-accent/20">
               <Heart className="w-5 h-5 text-accent fill-accent" />
@@ -141,9 +141,9 @@ export default function LibraryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left: Liked songs list */}
         <div className="lg:col-span-8 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
-          <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+          <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
             Liked Songs
-          </h3>
+          </h2>
 
           {loading ? (
             <div className="space-y-2 py-2">
@@ -207,9 +207,9 @@ export default function LibraryPage() {
         {/* Listening History */}
         <div className="lg:col-span-8 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-border/20 pb-2">
-            <h3 className="font-editorial text-xl text-text">
+            <h2 className="font-editorial text-xl text-text">
               Listening History
-            </h3>
+            </h2>
             {history.length > 0 && (
               <button 
                 onClick={handleDeleteHistory}
@@ -289,9 +289,9 @@ export default function LibraryPage() {
         
         {/* Right: Top Artists widgets */}
         <div className="lg:col-span-4 bg-surface border border-border/60 rounded-xl p-6 space-y-4">
-          <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+          <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
             Top Artists
-          </h3>
+          </h2>
 
           {loading ? (
             <div className="space-y-3 py-1">

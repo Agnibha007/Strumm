@@ -88,6 +88,7 @@ export default function HomePage() {
                         onClick={() => {
                           playSong(song, searchResults);
                         }}
+                        aria-label={`Play ${song.title} by ${song.artist}`}
                         className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-elevated text-left w-full cursor-pointer transition border border-transparent hover:border-border/60"
                       >
                         <SongArtwork song={song} className="w-10 h-10 rounded shadow flex-shrink-0" />

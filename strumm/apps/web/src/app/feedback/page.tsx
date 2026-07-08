@@ -138,7 +138,7 @@ export default function FeedbackPage() {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 gap-4">
         <MessageSquareText className="w-12 h-12 text-primary opacity-50" />
-        <h3 className="font-editorial text-2xl text-text font-bold">Feedback Portal</h3>
+        <h1 className="font-editorial text-2xl text-text font-bold">Feedback Portal</h1>
         <p className="text-sm text-muted">Sign in to submit feedback and track your submissions.</p>
       </div>
     );
@@ -151,9 +151,9 @@ export default function FeedbackPage() {
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
           Community
         </span>
-        <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
+        <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
           Feedback &amp; Suggestions
-        </h2>
+        </h1>
         <p className="text-sm text-muted mt-2 max-w-xl">
           Help shape the future of Strumm. Submit feedback, report bugs, or request features.
         </p>
@@ -166,7 +166,7 @@ export default function FeedbackPage() {
             <MessageSquareText className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-editorial text-xl text-text font-bold">Submit Feedback</h3>
+            <h2 className="font-editorial text-xl text-text font-bold">Submit Feedback</h2>
             <p className="text-[10px] uppercase tracking-wider text-muted font-semibold">
               We review every submission
             </p>
@@ -268,7 +268,7 @@ export default function FeedbackPage() {
       {/* History */}
       <div className="space-y-4">
         <div className="flex items-center justify-between border-b border-border/20 pb-2">
-          <h3 className="font-editorial text-xl text-text font-bold">Your Submissions</h3>
+          <h2 className="font-editorial text-xl text-text font-bold">Your Submissions</h2>
           <div className="flex items-center gap-2">
             {(["all", "open", "in_progress", "resolved", "closed"] as const).map((s) => (
               <button
@@ -315,7 +315,7 @@ export default function FeedbackPage() {
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <CatIcon className="w-4 h-4 text-muted flex-shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-sm font-bold text-text truncate">{item.title}</h4>
+                        <h3 className="text-sm font-bold text-text truncate">{item.title}</h3>
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-[10px] text-muted">{new Date(item.createdAt).toLocaleDateString()}</span>
                           <span className="text-[10px] text-muted capitalize">{item.category}</span>

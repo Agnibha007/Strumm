@@ -151,9 +151,9 @@ export default function LyricsPage() {
           </span>
           {currentSong && (
             <div className="mt-1 flex items-center justify-center gap-2">
-              <h2 className="font-editorial text-lg font-bold text-text truncate max-w-[200px]">
+              <h1 className="font-editorial text-lg font-bold text-text truncate max-w-[200px]">
                 {currentSong.title}
-              </h2>
+              </h1>
               <span className="text-muted text-xs">•</span>
               <p className="text-xs text-muted truncate max-w-[150px]">{currentSong.artist}</p>
             </div>
@@ -176,7 +176,7 @@ export default function LyricsPage() {
               <Music4 className="w-8 h-8 opacity-75" />
             </div>
             <div className="space-y-1">
-              <h3 className="font-editorial text-xl text-text font-bold">Silence is Golden</h3>
+              <h1 className="font-editorial text-xl text-text font-bold">Silence is Golden</h1>
               <p className="text-xs text-muted max-w-xs leading-relaxed">Queue a song to begin reading the translation.</p>
             </div>
           </div>

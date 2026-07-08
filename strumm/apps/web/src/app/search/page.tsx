@@ -300,9 +300,9 @@ export default function SearchPage() {
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
           Universal Portal
         </span>
-        <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
+        <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
           Search Directory
-        </h2>
+        </h1>
       </div>
 
       {/* Input */}
@@ -362,9 +362,9 @@ export default function SearchPage() {
             {/* Recent searches */}
             {recentSearches.length > 0 && (
               <div className="space-y-4">
-                <h3 className="font-editorial text-lg text-text border-b border-border/20 pb-2">
+                <h2 className="font-editorial text-lg text-text border-b border-border/20 pb-2">
                   Recent Curations
-                </h3>
+                </h2>
                 <div className="space-y-1">
                   {recentSearches.map((term) => (
                     <div
@@ -387,9 +387,9 @@ export default function SearchPage() {
 
             {/* Trending terms */}
             <div className="space-y-4">
-              <h3 className="font-editorial text-lg text-text border-b border-border/20 pb-2">
+              <h2 className="font-editorial text-lg text-text border-b border-border/20 pb-2">
                 Trending Waves
-              </h3>
+              </h2>
               <div className="flex flex-wrap gap-2.5">
                 {trending.map((term) => (
                   <button
@@ -437,9 +437,9 @@ export default function SearchPage() {
             {/* Render Song Matches */}
             {(activeFilter === "All" || activeFilter === "Songs") && results.songs.length > 0 && (
               <div className="space-y-4">
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Song Results
-                </h3>
+                </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   {results.songs.map((song) => (
                     <div
@@ -503,9 +503,9 @@ export default function SearchPage() {
             {/* Render Artists */}
             {(activeFilter === "All" || activeFilter === "Artists") && results.artists && results.artists.length > 0 && (
               <div className="space-y-4">
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Artists
-                </h3>
+                </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.artists.map((artist) => (
                     <div
@@ -531,9 +531,9 @@ export default function SearchPage() {
             {/* Render Albums */}
             {(activeFilter === "All" || activeFilter === "Albums") && results.albums && results.albums.length > 0 && (
               <div className="space-y-4">
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Albums
-                </h3>
+                </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.albums.map((album) => (
                     <div
@@ -563,9 +563,9 @@ export default function SearchPage() {
             {/* Render Playlists */}
             {(activeFilter === "All" || activeFilter === "Playlists") && results.playlists.length > 0 && (
               <div className="space-y-4">
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Shared Playlists
-                </h3>
+                </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.playlists.map((playlist) => (
                     <Link
@@ -591,9 +591,9 @@ export default function SearchPage() {
             {/* Render Podcast Shows */}
             {(activeFilter === "All" || activeFilter === "Podcasts") && results.podcasts.length > 0 && (
               <div className="space-y-4">
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Podcast Feeds
-                </h3>
+                </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.podcasts.map((podcast) => (
                     <Link
@@ -626,9 +626,9 @@ export default function SearchPage() {
             {/* Render Users / Curators */}
             {(activeFilter === "All" || activeFilter === "Profiles") && results.users.length > 0 && (
               <div className="space-y-4">
-                <h3 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
+                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
                   Strumm Curators
-                </h3>
+                </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                   {results.users.map((curator) => (
                     <Link
@@ -668,7 +668,7 @@ export default function SearchPage() {
               className="bg-surface border border-border/80 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4 relative"
             >
               <div className="flex justify-between items-center border-b border-border/20 pb-3">
-                <h3 className="font-editorial text-lg text-text font-bold">Add to Playlist</h3>
+                <h2 className="font-editorial text-lg text-text font-bold">Add to Playlist</h2>
                 <button
                   onClick={() => setAddingToPlaylistSong(null)}
                   className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded-md transition cursor-pointer"

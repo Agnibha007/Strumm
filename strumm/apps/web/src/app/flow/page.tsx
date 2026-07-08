@@ -44,9 +44,9 @@ export default function FlowPage() {
             <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
               AI Music Curation
             </span>
-            <h2 className="text-3xl font-editorial text-text tracking-tight font-bold mt-0.5 flex items-center gap-2">
+            <h1 className="text-3xl font-editorial text-text tracking-tight font-bold mt-0.5 flex items-center gap-2">
               <Sparkles className="w-6 h-6 text-primary animate-pulse" /> Strumm Flow
-            </h2>
+            </h1>
           </div>
         </div>
         <p className="text-xs text-muted max-w-sm sm:text-right">
