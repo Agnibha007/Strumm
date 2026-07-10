@@ -12,7 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { youTubeProvider, invidiousProvider, YouTubeAuthError } from "web/services/search";
+import { youTubeProvider, youTubeInnerTubeProvider, invidiousProvider, YouTubeAuthError } from "web/services/search";
 
 // ---------------------------------------------------------------------------
 // Route handler
@@ -38,37 +38,55 @@ export async function GET(request: NextRequest) {
   let source = "";
 
   // -----------------------------------------------------------------------
-  // 1. Try YouTube Data API v3 (primary)
+  // 1. Try youtubei.js (InnerTube) — no credentials needed, most reliable
   // -----------------------------------------------------------------------
   try {
-    results = await youTubeProvider.search(q, filter);
-    source = youTubeProvider.name;
+    results = await youTubeInnerTubeProvider.search(q, filter);
+    source = youTubeInnerTubeProvider.name;
   } catch (err: any) {
-    if (err instanceof YouTubeAuthError) {
-      console.warn("YouTube API auth error, falling back to Piped:", err.message);
-    } else {
-      console.warn("YouTube API error, falling back to Piped:", err?.message ?? err);
-    }
-    warning = "YouTube search is temporarily unavailable. Using fallback search.";
+    console.warn("YouTube InnerTube search failed, falling back to YouTube API:", err?.message ?? err);
+    warning = "Search is using a fallback provider.";
   }
 
   // -----------------------------------------------------------------------
-  // 2. Fallback: Invidious / Piped (when YouTube fails)
+  // 2. Fallback: YouTube Data API v3 (when InnerTube fails)
   // -----------------------------------------------------------------------
-  if (!results) {
+  if (!results || (results.songs.length === 0 && results.albums.length === 0 && results.artists.length === 0)) {
     try {
-      results = await invidiousProvider.search(q, filter);
-      source = invidiousProvider.name;
+      const ytResults = await youTubeProvider.search(q, filter);
+      if (ytResults && (ytResults.songs.length > 0 || ytResults.albums.length > 0 || ytResults.artists.length > 0)) {
+        results = ytResults;
+        source = youTubeProvider.name;
+      }
+    } catch (err: any) {
+      if (err instanceof YouTubeAuthError) {
+        console.warn("YouTube API auth error, falling back to Piped:", err.message);
+      } else {
+        console.warn("YouTube API error, falling back to Piped:", err?.message ?? err);
+      }
       if (!warning) {
         warning = "YouTube search is temporarily unavailable. Using fallback search.";
       }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // 3. Last resort: Invidious / Piped public instances
+  // -----------------------------------------------------------------------
+  if (!results || (results.songs.length === 0 && results.albums.length === 0 && results.artists.length === 0)) {
+    try {
+      const pipedResults = await invidiousProvider.search(q, filter);
+      if (pipedResults && (pipedResults.songs.length > 0 || pipedResults.albums.length > 0 || pipedResults.artists.length > 0)) {
+        results = pipedResults;
+        source = invidiousProvider.name;
+      }
     } catch (err: any) {
-      console.error("Both YouTube API and Piped fallback failed:", err?.message ?? err);
+      console.error("All search providers failed:", err?.message ?? err);
       return NextResponse.json(
         {
           success: false,
           error: "Search is currently unavailable. Please try again later.",
-          warning: "Both YouTube search and the Piped fallback are unavailable.",
+          warning: "All search providers are unavailable.",
           data: { songs: [], albums: [], artists: [] },
         },
         { status: 503 },
