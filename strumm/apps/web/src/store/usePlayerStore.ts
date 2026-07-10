@@ -12,7 +12,8 @@ function resolveNextTrackIndex(
   currentIndex: number,
   repeatMode: RepeatMode,
   isShuffle: boolean,
-  onTrackEnd: boolean
+  onTrackEnd: boolean,
+  shufflePlayedIds: string[] = []
 ): number | null {
   if (queue.length === 0) return null;
 
@@ -20,11 +21,30 @@ function resolveNextTrackIndex(
     if (queue.length === 1) {
       return onTrackEnd && repeatMode !== "all" ? null : 0;
     }
-    let nextIdx = currentIndex;
-    do {
-      nextIdx = Math.floor(Math.random() * queue.length);
-    } while (nextIdx === currentIndex);
-    return nextIdx;
+
+    // Build set of videoIds already played in this shuffle round
+    const playedSet = new Set(shufflePlayedIds);
+
+    // Find indices for songs not yet played
+    let eligibleIndices = queue
+      .map((song, idx) => ({ song, idx }))
+      .filter(({ song }) => !playedSet.has(song.videoId))
+      .map(({ idx }) => idx);
+
+    // If all songs have been played, reset and start a new round
+    if (eligibleIndices.length === 0) {
+      eligibleIndices = queue.map((_, idx) => idx);
+    }
+
+    // Remove current index to avoid playing the same song twice in a row
+    const filtered = eligibleIndices.filter((idx) => idx !== currentIndex);
+
+    if (filtered.length === 0) {
+      // Only the current song is eligible (single-song queue handled above)
+      return eligibleIndices[0];
+    }
+
+    return filtered[Math.floor(Math.random() * filtered.length)];
   }
 
   const nextIdx = currentIndex + 1;
@@ -121,6 +141,9 @@ interface PlayerState {
   setPlayerRef: (ref: any) => void;
   updateMediaSession: (song: Song) => void;
 
+  // Shuffle history — tracks videoIds played during the current shuffle round
+  shufflePlayedIds: string[];
+
   // Sleep Timer Actions
   setSleepTimer: (duration: SleepTimerDuration) => void;
   clearSleepTimer: () => void;
@@ -140,6 +163,7 @@ export const usePlayerStore = create<PlayerState>()(
       isShuffle: false,
       repeatMode: "none",
       reducedAnimation: false,
+      shufflePlayedIds: [],
       playbackRate: 1.0,
       podcastMode: "audio",
 
@@ -194,6 +218,7 @@ export const usePlayerStore = create<PlayerState>()(
           currentIndex: idx,
           isPlaying: true,
           currentTime: 0,
+          shufflePlayedIds: [], // Reset shuffle history when playing a new song
         });
 
         get().updateMediaSession(song);
@@ -215,8 +240,16 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       next: () => {
-        const { queue, currentIndex, repeatMode, isShuffle } = get();
-        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, false);
+        const { queue, currentIndex, repeatMode, isShuffle, currentSong, shufflePlayedIds } = get();
+
+        // Mark current song as played in shuffle history
+        let updatedPlayedIds = shufflePlayedIds;
+        if (isShuffle && currentSong?.videoId) {
+          updatedPlayedIds = [...shufflePlayedIds, currentSong.videoId];
+          set({ shufflePlayedIds: updatedPlayedIds });
+        }
+
+        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, false, updatedPlayedIds);
         if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) return;
         playTrackAtIndex(queue, nextIdx, set, get);
       },
@@ -268,7 +301,17 @@ export const usePlayerStore = create<PlayerState>()(
       
       setDuration: (duration) => set({ duration }),
 
-      setShuffle: (isShuffle) => set({ isShuffle }),
+      setShuffle: (isShuffle) => {
+        if (isShuffle) {
+          const { currentSong } = get();
+          set({
+            isShuffle: true,
+            shufflePlayedIds: currentSong?.videoId ? [currentSong.videoId] : [],
+          });
+        } else {
+          set({ isShuffle: false, shufflePlayedIds: [] });
+        }
+      },
 
       setRepeatMode: (repeatMode) => set({ repeatMode }),
 
@@ -277,7 +320,7 @@ export const usePlayerStore = create<PlayerState>()(
       setPodcastMode: (podcastMode) => set({ podcastMode }),
 
       handleTrackEnded: () => {
-        const { queue, currentIndex, repeatMode, isShuffle, playerRef } = get();
+        const { queue, currentIndex, repeatMode, isShuffle, playerRef, currentSong, shufflePlayedIds } = get();
         if (!queue.length) {
           set({ isPlaying: false, currentTime: 0 });
           return;
@@ -290,7 +333,14 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, true);
+        // Mark current song as played in shuffle history
+        let updatedPlayedIds = shufflePlayedIds;
+        if (isShuffle && currentSong?.videoId) {
+          updatedPlayedIds = [...shufflePlayedIds, currentSong.videoId];
+          set({ shufflePlayedIds: updatedPlayedIds });
+        }
+
+        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, true, updatedPlayedIds);
         if (nextIdx === null) {
           set({ isPlaying: false, currentTime: 0 });
           return;
@@ -355,6 +405,7 @@ export const usePlayerStore = create<PlayerState>()(
         reducedAnimation: state.reducedAnimation,
         playbackRate: state.playbackRate,
         podcastMode: state.podcastMode,
+        shufflePlayedIds: state.shufflePlayedIds,
   
         audioQuality: state.audioQuality,
       }),

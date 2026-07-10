@@ -85,6 +85,7 @@ describe("initialRadioState", () => {
   it("has all required fields with correct defaults", () => {
     expect(initialRadioState).toEqual({
       isRadio: false,
+      isRadioLoading: false,
       radioSeed: null,
       radioSession: null,
       radioHistory: [],
