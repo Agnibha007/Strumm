@@ -177,6 +177,18 @@ function classifyAll(
 }
 
 // ---------------------------------------------------------------------------
+// Warm-up — pre-initialize the Innertube instance on server startup so the
+// first search request doesn't pay the cold-start penalty.
+// ---------------------------------------------------------------------------
+
+/** Trigger Innertube initialization early. Safe to call multiple times. */
+export function warmUpInnertube(): void {
+  getInnertube().catch((err) => {
+    console.warn("YouTubeInnerTubeProvider: warm-up failed (will init on first request):", err);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 
