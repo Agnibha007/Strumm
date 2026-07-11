@@ -450,15 +450,15 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           }`}>
             
             {/* Album Cover Card */}
-            <div className={`relative group flex-shrink-0 ${effectiveShowLyrics ? "hidden lg:block" : "block"}`}>
+            <div className={`relative group flex items-center justify-center ${effectiveShowLyrics ? "hidden lg:block" : "flex"}`}>
               <div
-                className={`overflow-hidden rounded-2xl md:rounded-3xl border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated flex-shrink-0 transition-all duration-500 ${
+                className={`overflow-hidden rounded-2xl md:rounded-3xl border border-border/40 relative shadow-[0_25px_60px_rgba(0,0,0,0.65)] bg-surface-elevated transition-all duration-500 max-w-full ${
                   effectiveShowLyrics 
                     ? "w-48 h-48 md:w-56 md:h-56 lg:w-72 lg:h-72 xl:w-80 xl:h-80" 
-                    : "w-72 h-72 md:w-80 md:h-80 lg:w-96 lg:h-96 xl:w-[420px] xl:h-[420px]"
+                    : "w-[70vw] h-[70vw] sm:w-72 sm:h-72 md:w-80 md:h-80 lg:w-96 lg:h-96 xl:w-[420px] xl:h-[420px]"
                 }`}
               >
-                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 768px) 384px, (max-width: 1024px) 512px, 640px" />
+                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 640px) 70vw, (max-width: 768px) 288px, (max-width: 1024px) 320px, 384px" />
               </div>
             </div>
 
