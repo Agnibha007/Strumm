@@ -7,7 +7,7 @@ import { Mic2, Loader2, Music4, ArrowLeft, Play, Pause, SkipForward, SkipBack } 
 
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
-import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
+import { getActiveLyricIndex, parseLrc, type LyricLine, unescapeHtml } from "web/lib/lyrics";
 
 export default function LyricsPage() {
   const { currentSong, currentTime, isPlaying, togglePlay, next, prev } = usePlayerStore();
@@ -81,7 +81,7 @@ export default function LyricsPage() {
           if (json.data.isSynced && parsedLyrics.length > 0) {
             setLyrics(parsedLyrics);
           } else {
-            setPlainLyrics(plain || "Lyrics are loaded, but timestamps are missing.");
+            setPlainLyrics(plain ? unescapeHtml(plain) : "Lyrics are loaded, but timestamps are missing.");
           }
         } else {
           setPlainLyrics("No lyrics found for this track.");

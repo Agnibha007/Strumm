@@ -57,6 +57,94 @@ export default function AudioEngine() {
   const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isFadingRef = useRef<boolean>(false);
+  const prevSongIdRef = useRef<string | null>(null);
+  const prevIsPlayingRef = useRef<boolean>(false);
+
+  const setPlayerVolume = (volRatio: number) => {
+    const targetVal = volRatio * volume;
+
+    if (htmlAudioRef.current && currentSong?.metadata?.audioUrl) {
+      htmlAudioRef.current.volume = targetVal;
+    }
+
+    if (playerInstanceRef.current && !currentSong?.metadata?.audioUrl && typeof playerInstanceRef.current.setVolume === "function") {
+      try {
+        playerInstanceRef.current.setVolume(Math.round(targetVal * 100));
+      } catch (e) {}
+    }
+  };
+
+  const fadeVolume = (fromRatio: number, toRatio: number, durationMs: number, onComplete?: () => void) => {
+    if (fadeIntervalRef.current) {
+      clearInterval(fadeIntervalRef.current);
+      fadeIntervalRef.current = null;
+    }
+
+    isFadingRef.current = true;
+    const steps = 15;
+    const intervalTime = durationMs / steps;
+    let currentStep = 0;
+
+    fadeIntervalRef.current = setInterval(() => {
+      currentStep++;
+      const ratio = fromRatio + ((toRatio - fromRatio) * (currentStep / steps));
+      setPlayerVolume(ratio);
+
+      if (currentStep >= steps) {
+        if (fadeIntervalRef.current) {
+          clearInterval(fadeIntervalRef.current);
+          fadeIntervalRef.current = null;
+        }
+        isFadingRef.current = false;
+        if (onComplete) onComplete();
+      }
+    }, intervalTime);
+  };
+
+  const triggerPlay = () => {
+    if (currentSong?.metadata?.audioUrl) {
+      if (htmlAudioRef.current) {
+        htmlAudioRef.current.play().catch(() => {});
+      }
+    } else {
+      if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
+        htmlAudioRef.current.play().catch(() => {});
+      }
+      if (playerInstanceRef.current && typeof playerInstanceRef.current.playVideo === "function") {
+        try {
+          playerInstanceRef.current.playVideo();
+        } catch (e) {}
+      }
+    }
+  };
+
+  const triggerPause = () => {
+    if (currentSong?.metadata?.audioUrl) {
+      if (htmlAudioRef.current) {
+        htmlAudioRef.current.pause();
+      }
+    } else {
+      if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
+        htmlAudioRef.current.pause();
+      }
+      if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
+        try {
+          playerInstanceRef.current.pauseVideo();
+        } catch (e) {}
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (fadeIntervalRef.current) {
+        clearInterval(fadeIntervalRef.current);
+      }
+    };
+  }, []);
+
   // Auto-fetch more radio tracks when near end of queue
   useEffect(() => {
     if (!isRadio || queue.length === 0) return;
@@ -627,63 +715,46 @@ export default function AudioEngine() {
     }
   }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality]);
 
-  // 4. Watch for play/pause toggle from UI
+  // 4. Watch for play/pause and track transitions from UI (with smooth fade-in/fade-out transitions)
   useEffect(() => {
     const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
     if (isPodcastVideo) return;
 
-    if (currentSong?.metadata?.audioUrl) {
-      if (htmlAudioRef.current) {
-        if (isPlaying) {
-          htmlAudioRef.current.play().catch(() => {});
-        } else {
-          htmlAudioRef.current.pause();
-        }
-      }
-    } else {
-      // Keep silent audio track in sync with UI play/pause for YouTube songs
-      if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
-        if (isPlaying) {
-          htmlAudioRef.current.play().catch(() => {});
-        } else {
-          htmlAudioRef.current.pause();
-        }
-      }
+    const currentSongId = currentSong?.videoId || null;
 
-      if (playerInstanceRef.current) {
-        try {
-          const state = typeof playerInstanceRef.current.getPlayerState === "function"
-            ? playerInstanceRef.current.getPlayerState()
-            : -1;
-          if (isPlaying && state !== 1) {
-            if (typeof playerInstanceRef.current.playVideo === "function") {
-              playerInstanceRef.current.playVideo();
-            }
-          } else if (!isPlaying && state === 1) {
-            if (typeof playerInstanceRef.current.pauseVideo === "function") {
-              playerInstanceRef.current.pauseVideo();
-            }
-          }
-        } catch (e) {}
+    if (currentSongId !== prevSongIdRef.current) {
+      prevSongIdRef.current = currentSongId;
+      prevIsPlayingRef.current = isPlaying;
+
+      setPlayerVolume(0);
+      if (isPlaying) {
+        triggerPlay();
+        fadeVolume(0, 1, 800); // Smooth track change fade-in
+      } else {
+        triggerPause();
+      }
+    } else if (isPlaying !== prevIsPlayingRef.current) {
+      prevIsPlayingRef.current = isPlaying;
+
+      if (isPlaying) {
+        setPlayerVolume(0);
+        triggerPlay();
+        fadeVolume(0, 1, 600); // Smooth play resume fade-in
+      } else {
+        fadeVolume(1, 0, 500, () => {
+          triggerPause();
+        });
       }
     }
-  }, [isPlaying, podcastMode, currentSong?.metadata?.videoAvailable]);
+  }, [isPlaying, currentSong?.videoId, podcastMode, currentSong?.metadata?.videoAvailable]);
 
   // 5. Watch for volume changes from UI
   useEffect(() => {
     const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
     if (isPodcastVideo) return;
 
-    if (currentSong?.metadata?.audioUrl) {
-      if (htmlAudioRef.current) {
-        htmlAudioRef.current.volume = volume;
-      }
-    } else {
-      if (playerInstanceRef.current && typeof playerInstanceRef.current.setVolume === "function") {
-        try {
-          playerInstanceRef.current.setVolume(Math.round(volume * 100));
-        } catch (e) {}
-      }
+    if (!isFadingRef.current) {
+      setPlayerVolume(1.0);
     }
   }, [volume, podcastMode, currentSong?.metadata?.videoAvailable]);
 

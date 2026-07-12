@@ -33,7 +33,7 @@ import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { apiUrl, cleanText } from "web/lib/api";
 import { formatTime } from "web/lib/format";
 import { useLikeSong } from "web/hooks/useLikeSong";
-import { getActiveLyricIndex, parseLrc, type LyricLine } from "web/lib/lyrics";
+import { getActiveLyricIndex, parseLrc, type LyricLine, unescapeHtml } from "web/lib/lyrics";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
 import AddToPlaylistMenu from "web/components/AddToPlaylistMenu";
@@ -183,7 +183,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           if (json.data.isSynced && parsedLyrics.length > 0) {
             setLyrics(parsedLyrics);
           } else {
-            setPlainLyrics(plain || "Lyrics are synced to sound, but timestamps are missing.");
+            setPlainLyrics(plain ? unescapeHtml(plain) : "Lyrics are synced to sound, but timestamps are missing.");
           }
         } else {
           setPlainLyrics("Lyrics not found. Curation engine is ready.");

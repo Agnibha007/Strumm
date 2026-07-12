@@ -3,6 +3,18 @@ export interface LyricLine {
   text: string;
 }
 
+export function unescapeHtml(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/&#39;/g, "'");
+}
+
 function parseTimestamp(minutes: string, seconds: string, fraction?: string) {
   const mins = Number.parseInt(minutes, 10);
   const secs = Number.parseInt(seconds, 10);
@@ -13,12 +25,13 @@ function parseTimestamp(minutes: string, seconds: string, fraction?: string) {
 }
 
 export function parseLrc(lrcString: string): LyricLine[] {
+  const cleanLrc = unescapeHtml(lrcString);
   const parsed: LyricLine[] = [];
   const timeRegex = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
-  const offsetMatch = /\[offset:([+-]?\d+)\]/i.exec(lrcString);
+  const offsetMatch = /\[offset:([+-]?\d+)\]/i.exec(cleanLrc);
   const offsetSeconds = offsetMatch ? Number.parseInt(offsetMatch[1], 10) / 1000 : 0;
 
-  for (const line of lrcString.split(/\r?\n/)) {
+  for (const line of cleanLrc.split(/\r?\n/)) {
     const timestamps = [...line.matchAll(timeRegex)];
     if (timestamps.length === 0) continue;
 
