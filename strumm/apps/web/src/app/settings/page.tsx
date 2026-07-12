@@ -281,6 +281,130 @@ export default function SettingsPage() {
     }
   };
 
+  const convertToCSV = (data: any): string => {
+    const lines: string[] = [];
+
+    // Helper to escape CSV values
+    const escapeCSV = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val);
+      if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return `"${str}"`;
+    };
+
+    // 1. Profile Section
+    lines.push("=== USER PROFILE ===");
+    lines.push("ID,Username,Display Name,Email,Created At,Bio");
+    const p = data.profile || {};
+    lines.push([
+      escapeCSV(p.id || p.userId),
+      escapeCSV(p.username),
+      escapeCSV(p.displayName),
+      escapeCSV(p.email),
+      escapeCSV(p.createdAt),
+      escapeCSV(p.bio || "")
+    ].join(","));
+    lines.push("");
+
+    // 2. Playlists Section
+    lines.push("=== PLAYLISTS ===");
+    lines.push("Playlist ID,Playlist Name,Visibility,Song Title,Song Artist,Song Video ID,Song Duration (s)");
+    const playlists = data.playlists || [];
+    if (playlists.length === 0) {
+      lines.push("No playlists found.");
+    } else {
+      playlists.forEach((pl: any) => {
+        const plSongs = pl.songs || [];
+        if (plSongs.length === 0) {
+          lines.push([
+            escapeCSV(pl.id),
+            escapeCSV(pl.name),
+            escapeCSV(pl.visibility),
+            escapeCSV(""),
+            escapeCSV(""),
+            escapeCSV(""),
+            escapeCSV("")
+          ].join(","));
+        } else {
+          plSongs.forEach((song: any) => {
+            lines.push([
+              escapeCSV(pl.id),
+              escapeCSV(pl.name),
+              escapeCSV(pl.visibility),
+              escapeCSV(song.title),
+              escapeCSV(song.artist),
+              escapeCSV(song.videoId),
+              escapeCSV(song.duration)
+            ].join(","));
+          });
+        }
+      });
+    }
+    lines.push("");
+
+    // 3. Liked Songs Section
+    lines.push("=== LIKED SONGS ===");
+    lines.push("Song Video ID,Song Title,Song Artist,Song Duration (s),Liked At");
+    const likedSongs = data.likedSongs || [];
+    if (likedSongs.length === 0) {
+      lines.push("No liked songs found.");
+    } else {
+      likedSongs.forEach((item: any) => {
+        const s = item.song || {};
+        lines.push([
+          escapeCSV(s.videoId || item.videoId),
+          escapeCSV(s.title),
+          escapeCSV(s.artist),
+          escapeCSV(s.duration),
+          escapeCSV(item.likedAt)
+        ].join(","));
+      });
+    }
+    lines.push("");
+
+    // 4. Listening History Section
+    lines.push("=== LISTENING HISTORY ===");
+    lines.push("Song Video ID,Song Title,Song Artist,Song Duration (s),Listen Duration (s),Played At");
+    const history = data.listeningHistory || [];
+    if (history.length === 0) {
+      lines.push("No listening history found.");
+    } else {
+      history.forEach((item: any) => {
+        const s = item.song || {};
+        lines.push([
+          escapeCSV(s.videoId || item.videoId),
+          escapeCSV(s.title),
+          escapeCSV(s.artist),
+          escapeCSV(s.duration),
+          escapeCSV(item.listenDuration),
+          escapeCSV(item.playedAt)
+        ].join(","));
+      });
+    }
+    lines.push("");
+
+    // 5. Memories Section
+    lines.push("=== SONG MEMORIES ===");
+    lines.push("Memory ID,Song Video ID,Reaction,Created At");
+    const memories = data.memories || [];
+    if (memories.length === 0) {
+      lines.push("No song memories found.");
+    } else {
+      memories.forEach((m: any) => {
+        lines.push([
+          escapeCSV(m.id),
+          escapeCSV(m.videoId),
+          escapeCSV(m.reaction || ""),
+          escapeCSV(m.createdAt)
+        ].join(","));
+      });
+    }
+
+    return lines.join("\n");
+  };
+
   const handleExportData = async () => {
     setExportLoading(true);
     setExportError(null);
@@ -290,14 +414,15 @@ export default function SettingsPage() {
       });
       const json = await response.json();
       if (json.success && json.data) {
-        const blob = new Blob([JSON.stringify(json.data, null, 2)], { type: "application/json" });
+        const csvContent = convertToCSV(json.data);
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `strumm-export-${user?.username || "data"}.json`;
+        a.download = `strumm-export-${user?.username || "data"}.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        setSuccess("Data exported successfully.");
+        setSuccess("Data exported successfully as CSV.");
       } else {
         setExportError(json.error || "Failed to export data.");
       }

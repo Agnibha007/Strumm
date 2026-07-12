@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { useThemeStore } from "web/store/useThemeStore";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { Play, Sparkles, Loader2, Radio } from "lucide-react";
@@ -9,9 +10,16 @@ import { Song } from "@strumm/types";
 
 export default function DiscoverySection({ token }: { token: string | null }) {
   const { playSong, isRadio, isRadioLoading, triggerRadio } = usePlayerStore();
+  const { isAnimated } = useThemeStore();
   const [recommendations, setRecommendations] = useState<Song[]>([]);
   const [transitioningIndices, setTransitioningIndices] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const isAnimatedRef = useRef(isAnimated);
+
+  useEffect(() => {
+    isAnimatedRef.current = isAnimated;
+  }, [isAnimated]);
 
   useEffect(() => {
     if (!token) return;
@@ -92,7 +100,12 @@ export default function DiscoverySection({ token }: { token: string | null }) {
               newSongs.some((song, idx) => song.videoId !== cached[idx]?.videoId);
 
             if (isDifferent) {
-              await transitionSongsOneByOne(cached, newSongs);
+              if (isAnimatedRef.current) {
+                await transitionSongsOneByOne(cached, newSongs);
+              } else {
+                setRecommendations(newSongs);
+                localStorage.setItem("strumm_last_recommendations", JSON.stringify(newSongs));
+              }
             }
           } else {
             setRecommendations(newSongs);
@@ -142,7 +155,9 @@ export default function DiscoverySection({ token }: { token: string | null }) {
               return (
                 <article
                   key={`rec-${song.videoId}-${idx}`}
-                  className={`p-3 bg-surface/40 border border-border/40 hover:bg-surface hover:border-border/80 rounded-xl transition-all duration-300 transform group ${
+                  className={`p-3 bg-surface/40 border border-border/40 hover:bg-surface hover:border-border/80 rounded-xl group ${
+                    isAnimated ? "transition-all duration-300 transform" : ""
+                  } ${
                     isTransitioning ? "opacity-0 scale-95 pointer-events-none" : "opacity-100 scale-100"
                   }`}
                 >
