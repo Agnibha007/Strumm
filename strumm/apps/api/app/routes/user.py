@@ -1041,13 +1041,25 @@ async def recalculate_user_stats(current_user: dict = Depends(get_current_user))
 @router.get("/profile/export")
 async def export_user_data(current_user: dict = Depends(get_current_user)):
     """Export all user data for GDPR compliance."""
+    def serialize_mongo_doc(doc: Any) -> Any:
+        """Recursively convert ObjectId and datetime instances to string for JSON serialization."""
+        if isinstance(doc, dict):
+            return {k: serialize_mongo_doc(v) for k, v in doc.items()}
+        elif isinstance(doc, list):
+            return [serialize_mongo_doc(item) for item in doc]
+        elif isinstance(doc, ObjectId):
+            return str(doc)
+        elif hasattr(doc, "isoformat"):
+            return doc.isoformat()
+        return doc
+
     try:
         database = db.get_db()
         user_id = current_user["id"]
         possible_ids = [user_id, parse_object_id(user_id)]
         
         # Profile
-        user_data = dict(current_user)
+        user_data = serialize_mongo_doc(dict(current_user))
         if "_id" in user_data:
             del user_data["_id"]
         if "password" in user_data:
@@ -1056,32 +1068,30 @@ async def export_user_data(current_user: dict = Depends(get_current_user)):
         # Playlists
         playlists = []
         async for p in database[db.PLAYLISTS].find({"userId": {"$in": possible_ids}}):
-            p["id"] = str(p["_id"])
-            del p["_id"]
-            playlists.append(p)
+            p_serial = serialize_mongo_doc(p)
+            p_serial["id"] = p_serial.pop("_id", None)
+            playlists.append(p_serial)
         
         # Liked songs
         liked = []
         async for l in database[db.LIKED_SONGS].find({"userId": {"$in": possible_ids}}):
-            l["id"] = str(l["_id"])
-            del l["_id"]
-            liked.append(l)
+            l_serial = serialize_mongo_doc(l)
+            l_serial["id"] = l_serial.pop("_id", None)
+            liked.append(l_serial)
         
         # History
         history = []
         async for h in database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).sort("playedAt", -1).limit(1000):
-            h["id"] = str(h["_id"])
-            del h["_id"]
-            if "userId" in h:
-                h["userId"] = str(h["userId"])
-            history.append(h)
+            h_serial = serialize_mongo_doc(h)
+            h_serial["id"] = h_serial.pop("_id", None)
+            history.append(h_serial)
         
         # Memories
         memories = []
         async for m in database["songMemories"].find({"userId": {"$in": possible_ids}}).sort("createdAt", -1):
-            m["id"] = str(m["_id"])
-            del m["_id"]
-            memories.append(m)
+            m_serial = serialize_mongo_doc(m)
+            m_serial["id"] = m_serial.pop("_id", None)
+            memories.append(m_serial)
         
         return {
             "success": True,

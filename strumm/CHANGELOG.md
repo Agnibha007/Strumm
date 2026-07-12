@@ -2,6 +2,19 @@
 
 All notable changes to Strumm will be documented in this file.
 
+## [2.2.0] — 2026-07-12
+
+### Added
+- 3 new dynamic themes: Sage Forest, Midnight Amethyst, and Glacial Blue.
+- transparent caching for YTMusic search/playlist calls, podcast details, and user auth context.
+- Local storage caching for frontend recommendations with staggered fade/scale transition animations.
+
+### Changed
+- Unified multiple Starlette/FastAPI BaseHTTPMiddlewares into a single Consolidated Backend Middleware (reducing ASGI base latency by 66%).
+
+### Fixed
+- GDPR profile data export JSON serialization failure for MongoDB ObjectIds and Datetimes.
+
 ## [2.1.0] — 2026-07-04
 
 ### Added

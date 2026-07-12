@@ -1,4 +1,4 @@
-export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk';
+export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk' | 'Sage Forest' | 'Midnight Amethyst' | 'Glacial Blue';
 
 export interface ApiResponse<T = unknown> {
   success: boolean;

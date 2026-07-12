@@ -118,6 +118,45 @@
   --glow: rgba(252, 238, 9, 0.2);
 }
 
+[data-theme="Sage Forest"] {
+  --background: #090C0A;
+  --surface: #121814;
+  --surface-elevated: #1D2620;
+  --primary: #84A98C;
+  --primary-hover: #A3C4BC;
+  --accent: #CAD2C5;
+  --text: #F4F7F5;
+  --muted: #A3AD9E;
+  --border: #2E3A31;
+  --glow: rgba(132, 169, 140, 0.15);
+}
+
+[data-theme="Midnight Amethyst"] {
+  --background: #06040A;
+  --surface: #110D1A;
+  --surface-elevated: #1E182D;
+  --primary: #8B5CF6;
+  --primary-hover: #A78BFA;
+  --accent: #FCD34D;
+  --text: #F5F3FF;
+  --muted: #93C5FD;
+  --border: #31254A;
+  --glow: rgba(139, 92, 246, 0.15);
+}
+
+[data-theme="Glacial Blue"] {
+  --background: #05080C;
+  --surface: #0D131C;
+  --surface-elevated: #17202D;
+  --primary: #38BDF8;
+  --primary-hover: #7DD3FC;
+  --accent: #FB7185;
+  --text: #F0F9FF;
+  --muted: #93C5FD;
+  --border: #223044;
+  --glow: rgba(56, 189, 248, 0.15);
+}
+
 @theme {
   --color-background: var(--background);
   --color-surface: var(--surface);
