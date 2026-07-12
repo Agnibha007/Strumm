@@ -672,16 +672,65 @@ class YTMusicManager:
         Call a YTMusic method with full resilience.
 
         Resilience strategy (capped at MAX_RETRY_TOTAL_SECONDS ≈ 5 s):
-          1. Fast-fail reachability check (cached 30 s)
-          2. Attempt the method with our managed client
-          3. On SSL / connection error → recreate session, retry
-          4. On timeout → retry with backoff
-          5. On rate-limit → try fallback client
-          6. Deadline enforcement via monotonic clock
+          1. Check transparent in-memory caches first
+          2. Fast-fail reachability check (cached 30 s)
+          3. Attempt the method with our managed client
+          4. On SSL / connection error → recreate session, retry
+          5. On timeout → retry with backoff
+          6. On rate-limit → try fallback client
+          7. Deadline enforcement via monotonic clock
 
         Returns the method's result or *None* on persistent failure.
         Raises YTMusicUnreachableError if music.youtube.com cannot be reached.
         """
+        # --- Cache resolution ---
+        from app.services.cache import (
+            get_cached_search, cache_search,
+            get_cached_artist, cache_artist,
+            get_cached_album, cache_album,
+            get_cached_lyrics, cache_lyrics,
+            get_cached_recommendation, cache_recommendation,
+            get_cached_stream, cache_stream,
+            cache_key
+        )
+
+        # Build cache key
+        key_parts = [method]
+        for arg in args:
+            key_parts.append(str(arg))
+        for k, v in sorted(kwargs.items()):
+            key_parts.append(f"{k}={v}")
+        cache_key_str = cache_key(*key_parts)
+
+        get_cached_fn = None
+        cache_set_fn = None
+
+        if method == "search":
+            get_cached_fn = get_cached_search
+            cache_set_fn = cache_search
+        elif method in ("get_artist", "get_artist_albums"):
+            get_cached_fn = get_cached_artist
+            cache_set_fn = cache_artist
+        elif method == "get_album":
+            get_cached_fn = get_cached_album
+            cache_set_fn = cache_album
+        elif method == "get_lyrics":
+            get_cached_fn = get_cached_lyrics
+            cache_set_fn = cache_lyrics
+        elif method == "get_watch_playlist":
+            get_cached_fn = get_cached_stream
+            cache_set_fn = cache_stream
+        elif method == "get_playlist":
+            get_cached_fn = get_cached_album
+            cache_set_fn = cache_album
+
+        if get_cached_fn:
+            cached_val = get_cached_fn(cache_key_str)
+            if cached_val is not None:
+                self._metrics.record_cache_hit()
+                return cached_val
+            self._metrics.record_cache_miss()
+
         start = time.monotonic()
         deadline = start + MAX_RETRY_TOTAL_SECONDS
 
@@ -719,6 +768,8 @@ class YTMusicManager:
                         f"YTMusic {method} recovered on attempt {attempt} "
                         f"({time.monotonic() - start:.2f}s)"
                     )
+                if cache_set_fn and result:
+                    cache_set_fn(cache_key_str, result)
                 return result
 
             except Exception as exc:
@@ -776,6 +827,8 @@ class YTMusicManager:
                                     f"YTMusic {method} succeeded via fallback client "
                                     f"({time.monotonic() - start:.2f}s)"
                                 )
+                                if cache_set_fn and fb_result:
+                                    cache_set_fn(cache_key_str, fb_result)
                                 return fb_result
                             except Exception as fb_exc:
                                 logger.warning(

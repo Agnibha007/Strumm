@@ -221,16 +221,24 @@ async def get_show_details(id: str = Path(...)):
     try:
         cleaned_id = sanitize_text(id, max_length=32)
         if cleaned_id.isdigit():
+            from app.services.cache import get_cached_podcast, cache_podcast
+            cache_key_str = f"podcast-details:{cleaned_id}"
+            cached = get_cached_podcast(cache_key_str)
+            if cached:
+                return {"success": True, "data": cached}
+
             show = await get_podcast_index_show(cleaned_id)
             if not show:
                 return {"success": False, "error": "Show not found"}
             episodes = await get_podcast_index_episodes(cleaned_id, max_results=1000)
+            res_data = {
+                "show": show,
+                "episodes": episodes
+            }
+            cache_podcast(cache_key_str, res_data)
             return {
                 "success": True,
-                "data": {
-                    "show": show,
-                    "episodes": episodes
-                }
+                "data": res_data
             }
     except PodcastIndexNotConfigured:
         logger.warning("PodcastIndex credentials are not configured; falling back to local show lookup.")
@@ -238,6 +246,12 @@ async def get_show_details(id: str = Path(...)):
         logger.error(f"PodcastIndex show lookup failed; falling back to local lookup: {str(e)}")
 
     try:
+        from app.services.cache import get_cached_podcast, cache_podcast
+        cache_key_str = f"podcast-details:{id}"
+        cached = get_cached_podcast(cache_key_str)
+        if cached:
+            return {"success": True, "data": cached}
+
         database = db.get_db()
         show = await database[db.PODCAST_SHOWS].find_one({"_id": parse_object_id(id)})
         if not show:
@@ -258,12 +272,14 @@ async def get_show_details(id: str = Path(...)):
             ep["audioVariants"] = ep.get("audioVariants", {"high": ep.get("audioUrl", "")})
             episodes.append(ep)
             
+        res_data = {
+            "show": show,
+            "episodes": episodes
+        }
+        cache_podcast(cache_key_str, res_data)
         return {
             "success": True,
-            "data": {
-                "show": show,
-                "episodes": episodes
-            }
+            "data": res_data
         }
     except Exception as e:
         logger.error(f"Error fetching show details: {str(e)}")

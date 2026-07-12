@@ -4,6 +4,7 @@ from datetime import datetime
 from app.database import mongodb as db
 from app.services.auth_utils import decode_access_token
 from app.services.security import parse_object_id
+from app.services import get_cached_user, cache_user
 from bson import ObjectId
 from pymongo.errors import PyMongoError
 
@@ -56,6 +57,12 @@ async def get_current_user(
         
     background_tasks.add_task(update_last_active, user_id)
     
+    # Check cache first
+    cache_key = f"user:{user_id}"
+    cached = get_cached_user(cache_key)
+    if cached:
+        return cached
+
     database = db.get_db()
     try:
         user = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
@@ -79,6 +86,9 @@ async def get_current_user(
             user["createdAt"] = user["createdAt"].isoformat()
         else:
             user["createdAt"] = str(user["createdAt"])
+            
+    # Cache user doc
+    cache_user(cache_key, user)
     return user
 
 
@@ -112,6 +122,12 @@ async def get_optional_user(
     if not user_id:
         return None
 
+    # Check cache first
+    cache_key = f"user:{user_id}"
+    cached = get_cached_user(cache_key)
+    if cached:
+        return cached
+
     database = db.get_db()
     try:
         user = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
@@ -128,4 +144,7 @@ async def get_optional_user(
             user["createdAt"] = user["createdAt"].isoformat()
         else:
             user["createdAt"] = str(user["createdAt"])
+            
+    # Cache user doc
+    cache_user(cache_key, user)
     return user

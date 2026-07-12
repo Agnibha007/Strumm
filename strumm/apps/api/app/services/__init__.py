@@ -9,6 +9,7 @@ from app.services.cache import (
     get_cached_lyrics, get_cached_recommendation, get_cached_podcast,
     get_cached_stream, cache_key, clear_all_caches,
     record_search_latency, get_latency_snapshot,
+    cache_user, get_cached_user, delete_cached_user,
 )
 from app.services.coalescer import get_coalescer
 from app.services.normalizer import (
@@ -37,6 +38,7 @@ __all__ = [
     "get_cached_lyrics", "get_cached_recommendation", "get_cached_podcast",
     "get_cached_stream", "cache_key", "clear_all_caches",
     "record_search_latency", "get_latency_snapshot",
+    "cache_user", "get_cached_user", "delete_cached_user",
     # Coalescer
     "get_coalescer",
     # Normalizer

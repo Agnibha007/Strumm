@@ -32,6 +32,7 @@ TTL = {
     "recommendations": 900,  # 15 minutes
     "podcasts": 3600,        # 1 hour
     "stream": 7200,          # 2 hours
+    "user": 15,              # 15 seconds (short TTL to handle request bursts)
     "default": 300,          # 5 minutes
 }
 
@@ -219,6 +220,9 @@ def get_cached_podcast(key: str) -> Optional[Any]:
     return _podcast_cache.get(key)
 
 
+_user_cache = TTLCache(max_size=100)
+
+
 # --- Stream metadata (TTL: 2 h) ---
 
 def cache_stream(key: str, value: Any) -> None:
@@ -227,6 +231,20 @@ def cache_stream(key: str, value: Any) -> None:
 
 def get_cached_stream(key: str) -> Optional[Any]:
     return _stream_cache.get(key)
+
+
+# --- User cache (TTL: 15s) ---
+
+def cache_user(key: str, value: Any) -> None:
+    _user_cache.set(key, value, TTL["user"])
+
+
+def get_cached_user(key: str) -> Optional[Any]:
+    return _user_cache.get(key)
+
+
+def delete_cached_user(key: str) -> None:
+    _user_cache.delete(key)
 
 
 # --- Latency recording ---
@@ -251,3 +269,4 @@ def clear_all_caches() -> None:
     _recommendation_cache.clear()
     _podcast_cache.clear()
     _stream_cache.clear()
+    _user_cache.clear()

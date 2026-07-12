@@ -21,6 +21,13 @@ router = APIRouter(tags=["stream"])
 
 async def get_song_metadata(video_id: str) -> Optional[dict]:
     """Fetch song metadata from YTMusic or local cache."""
+    # 0. Check in-memory TTL cache first
+    from app.services.cache import get_cached_stream, cache_stream
+    cache_key_str = f"stream:{video_id}"
+    cached = get_cached_stream(cache_key_str)
+    if cached:
+        return cached
+
     # 1. Check local database cache first
     database = db.get_db()
     song_doc = await database[db.PLAYLISTS].find_one(
@@ -28,15 +35,21 @@ async def get_song_metadata(video_id: str) -> Optional[dict]:
         {"songs.$": 1}
     )
     if song_doc and "songs" in song_doc and len(song_doc["songs"]) > 0:
-        return song_doc["songs"][0]
+        res = song_doc["songs"][0]
+        cache_stream(cache_key_str, res)
+        return res
 
     liked_doc = await database[db.LIKED_SONGS].find_one({"song.videoId": video_id})
     if liked_doc:
-        return liked_doc["song"]
+        res = liked_doc["song"]
+        cache_stream(cache_key_str, res)
+        return res
 
     hist_doc = await database[db.PLAYBACK_HISTORIES].find_one({"song.videoId": video_id})
     if hist_doc:
-        return hist_doc["song"]
+        res = hist_doc["song"]
+        cache_stream(cache_key_str, res)
+        return res
 
     # 2. Fetch from YTMusic
     try:
@@ -56,7 +69,7 @@ async def get_song_metadata(video_id: str) -> Optional[dict]:
             album_info = track.get("album")
             album_name = album_info.get("name", "") if album_info else ""
 
-            return {
+            res = {
                 "videoId": video_id,
                 "title": track.get("title", "Untitled Track"),
                 "artist": artist_name,
@@ -64,11 +77,13 @@ async def get_song_metadata(video_id: str) -> Optional[dict]:
                 "duration": duration_sec,
                 "metadata": {"album": album_name},
             }
+            cache_stream(cache_key_str, res)
+            return res
     except Exception as e:
         logger.warning(f"Provider metadata fetch failed for {video_id}: {e}")
 
     # 3. Fallback with basic info
-    return {
+    res = {
         "videoId": video_id,
         "title": f"YouTube Track ({video_id})",
         "artist": "Various Artists",
@@ -76,6 +91,8 @@ async def get_song_metadata(video_id: str) -> Optional[dict]:
         "duration": 200,
         "metadata": {},
     }
+    cache_stream(cache_key_str, res)
+    return res
 
 
 @router.get("/resolve/{id}")
