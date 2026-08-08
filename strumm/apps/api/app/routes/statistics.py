@@ -40,7 +40,7 @@ class StatisticsService:
                         }
                     },
                     "totalSeconds": {
-                        "$sum": "$durationSec"
+                        "$sum": "$listenDuration"
                     },
                     "songCount": {"$sum": 1}
                 }
@@ -79,7 +79,7 @@ class StatisticsService:
     ) -> dict:
         """Get genre breakdown of listening."""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
-        
+
         pipeline = [
             {
                 "$match": {
@@ -89,45 +89,24 @@ class StatisticsService:
             },
             {
                 "$group": {
-                    "_id": "$songId",
+                    "_id": {"$ifNull": ["$song.metadata.genre", "Unknown"]},
                     "playCount": {"$sum": 1},
-                    "totalSeconds": {"$sum": "$durationSec"}
+                    "totalSeconds": {"$sum": "$listenDuration"}
                 }
             }
         ]
-        
-        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
-        aggregated = []
-        async for history in cursor:
-            if history["_id"]:
-                aggregated.append(history)
-        
-        # Batch-fetch all songs in a single query (eliminates N+1)
-        song_ids = [h["_id"] for h in aggregated]
-        songs_map = {}
-        if song_ids:
-            song_cursor = database[db.SONGS].find({"_id": {"$in": song_ids}})
-            async for song in song_cursor:
-                songs_map[song["_id"]] = song
-        
+
         genre_map = {}
-        for history in aggregated:
-            song = songs_map.get(history["_id"])
-            if not song:
-                continue
-            
-            genres = song.get("genres", ["Unknown"])
-            if isinstance(genres, str):
-                genres = [genres]
-            
-            for genre in genres:
-                if genre not in genre_map:
-                    genre_map[genre] = {"plays": 0, "minutes": 0}
-                genre_map[genre]["plays"] += history["playCount"]
-                genre_map[genre]["minutes"] += history["totalSeconds"] // 60
-        
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
+        async for doc in cursor:
+            genre = doc.get("_id") or "Unknown"
+            if genre not in genre_map:
+                genre_map[genre] = {"plays": 0, "minutes": 0}
+            genre_map[genre]["plays"] += doc.get("playCount", 0)
+            genre_map[genre]["minutes"] += (doc.get("totalSeconds", 0) // 60)
+
         sorted_genres = sorted(genre_map.items(), key=lambda x: x[1]["minutes"], reverse=True)
-        
+
         return {
             "top_genres": [
                 {"genre": g[0], "plays": g[1]["plays"], "minutes": g[1]["minutes"]}
@@ -145,7 +124,7 @@ class StatisticsService:
     ) -> list:
         """Get top played songs."""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
-        
+
         pipeline = [
             {
                 "$match": {
@@ -155,42 +134,30 @@ class StatisticsService:
             },
             {
                 "$group": {
-                    "_id": "$songId",
+                    "_id": "$song.videoId",
                     "playCount": {"$sum": 1},
-                    "totalMinutes": {"$sum": {"$divide": ["$durationSec", 60]}}
+                    "totalMinutes": {"$sum": {"$divide": ["$listenDuration", 60]}},
+                    "title": {"$first": "$song.title"},
+                    "artist": {"$first": "$song.artist"},
+                    "thumbnail": {"$first": "$song.thumbnail"}
                 }
             },
             {"$sort": {"playCount": -1}},
             {"$limit": limit}
         ]
-        
+
         cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
-        aggregated = []
-        async for history in cursor:
-            if history["_id"]:
-                aggregated.append(history)
-        
-        # Batch-fetch all songs in a single query (eliminates N+1)
-        song_ids = [h["_id"] for h in aggregated]
-        songs_map = {}
-        if song_ids:
-            song_cursor = database[db.SONGS].find({"_id": {"$in": song_ids}})
-            async for song in song_cursor:
-                songs_map[song["_id"]] = song
-        
         top_songs = []
-        for history in aggregated:
-            song = songs_map.get(history["_id"])
-            if song:
-                top_songs.append({
-                    "songId": str(history["_id"]),
-                    "title": song.get("title"),
-                    "artist": song.get("artist"),
-                    "plays": history["playCount"],
-                    "totalMinutes": round(history["totalMinutes"], 2),
-                    "coverUrl": song.get("coverUrl")
-                })
-        
+        async for doc in cursor:
+            top_songs.append({
+                "songId": doc["_id"],
+                "title": doc.get("title"),
+                "artist": doc.get("artist"),
+                "plays": doc.get("playCount", 0),
+                "totalMinutes": round(doc.get("totalMinutes", 0), 2),
+                "coverUrl": doc.get("thumbnail")
+            })
+
         return top_songs
     
     @staticmethod
@@ -202,7 +169,7 @@ class StatisticsService:
     ) -> list:
         """Get top artists by listening time."""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
-        
+
         pipeline = [
             {
                 "$match": {
@@ -212,41 +179,24 @@ class StatisticsService:
             },
             {
                 "$group": {
-                    "_id": "$songId",
-                    "totalSeconds": {"$sum": "$durationSec"},
+                    "_id": {"$ifNull": ["$song.artist", "Unknown"]},
+                    "totalSeconds": {"$sum": "$listenDuration"},
                     "playCount": {"$sum": 1}
                 }
             }
         ]
-        
-        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
-        aggregated = []
-        async for history in cursor:
-            if history["_id"]:
-                aggregated.append(history)
-        
-        # Batch-fetch all songs in a single query (eliminates N+1)
-        song_ids = [h["_id"] for h in aggregated]
-        songs_map = {}
-        if song_ids:
-            song_cursor = database[db.SONGS].find({"_id": {"$in": song_ids}})
-            async for song in song_cursor:
-                songs_map[song["_id"]] = song
-        
+
         artist_map = {}
-        for history in aggregated:
-            song = songs_map.get(history["_id"])
-            if not song:
-                continue
-            
-            artist = song.get("artist", "Unknown")
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
+        async for doc in cursor:
+            artist = doc.get("_id") or "Unknown"
             if artist not in artist_map:
                 artist_map[artist] = {"plays": 0, "minutes": 0}
-            artist_map[artist]["plays"] += history["playCount"]
-            artist_map[artist]["minutes"] += history["totalSeconds"] // 60
-        
+            artist_map[artist]["plays"] += doc.get("playCount", 0)
+            artist_map[artist]["minutes"] += (doc.get("totalSeconds", 0) // 60)
+
         sorted_artists = sorted(artist_map.items(), key=lambda x: x[1]["minutes"], reverse=True)
-        
+
         return [
             {"artist": a[0], "plays": a[1]["plays"], "minutes": a[1]["minutes"]}
             for a in sorted_artists[:limit]
@@ -270,7 +220,7 @@ class StatisticsService:
             },
             {
                 "$group": {
-                    "_id": "$songId",
+                    "_id": "$song.videoId",
                     "playCount": {"$sum": 1}
                 }
             }
@@ -281,6 +231,8 @@ class StatisticsService:
         repeat_plays = 0
         
         async for history in cursor:
+            if not history.get("_id"):
+                continue
             if history["playCount"] == 1:
                 new_songs += 1
             else:
