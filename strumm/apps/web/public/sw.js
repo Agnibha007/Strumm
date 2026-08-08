@@ -1,4 +1,4 @@
-const CACHE_NAME = "strumm-shell-v5";
+const CACHE_NAME = "strumm-shell-v6";
 const SHELL_ASSETS = [
   "/",
   "/login",

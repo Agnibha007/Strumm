@@ -31,6 +31,17 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/sw.js",
+        headers: [
+          {
+            // Service workers must never be HTTP-cached, otherwise a deploy's
+            // SW (and the static assets it serves) stays stale for hours.
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
+      {
         source: "/((?!api|proxy|_next/static|_next/image|favicon.ico).*)",
         headers: [
           {
