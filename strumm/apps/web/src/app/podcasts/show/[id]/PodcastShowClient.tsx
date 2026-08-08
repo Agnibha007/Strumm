@@ -3,10 +3,12 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Radio, Plus, Check, Play, Clock, ArrowLeft, Loader2 } from "lucide-react";
+import { Radio, Plus, Check, Play, Clock, ArrowLeft, Loader2, History } from "lucide-react";
 import { PodcastShow, PodcastEpisode, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, stripHtml } from "web/lib/api";
+import { apiFetch } from "web/lib/api-client";
+import { formatTime } from "web/lib/format";
 import SafePodcastImage from "web/components/SafePodcastImage";
 
 interface PodcastShowPageProps {
@@ -26,7 +28,31 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [followError, setFollowError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [resumeMap, setResumeMap] = useState<Record<string, number>>({});
   const EPISODES_PER_PAGE = 5;
+
+  // Load saved playback positions so episode rows can show "Resume from X:XX".
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    apiFetch<{ progress: Array<{ episodeId: string; positionSeconds: number }> }>(
+      "/podcasts/progress"
+    )
+      .then((data) => {
+        if (cancelled) return;
+        const map: Record<string, number> = {};
+        for (const entry of data.progress) {
+          if (entry.positionSeconds > 0) map[entry.episodeId] = entry.positionSeconds;
+        }
+        setResumeMap(map);
+      })
+      .catch(() => {
+        // Progress is optional; ignore failures.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -251,6 +277,12 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
                       <div className="flex items-center gap-3 text-[10px] text-muted font-bold uppercase tracking-wider">
                         <Clock className="w-3.5 h-3.5 text-primary" />
                         <span>{formatEpisodeDuration(episode.duration)}</span>
+                        {resumeMap[episode.id] ? (
+                          <span className="text-primary flex items-center gap-1">
+                            <History className="w-3.5 h-3.5" />
+                            Resume from {formatTime(resumeMap[episode.id])}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
 

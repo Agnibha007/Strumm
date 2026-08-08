@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { evaluateCrossfadeTick, CROSSFADE_DURATION_MS } from "web/lib/crossfade";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import {
+  getPodcastEpisodeId,
+  fetchPodcastProgress,
+  savePodcastProgress,
+  clearPodcastProgress,
+} from "web/lib/podcast-progress";
 
 declare global {
   interface Window {
@@ -69,6 +75,26 @@ export default function AudioEngine() {
   // while swapping videos, which would otherwise stick playback in a paused
   // state right after auto-advance.
   const transitioningRef = useRef<boolean>(false);
+
+  // End-of-track handler that also clears/saves podcast resume position. Used
+  // by the HTML audio `ended` handler (and the YouTube ENDED branch) so a
+  // finished episode doesn't restart from an old position next time.
+  const handlePodcastEnded = useCallback(() => {
+    const state = usePlayerStore.getState();
+    const episodeId = getPodcastEpisodeId(state.currentSong);
+    if (episodeId) {
+      const pos = state.currentTime;
+      const dur = state.duration || state.currentSong?.duration || 0;
+      // Finished (or within 10s of the end) → drop the saved position so the
+      // next listen starts fresh. Stopped early → persist the position.
+      if (dur > 0 && pos >= dur - 10) {
+        clearPodcastProgress(episodeId);
+      } else if (pos > 3) {
+        savePodcastProgress(episodeId, pos, dur);
+      }
+    }
+    state.handleTrackEnded();
+  }, []);
 
   const setPlayerVolume = (volRatio: number) => {
     const targetVal = volRatio * volume;
@@ -274,7 +300,7 @@ export default function AudioEngine() {
         crossfadeAdvancedRef.current = false;
         return;
       }
-      handleTrackEnded();
+      handlePodcastEnded();
     };
 
     audio.addEventListener("play", onPlay);
@@ -293,7 +319,7 @@ export default function AudioEngine() {
       audio.removeEventListener("error", handleAudioError);
       audio.pause();
     };
-  }, [handleTrackEnded, setCurrentTime, setDuration, setPlaying]);
+  }, [handlePodcastEnded, handleTrackEnded, setCurrentTime, setDuration, setPlaying]);
 
   // Global Spacebar Play/Pause Listener
   useEffect(() => {
@@ -760,6 +786,83 @@ export default function AudioEngine() {
       }
     }
   }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality]);
+
+  // Podcast resume: auto-seek to the saved position and persist progress
+  // periodically (and when leaving the episode). Only meaningful for HTML
+  // audio playback, which is how podcast episodes actually play.
+  useEffect(() => {
+    const episodeId = getPodcastEpisodeId(currentSong);
+    if (!episodeId) return;
+
+    let cancelled = false;
+    let saveTimer: ReturnType<typeof setInterval> | null = null;
+
+    const saveNow = () => {
+      const state = usePlayerStore.getState();
+      const pos = state.currentTime;
+      const dur = state.duration || currentSong?.duration || 0;
+      if (pos > 3) savePodcastProgress(episodeId, pos, dur);
+    };
+
+    // 1. Auto-resume: fetch the saved position and seek once the audio for
+    // this episode has metadata loaded.
+    (async () => {
+      const { positionSeconds } = await fetchPodcastProgress(episodeId);
+      if (cancelled || !positionSeconds || positionSeconds <= 0) return;
+
+      setCurrentTime(positionSeconds);
+
+      const audio = htmlAudioRef.current;
+      if (!audio) return;
+
+      let applied = false;
+      const applySeek = () => {
+        if (cancelled || applied) return;
+        // Don't yank playback backwards if the user already got past the
+        // saved position (e.g. a slow fetch while the episode was playing).
+        if (audio.currentTime > positionSeconds + 2) {
+          applied = true;
+          return;
+        }
+        try {
+          audio.currentTime = positionSeconds;
+          applied = true;
+        } catch {
+          // Seek may fail before metadata is available; retries will re-apply.
+        }
+      };
+
+      if (audio.readyState >= 1) {
+        applySeek();
+      } else {
+        audio.addEventListener("loadedmetadata", applySeek);
+        audio.addEventListener("canplay", applySeek);
+        const retry = setInterval(applySeek, 500);
+        setTimeout(() => {
+          clearInterval(retry);
+          audio.removeEventListener("loadedmetadata", applySeek);
+          audio.removeEventListener("canplay", applySeek);
+        }, 6000);
+      }
+    })();
+
+    // 2. Periodic save while the episode is active.
+    saveTimer = setInterval(saveNow, 12000);
+
+    // 3. Save when the tab is hidden (closing / switching away mid-episode).
+    const saveOnHidden = () => {
+      if (document.visibilityState === "hidden") saveNow();
+    };
+    document.addEventListener("visibilitychange", saveOnHidden);
+
+    return () => {
+      cancelled = true;
+      if (saveTimer) clearInterval(saveTimer);
+      document.removeEventListener("visibilitychange", saveOnHidden);
+      // Final save of the position when the user switches episodes.
+      saveNow();
+    };
+  }, [currentSong?.videoId, setCurrentTime]);
 
   // 4. Watch for play/pause and track transitions from UI (with smooth fade-in/fade-out transitions)
   useEffect(() => {
