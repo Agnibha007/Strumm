@@ -10,10 +10,72 @@ sides produce identical canonical keys for the same input.
 
 from __future__ import annotations
 
+import html
 import re
 import unicodedata
 from functools import lru_cache
-from typing import Set
+from typing import Any, Set
+
+
+def unescape_html(value: Any) -> str:
+    """
+    Decode HTML entities from a title/artist string.
+
+    Some song metadata (older DB rows, external providers) is HTML-encoded,
+    sometimes double-encoded (e.g. ``&amp;quot;``). ``html.unescape`` handles a
+    single pass only, so we loop until stable — mirroring the frontend's
+    iterative ``decodeHtml``.
+    """
+    if not value:
+        return ""
+    prev = None
+    result = str(value)
+    while result != prev:
+        prev = result
+        result = html.unescape(result)
+    return result
+
+
+def clean_song_text_fields(node: Any) -> Any:
+    """
+    Recursively decode HTML entities in song display fields of an API payload.
+
+    Handles ``title``/``artist``/``album``/``name`` keys at any nesting depth
+    (e.g. ``song.title``, ``songs[].artist``, playlist ``name``), for both
+    new and legacy (already-stored) data.
+
+    Returns the *same* object when nothing changed, so callers can cheaply
+    detect whether a payload needed cleaning.
+    """
+    CLEAN_KEYS = {"title", "artist", "album", "name", "uploaderName", "channelTitle", "showTitle"}
+
+    if isinstance(node, dict):
+        rebuilt: dict = {}
+        changed = False
+        for k, v in node.items():
+            if k in CLEAN_KEYS and isinstance(v, str):
+                cleaned = unescape_html(v)
+                if cleaned != v:
+                    changed = True
+                rebuilt[k] = cleaned
+            else:
+                nested = clean_song_text_fields(v)
+                if nested is not v:
+                    changed = True
+                rebuilt[k] = nested
+        return rebuilt if changed else node
+
+    if isinstance(node, list):
+        rebuilt_list: list = []
+        changed = False
+        for item in node:
+            nested = clean_song_text_fields(item)
+            if nested is not item:
+                changed = True
+            rebuilt_list.append(nested)
+        return rebuilt_list if changed else node
+
+    return node
 
 # ---------------------------------------------------------------------------
 # Noise-word sets (must match frontend canonical.ts)

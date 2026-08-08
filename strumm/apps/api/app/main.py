@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import uuid
 import shutil
 import asyncio
@@ -15,6 +16,7 @@ from app.database import mongodb as db
 from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
+from app.services.normalizer import clean_song_text_fields
 from app.services.realtime.websocket import router as realtime_router
 from app.services.http_client import close_http_client
 import logging
@@ -247,6 +249,38 @@ app.add_middleware(
 # --- Unified Backend Middleware ---
 # Combines Request ID tracing, Per-Endpoint Rate Limiting, and Security Headers.
 # This eliminates multiple BaseHTTPMiddleware wraps (reducing ASGI overhead by 66%).
+async def _sanitize_song_text(response: Response) -> Response:
+    """Decode HTML entities in song text fields of JSON API responses."""
+    ctype = response.headers.get("content-type", "")
+    if "application/json" not in ctype or "set-cookie" in response.headers:
+        return response
+    try:
+        chunks = [chunk async for chunk in response.body_iterator]
+        body = b"".join(chunks)
+        if not body:
+            return response
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except Exception:
+            # Not JSON despite content-type; re-serve original bytes.
+            data = None
+        if data is not None:
+            cleaned = clean_song_text_fields(data)
+            if cleaned is not data:
+                body = json.dumps(cleaned, ensure_ascii=False).encode("utf-8")
+        headers = dict(response.headers)
+        headers.pop("content-length", None)
+        headers.pop("transfer-encoding", None)
+        return Response(
+            content=body,
+            status_code=response.status_code,
+            headers=headers,
+            media_type="application/json",
+        )
+    except Exception:
+        return response
+
+
 class UnifiedBackendMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 1. Request ID Initialization
@@ -277,6 +311,14 @@ class UnifiedBackendMiddleware(BaseHTTPMiddleware):
         try:
             # 3. Proceed with request execution
             response = await call_next(request)
+
+            # 3b. Clean HTML entities (e.g. &amp;quot;) in song text fields of
+            #     JSON responses. Legacy DB rows can carry encoded titles; we
+            #     fix them at the single response boundary so every read
+            #     (playlists, liked, history, radio, stats) returns clean text.
+            #     Skipped for cookie-setting (auth) responses to avoid touching
+            #     Set-Cookie headers.
+            response = await _sanitize_song_text(response)
 
             # 4. Inject Response Headers (Request ID, Rate Limits, and Security Headers)
             response.headers["X-Request-ID"] = request_id
