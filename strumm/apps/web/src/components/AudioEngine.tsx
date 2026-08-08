@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { evaluateCrossfadeTick, CROSSFADE_DURATION_MS } from "web/lib/crossfade";
 import { usePlayerStore } from "web/store/usePlayerStore";
 
 declare global {
@@ -228,25 +229,24 @@ export default function AudioEngine() {
       const curr = audio.currentTime;
       const dur = audio.duration;
       setCurrentTime(curr);
-      updatePositionState();            if (dur && dur > 15) {
-              if (curr >= dur - 10) {
-                if (!hasTriggeredCrossfadeRef.current) {
-                  hasTriggeredCrossfadeRef.current = true;
-                  fadeVolume(1, 0, 5000, () => {
-                    crossfadeAdvancedRef.current = true;
-                    usePlayerStore.getState().next();
-                  });
-                }
-              } else if (hasTriggeredCrossfadeRef.current) {
-                hasTriggeredCrossfadeRef.current = false;
-                if (fadeIntervalRef.current) {
-                  clearInterval(fadeIntervalRef.current);
-                  fadeIntervalRef.current = null;
-                }
-                isFadingRef.current = false;
-                setPlayerVolume(1.0);
-              }
-            }
+      updatePositionState();
+
+      const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
+      if (crossfadeAction === "start-fade") {
+        hasTriggeredCrossfadeRef.current = true;
+        fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
+          crossfadeAdvancedRef.current = true;
+          usePlayerStore.getState().next();
+        });
+      } else if (crossfadeAction === "cancel-fade") {
+        hasTriggeredCrossfadeRef.current = false;
+        if (fadeIntervalRef.current) {
+          clearInterval(fadeIntervalRef.current);
+          fadeIntervalRef.current = null;
+        }
+        isFadingRef.current = false;
+        setPlayerVolume(1.0);
+      }
     };
     const onDurationChange = () => {
       if (audio.src && audio.src.startsWith("data:audio")) return;
@@ -936,24 +936,21 @@ export default function AudioEngine() {
           setCurrentTime(curr);
           if (dur !== undefined && dur !== null && !isNaN(dur)) setDuration(dur);
 
-          if (dur && dur > 15) {
-            if (curr >= dur - 10) {
-              if (!hasTriggeredCrossfadeRef.current) {
-                hasTriggeredCrossfadeRef.current = true;
-                fadeVolume(1, 0, 5000, () => {
-                  crossfadeAdvancedRef.current = true;
-                  usePlayerStore.getState().next();
-                });
-              }
-            } else if (hasTriggeredCrossfadeRef.current) {
-              hasTriggeredCrossfadeRef.current = false;
-              if (fadeIntervalRef.current) {
-                clearInterval(fadeIntervalRef.current);
-                fadeIntervalRef.current = null;
-              }
-              isFadingRef.current = false;
-              setPlayerVolume(1.0);
+          const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
+          if (crossfadeAction === "start-fade") {
+            hasTriggeredCrossfadeRef.current = true;
+            fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
+              crossfadeAdvancedRef.current = true;
+              usePlayerStore.getState().next();
+            });
+          } else if (crossfadeAction === "cancel-fade") {
+            hasTriggeredCrossfadeRef.current = false;
+            if (fadeIntervalRef.current) {
+              clearInterval(fadeIntervalRef.current);
+              fadeIntervalRef.current = null;
             }
+            isFadingRef.current = false;
+            setPlayerVolume(1.0);
           }
           
           // Sync MediaSession position state for YT Player
