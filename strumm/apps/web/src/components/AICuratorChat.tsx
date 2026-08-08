@@ -5,6 +5,7 @@ import { Send, Sparkles, Loader2, Music, CheckCircle2, ListMusic } from "lucide-
 import { apiUrl } from "web/lib/api";
 import { Song } from "@strumm/types";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { useAuthStore } from "web/store/useAuthStore";
 import SongArtwork from "./SongArtwork";
 
 interface ChatMessage {
@@ -26,6 +27,7 @@ interface ChatMessage {
 }
 
 export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean }) {
+  const token = useAuthStore((s) => s.token);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       sender: "ai",
@@ -62,8 +64,9 @@ export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("strumm-token") || ""}`,
+          "Authorization": token ? `Bearer ${token}` : "",
         },
+        credentials: "include",
         body: JSON.stringify({
           prompt: userText,
           history: historyPayload
@@ -118,8 +121,9 @@ export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("strumm-token") || ""}`,
+          "Authorization": token ? `Bearer ${token}` : "",
         },
+        credentials: "include",
         body: JSON.stringify({
           prompt: "Confirm edit playlist",
           confirm_edit: true,

@@ -187,7 +187,7 @@ export default function EditorialPlayer() {
 
   return (
     <>
-      <div className="fixed bottom-[64px] md:bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
+      <div className="fixed bottom-[64px] md:bottom-0 left-0 md:left-64 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
         {/* Mobile thin top playbar */}
         <div 
           onClick={handleProgressClick}

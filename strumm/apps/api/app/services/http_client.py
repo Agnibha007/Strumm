@@ -59,6 +59,38 @@ def get_http_client() -> httpx.AsyncClient:
     return _client
 
 
+async def safe_http_get(url: str, *, max_redirects: int = 5, **kwargs) -> httpx.Response:
+    """GET ``url`` following redirects manually and re-validating each hop.
+
+    The shared client follows redirects automatically, which means a
+    user-supplied URL that starts public could bounce to an internal address
+    (``169.254.169.254``, ``127.0.0.1``, ...) and be fetched without ever being
+    re-checked.  This helper disables automatic redirects and re-runs
+    ``assert_public_http_url`` against every ``Location`` header so SSRF
+    checks apply to the whole chain, not just the first URL.
+
+    Any extra ``**kwargs`` (timeout, headers, ...) are forwarded to each hop.
+    """
+    from app.services.security import assert_public_http_url
+
+    client = get_http_client()
+    current_url = assert_public_http_url(url)
+
+    for _ in range(max_redirects + 1):
+        response = await client.get(current_url, follow_redirects=False, **kwargs)
+        if response.is_redirect:
+            next_url = response.headers.get("location")
+            if not next_url:
+                return response
+            # Resolve relative redirects against the current URL, then re-check.
+            current_url = assert_public_http_url(str(response.url.join(next_url)))
+            await response.aclose()
+            continue
+        return response
+
+    raise httpx.TooManyRedirects("Maximum redirects exceeded for requested URL.")
+
+
 async def close_http_client() -> None:
     """Gracefully close the shared HTTP client on shutdown."""
     global _client

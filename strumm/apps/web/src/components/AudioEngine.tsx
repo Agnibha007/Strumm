@@ -62,6 +62,7 @@ export default function AudioEngine() {
   const prevSongIdRef = useRef<string | null>(null);
   const prevIsPlayingRef = useRef<boolean>(false);
   const hasTriggeredCrossfadeRef = useRef<boolean>(false);
+  const crossfadeAdvancedRef = useRef<boolean>(false);
 
   const setPlayerVolume = (volRatio: number) => {
     const targetVal = volRatio * volume;
@@ -205,6 +206,11 @@ export default function AudioEngine() {
 
     const onPlay = () => {
       if (audio.src && audio.src.startsWith("data:audio")) return;
+      // New track has taken over playback — clear the crossfade guard that was
+      // set for the previous track. If it leaked, the next natural `ended`
+      // would be swallowed and auto-advance would pause instead of continuing.
+      crossfadeAdvancedRef.current = false;
+      hasTriggeredCrossfadeRef.current = false;
       setPlaying(true);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
@@ -222,26 +228,25 @@ export default function AudioEngine() {
       const curr = audio.currentTime;
       const dur = audio.duration;
       setCurrentTime(curr);
-      updatePositionState();
-
-      if (dur && dur > 15) {
-        if (curr >= dur - 10) {
-          if (!hasTriggeredCrossfadeRef.current) {
-            hasTriggeredCrossfadeRef.current = true;
-            fadeVolume(1, 0, 5000, () => {
-              usePlayerStore.getState().next();
-            });
-          }
-        } else if (hasTriggeredCrossfadeRef.current) {
-          hasTriggeredCrossfadeRef.current = false;
-          if (fadeIntervalRef.current) {
-            clearInterval(fadeIntervalRef.current);
-            fadeIntervalRef.current = null;
-          }
-          isFadingRef.current = false;
-          setPlayerVolume(1.0);
-        }
-      }
+      updatePositionState();            if (dur && dur > 15) {
+              if (curr >= dur - 10) {
+                if (!hasTriggeredCrossfadeRef.current) {
+                  hasTriggeredCrossfadeRef.current = true;
+                  fadeVolume(1, 0, 5000, () => {
+                    crossfadeAdvancedRef.current = true;
+                    usePlayerStore.getState().next();
+                  });
+                }
+              } else if (hasTriggeredCrossfadeRef.current) {
+                hasTriggeredCrossfadeRef.current = false;
+                if (fadeIntervalRef.current) {
+                  clearInterval(fadeIntervalRef.current);
+                  fadeIntervalRef.current = null;
+                }
+                isFadingRef.current = false;
+                setPlayerVolume(1.0);
+              }
+            }
     };
     const onDurationChange = () => {
       if (audio.src && audio.src.startsWith("data:audio")) return;
@@ -250,6 +255,12 @@ export default function AudioEngine() {
     };
     const onEnded = () => {
       if (audio.src && audio.src.startsWith("data:audio")) return;
+      // Guard against double-advance: if the crossfade mechanism already called
+      // next() before this track naturally ended, skip handleTrackEnded.
+      if (crossfadeAdvancedRef.current) {
+        crossfadeAdvancedRef.current = false;
+        return;
+      }
       handleTrackEnded();
     };
 
@@ -868,6 +879,12 @@ export default function AudioEngine() {
 
             const state = event.data;
             if (state === 1) {
+              // The new song has taken over — the crossfade guard for the
+              // *previous* track is no longer needed. If we kept it, the leaked
+              // flag would suppress handleTrackEnded() when THIS track finishes,
+              // causing auto-advance to pause instead of continuing.
+              crossfadeAdvancedRef.current = false;
+              hasTriggeredCrossfadeRef.current = false;
               setPlaying(true);
               usePlayerStore.getState().setPlayerLoading(false);
               setDuration(playerInstanceRef.current.getDuration() || currentSong?.duration || 0);
@@ -877,6 +894,14 @@ export default function AudioEngine() {
               stopProgressTimer();
             } else if (state === 0) {
               stopProgressTimer();
+              // Guard against double-advance: if the crossfade mechanism already
+              // called next() before this track naturally ended, skip
+              // handleTrackEnded. The ref is set right before next() is called
+              // in the crossfade callback.
+              if (crossfadeAdvancedRef.current) {
+                crossfadeAdvancedRef.current = false;
+                return;
+              }
               usePlayerStore.getState().handleTrackEnded();
             }
           },
@@ -916,6 +941,7 @@ export default function AudioEngine() {
               if (!hasTriggeredCrossfadeRef.current) {
                 hasTriggeredCrossfadeRef.current = true;
                 fadeVolume(1, 0, 5000, () => {
+                  crossfadeAdvancedRef.current = true;
                   usePlayerStore.getState().next();
                 });
               }

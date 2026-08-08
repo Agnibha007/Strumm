@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { useAuthStore } from "web/store/useAuthStore";
 import { Check, AlertTriangle, HelpCircle, ArrowRight, Play } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -29,6 +30,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
   
   const [error, setError] = useState<string | null>(null);
   const { playSong, setQueue } = usePlayerStore();
+  const token = useAuthStore((s) => s.token);
 
   const handleImport = async () => {
     if (!playlistName.trim()) {
@@ -48,8 +50,9 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("strumm-token") || ""}`
+          "Authorization": token ? `Bearer ${token}` : "",
         },
+        credentials: "include",
         body: JSON.stringify({
           source,
           name: cleanText(playlistName, 120),

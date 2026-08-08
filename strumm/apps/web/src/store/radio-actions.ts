@@ -91,8 +91,9 @@ export function createRadioActions(
     },
 
     triggerRadio: async (seedVideoId) => {
-      const { isRadio, radioSeed, radioHistory } = get();
+      const { isRadio, radioSeed, radioHistory, isRadioLoading } = get();
       if (isRadio && radioSeed === seedVideoId) return;
+      if (isRadioLoading) return;
 
       set({ isRadioLoading: true });
 

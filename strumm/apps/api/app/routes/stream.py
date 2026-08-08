@@ -161,11 +161,10 @@ async def proxy_image(
     """
     try:
         from app.services.security import assert_public_http_url
-        from app.services.http_client import get_http_client
+        from app.services.http_client import safe_http_get
 
         safe_url = assert_public_http_url(url)
-        client = get_http_client()
-        response = await client.get(safe_url, timeout=8.0)
+        response = await safe_http_get(safe_url, timeout=8.0)
         response.raise_for_status()
 
         raw_bytes = response.content

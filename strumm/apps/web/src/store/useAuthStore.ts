@@ -39,19 +39,19 @@ export const useAuthStore = create<AuthState>()(
       
       login: (token, user, refreshToken) => {
         set({ token, user, refreshToken: refreshToken || null });
-        if (typeof window !== "undefined") {
-          localStorage.setItem("strumm-token", token);
-        }
       },
       
       logout: () => {
         const { refreshToken } = get();
 
-        // Revoke session on the server before clearing local state
+        // Revoke session on the server before clearing local state.
+        // The httpOnly access_token/refresh_token cookies are cleared by the
+        // backend; credentials must be included for the Set-Cookie to apply.
         if (typeof window !== "undefined") {
           fetch(apiUrl("/auth/logout"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify({ refreshToken }),
           }).catch(() => {
             // Fire-and-forget: don't block logout if the request fails
@@ -79,12 +79,17 @@ export const useAuthStore = create<AuthState>()(
       silentRefresh: async () => {
         try {
           const { refreshToken } = get();
-          if (!refreshToken) return false;
+
+          // If we have an in-memory refresh token (e.g. after a Google sign-in
+          // through NextAuth), send it in the body as a fallback. Otherwise the
+          // backend reads the httpOnly refresh_token cookie automatically.
+          const body = refreshToken ? JSON.stringify({ refreshToken }) : "{}";
 
           const res = await fetch(apiUrl("/auth/refresh"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refreshToken }),
+            credentials: "include",
+            body,
           });
           const json = await res.json();
           if (json.success && json.data?.token) {
@@ -93,9 +98,6 @@ export const useAuthStore = create<AuthState>()(
               user: json.data.user,
               refreshToken: json.data.refreshToken || refreshToken,
             });
-            if (typeof window !== "undefined") {
-              localStorage.setItem("strumm-token", json.data.token);
-            }
             scheduleRefresh();
             return true;
           }
@@ -106,9 +108,19 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchProfile: async () => {
-        const { token } = get();
-        if (!token) return false;
-        
+        let { token } = get();
+
+        // On reload the token lives only in memory (it is never persisted), so
+        // restore the session from the httpOnly cookies before fetching.
+        if (!token) {
+          const restored = await get().silentRefresh();
+          if (!restored) {
+            get().logout();
+            return false;
+          }
+          token = get().token;
+        }
+
         try {
           const data = await apiFetch<any>("/profile", { token });
           set({ user: data });
@@ -138,11 +150,20 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "strumm-auth-cache",
+      version: 1,
+      // Tokens are only ever kept in memory. On reload they are restored via the
+      // httpOnly cookies (see initializeAuth). Persisting them to localStorage
+      // would expose them to any XSS.
       partialize: (state) => ({
-        token: state.token,
         user: state.user,
-        refreshToken: state.refreshToken,
       }),
+      migrate: (persisted: unknown) => {
+        // Drop any legacy token fields that were persisted under version 0.
+        const legacy = (persisted ?? {}) as Record<string, unknown>;
+        return {
+          user: (legacy.user as User | null) ?? null,
+        };
+      },
     }
   )
 );
@@ -269,11 +290,25 @@ function setupVisibilityRefresh() {
 async function initializeAuth() {
   if (typeof window === "undefined") return;
 
+  // Purge legacy token storage written by older versions of the app.
+  localStorage.removeItem("strumm-token");
+
   // Wait a tick for Zustand to rehydrate from localStorage
   await new Promise(resolve => setTimeout(resolve, 50));
 
-  const { token, silentRefresh } = useAuthStore.getState();
-  if (!token) return;
+  const { token, silentRefresh, logout } = useAuthStore.getState();
+
+  // No in-memory token: try to restore the session from the httpOnly
+  // access_token / refresh_token cookies, which are sent automatically with
+  // credentials: "include". If the user was previously logged in but the
+  // cookie is gone, log out so we don't show a stale logged-in UI.
+  if (!token) {
+    const restored = await silentRefresh();
+    if (!restored && useAuthStore.getState().user) {
+      logout();
+    }
+    return;
+  }
 
   // Set up the visibility listener once
   setupVisibilityRefresh();
