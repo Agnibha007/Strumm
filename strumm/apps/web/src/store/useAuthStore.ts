@@ -25,7 +25,27 @@ interface AuthState {
   logout: () => void;
   fetchProfile: () => Promise<boolean>;
   silentRefresh: () => Promise<boolean>;
+  /** Drop local session state without revoking the server session or clearing cookies. */
+  clearLocalSession: () => void;
 }
+
+interface RefreshResult {
+  ok: boolean;
+  status: number | null;
+}
+
+// The API rotates the refresh token on every use. If two refreshes run
+// concurrently with the same token (page-load restore + fetchProfile + activity
+// timer + visibility handler + proactive apiFetch refresh can all overlap), the
+// rotation races: the database ends up holding one token while the browser
+// cookie holds another. The next refresh then 401s and the old failure path
+// called logout(), which deleted the cookies and revoked the session — forcing
+// a re-login after any transient hiccup. Fixes:
+//  1. Single-flight: concurrent callers share one in-flight refresh promise.
+//  2. Web Locks API: serialize refreshes across browser tabs too.
+//  3. Failed refreshes are non-destructive (see clearLocalSession + retry).
+let _refreshPromise: Promise<boolean> | null = null;
+let _lastRefreshStatus: number | null = null;
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -59,52 +79,28 @@ export const useAuthStore = create<AuthState>()(
         }
 
         set({ token: null, user: null, refreshToken: null });
-        // Clear refresh timer
-        if (typeof window !== "undefined" && window.__strummRefreshTimer) {
-          clearTimeout(window.__strummRefreshTimer);
-          window.__strummRefreshTimer = null;
-        }
-        // Clear activity timer
-        if (typeof window !== "undefined" && window.__strummActivityTimer) {
-          clearTimeout(window.__strummActivityTimer);
-          window.__strummActivityTimer = null;
-        }
-        // Remove visibility listener
-        if (typeof window !== "undefined" && window.__strummVisibilityHandler) {
-          document.removeEventListener("visibilitychange", window.__strummVisibilityHandler);
-          window.__strummVisibilityHandler = null;
-        }
+        teardownSessionListeners();
       },
 
-      silentRefresh: async () => {
-        try {
-          const { refreshToken } = get();
+      // Clears only the local state. Unlike logout(), this does NOT revoke the
+      // server session or delete the httpOnly cookies, so a later page load can
+      // still restore the session via silentRefresh once the API is reachable.
+      clearLocalSession: () => {
+        set({ token: null, user: null, refreshToken: null });
+        teardownSessionListeners();
+      },
 
-          // If we have an in-memory refresh token (e.g. after a Google sign-in
-          // through NextAuth), send it in the body as a fallback. Otherwise the
-          // backend reads the httpOnly refresh_token cookie automatically.
-          const body = refreshToken ? JSON.stringify({ refreshToken }) : "{}";
-
-          const res = await fetch(apiUrl("/auth/refresh"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body,
+      silentRefresh: () => {
+        // Single-flight: concurrent callers (page-load restore, fetchProfile,
+        // apiFetch proactive refresh, activity timer, visibility handler) all
+        // share one refresh request so the token rotation can't race itself.
+        if (_refreshPromise) return _refreshPromise;
+        _refreshPromise = acquireRefreshLock(performRefresh)
+          .then((result) => result.ok)
+          .finally(() => {
+            _refreshPromise = null;
           });
-          const json = await res.json();
-          if (json.success && json.data?.token) {
-            set({
-              token: json.data.token,
-              user: json.data.user,
-              refreshToken: json.data.refreshToken || refreshToken,
-            });
-            scheduleRefresh();
-            return true;
-          }
-          return false;
-        } catch {
-          return false;
-        }
+        return _refreshPromise;
       },
 
       fetchProfile: async () => {
@@ -115,7 +111,13 @@ export const useAuthStore = create<AuthState>()(
         if (!token) {
           const restored = await get().silentRefresh();
           if (!restored) {
-            get().logout();
+            // Non-destructive: a dead/transient refresh must not revoke the
+            // server session or wipe the cookies. 401 means the token is truly
+            // gone, so drop local state; network/5xx errors keep it (the
+            // background retry in initializeAuth handles recovery).
+            if (_lastRefreshStatus === 401) {
+              get().clearLocalSession();
+            }
             return false;
           }
           token = get().token;
@@ -136,11 +138,13 @@ export const useAuthStore = create<AuthState>()(
                 set({ user: data });
                 return true;
               } catch {
-                get().logout();
+                get().clearLocalSession();
                 return false;
               }
             }
-            get().logout();
+            if (_lastRefreshStatus === 401) {
+              get().clearLocalSession();
+            }
             return false;
           }
           console.warn("Unable to sync profile offline. Using cached user session.");
@@ -193,6 +197,95 @@ const REFRESH_RETRY_MAX_INTERVAL_MS = 5 * 60 * 1000; // cap at 5 minutes
  */
 /** Guard to prevent concurrent refreshes (e.g., timer + visibility firing at the same time). */
 let _refreshing = false;
+
+// Clears refresh/activity timers and the visibility listener. Does not touch the
+// server session or the cookies.
+function teardownSessionListeners() {
+  if (typeof window === "undefined") return;
+  if (window.__strummRefreshTimer) {
+    clearTimeout(window.__strummRefreshTimer);
+    window.__strummRefreshTimer = null;
+  }
+  if (window.__strummActivityTimer) {
+    clearTimeout(window.__strummActivityTimer);
+    window.__strummActivityTimer = null;
+  }
+  if (window.__strummVisibilityHandler) {
+    document.removeEventListener("visibilitychange", window.__strummVisibilityHandler);
+    window.__strummVisibilityHandler = null;
+  }
+}
+
+// Serialize refreshes across browser tabs via the Web Locks API so the rotation
+// can't race even when several tabs restore the session at once. Falls back to
+// a no-op when the API is unavailable (older browsers).
+function acquireRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && typeof navigator.locks?.request === "function") {
+    return navigator.locks.request(
+      "strumm-session-refresh",
+      { mode: "exclusive" },
+      () => task()
+    ) as Promise<T>;
+  }
+  return task();
+}
+
+// Single refresh attempt. Rotates the refresh token server-side and, on success,
+// updates local state and schedules the next refresh. Records the HTTP status for
+// callers to distinguish "session truly dead" (401) from transient failures.
+async function performRefresh(): Promise<RefreshResult> {
+  const { refreshToken } = useAuthStore.getState();
+
+  // If we have an in-memory refresh token (e.g. after a Google sign-in through
+  // NextAuth), send it in the body as a fallback. Otherwise the backend reads
+  // the httpOnly refresh_token cookie automatically.
+  const body = refreshToken ? JSON.stringify({ refreshToken }) : "{}";
+
+  try {
+    const res = await fetch(apiUrl("/auth/refresh"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body,
+    });
+    _lastRefreshStatus = res.status;
+    const json = await res.json();
+    if (json.success && json.data?.token) {
+      useAuthStore.setState({
+        token: json.data.token,
+        user: json.data.user,
+        refreshToken: json.data.refreshToken || refreshToken,
+      });
+      scheduleRefresh();
+      return { ok: true, status: res.status };
+    }
+    return { ok: false, status: res.status };
+  } catch {
+    _lastRefreshStatus = null;
+    return { ok: false, status: null };
+  }
+}
+
+// Bounded retry for transient failures (deploy restarts, brief API downtime).
+// Does not run on a 401 (the session is genuinely gone) and never destroys the
+// server session or the cookies.
+async function retryRefreshInBackground() {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const backoff = Math.min(2000 * Math.pow(2, attempt), 15000);
+    await new Promise((resolve) => setTimeout(resolve, backoff));
+
+    if (useAuthStore.getState().token) return; // recovered elsewhere
+    const ok = await useAuthStore.getState().silentRefresh();
+    if (ok) {
+      scheduleActivityRefresh();
+      return;
+    }
+    if (_lastRefreshStatus === 401) {
+      useAuthStore.getState().clearLocalSession();
+      return;
+    }
+  }
+}
 
 function scheduleRefresh(attempt = 0) {
   if (typeof window === "undefined") return;
@@ -286,7 +379,10 @@ function setupVisibilityRefresh() {
 }
 
 // Attempt immediate silent refresh on page load to slide the session window,
-// then schedule the refresh cycle.
+// then schedule the refresh cycle. Crucially, a failed refresh here never
+// revokes the server session or deletes the cookies: a transient failure
+// (deploy restart, network blip, token-rotation race) must not force a
+// re-login. The cookies stay in place so the next load can restore the session.
 async function initializeAuth() {
   if (typeof window === "undefined") return;
 
@@ -296,32 +392,26 @@ async function initializeAuth() {
   // Wait a tick for Zustand to rehydrate from localStorage
   await new Promise(resolve => setTimeout(resolve, 50));
 
-  const { token, silentRefresh, logout } = useAuthStore.getState();
-
-  // No in-memory token: try to restore the session from the httpOnly
-  // access_token / refresh_token cookies, which are sent automatically with
-  // credentials: "include". If the user was previously logged in but the
-  // cookie is gone, log out so we don't show a stale logged-in UI.
-  if (!token) {
-    const restored = await silentRefresh();
-    if (!restored && useAuthStore.getState().user) {
-      logout();
-    }
-    return;
-  }
-
   // Set up the visibility listener once
   setupVisibilityRefresh();
 
-  // Try a silent refresh immediately on page load to slide the session
-  const refreshed = await silentRefresh();
+  const refreshed = await useAuthStore.getState().silentRefresh();
   if (refreshed) {
     // If refresh succeeded, schedule the periodic activity refresh for sliding window
     scheduleActivityRefresh();
-  } else {
-    // If immediate refresh failed, schedule the access token refresh cycle with retry
-    scheduleRefresh(0);
+    return;
   }
+
+  // The session is genuinely gone (401) — drop local state but keep the cookies
+  // so a later load can still recover.
+  if (_lastRefreshStatus === 401) {
+    useAuthStore.getState().clearLocalSession();
+    return;
+  }
+
+  // Transient failure: keep the rehydrated user visible and retry in the
+  // background with backoff. When the API comes back, the session slides back in.
+  retryRefreshInBackground();
 }
 
 // Initialize auth when module loads
