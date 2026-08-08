@@ -64,6 +64,11 @@ export default function AudioEngine() {
   const prevIsPlayingRef = useRef<boolean>(false);
   const hasTriggeredCrossfadeRef = useRef<boolean>(false);
   const crossfadeAdvancedRef = useRef<boolean>(false);
+  // True between the moment a new track is selected and the moment it actually
+  // starts playing. The YouTube player can emit transient PAUSED/ENDED events
+  // while swapping videos, which would otherwise stick playback in a paused
+  // state right after auto-advance.
+  const transitioningRef = useRef<boolean>(false);
 
   const setPlayerVolume = (volRatio: number) => {
     const targetVal = volRatio * volume;
@@ -212,6 +217,7 @@ export default function AudioEngine() {
       // would be swallowed and auto-advance would pause instead of continuing.
       crossfadeAdvancedRef.current = false;
       hasTriggeredCrossfadeRef.current = false;
+      transitioningRef.current = false;
       setPlaying(true);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
@@ -219,6 +225,9 @@ export default function AudioEngine() {
     };
     const onPause = () => {
       if (audio.src && audio.src.startsWith("data:audio")) return;
+      // Ignore pause events fired while the engine is swapping tracks — the
+      // element for the old track is being torn down and the new one is loading.
+      if (transitioningRef.current) return;
       setPlaying(false);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "paused";
@@ -231,21 +240,25 @@ export default function AudioEngine() {
       setCurrentTime(curr);
       updatePositionState();
 
-      const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
-      if (crossfadeAction === "start-fade") {
-        hasTriggeredCrossfadeRef.current = true;
-        fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
-          crossfadeAdvancedRef.current = true;
-          usePlayerStore.getState().next();
-        });
-      } else if (crossfadeAction === "cancel-fade") {
-        hasTriggeredCrossfadeRef.current = false;
-        if (fadeIntervalRef.current) {
-          clearInterval(fadeIntervalRef.current);
-          fadeIntervalRef.current = null;
+      // Skip crossfade evaluation while swapping tracks so the leaked
+      // "fade triggered" flag from the previous track can't cancel the fade-in.
+      if (!transitioningRef.current) {
+        const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
+        if (crossfadeAction === "start-fade") {
+          hasTriggeredCrossfadeRef.current = true;
+          fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
+            crossfadeAdvancedRef.current = true;
+            usePlayerStore.getState().next();
+          });
+        } else if (crossfadeAction === "cancel-fade") {
+          hasTriggeredCrossfadeRef.current = false;
+          if (fadeIntervalRef.current) {
+            clearInterval(fadeIntervalRef.current);
+            fadeIntervalRef.current = null;
+          }
+          isFadingRef.current = false;
+          setPlayerVolume(1.0);
         }
-        isFadingRef.current = false;
-        setPlayerVolume(1.0);
       }
     };
     const onDurationChange = () => {
@@ -759,6 +772,10 @@ export default function AudioEngine() {
       prevSongIdRef.current = currentSongId;
       prevIsPlayingRef.current = isPlaying;
 
+      // Mark the swap in progress so transient player events (PAUSED/ENDED)
+      // fired while the new video loads don't get misread as user intent.
+      transitioningRef.current = true;
+
       setPlayerVolume(0);
       if (isPlaying) {
         triggerPlay();
@@ -885,11 +902,16 @@ export default function AudioEngine() {
               // causing auto-advance to pause instead of continuing.
               crossfadeAdvancedRef.current = false;
               hasTriggeredCrossfadeRef.current = false;
+              transitioningRef.current = false;
               setPlaying(true);
               usePlayerStore.getState().setPlayerLoading(false);
               setDuration(playerInstanceRef.current.getDuration() || currentSong?.duration || 0);
               startProgressTimer();
             } else if (state === 2) {
+              // Ignore transient PAUSED events fired while the player is swapping
+              // to the next track — otherwise the new song would stick paused
+              // right after auto-advance.
+              if (transitioningRef.current) return;
               setPlaying(false);
               stopProgressTimer();
             } else if (state === 0) {
@@ -936,21 +958,26 @@ export default function AudioEngine() {
           setCurrentTime(curr);
           if (dur !== undefined && dur !== null && !isNaN(dur)) setDuration(dur);
 
-          const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
-          if (crossfadeAction === "start-fade") {
-            hasTriggeredCrossfadeRef.current = true;
-            fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
-              crossfadeAdvancedRef.current = true;
-              usePlayerStore.getState().next();
-            });
-          } else if (crossfadeAction === "cancel-fade") {
-            hasTriggeredCrossfadeRef.current = false;
-            if (fadeIntervalRef.current) {
-              clearInterval(fadeIntervalRef.current);
-              fadeIntervalRef.current = null;
+          // Skip crossfade evaluation while swapping tracks so the leaked
+          // "fade triggered" flag from the previous track can't cancel the
+          // new track's fade-in.
+          if (!transitioningRef.current) {
+            const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
+            if (crossfadeAction === "start-fade") {
+              hasTriggeredCrossfadeRef.current = true;
+              fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
+                crossfadeAdvancedRef.current = true;
+                usePlayerStore.getState().next();
+              });
+            } else if (crossfadeAction === "cancel-fade") {
+              hasTriggeredCrossfadeRef.current = false;
+              if (fadeIntervalRef.current) {
+                clearInterval(fadeIntervalRef.current);
+                fadeIntervalRef.current = null;
+              }
+              isFadingRef.current = false;
+              setPlayerVolume(1.0);
             }
-            isFadingRef.current = false;
-            setPlayerVolume(1.0);
           }
           
           // Sync MediaSession position state for YT Player

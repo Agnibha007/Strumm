@@ -55,9 +55,7 @@ export default function FlowPage() {
       </div>
 
       {/* Fullscreen AI Chat container */}
-      <div className="bg-surface/10 border border-border/40 rounded-2xl p-2 md:p-6 shadow-xl backdrop-blur-lg">
-        <AICuratorChat fullPage={true} />
-      </div>
+      <AICuratorChat fullPage={true} />
     </div>
   );
 }
