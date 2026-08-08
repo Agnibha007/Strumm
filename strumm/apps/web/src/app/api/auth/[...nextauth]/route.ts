@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { apiUrl } from "web/lib/api";
+import { API_ORIGIN } from "web/lib/api";
 
 const handler = NextAuth({
   providers: [
@@ -16,8 +16,10 @@ const handler = NextAuth({
           if (!account.id_token) {
             throw new Error("Google did not return an ID token.");
           }
-          // Sync with our FastAPI backend database
-          const response = await fetch(apiUrl("/auth/google"), {
+          // Sync with our FastAPI backend database. This runs on the server
+          // (no CORS), so call the API origin directly — apiUrl() returns a
+          // relative /proxy path that only the browser can use.
+          const response = await fetch(`${API_ORIGIN}/auth/google`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
