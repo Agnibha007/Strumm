@@ -1,10 +1,26 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Song } from "@strumm/types";
+import { decodeHtml } from "web/lib/api";
 import { updateMediaSession } from "web/store/media-session-utils";
 import { createRadioActions, initialRadioState } from "web/store/radio-actions";
 import { createSleepTimerActions, initialSleepTimerState, type SleepTimerDuration } from "web/store/sleep-timer-utils";
 import { resolveNextTrackIndex } from "web/store/queue-utils";
+
+// HTML entities (e.g. &quot;, &amp;quot;) can end up in titles stored in the
+// DB / player cache. Decode them once as songs enter the store so every
+// render (player, queue, lists) shows clean text.
+function cleanSong(song: Song): Song {
+  if (!song) return song;
+  return {
+    ...song,
+    title: decodeHtml(song.title ?? ""),
+    artist: decodeHtml(song.artist ?? ""),
+    metadata: song.metadata
+      ? { ...song.metadata, album: song.metadata.album ? decodeHtml(song.metadata.album) : undefined }
+      : song.metadata,
+  };
+}
 
 function playTrackAtIndex(
   queue: Song[],
@@ -135,36 +151,39 @@ export const usePlayerStore = create<PlayerState>()(
       setPlayerError: (error) => set({ playerError: error }),
 
       setCurrentSong: (song) => {
-        set({ currentSong: song });
-        if (song) {
-          get().updateMediaSession(song);
+        const cleaned = song ? cleanSong(song) : song;
+        set({ currentSong: cleaned });
+        if (cleaned) {
+          get().updateMediaSession(cleaned);
         }
       },
 
       setQueue: (queue) => {
-        set({ queue });
+        set({ queue: queue.map(cleanSong) });
       },
 
       addToQueue: (song) => {
         const { queue } = get();
-        if (!queue.some((s) => s.videoId === song.videoId)) {
-          set({ queue: [...queue, song] });
+        const cleaned = cleanSong(song);
+        if (!queue.some((s) => s.videoId === cleaned.videoId)) {
+          set({ queue: [...queue, cleaned] });
         }
       },
 
       playSong: (song, contextQueue) => {
-        const currentQueue = contextQueue || get().queue;
-        const existsInQueue = currentQueue.some((s) => s.videoId === song.videoId);
-        
+        const cleaned = cleanSong(song);
+        const currentQueue = (contextQueue || get().queue).map(cleanSong);
+        const existsInQueue = currentQueue.some((s) => s.videoId === cleaned.videoId);
+
         let newQueue = [...currentQueue];
         if (!existsInQueue) {
-          newQueue = [...newQueue, song];
+          newQueue = [...newQueue, cleaned];
         }
 
-        const idx = newQueue.findIndex((s) => s.videoId === song.videoId);
+        const idx = newQueue.findIndex((s) => s.videoId === cleaned.videoId);
 
         set({
-          currentSong: song,
+          currentSong: cleaned,
           queue: newQueue,
           currentIndex: idx,
           isPlaying: true,
@@ -172,7 +191,7 @@ export const usePlayerStore = create<PlayerState>()(
           shufflePlayedIds: [], // Reset shuffle history when playing a new song
         });
 
-        get().updateMediaSession(song);
+        get().updateMediaSession(cleaned);
       },
 
       togglePlay: () => {
@@ -301,9 +320,10 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       restorePlayerState: (state) => {
+        const currentSong = state.currentSong ? cleanSong(state.currentSong) : null;
         set({
-          currentSong: state.currentSong ?? null,
-          queue: state.queue ?? [],
+          currentSong,
+          queue: (state.queue ?? []).map(cleanSong),
           currentIndex: state.currentIndex ?? -1,
           isPlaying: false,
           currentTime: state.currentTime ?? 0,
@@ -313,8 +333,8 @@ export const usePlayerStore = create<PlayerState>()(
           playbackRate: state.playbackRate ?? 1,
           audioQuality: state.audioQuality ?? get().audioQuality,
         });
-        if (state.currentSong) {
-          get().updateMediaSession(state.currentSong);
+        if (currentSong) {
+          get().updateMediaSession(currentSong);
         }
       },
 
