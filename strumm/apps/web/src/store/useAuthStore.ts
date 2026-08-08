@@ -182,9 +182,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-// Access token lifetime in ms (15 minutes)
-const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
-const REFRESH_BUFFER_MS = 5 * 60 * 1000; // refresh 5 minutes before expiry for reliability
+// Access token lifetime in ms (1 hour — matches ACCESS_TOKEN_EXPIRE on the API)
+const ACCESS_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
+const REFRESH_BUFFER_MS = 10 * 60 * 1000; // refresh 10 minutes before expiry for reliability
 // Periodic activity refresh: every 10 minutes to slide the session window during active use
 const ACTIVITY_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 // Retry interval for failed refreshes (with exponential backoff)
@@ -266,12 +266,12 @@ async function performRefresh(): Promise<RefreshResult> {
   }
 }
 
-// Bounded retry for transient failures (deploy restarts, brief API downtime).
+// Bounded retry for transient failures (deploy restarts, HF Spaces cold start).
 // Does not run on a 401 (the session is genuinely gone) and never destroys the
 // server session or the cookies.
 async function retryRefreshInBackground() {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const backoff = Math.min(2000 * Math.pow(2, attempt), 15000);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const backoff = Math.min(2000 * Math.pow(2, attempt), 30000);
     await new Promise((resolve) => setTimeout(resolve, backoff));
 
     if (useAuthStore.getState().token) return; // recovered elsewhere
@@ -364,8 +364,8 @@ function setupVisibilityRefresh() {
     const expiresAt = Number(payload.exp) * 1000;
     const remaining = expiresAt - Date.now();
 
-    // If less than 5 minutes remain, refresh proactively
-    if (remaining < 5 * 60 * 1000) {
+    // If less than the refresh buffer remains, refresh proactively
+    if (remaining < REFRESH_BUFFER_MS) {
       _refreshing = true;
       const { silentRefresh } = useAuthStore.getState();
       await silentRefresh();

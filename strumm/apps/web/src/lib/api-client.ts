@@ -38,13 +38,13 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     effectiveToken = store.useAuthStore.getState().token;
   }
 
-  // Proactive refresh: if token is about to expire (< 6 min remaining), silently refresh now
+  // Proactive refresh: if token is about to expire (< 10 min remaining), silently refresh now
   if (effectiveToken) {
     const payload = decodeJwtPayload(effectiveToken);
     if (payload?.exp) {
       const expiresAt = Number(payload.exp) * 1000;
       const remaining = expiresAt - Date.now();
-      if (remaining < 6 * 60 * 1000) {
+      if (remaining < 10 * 60 * 1000) {
         const store = await import("web/store/useAuthStore");
         const refreshed = await store.useAuthStore.getState().silentRefresh();
         if (refreshed) {
@@ -61,11 +61,26 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(apiUrl(path), {
-    ...rest,
-    headers,
-    credentials: "include",
-  });
+  const attemptFetch = (): Promise<Response> =>
+    fetch(apiUrl(path), {
+      ...rest,
+      headers,
+      credentials: "include",
+    });
+
+  let response = await attemptFetch();
+
+  // Reactive retry: if the access token expired mid-session (e.g. timers were
+  // throttled while the tab was backgrounded), refresh once and retry.
+  if (response.status === 401 || response.status === 403) {
+    const store = await import("web/store/useAuthStore");
+    const refreshed = await store.useAuthStore.getState().silentRefresh();
+    if (refreshed) {
+      headers.set("Authorization", `Bearer ${store.useAuthStore.getState().token}`);
+      response = await attemptFetch();
+    }
+  }
+
   const json = (await response.json()) as ApiResponse<T>;
 
   if (!json.success) {

@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr
 from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
-from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password
+from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password, ACCESS_TOKEN_EXPIRE
 from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_email, send_password_changed_email, send_welcome_email, send_email_changed_email
 from app.services.security import sanitize_text, sanitize_username, parse_object_id, validate_password_strength
 import httpx
@@ -23,14 +23,16 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 async def create_device_session(user_id: str, email: str, username: str, request: Request, database) -> tuple[str, str]:
-    # Short-lived access token: 15 minutes
+    # Access token: 1 hour (see ACCESS_TOKEN_EXPIRE). Sessions themselves are
+    # governed by the sliding 7-day refresh token, so a longer access token just
+    # means fewer refreshes and more tolerance for API cold starts.
     access_token_payload = {
         "sub": user_id,
         "email": email,
         "username": username,
         "type": "access"
     }
-    access_token = create_access_token(access_token_payload, expires_delta=timedelta(minutes=15))
+    access_token = create_access_token(access_token_payload, expires_delta=ACCESS_TOKEN_EXPIRE)
     
     # Sliding session: valid for 7 days from last activity
     refresh_token = secrets.token_hex(32)
@@ -773,7 +775,7 @@ async def refresh_session(
             "username": user.get("username"),
             "type": "access"
         }
-        new_access_token = create_access_token(new_access_token_payload, expires_delta=timedelta(minutes=15))
+        new_access_token = create_access_token(new_access_token_payload, expires_delta=ACCESS_TOKEN_EXPIRE)
         
         new_refresh_token = secrets.token_hex(32)
         new_refresh_token_hash = hash_refresh_token(new_refresh_token)
