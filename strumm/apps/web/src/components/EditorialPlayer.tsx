@@ -59,6 +59,8 @@ export default function EditorialPlayer() {
   const [, setListenSeconds] = useState(0);
   const [, setIsFullscreen] = useState(false);
   const [showFullscreenMenu, setShowFullscreenMenu] = useState(false);
+  const showFullscreenMenuRef = useRef(false);
+  const pendingFullscreenExitRef = useRef(false);
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
   const sleepTimerDuration = usePlayerStore((s) => s.sleepTimerDuration);
   const sleepTimerEndTime = usePlayerStore((s) => s.sleepTimerEndTime);
@@ -72,13 +74,47 @@ export default function EditorialPlayer() {
 
     if (shouldOpenPodcastVideo && currentSong && lastAutoOpenedVideoId.current !== currentSong.videoId) {
       lastAutoOpenedVideoId.current = currentSong.videoId;
-      setShowFullscreenMenu(true);
+      openFullscreenPlayer();
     }
   }, [currentSong?.videoId, currentSong?.metadata?.videoAvailable, podcastMode]);
 
   useEffect(() => {
+    showFullscreenMenuRef.current = showFullscreenMenu;
+  }, [showFullscreenMenu]);
+
+  const openFullscreenPlayer = async () => {
+    setShowFullscreenMenu(true);
+    try {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // Fullscreen API unavailable (e.g. iOS Safari); the in-page overlay still opens.
+    }
+  };
+
+  const closeFullscreenPlayer = async () => {
+    pendingFullscreenExitRef.current = true;
+    setShowFullscreenMenu(false);
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // ignore
+    }
+    setTimeout(() => {
+      pendingFullscreenExitRef.current = false;
+    }, 150);
+  };
+
+  useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const isFs = !!document.fullscreenElement;
+      setIsFullscreen(isFs);
+      if (!isFs && !pendingFullscreenExitRef.current && showFullscreenMenuRef.current) {
+        setShowFullscreenMenu(false);
+      }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
@@ -206,7 +242,7 @@ export default function EditorialPlayer() {
             className="flex items-center gap-3 md:gap-4 min-w-0 flex-1 md:w-full cursor-pointer md:cursor-auto"
             onClick={() => {
               if (window.innerWidth < 768) {
-                setShowFullscreenMenu(true);
+                openFullscreenPlayer();
               }
             }}
           >
@@ -345,7 +381,7 @@ export default function EditorialPlayer() {
             {sleepTimerDuration && sleepTimerEndTime && (
               <div className="relative">
                 <button
-                  onClick={() => setShowFullscreenMenu(true)}
+                  onClick={() => openFullscreenPlayer()}
                   className="p-2 rounded hover:bg-surface-elevated cursor-pointer transition text-primary text-glow"
                   title={`Sleep timer: ${sleepTimerDuration === "end-of-track" ? "End of track" : `${sleepTimerDuration} min`}`}
                 >
@@ -358,7 +394,7 @@ export default function EditorialPlayer() {
             )}
 
             <button
-              onClick={() => setShowFullscreenMenu(true)}
+              onClick={() => openFullscreenPlayer()}
               className="p-2 rounded hover:bg-surface-elevated cursor-pointer transition text-muted hover:text-text"
               title="Fullscreen Mode"
             >
@@ -487,7 +523,7 @@ export default function EditorialPlayer() {
             transition={{ type: "spring", duration: 0.4, bounce: 0.12 }}
             className="fixed inset-0 z-[9999]"
           >
-            <FullscreenPlayerOverlay onClose={() => setShowFullscreenMenu(false)} />
+            <FullscreenPlayerOverlay onClose={closeFullscreenPlayer} />
           </motion.div>
         )}
       </AnimatePresence>

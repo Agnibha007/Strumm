@@ -345,7 +345,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
         transition={{ duration: 0.35, ease: "easeOut" }}
         className={`fixed inset-0 z-50 bg-background/95 flex flex-col p-4 md:p-6 lg:p-8 xl:p-12 text-text overflow-x-hidden select-none transition-all ${effectiveShowLyrics ? "overflow-y-hidden" : "overflow-y-auto"}`}
       >
-      {/* Header bar */}        <div className="flex justify-between items-start md:items-center z-10 flex-shrink-0 border-b border-border/20 pb-3 md:pb-4 gap-2 max-w-7xl w-full mx-auto">
+      {/* Header bar */}        <div className="flex justify-between items-start md:items-center z-20 flex-shrink-0 border-b border-border/20 pb-3 md:pb-4 gap-2 max-w-7xl w-full mx-auto">
         <button 
           onClick={onClose} 
           className="flex items-center gap-1.5 md:gap-2 text-muted hover:text-text cursor-pointer group transition flex-shrink-0"
@@ -446,7 +446,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
           <div className={`flex flex-col items-center w-full transition-all duration-500 ${
             effectiveShowLyrics 
               ? "gap-2 lg:gap-4 xl:gap-6 lg:items-center text-center flex-shrink-0" 
-              : "gap-6 items-center text-center"
+              : "gap-6 items-center text-center min-h-0 overflow-y-auto overscroll-contain"
           }`}>
             
             {/* Album Cover Card */}

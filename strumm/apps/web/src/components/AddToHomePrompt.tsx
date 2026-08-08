@@ -74,7 +74,7 @@ export default function AddToHomePrompt() {
   if (!showPrompt) return null;
 
   return (
-    <div className="fixed left-3 right-3 bottom-24 z-[80] md:hidden">
+    <div className="fixed left-3 right-3 bottom-40 z-[80] md:hidden">
       <div className="bg-surface-elevated/95 border border-border/80 rounded-xl shadow-2xl p-4 flex items-start gap-3 backdrop-blur-xl">
         <Smartphone className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
