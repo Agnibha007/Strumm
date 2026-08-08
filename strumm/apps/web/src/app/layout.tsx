@@ -146,6 +146,7 @@ export default async function RootLayout({
                       document.documentElement.style.setProperty('--extracted-color', state.extractedColor);
                     }
                   }
+                  document.documentElement.setAttribute('data-reduced-motion', state && state.isAnimated === false ? 'true' : 'false');
                 }
               } catch (e) {}
             `,

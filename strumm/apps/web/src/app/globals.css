@@ -173,6 +173,19 @@
   --font-serif: var(--font-playfair), serif;
 }
 
+/* Micro-Animations toggle — hard kill for all CSS-driven motion */
+html[data-reduced-motion="true"],
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
 /* Theme-aware transitions for interactive elements only */
 a, button, [role="button"], input, textarea, select, .transition {
   transition: background-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),

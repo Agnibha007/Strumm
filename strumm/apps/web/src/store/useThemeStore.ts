@@ -28,7 +28,12 @@ export const useThemeStore = create<ThemeState>()(
         }
       },
       setCustomImage: (url) => set({ customImage: url }),
-      setAnimated: (animated) => set({ isAnimated: animated }),
+      setAnimated: (animated) => {
+        set({ isAnimated: animated });
+        if (typeof document !== "undefined") {
+          document.documentElement.setAttribute("data-reduced-motion", animated ? "false" : "true");
+        }
+      },
       setExtractedColor: (color) => {
         set({ extractedColor: color });
         if (typeof document !== "undefined" && color) {
@@ -44,6 +49,7 @@ export const useThemeStore = create<ThemeState>()(
         });
         if (typeof document !== "undefined") {
           document.documentElement.setAttribute("data-theme", "Obsidian");
+          document.documentElement.setAttribute("data-reduced-motion", "false");
           document.documentElement.style.removeProperty("--extracted-color");
         }
       },
@@ -54,6 +60,7 @@ export const useThemeStore = create<ThemeState>()(
         // Apply theme from localStorage immediately upon page load to prevent flash of wrong theme
         if (state && typeof document !== "undefined") {
           document.documentElement.setAttribute("data-theme", state.currentTheme);
+          document.documentElement.setAttribute("data-reduced-motion", state.isAnimated ? "false" : "true");
           if (state.extractedColor) {
             document.documentElement.style.setProperty("--extracted-color", state.extractedColor);
           }
