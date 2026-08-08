@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
+import { apiFetch } from "web/lib/api-client";
 import Link from "next/link";
 import { BarChart3, Clock, Music, Headphones, TrendingUp, Loader2 } from "lucide-react";
 
@@ -74,21 +75,8 @@ export default function StatsPage() {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/stats/dashboard?days=${period}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!res.ok) throw new Error("Failed to fetch stats");
-
-      const json = await res.json();
-      if (json.success) {
-        setData(json.data);
-      }
+      const data = await apiFetch<DashboardData>(`/stats/dashboard?days=${period}`, { token });
+      setData(data);
     } catch (error) {
       showNotification("Failed to load listening statistics", "error");
     } finally {
