@@ -37,6 +37,7 @@ export function middleware(request: NextRequest) {
   // bundles, API routes, Sentry tunnel) is excluded to keep headers light.
   if (pathname.startsWith("/_next/")) return NextResponse.next();
   if (pathname.startsWith("/api/")) return NextResponse.next();
+  if (pathname.startsWith("/proxy")) return NextResponse.next();
   if (pathname === "/monitoring") return NextResponse.next();
   if (/\.(?:png|jpe?g|gif|svg|webp|avif|ico|css|js|json|txt|woff2?|mp3|mp4)$/.test(pathname)) {
     return NextResponse.next();

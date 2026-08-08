@@ -73,6 +73,7 @@ PLAYER_STATES = "playerstates"
 SHARES = "shares"
 PODCAST_SHOWS = "podcastshows"
 PODCAST_EPISODES = "podcastepisodes"
+PODCAST_PROGRESS = "podcastprogress"
 RECENTLY_PLAYED = "recentlyplayeds"
 
 # Social / Realtime collections

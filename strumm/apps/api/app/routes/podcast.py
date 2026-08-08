@@ -15,7 +15,7 @@ from app.services.podcast_index import (
     trending_podcasts,
 )
 from app.services.security import assert_public_http_url, parse_object_id, sanitize_text
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 import logging
 
 logger = logging.getLogger("strumm-podcast")
@@ -24,6 +24,10 @@ router = APIRouter(prefix="/podcasts", tags=["podcast"])
 class ImportRSSRequest(BaseModel):
     rss_url: str
 
+
+class PodcastProgressRequest(BaseModel):
+    positionSeconds: float = Field(ge=0, default=0)
+    durationSeconds: float = Field(ge=0, default=0)
 @router.post("/import-rss")
 async def import_podcast_rss(
     payload: ImportRSSRequest,
@@ -368,3 +372,105 @@ async def get_episode_details(id: str = Path(...)):
     except Exception as e:
         logger.error(f"Error fetching episode details: {str(e)}")
         return {"success": False, "error": "An internal error occurred."}
+
+
+# ─── Podcast resume progress ───
+# Per-episode playback position so users can pick up where they left off.
+# The player stores one row per (userId, episodeId); the frontend treats a
+# position within a few seconds of the end as "completed" and deletes it.
+
+@router.get("/progress")
+async def get_podcast_progress(current_user: dict = Depends(get_current_user)):
+    """List all saved podcast progress entries for the current user."""
+    try:
+        database = db.get_db()
+        cursor = database[db.PODCAST_PROGRESS].find(
+            {"userId": current_user["id"]}
+        ).sort("updatedAt", -1)
+        entries = []
+        async for doc in cursor:
+            entries.append({
+                "episodeId": doc["episodeId"],
+                "positionSeconds": doc.get("positionSeconds", 0),
+                "durationSeconds": doc.get("durationSeconds", 0),
+                "updatedAt": doc.get("updatedAt", datetime.utcnow()).isoformat(),
+            })
+        return {"success": True, "data": {"progress": entries}}
+    except Exception as e:
+        logger.error(f"Error listing podcast progress: {str(e)}")
+        return {"success": False, "error": "Failed to load podcast progress."}
+
+
+@router.get("/progress/{episode_id}")
+async def get_podcast_episode_progress(
+    episode_id: str = Path(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Return the saved playback position for a single episode (0 if none)."""
+    try:
+        database = db.get_db()
+        cleaned = sanitize_text(episode_id, max_length=128)
+        doc = await database[db.PODCAST_PROGRESS].find_one(
+            {"userId": current_user["id"], "episodeId": cleaned}
+        )
+        if not doc:
+            return {"success": True, "data": {"positionSeconds": 0}}
+        return {
+            "success": True,
+            "data": {
+                "episodeId": doc["episodeId"],
+                "positionSeconds": doc.get("positionSeconds", 0),
+                "durationSeconds": doc.get("durationSeconds", 0),
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error loading podcast progress: {str(e)}")
+        return {"success": False, "error": "An internal error occurred."}
+
+
+@router.put("/progress/{episode_id}")
+async def save_podcast_progress(
+    episode_id: str = Path(...),
+    payload: PodcastProgressRequest = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Upsert the playback position for an episode."""
+    try:
+        database = db.get_db()
+        cleaned = sanitize_text(episode_id, max_length=128)
+        position = max(0.0, float(payload.positionSeconds))
+        duration = max(0.0, float(payload.durationSeconds))
+
+        await database[db.PODCAST_PROGRESS].update_one(
+            {"userId": current_user["id"], "episodeId": cleaned},
+            {
+                "$set": {
+                    "positionSeconds": position,
+                    "durationSeconds": duration,
+                    "updatedAt": datetime.utcnow(),
+                }
+            },
+            upsert=True,
+        )
+        return {"success": True, "data": {"episodeId": cleaned, "positionSeconds": position}}
+    except Exception as e:
+        logger.error(f"Error saving podcast progress: {str(e)}")
+        return {"success": False, "error": "Failed to save podcast progress."}
+
+
+@router.delete("/progress/{episode_id}")
+async def clear_podcast_progress(
+    episode_id: str = Path(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Remove the saved position for an episode (e.g. when it is finished)."""
+    try:
+        database = db.get_db()
+        cleaned = sanitize_text(episode_id, max_length=128)
+        await database[db.PODCAST_PROGRESS].delete_one(
+            {"userId": current_user["id"], "episodeId": cleaned}
+        )
+        return {"success": True, "data": {"message": "Progress cleared."}}
+    except Exception as e:
+        logger.error(f"Error clearing podcast progress: {str(e)}")
+        return {"success": False, "error": "Failed to clear podcast progress."}

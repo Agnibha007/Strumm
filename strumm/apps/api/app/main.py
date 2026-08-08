@@ -165,6 +165,8 @@ async def _create_indexes(database):
         ("feedback.createdAt", lambda: database["feedback"].create_index("createdAt")),
         ("feedback.userId", lambda: database["feedback"].create_index("userId")),
         ("feedback.status", lambda: database["feedback"].create_index("status")),
+        ("podcastprogress.compound", lambda: database[db.PODCAST_PROGRESS].create_index([("userId", 1), ("episodeId", 1)], unique=True)),
+        ("podcastprogress.userId", lambda: database[db.PODCAST_PROGRESS].create_index("userId")),
     ]
 
     created = 0

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { apiUrl } from "web/lib/api";
+import { apiUrl, API_ORIGIN } from "web/lib/api";
 import { searchYouTube } from "web/lib/search";
 import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2 } from "lucide-react";
 import SongArtwork from "web/components/SongArtwork";
@@ -122,7 +122,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (!token || !user?.id || !room) return;
 
-    let baseWs = apiUrl("").replace(/^http/, "ws");
+    let baseWs = API_ORIGIN.replace(/^http/, "ws");
     if (baseWs.endsWith("/")) {
       baseWs = baseWs.slice(0, -1);
     }

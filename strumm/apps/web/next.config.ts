@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+// Backend API. All client HTTP goes through the same-origin /proxy rewrite so
+// cookies survive (the HF Spaces gateway never sends
+// Access-Control-Allow-Credentials). WebSocket uses API_ORIGIN directly.
+const API_TARGET = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@strumm/types", "@strumm/ui", "@strumm/database"],
   reactStrictMode: true,
@@ -22,7 +31,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/((?!api|_next/static|_next/image|favicon.ico).*)",
+        source: "/((?!api|proxy|_next/static|_next/image|favicon.ico).*)",
         headers: [
           {
             key: "X-Frame-Options",
@@ -57,6 +66,13 @@ const nextConfig: NextConfig = {
       {
         source: "/@:username",
         destination: "/public/@:username",
+      },
+      {
+        // Same-origin API proxy: forwards everything under /proxy to the
+        // backend, passing through request/response headers (cookies, JWT)
+        // untouched so the browser never makes a cross-origin call.
+        source: "/proxy/:path*",
+        destination: `${API_TARGET}/:path*`,
       },
     ];
   }
