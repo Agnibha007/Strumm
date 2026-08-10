@@ -1,4 +1,4 @@
-const CACHE_NAME = "strumm-shell-v6";
+const CACHE_NAME = "strumm-shell-v7";
 const SHELL_ASSETS = [
   "/",
   "/login",
@@ -51,10 +51,29 @@ self.addEventListener("fetch", (event) => {
 
   if (request.method !== "GET") return;
 
-  const url = request.url;
-  const isExcluded = EXCLUDED_PATTERNS.some((pattern) => pattern.test(url));
+  const url = new URL(request.url);
+  const isExcluded = EXCLUDED_PATTERNS.some((pattern) => pattern.test(url.href));
 
   if (isExcluded) {
+    return;
+  }
+
+  // Never intercept Next.js RSC (flight) fetches: client-side navigation must
+  // always hit the network so the router receives a live payload. Serving a
+  // stale cached flight response makes the router error and fall back to a
+  // full page reload on every nav click.
+  const isRscFlight =
+    url.searchParams.has("_rsc") ||
+    url.searchParams.has("flight") ||
+    request.headers.get("rsc") === "1" ||
+    (request.headers.get("accept") || "").includes("text/x-component");
+  if (isRscFlight) {
+    return;
+  }
+
+  // Never intercept API traffic (the browser reaches the backend via /proxy);
+  // API responses are live data and must not be served from cache.
+  if (url.pathname.startsWith("/proxy/")) {
     return;
   }
 
@@ -79,7 +98,7 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           const copy = response.clone();
           if (response.ok && new URL(request.url).origin === self.location.origin) {
-            if (!url.includes("/api/")) {
+            if (!url.pathname.startsWith("/api/")) {
               caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => undefined);
             }
           }
