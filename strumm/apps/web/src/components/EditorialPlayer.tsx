@@ -52,11 +52,10 @@ export default function EditorialPlayer() {
   const setShuffle = usePlayerStore((s) => s.setShuffle);
   const setRepeatMode = usePlayerStore((s) => s.setRepeatMode);
 
-  const { token, fetchProfile } = useAuthStore();
+  const { token } = useAuthStore();
 
   const { isAnimated } = useThemeStore();
   const [showQueue, setShowQueue] = useState(false);
-  const [, setListenSeconds] = useState(0);
   const [, setIsFullscreen] = useState(false);
   const [showFullscreenMenu, setShowFullscreenMenu] = useState(false);
   const showFullscreenMenuRef = useRef(false);
@@ -120,11 +119,21 @@ export default function EditorialPlayer() {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  // Sync listening stats to backend every 30 seconds of active playback
+  // Sync listening stats to backend every 30 seconds of active playback.
+  // A ref accumulator (not React state) drives the counter: side effects in
+  // state updaters are re-run by React StrictMode/concurrent rendering, which
+  // double-counts play events. The token is read fresh from the store at send
+  // time so an access-token rotation mid-session can't 401 every sync, and
+  // partial seconds are flushed on pause/track-change/unmount so short listening
+  // bursts still count toward the user's minutes.
+  const listenAccumulatorRef = useRef(0);
+
   const syncListeningStats = async (song: any, durationSec: number) => {
+    const { token, fetchProfile } = useAuthStore.getState();
     try {
       const response = await fetch(apiUrl("/play-event"), {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token || ""}`
@@ -150,22 +159,24 @@ export default function EditorialPlayer() {
   };
 
   useEffect(() => {
-    let timer: any = null;
-    if (isPlaying && currentSong) {
-      timer = setInterval(() => {
-        setListenSeconds((prevSec) => {
-          const updated = prevSec + 1;
-          if (updated >= 30) {
-            syncListeningStats(currentSong, 30);
-            return 0; // reset
-          }
-          return updated;
-        });
-      }, 1000);
-    }
-    
+    if (!isPlaying || !currentSong) return;
+    const song = currentSong;
+    const timer = setInterval(() => {
+      listenAccumulatorRef.current += 1;
+      if (listenAccumulatorRef.current >= 30) {
+        const secs = 30;
+        listenAccumulatorRef.current -= 30;
+        syncListeningStats(song, secs);
+      }
+    }, 1000);
+
     return () => {
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
+      const partial = listenAccumulatorRef.current;
+      if (partial > 0) {
+        listenAccumulatorRef.current = 0;
+        syncListeningStats(song, partial);
+      }
     };
   }, [isPlaying, currentSong?.videoId]);
 
