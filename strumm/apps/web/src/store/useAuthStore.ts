@@ -38,14 +38,16 @@ interface RefreshResult {
 // concurrently with the same token (page-load restore + fetchProfile + activity
 // timer + visibility handler + proactive apiFetch refresh can all overlap), the
 // rotation races: the database ends up holding one token while the browser
-// cookie holds another. The next refresh then 401s and the old failure path
-// called logout(), which deleted the cookies and revoked the session — forcing
-// a re-login after any transient hiccup. Fixes:
+// holds another. The next refresh then 401s and would otherwise force a
+// re-login after any transient hiccup. Fixes:
 //  1. Single-flight: concurrent callers share one in-flight refresh promise.
 //  2. Web Locks API: serialize refreshes across browser tabs too.
-//  3. Failed refreshes are non-destructive (see clearLocalSession + retry).
-let _refreshPromise: Promise<boolean> | null = null;
-let _lastRefreshStatus: number | null = null;
+//  3. Failed refreshes are non-destructive: we only ever drop the local session
+//     when the access token is genuinely unusable (absent or expired) AND the
+//     refresh was rejected with 401. A stale refresh token from a rotation
+//     race, a network blip, or an API cold start must not log the user out
+//     while the current access token still works.
+let _refreshPromise: Promise<RefreshResult> | null = null;
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -84,23 +86,15 @@ export const useAuthStore = create<AuthState>()(
 
       // Clears only the local state. Unlike logout(), this does NOT revoke the
       // server session or delete the httpOnly cookies, so a later page load can
-      // still restore the session via silentRefresh once the API is reachable.
+      // still restore the session via refreshSession once the API is reachable.
       clearLocalSession: () => {
         set({ token: null, user: null, refreshToken: null });
         teardownSessionListeners();
       },
 
-      silentRefresh: () => {
-        // Single-flight: concurrent callers (page-load restore, fetchProfile,
-        // apiFetch proactive refresh, activity timer, visibility handler) all
-        // share one refresh request so the token rotation can't race itself.
-        if (_refreshPromise) return _refreshPromise;
-        _refreshPromise = acquireRefreshLock(performRefresh)
-          .then((result) => result.ok)
-          .finally(() => {
-            _refreshPromise = null;
-          });
-        return _refreshPromise;
+      silentRefresh: async () => {
+        const result = await refreshSession();
+        return result.ok;
       },
 
       fetchProfile: async () => {
@@ -109,13 +103,15 @@ export const useAuthStore = create<AuthState>()(
         // On reload the token lives only in memory (it is never persisted), so
         // restore the session from the httpOnly cookies before fetching.
         if (!token) {
-          const restored = await get().silentRefresh();
-          if (!restored) {
+          const result = await refreshSession();
+          if (!result.ok) {
             // Non-destructive: a dead/transient refresh must not revoke the
-            // server session or wipe the cookies. 401 means the token is truly
-            // gone, so drop local state; network/5xx errors keep it (the
-            // background retry in initializeAuth handles recovery).
-            if (_lastRefreshStatus === 401) {
+            // server session or wipe the cookies. Only drop local state when
+            // the access token is truly unusable AND the refresh was rejected
+            // with 401 (the session is genuinely gone). Anything else (network
+            // error, cold start, rotation race) keeps the session so the
+            // background retry in initializeAuth can recover it.
+            if (!hasUsableAccessToken(get().token) && result.status === 401) {
               get().clearLocalSession();
             }
             return false;
@@ -130,19 +126,29 @@ export const useAuthStore = create<AuthState>()(
         } catch (e) {
           // If 401/403, try silent refresh first
           if (e instanceof ApiError && e.status && [401, 403].includes(e.status)) {
-            const refreshed = await get().silentRefresh();
-            if (refreshed) {
+            const result = await refreshSession();
+            if (result.ok) {
               // Retry fetchProfile with new token
               try {
                 const data = await apiFetch<any>("/profile", { token: get().token });
                 set({ user: data });
                 return true;
-              } catch {
-                get().clearLocalSession();
+              } catch (err) {
+                // A transient failure re-fetching the profile (e.g. cold start
+                // right after the refresh) must NOT wipe the session — only a
+                // confirmed dead access token may.
+                if (
+                  err instanceof ApiError &&
+                  err.status &&
+                  [401, 403].includes(err.status) &&
+                  !hasUsableAccessToken(get().token)
+                ) {
+                  get().clearLocalSession();
+                }
                 return false;
               }
             }
-            if (_lastRefreshStatus === 401) {
+            if (!hasUsableAccessToken(get().token) && result.status === 401) {
               get().clearLocalSession();
             }
             return false;
@@ -180,6 +186,18 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+// True when the current in-memory access token can still authenticate requests.
+// A stale refresh token from a multi-tab rotation race must not log the user
+// out while this token remains valid — only once it has expired (and refresh
+// keeps failing) is the session considered gone.
+function hasUsableAccessToken(token: string | null): boolean {
+  if (!token) return false;
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp) return false;
+  const expiresAt = Number(payload.exp) * 1000;
+  return expiresAt - Date.now() > 60 * 1000;
 }
 
 // Access token lifetime in ms (1 hour — matches ACCESS_TOKEN_EXPIRE on the API)
@@ -230,9 +248,20 @@ function acquireRefreshLock<T>(task: () => Promise<T>): Promise<T> {
   return task();
 }
 
+// Single-flight wrapper around performRefresh. Every caller (page-load restore,
+// fetchProfile, apiFetch proactive refresh, activity timer, visibility handler)
+// shares one in-flight request so the refresh-token rotation can't race itself.
+function refreshSession(): Promise<RefreshResult> {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = acquireRefreshLock(performRefresh).finally(() => {
+    _refreshPromise = null;
+  });
+  return _refreshPromise;
+}
+
 // Single refresh attempt. Rotates the refresh token server-side and, on success,
-// updates local state and schedules the next refresh. Records the HTTP status for
-// callers to distinguish "session truly dead" (401) from transient failures.
+// updates local state and schedules the next refresh. Returns the HTTP status so
+// callers can distinguish "session truly dead" (401) from transient failures.
 async function performRefresh(): Promise<RefreshResult> {
   const { refreshToken } = useAuthStore.getState();
 
@@ -248,12 +277,18 @@ async function performRefresh(): Promise<RefreshResult> {
       credentials: "include",
       body,
     });
-    _lastRefreshStatus = res.status;
-    const json = await res.json();
-    if (json.success && json.data?.token) {
+
+    let json: { success?: boolean; data?: { token?: string; refreshToken?: string; user?: User }; error?: string } | null = null;
+    try {
+      json = await res.json();
+    } catch {
+      // Non-JSON body (e.g. a gateway error page) — treat as a failed refresh.
+    }
+
+    if (res.ok && json?.success && json.data?.token) {
       useAuthStore.setState({
         token: json.data.token,
-        user: json.data.user,
+        user: json.data.user ?? useAuthStore.getState().user,
         refreshToken: json.data.refreshToken || refreshToken,
       });
       scheduleRefresh();
@@ -261,26 +296,25 @@ async function performRefresh(): Promise<RefreshResult> {
     }
     return { ok: false, status: res.status };
   } catch {
-    _lastRefreshStatus = null;
     return { ok: false, status: null };
   }
 }
 
 // Bounded retry for transient failures (deploy restarts, HF Spaces cold start).
-// Does not run on a 401 (the session is genuinely gone) and never destroys the
-// server session or the cookies.
+// Never destroys the server session or the cookies on transient errors; only a
+// 401 with a truly unusable access token ends the session.
 async function retryRefreshInBackground() {
   for (let attempt = 0; attempt < 10; attempt++) {
     const backoff = Math.min(2000 * Math.pow(2, attempt), 30000);
     await new Promise((resolve) => setTimeout(resolve, backoff));
 
     if (useAuthStore.getState().token) return; // recovered elsewhere
-    const ok = await useAuthStore.getState().silentRefresh();
-    if (ok) {
+    const result = await refreshSession();
+    if (result.ok) {
       scheduleActivityRefresh();
       return;
     }
-    if (_lastRefreshStatus === 401) {
+    if (result.status === 401 && !hasUsableAccessToken(useAuthStore.getState().token)) {
       useAuthStore.getState().clearLocalSession();
       return;
     }
@@ -306,17 +340,23 @@ function scheduleRefresh(attempt = 0) {
   window.__strummRefreshTimer = setTimeout(async () => {
     if (_refreshing) return; // skip if already refreshing
 
-    const { token, silentRefresh } = useAuthStore.getState();
-    if (token) {
-      _refreshing = true;
-      const ok = await silentRefresh();
-      _refreshing = false;
-      if (!ok) {
-        // Refresh failed — schedule a retry with backoff
-        scheduleRefresh(attempt + 1);
-      }
-      // On success, silentRefresh() already called scheduleRefresh(0) internally
+    const { token } = useAuthStore.getState();
+    if (!token) return;
+
+    _refreshing = true;
+    const result = await refreshSession();
+    _refreshing = false;
+    if (result.ok) {
+      // On success, performRefresh() already called scheduleRefresh(0) internally.
+      return;
     }
+    // A confirmed dead session stops being retried; transient failures get
+    // another attempt with backoff.
+    if (result.status === 401 && !hasUsableAccessToken(useAuthStore.getState().token)) {
+      useAuthStore.getState().clearLocalSession();
+      return;
+    }
+    scheduleRefresh(attempt + 1);
   }, delay);
 }
 
@@ -379,10 +419,12 @@ function setupVisibilityRefresh() {
 }
 
 // Attempt immediate silent refresh on page load to slide the session window,
-// then schedule the refresh cycle. Crucially, a failed refresh here never
-// revokes the server session or deletes the cookies: a transient failure
-// (deploy restart, network blip, token-rotation race) must not force a
-// re-login. The cookies stay in place so the next load can restore the session.
+// then schedule the refresh cycle. Crucially, this never destroys the session
+// itself: a transient failure (deploy restart, network blip, token-rotation
+// race, or a Google login whose cookies are still being established) must not
+// force a re-login, and a live NextAuth session still has a chance to restore
+// the store before any redirect happens. AuthWrapper's fetchProfile is what
+// makes the final "session is really gone" call.
 async function initializeAuth() {
   if (typeof window === "undefined") return;
 
@@ -395,22 +437,17 @@ async function initializeAuth() {
   // Set up the visibility listener once
   setupVisibilityRefresh();
 
-  const refreshed = await useAuthStore.getState().silentRefresh();
-  if (refreshed) {
+  const result = await refreshSession();
+  if (result.ok) {
     // If refresh succeeded, schedule the periodic activity refresh for sliding window
     scheduleActivityRefresh();
     return;
   }
 
-  // The session is genuinely gone (401) — drop local state but keep the cookies
-  // so a later load can still recover.
-  if (_lastRefreshStatus === 401) {
-    useAuthStore.getState().clearLocalSession();
-    return;
-  }
-
-  // Transient failure: keep the rehydrated user visible and retry in the
-  // background with backoff. When the API comes back, the session slides back in.
+  // Transient failure, rotation race, or a session that needs restoring from the
+  // NextAuth cookie: keep the rehydrated user visible and retry in the background
+  // with backoff. When the API comes back (or the session sync lands), the
+  // session slides back in.
   retryRefreshInBackground();
 }
 

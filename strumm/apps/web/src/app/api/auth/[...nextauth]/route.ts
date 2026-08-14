@@ -19,17 +19,33 @@ const handler = NextAuth({
           // Sync with our FastAPI backend database. This runs on the server
           // (no CORS), so call the API origin directly — apiUrl() returns a
           // relative /proxy path that only the browser can use.
-          const response = await fetch(`${API_ORIGIN}/auth/google`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              idToken: account.id_token,
-            }),
-          });
-          
-          if (!response.ok) {
+          // Retried with backoff: the API gateway can cold-start (HF Spaces
+          // sleeps when idle), so a first-attempt failure shouldn't silently
+          // drop the OAuth session — without a backend session the user would
+          // end up authenticated with Google but unable to get into Strumm.
+          let response: Response | null = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              response = await fetch(`${API_ORIGIN}/auth/google`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  idToken: account.id_token,
+                }),
+              });
+              if (response.ok) break;
+            } catch {
+              response = null;
+            }
+            if (attempt < 2) {
+              await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+            }
+          }
+          if (!response) {
+            console.error("Strumm Auth: Backend API unreachable for Google OAuth sync.");
+          } else if (!response.ok) {
             console.error(
               "Strumm Auth: Backend API returned HTTP", response.status,
               "for Google OAuth sync. Check that the API has GOOGLE_CLIENT_ID configured.",

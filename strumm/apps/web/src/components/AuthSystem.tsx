@@ -171,12 +171,21 @@ export default function AuthSystem() {
   };
 
   const handleGoogleLogin = async () => {
+    if (loading) return; // prevent double-submit while a redirect is in flight
     setLoading(true);
     setError(null);
     try {
-      await signIn("google");
+      // Preserve the redirect target (set by AuthWrapper when an unauthenticated
+      // user hits a protected route) so OAuth returns them where they were headed.
+      const redirect = new URLSearchParams(window.location.search).get("redirect");
+      await signIn("google", {
+        callbackUrl: redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : "/",
+      });
     } catch (err) {
       setError("Google OAuth connection error.");
+    } finally {
+      // If the redirect to Google never happened (OAuth config error), unblock
+      // the form. On a successful redirect the component unmounts instead.
       setLoading(false);
     }
   };

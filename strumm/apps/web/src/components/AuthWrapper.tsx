@@ -18,9 +18,12 @@ const FriendActivitySidebar = dynamic(() => import("web/components/FriendActivit
 });
 
 export default function AuthWrapper({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession();
-  const { user, token, fetchProfile, login } = useAuthStore();
+  const { data: session, status: sessionStatus } = useSession();
+  const { user, fetchProfile, login } = useAuthStore();
   const [loading, setLoading] = useState(true);
+  // One-time latch: NextAuth flips status back to "loading" when it refetches
+  // the session on tab focus, which must not re-trigger the splash screen.
+  const [sessionResolved, setSessionResolved] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { customImage } = useThemeStore();
@@ -37,16 +40,27 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     localStorage.setItem("strumm-circle-collapsed", String(isCircleCollapsed));
   }, [isCircleCollapsed]);
 
-  // Sync NextAuth Google session
   useEffect(() => {
-    if (session && (session as any).accessToken && (session as any).user) {
-      const currentToken = useAuthStore.getState().token;
-      const currentUser = useAuthStore.getState().user;
-      if (!currentToken || !currentUser || !currentUser.settings) {
-        login((session as any).accessToken, (session as any).user, (session as any).refreshToken);
-      }
+    if (sessionStatus !== "loading") {
+      setSessionResolved(true);
     }
-  }, [session]);
+  }, [sessionStatus]);
+
+  // Sync NextAuth Google session into the Zustand store.
+  // The server-side OAuth sync in the NextAuth route cannot forward the
+  // backend's Set-Cookie headers, so after populating the store we also run a
+  // browser-side refresh: it establishes the httpOnly access/refresh cookies
+  // (so later page reloads restore from cookies instead of the session cookie)
+  // and replaces the trimmed session user with the full backend user.
+  useEffect(() => {
+    if (sessionStatus !== "authenticated") return;
+    const s = session as any;
+    if (!s?.accessToken || !s?.user) return;
+    const store = useAuthStore.getState();
+    if (store.token && store.user) return;
+    login(s.accessToken, s.user, s.refreshToken);
+    void useAuthStore.getState().silentRefresh();
+  }, [session, sessionStatus, login]);
 
   // Sync profile details — auth is via httpOnly cookie, so we don't need token
   useEffect(() => {
@@ -59,23 +73,29 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     init();
   }, [user?.id]);
 
-  // Redirection guard logic
+  // Redirection guard logic. Never redirect while NextAuth is still resolving:
+  // a Google OAuth session restores the store from the session cookie, so
+  // redirecting early would flash the login page and bounce the user back.
   useEffect(() => {
-    if (!loading) {
-      const isAuthenticated = !!user;
-      const isPublic = isPublicRoute(pathname);
-      if (!isAuthenticated && pathname !== "/login" && pathname !== "/" && !isPublic) {
-        const currentSearch = window.location.search;
-        router.replace(`/login?redirect=${encodeURIComponent(pathname + currentSearch)}`);
-      } else if (isAuthenticated && pathname === "/login") {
-        const searchParams = new URLSearchParams(window.location.search);
-        const redirectUrl = searchParams.get("redirect") || "/";
-        router.replace(redirectUrl);
-      }
+    if (loading) return;
+    if (!sessionResolved) return;
+    const hasSessionCreds =
+      sessionStatus === "authenticated" &&
+      !!(session as any)?.accessToken &&
+      !!(session as any)?.user;
+    const isAuthenticated = !!user || hasSessionCreds;
+    const isPublic = isPublicRoute(pathname);
+    if (!isAuthenticated && pathname !== "/login" && pathname !== "/" && !isPublic) {
+      const currentSearch = window.location.search;
+      router.replace(`/login?redirect=${encodeURIComponent(pathname + currentSearch)}`);
+    } else if (isAuthenticated && pathname === "/login") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectUrl = searchParams.get("redirect") || "/";
+      router.replace(redirectUrl);
     }
-  }, [user?.id, loading, pathname, router]);
+  }, [user?.id, loading, pathname, router, sessionStatus, session, sessionResolved]);
 
-  if (loading) {
+  if (loading || !sessionResolved) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center text-muted">
         <BrandLogo size="md" className="animate-pulse mb-3" priority />
@@ -84,7 +104,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     );
   }
 
-  const isAuthenticated = !!user;
+  const isAuthenticated = !!user || (sessionStatus === "authenticated" && !!(session as any)?.accessToken && !!(session as any)?.user);
 
   if (!isAuthenticated) {
     if (pathname === "/login" || pathname === "/" || isPublicRoute(pathname)) {
