@@ -8,7 +8,6 @@ import PersistentPlayerWrapper from "web/components/PersistentPlayerWrapper";
 import NotificationToast from "web/components/NotificationToast";
 import { RealTimeProvider } from "web/services/realtime";
 import ConditionalFooter from "web/components/ConditionalFooter";
-import FeedbackButton from "web/components/FeedbackButton";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -263,7 +262,6 @@ export default async function RootLayout({
           <PersistentPlayerWrapper />
           <NotificationToast />
           <ConditionalFooter />
-          <FeedbackButton />
         </Providers>
       </body>
     </html>
