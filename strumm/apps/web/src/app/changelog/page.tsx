@@ -22,6 +22,26 @@ export const metadata: Metadata = {
 
 const entries = [
   {
+    date: "August 15, 2026",
+    version: "2.3.0",
+    changes: [
+      "Repeat One now correctly replays the current song instead of advancing to the next track",
+      "Shuffle and Repeat One are now mutually exclusive — enabling one turns the other off",
+      "Stabilized Google OAuth and stop mid-session logouts after deploys via serialized token refresh",
+      "Extended access tokens to 1 hour with hardened refresh against API cold starts",
+      "Podcast episodes resume where you left off, with playback position persisted",
+      "Engaged native fullscreen and unblocked fullscreen overlay controls",
+      "Made listening stats sync reliable — stats dashboard routed through /proxy and aggregated from embedded history",
+      "Decoded HTML entities in song titles and metadata at the API and player boundaries",
+      "Service worker no longer intercepts RSC and API requests; purged stale shell cache",
+      "Crossfade auto-advance no longer leaves the next song paused; transient YouTube PAUSED events during track swaps are ignored",
+      "Micro-Animations toggle now actually disables animations",
+      "Queue-advance and crossfade logic extracted into testable modules and wired into CI",
+      "Removed the floating feedback button, keeping the feedback link in the sidebar",
+      "Polished Strumm Flow curator UX",
+    ],
+  },
+  {
     date: "July 12, 2026",
     version: "2.2.0",
     changes: [
@@ -132,7 +152,7 @@ export default function ChangelogPage() {
             description:
               "Complete release history and changelog for Strumm music ecosystem, from v1.0.0 through v2.0.0, including AI features, podcast support, social features, and more.",
             url: `${appUrl}/changelog`,
-            dateModified: "2026-07-03",
+            dateModified: "2026-08-15",
             datePublished: "2026-03-01",
             author: {
               "@type": "Organization",

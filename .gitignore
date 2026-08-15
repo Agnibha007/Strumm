@@ -40,5 +40,8 @@ FEATURE_ROADMAP.md
 *_AUDIT_REPORT.md
 .analysis/
 
+# Local tooling config (not committed)
+opencode.json
+
 ssh.txt.*
 ssh.txt

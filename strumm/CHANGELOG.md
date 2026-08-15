@@ -2,6 +2,29 @@
 
 All notable changes to Strumm will be documented in this file.
 
+## [2.3.0] — 2026-08-15
+
+### Added
+- Podcast resume: episodes pick up where the user left off with persisted playback position.
+- Queue-advance and crossfade logic extracted into testable modules, wired into CI.
+
+### Fixed
+- Repeat One now replays the current song instead of advancing to the next track.
+- Shuffle and Repeat One are now mutually exclusive — enabling one turns the other off.
+- Google OAuth logouts mid-session after deploys, via serialized token refresh.
+- Listening stats sync made reliable; stats aggregated from embedded history instead of unpopulated song collections.
+- HTML entities in song titles/metadata now decoded at both the API and player boundaries.
+- Service worker no longer intercepts RSC and API requests; stale shell cache purged.
+- Crossfade auto-advance no longer leaves the next song paused; transient YouTube PAUSED events during track swaps are ignored.
+- Micro-Animations toggle now actually disables animations.
+- Fullscreen overlay controls unblocked and native fullscreen engaged.
+
+### Changed
+- Access tokens extended to 1 hour with hardened refresh against API cold starts.
+- Stats dashboard routed through same-origin `/proxy` rewrite.
+- Removed floating feedback button, keeping the feedback link in the sidebar.
+- Polished Strumm Flow curator UX.
+
 ## [2.2.0] — 2026-07-12
 
 ### Added
