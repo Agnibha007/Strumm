@@ -537,12 +537,13 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               effectiveShowLyrics ? "lg:justify-center" : "justify-center"
             }`}>
               <motion.button
-                whileHover={{ scale: 1.1 }}
+                whileHover={repeatMode === "one" ? undefined : { scale: 1.1 }}
                 whileTap={{ scale: 0.85 }}
                 onClick={() => setShuffle(!isShuffle)}
-                className={`p-2 rounded-lg cursor-pointer transition ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
+                disabled={repeatMode === "one"}
+                className={`p-2 rounded-lg cursor-pointer transition ${repeatMode === "one" ? "opacity-40 cursor-not-allowed text-muted" : isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
                 aria-pressed={isShuffle}
-                title="Shuffle"
+                title={repeatMode === "one" ? "Turn off Repeat One to use Shuffle" : "Shuffle"}
               >
                 <Shuffle className="w-4 h-4" />
               </motion.button>

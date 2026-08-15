@@ -290,8 +290,9 @@ export default function EditorialPlayer() {
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 onClick={() => setShuffle(!isShuffle)}
-                title={isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
-                className={`hidden md:block p-1.5 rounded-lg cursor-pointer transition ${isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
+                disabled={repeatMode === "one"}
+                title={repeatMode === "one" ? "Turn off Repeat One to use Shuffle" : isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
+                className={`hidden md:block p-1.5 rounded-lg cursor-pointer transition ${repeatMode === "one" ? "opacity-40 cursor-not-allowed text-muted" : isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
               >
                 <Shuffle className="w-3.5 h-3.5" />
               </motion.button>

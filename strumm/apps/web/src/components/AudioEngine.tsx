@@ -11,6 +11,19 @@ import {
   clearPodcastProgress,
 } from "web/lib/podcast-progress";
 
+// A real (digitally silent) audio track. Unlike a muted, sub-second
+// data: URI, an element playing this qualifies as a valid Media Session —
+// Chrome only routes hardware media keys to elements with >=5s of audio
+// that aren't muted, so this keeps play/pause/next on the host page instead
+// of letting the cross-origin YouTube iframe hijack them.
+const SILENT_AUDIO_SRC = "/silence.wav";
+
+function isSilentAudio(audio: HTMLAudioElement | null | undefined): boolean {
+  if (!audio) return false;
+  const src = audio.src || "";
+  return src.startsWith("data:audio") || src.endsWith(SILENT_AUDIO_SRC);
+}
+
 declare global {
   interface Window {
     onYouTubeIframeAPIReady?: () => void;
@@ -143,7 +156,7 @@ export default function AudioEngine() {
         htmlAudioRef.current.play().catch(() => {});
       }
     } else {
-      if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
+      if (htmlAudioRef.current && isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.play().catch(() => {});
       }
       if (playerInstanceRef.current && typeof playerInstanceRef.current.playVideo === "function") {
@@ -160,7 +173,7 @@ export default function AudioEngine() {
         htmlAudioRef.current.pause();
       }
     } else {
-      if (htmlAudioRef.current && htmlAudioRef.current.src.startsWith("data:audio")) {
+      if (htmlAudioRef.current && isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.pause();
       }
       if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
@@ -212,7 +225,7 @@ export default function AudioEngine() {
         );
       }
       // Reset src so the element isn't stuck in an error state
-      if (audio.src && !audio.src.startsWith("data:audio")) {
+      if (audio.src && !isSilentAudio(audio)) {
         audio.removeAttribute("src");
         audio.load();
       }
@@ -222,7 +235,7 @@ export default function AudioEngine() {
       if ("mediaSession" in navigator && typeof navigator.mediaSession.setPositionState === "function") {
         try {
           // Only sync position state from HTML audio if it's not the silent track
-          if (audio.src && audio.src.startsWith("data:audio")) return;
+          if (audio.src && isSilentAudio(audio)) return;
           const duration = audio.duration;
           const position = audio.currentTime;
           if (isFinite(duration) && isFinite(position) && duration > 0) {
@@ -237,7 +250,7 @@ export default function AudioEngine() {
     };
 
     const onPlay = () => {
-      if (audio.src && audio.src.startsWith("data:audio")) return;
+      if (audio.src && isSilentAudio(audio)) return;
       // New track has taken over playback — clear the crossfade guard that was
       // set for the previous track. If it leaked, the next natural `ended`
       // would be swallowed and auto-advance would pause instead of continuing.
@@ -250,7 +263,7 @@ export default function AudioEngine() {
       }
     };
     const onPause = () => {
-      if (audio.src && audio.src.startsWith("data:audio")) return;
+      if (audio.src && isSilentAudio(audio)) return;
       // Ignore pause events fired while the engine is swapping tracks — the
       // element for the old track is being torn down and the new one is loading.
       if (transitioningRef.current) return;
@@ -260,7 +273,7 @@ export default function AudioEngine() {
       }
     };
     const onTimeUpdate = () => {
-      if (audio.src && audio.src.startsWith("data:audio")) return;
+      if (audio.src && isSilentAudio(audio)) return;
       const curr = audio.currentTime;
       const dur = audio.duration;
       setCurrentTime(curr);
@@ -269,7 +282,12 @@ export default function AudioEngine() {
       // Skip crossfade evaluation while swapping tracks so the leaked
       // "fade triggered" flag from the previous track can't cancel the fade-in.
       if (!transitioningRef.current) {
-        const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
+        const crossfadeAction = evaluateCrossfadeTick(
+          curr,
+          dur,
+          hasTriggeredCrossfadeRef.current,
+          usePlayerStore.getState().repeatMode
+        );
         if (crossfadeAction === "start-fade") {
           hasTriggeredCrossfadeRef.current = true;
           fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
@@ -288,12 +306,12 @@ export default function AudioEngine() {
       }
     };
     const onDurationChange = () => {
-      if (audio.src && audio.src.startsWith("data:audio")) return;
+      if (audio.src && isSilentAudio(audio)) return;
       setDuration(audio.duration || 0);
       updatePositionState();
     };
     const onEnded = () => {
-      if (audio.src && audio.src.startsWith("data:audio")) return;
+      if (audio.src && isSilentAudio(audio)) return;
       // Guard against double-advance: if the crossfade mechanism already called
       // next() before this track naturally ended, skip handleTrackEnded.
       if (crossfadeAdvancedRef.current) {
@@ -342,11 +360,13 @@ export default function AudioEngine() {
   }, []);
 
   // Media Session API for Lock-Screen Controls and Media Keys
-  // This handles hardware media buttons from headphones, keyboards, and lock screen
+  // This handles hardware media buttons from headphones, keyboards, and lock screen.
+  // Handlers are registered ONCE on mount (deps []) so they are never torn down
+  // and re-created on every play/pause/track change — that gap is when hardware
+  // media keys silently stop working.
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
 
-    // Update handlers more frequently to ensure they're always ready
     const updateMediaSessionHandlers = () => {
       try {
         const ms = navigator.mediaSession;
@@ -419,32 +439,7 @@ export default function AudioEngine() {
       }
     };
 
-    // Set up handlers immediately and on mount
     updateMediaSessionHandlers();
-
-    // Update metadata and playback state whenever current song or playing status changes
-    if (currentSong) {
-      let secureArtwork = currentSong.thumbnail;
-      if (secureArtwork && secureArtwork.startsWith("http://")) {
-        secureArtwork = secureArtwork.replace("http://", "https://");
-      }
-
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentSong.title,
-        artist: currentSong.artist,
-        album: currentSong.metadata?.album || "Strumm",
-        artwork: [
-          { src: secureArtwork || "", sizes: "96x96", type: "image/jpeg" },
-          { src: secureArtwork || "", sizes: "256x256", type: "image/jpeg" },
-          { src: secureArtwork || "", sizes: "512x512", type: "image/jpeg" },
-        ],
-      });
-    } else {
-      navigator.mediaSession.metadata = null;
-    }
-
-    // Always update playback state based on current isPlaying
-    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 
     // Cleanup handlers on unmount
     return () => {
@@ -470,23 +465,70 @@ export default function AudioEngine() {
         }
       }
     };
+  }, []);
+
+  // Keep lock-screen metadata and playback state in sync with the UI.
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+
+    if (currentSong) {
+      let secureArtwork = currentSong.thumbnail;
+      if (secureArtwork && secureArtwork.startsWith("http://")) {
+        secureArtwork = secureArtwork.replace("http://", "https://");
+      }
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentSong.title,
+        artist: currentSong.artist,
+        album: currentSong.metadata?.album || "Strumm",
+        artwork: [
+          { src: secureArtwork || "", sizes: "96x96", type: "image/jpeg" },
+          { src: secureArtwork || "", sizes: "256x256", type: "image/jpeg" },
+          { src: secureArtwork || "", sizes: "512x512", type: "image/jpeg" },
+        ],
+      });
+    } else {
+      navigator.mediaSession.metadata = null;
+    }
+
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
   }, [currentSong, isPlaying]);
 
-
+  // Embedded YouTube players can auto-pause when the tab is hidden. Since that
+  // pause isn't user intent (we ignore it in onStateChange), resume the player
+  // the moment the user comes back to the tab.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const state = usePlayerStore.getState();
+      if (!state.isPlaying) return;
+      const yt = playerInstanceRef.current;
+      if (!yt || typeof yt.getPlayerState !== "function") return;
+      try {
+        if (yt.getPlayerState() === 2) yt.playVideo();
+      } catch (e) {
+        // Ignore transient errors while the player is (re)initializing
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   // Ensure media key routing is always active by keeping audio context alive
   useEffect(() => {
     if (!htmlAudioRef.current) return;
 
-    const silentAudioSrc =
-      "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+    const silentAudioSrc = SILENT_AUDIO_SRC;
 
     // If no song is playing, use silent audio to keep media keys responsive
     if (!currentSong) {
-      if (htmlAudioRef.current.src !== silentAudioSrc) {
+      if (!isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.src = silentAudioSrc;
         htmlAudioRef.current.loop = true;
-        htmlAudioRef.current.volume = 0; // Ensure it's inaudible
+        // The file itself is digitally silent, so normal volume stays inaudible —
+        // but keeps the element eligible as a Media Session (muted/volume-0
+        // elements are ignored for hardware key routing).
+        htmlAudioRef.current.volume = 1.0;
       }
 
       // Keep silent audio playing so media keys are routed to us
@@ -719,10 +761,13 @@ export default function AudioEngine() {
       // B. YouTube song
       // Play a silent audio track so the host page retains the OS MediaSession keys.
       // This prevents the YouTube iframe from hijacking media hardware buttons.
-      const silentAudioSrc = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-      if (htmlAudioRef.current.src !== silentAudioSrc) {
+      const silentAudioSrc = SILENT_AUDIO_SRC;
+      if (!isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.src = silentAudioSrc;
         htmlAudioRef.current.loop = true;
+        // Normal volume (the file is digitally silent) so the element counts
+        // as an active Media Session for hardware key routing.
+        htmlAudioRef.current.volume = 1.0;
       }
       if (isPlaying) {
         htmlAudioRef.current.play().catch(() => {});
@@ -1015,6 +1060,11 @@ export default function AudioEngine() {
               // to the next track — otherwise the new song would stick paused
               // right after auto-advance.
               if (transitioningRef.current) return;
+              // Ignore pauses the browser triggers when the tab is hidden (the
+              // embedded player is backgrounded). Treating it as user intent would
+              // flip the UI to "paused" for no reason; the visibilitychange
+              // handler resumes playback when the user returns.
+              if (document.hidden) return;
               setPlaying(false);
               stopProgressTimer();
             } else if (state === 0) {
@@ -1065,7 +1115,12 @@ export default function AudioEngine() {
           // "fade triggered" flag from the previous track can't cancel the
           // new track's fade-in.
           if (!transitioningRef.current) {
-            const crossfadeAction = evaluateCrossfadeTick(curr, dur, hasTriggeredCrossfadeRef.current);
+            const crossfadeAction = evaluateCrossfadeTick(
+              curr,
+              dur,
+              hasTriggeredCrossfadeRef.current,
+              usePlayerStore.getState().repeatMode
+            );
             if (crossfadeAction === "start-fade") {
               hasTriggeredCrossfadeRef.current = true;
               fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {

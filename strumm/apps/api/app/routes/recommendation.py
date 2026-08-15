@@ -510,7 +510,15 @@ async def explore_chat(
             "You are 'Strumm Flow', a premium, intelligent music curator assistant. "
             "Your goal is to help the user discover music, answer music-related questions, "
             "suggest tracks, build custom playlists, or edit existing playlists.\n"
-            f"\nThe user is looking for a '{prompt_mood}' vibe. Tailor your suggestions to match this mood.\n"
+            "\nThe user's latest message is your PRIMARY instruction. "
+            "Your reply must directly address exactly what they asked for — answer the "
+            "question, honor the requested purpose/occasion/genre/artist, and do what they "
+            "explicitly requested (suggest songs, build a playlist, edit a playlist, or "
+            "explain something). Never substitute a generic, pre-canned response for a "
+            "specific answer.\n"
+            f"\nSecondary hint only: a lightweight vibe derived from their wording is "
+            f"'{prompt_mood}'. Use it only as color to fine-tune tone or picks — never to "
+            f"override the user's explicit request.\n"
             "\nHere is what you know about the user:\n"
             f"• Liked songs: {likes_summary}\n"
             f"• Listening history: {history_summary}\n"
@@ -518,8 +526,12 @@ async def explore_chat(
             f"• Pre-generated candidates: {engine_songs_summary}\n"
             "\nCRITICAL: You must respond with ONLY a valid JSON object. No other text.\n"
             "\nJSON keys:\n"
-            "- message (string): Your 2-4 sentence response, conversational and brief.\n"
-            "- songs (array of {title:string, artist:string}): Up to 6 recommended songs. Empty array if none.\n"
+            "- message (string): A 2-4 sentence reply that is a DIRECT answer to the user's "
+            "message. Echo their request, state what you did/selected and why it fits, and "
+            "reference their own words where natural. No filler like 'Here is your update'.\n"
+            "- songs (array of {title:string, artist:string}): Up to 6 recommended songs. "
+            "Empty array if none. Choose songs that specifically match the user's stated "
+            "request (purpose, genre, era, artist), not just a generic mood mix.\n"
             "- create_playlist (boolean): true ONLY if user explicitly requested a new playlist.\n"
             "- playlist_name (string|null): Creative name if create_playlist=true.\n"
             "- playlist_description (string|null): Short description if create_playlist=true.\n"
@@ -530,7 +542,8 @@ async def explore_chat(
             "- requires_confirmation (boolean): true if editing pre-made content. false otherwise.\n"
             "\nRules:\n"
             "1. Suggest ONLY real, existing songs and artists.\n"
-            "2. You may pick from the pre-generated candidates or suggest different ones.\n"
+            "2. Prefer the pre-generated candidates when they fit the request; otherwise "
+            "suggest different real songs that fit better.\n"
             "3. Return ONLY raw JSON. No markdown, no code fences, no extra text."
         )
         
@@ -539,7 +552,7 @@ async def explore_chat(
             return {
                 "success": True,
                 "data": {
-                    "message": "Here's a personalized flow based on your listening preferences:",
+                    "message": f"Here's a personalized {prompt_mood.lower()} flow to match \"{user_prompt[:60]}\" — enjoy!",
                     "songs": engine_candidates.get("songs", []),
                     "playlist": None,
                     "source": "engine",
@@ -557,14 +570,16 @@ async def explore_chat(
             return {
                 "success": True,
                 "data": {
-                    "message": "Here's a personalized flow based on your listening preferences:",
+                    "message": f"Here's a personalized {prompt_mood.lower()} flow to match \"{user_prompt[:60]}\" — enjoy!",
                     "songs": engine_candidates.get("songs", []),
                     "playlist": None,
                     "source": "engine",
                 }
             }
 
-        message = result_data.get("message", "Here is your update:")
+        message = result_data.get("message") or (
+            f"Here's a personalized {prompt_mood.lower()} flow to match \"{user_prompt[:60]}\" — enjoy!"
+        )
         songs_suggestions = result_data.get("songs", [])
         create_playlist = result_data.get("create_playlist", False)
         playlist_name = result_data.get("playlist_name", "Flow Curated Playlist")

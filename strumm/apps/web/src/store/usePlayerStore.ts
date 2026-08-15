@@ -273,17 +273,26 @@ export const usePlayerStore = create<PlayerState>()(
 
       setShuffle: (isShuffle) => {
         if (isShuffle) {
-          const { currentSong } = get();
+          const { currentSong, repeatMode } = get();
           set({
             isShuffle: true,
             shufflePlayedIds: currentSong?.videoId ? [currentSong.videoId] : [],
+            // Repeat-one repeats the current track, which is incompatible
+            // with shuffle picking random tracks — turn it off.
+            repeatMode: repeatMode === "one" ? "none" : repeatMode,
           });
         } else {
           set({ isShuffle: false, shufflePlayedIds: [] });
         }
       },
 
-      setRepeatMode: (repeatMode) => set({ repeatMode }),
+      setRepeatMode: (repeatMode) => {
+        if (repeatMode === "one" && get().isShuffle) {
+          set({ repeatMode, isShuffle: false, shufflePlayedIds: [] });
+        } else {
+          set({ repeatMode });
+        }
+      },
 
       setReducedAnimation: (reducedAnimation) => set({ reducedAnimation }),
 
@@ -321,6 +330,8 @@ export const usePlayerStore = create<PlayerState>()(
 
       restorePlayerState: (state) => {
         const currentSong = state.currentSong ? cleanSong(state.currentSong) : null;
+        const isShuffle = state.isShuffle ?? false;
+        const repeatMode = state.repeatMode ?? "none";
         set({
           currentSong,
           queue: (state.queue ?? []).map(cleanSong),
@@ -328,8 +339,10 @@ export const usePlayerStore = create<PlayerState>()(
           isPlaying: false,
           currentTime: state.currentTime ?? 0,
           volume: state.volume ?? get().volume,
-          isShuffle: state.isShuffle ?? false,
-          repeatMode: state.repeatMode ?? "none",
+          isShuffle,
+          // Shuffle and repeat-one are mutually exclusive — never restore a
+          // persisted state where both are active.
+          repeatMode: isShuffle && repeatMode === "one" ? "none" : repeatMode,
           playbackRate: state.playbackRate ?? 1,
           audioQuality: state.audioQuality ?? get().audioQuality,
         });
@@ -380,6 +393,15 @@ export const usePlayerStore = create<PlayerState>()(
   
         audioQuality: state.audioQuality,
       }),
+      // Rehydrated cache could hold shuffle + repeat-one together; normalize
+      // it so the two modes stay mutually exclusive.
+      merge: (persisted, current) => {
+        const state = { ...current, ...(persisted as Partial<PlayerState>) };
+        if (state.isShuffle && state.repeatMode === "one") {
+          state.repeatMode = "none";
+        }
+        return state as PlayerState;
+      },
     }
   )
 );

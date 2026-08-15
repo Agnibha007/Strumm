@@ -58,4 +58,18 @@ describe("evaluateCrossfadeTick", () => {
       "none"
     );
   });
+
+  it("never starts a fade when repeat mode is 'one'", () => {
+    expect(evaluateCrossfadeTick(200, 200, false, "one")).toBe("none");
+    expect(evaluateCrossfadeTick(190, 200, false, "one")).toBe("none");
+  });
+
+  it("does not cancel an existing fade when repeat mode is 'one'", () => {
+    expect(evaluateCrossfadeTick(180, 200, true, "one")).toBe("none");
+  });
+
+  it("defaults to no repeat mode (crossfade allowed) when not provided", () => {
+    expect(evaluateCrossfadeTick(190, 200, false, "all")).toBe("start-fade");
+    expect(evaluateCrossfadeTick(190, 200, false)).toBe("start-fade");
+  });
 });

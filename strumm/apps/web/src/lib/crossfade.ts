@@ -24,12 +24,17 @@ export type CrossfadeTickAction = "start-fade" | "cancel-fade" | "none";
  *   not-yet-known durations are treated as "not eligible").
  * @param fadeTriggered - whether the fade-out has already been started for
  *   this track (mirrors `hasTriggeredCrossfadeRef`).
+ * @param repeatMode - player repeat mode. When "one" the current track
+ *   replays instead of advancing, so a crossfade to the next track must
+ *   never be started.
  */
 export function evaluateCrossfadeTick(
   currentTime: number,
   duration: number,
-  fadeTriggered: boolean
+  fadeTriggered: boolean,
+  repeatMode: "none" | "all" | "one" = "none"
 ): CrossfadeTickAction {
+  if (repeatMode === "one") return "none";
   if (duration > CROSSFADE_MIN_DURATION_SECONDS) {
     if (currentTime >= duration - CROSSFADE_START_SECONDS_BEFORE_END) {
       if (!fadeTriggered) return "start-fade";
