@@ -399,6 +399,36 @@ async def get_discovery_rate(
         }
 
 
+@router.get("/global-leaderboard")
+async def get_global_leaderboard():
+    """Get the top 3 global listeners by total listening minutes (all time)."""
+    try:
+        database = db.get_db()
+        pipeline = [
+            {"$match": {"statistics.totalListeningTime": {"$gt": 0}}},
+            {"$project": {
+                "_id": 0,
+                "displayName": {"$ifNull": ["$displayName", "Anonymous"]},
+                "avatar": {"$ifNull": ["$avatar", None]},
+                "totalMinutes": {"$divide": ["$statistics.totalListeningTime", 60]}
+            }},
+            {"$sort": {"totalMinutes": -1}},
+            {"$limit": 3}
+        ]
+        cursor = database[db.USERS].aggregate(pipeline)
+        leaders = []
+        async for doc in cursor:
+            leaders.append({
+                "displayName": doc["displayName"],
+                "avatar": doc.get("avatar"),
+                "totalMinutes": int(doc["totalMinutes"])
+            })
+        return {"success": True, "data": leaders}
+    except Exception as e:
+        logger.error(f"Error getting global leaderboard: {str(e)}")
+        return {"success": False, "error": "Failed to load global leaderboard."}
+
+
 @router.get("/dashboard")
 async def get_dashboard_stats(
     days: int = 30,

@@ -7,7 +7,7 @@ import { useThemeStore } from "web/store/useThemeStore";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import SoundDNAChart from "web/components/SoundDNAChart";
-import { Loader2, Music, Sparkles, Trophy, Compass, User, Play, Clock } from "lucide-react";
+import { Loader2, Music, Sparkles, Trophy, Compass, User, Play, Clock, Globe } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ReplayData {
@@ -60,6 +60,7 @@ export default function ReplayPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recalculating, setRecalculating] = useState(false);
+  const [globalLeaders, setGlobalLeaders] = useState<Array<{ displayName: string; avatar: string | null; totalMinutes: number }>>([]);
 
   const fetchReplay = useCallback(async () => {
     setError(null);
@@ -85,6 +86,11 @@ export default function ReplayPage() {
   useEffect(() => {
     if (!user) return;
     fetchReplay();
+    // Fetch global leaderboard (public, no auth required)
+    fetch(apiUrl("/stats/global-leaderboard"))
+      .then(r => r.json())
+      .then(json => { if (json.success && json.data) setGlobalLeaders(json.data); })
+      .catch(() => {});
   }, [token, fetchReplay]);
 
   const handleRecalculateLive = async () => {
@@ -221,6 +227,53 @@ export default function ReplayPage() {
           )}
         </button>
       </div>
+
+      {/* Global Leaderboard — Top 3 Listening Minutes */}
+      {globalLeaders.length > 0 && (
+        <motion.div
+          initial={isAnimated ? { opacity: 0, y: 12 } : undefined}
+          animate={isAnimated ? { opacity: 1, y: 0 } : undefined}
+          className="bg-surface/40 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0 overflow-hidden relative"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Globe className="w-4 h-4 text-primary flex-shrink-0" />
+            <span className="text-[9px] tracking-widest uppercase font-semibold text-primary">
+              Global Listening Champions
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 min-w-0">
+            {globalLeaders.map((leader, idx) => (
+              <div
+                key={leader.displayName}
+                className="flex items-center gap-3 p-3.5 bg-surface-elevated/40 border border-border/50 rounded-xl min-w-0"
+              >
+                <span className="text-lg font-editorial font-bold text-primary/70 flex-shrink-0 w-7 text-center">
+                  {idx === 0 ? "\u00B9" : idx === 1 ? "\u00B2" : "\u00B3"}
+                </span>
+                {leader.avatar ? (
+                  <img
+                    src={leader.avatar}
+                    loading="lazy"
+                    decoding="async"
+                    alt={leader.displayName}
+                    className="w-10 h-10 rounded-full object-cover border border-border/40 flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-surface border border-border/40 flex items-center justify-center flex-shrink-0">
+                    <User className="w-5 h-5 text-muted" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-semibold text-text truncate block">{leader.displayName}</span>
+                  <span className="text-xs text-muted font-mono">
+                    {leader.totalMinutes.toLocaleString()} min
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       <motion.div {...animatedProps} className="grid grid-cols-1 md:grid-cols-3 gap-6 min-w-0">
         {/* Personality Box */}
