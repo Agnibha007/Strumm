@@ -24,7 +24,7 @@ Why Hugging Face Spaces experiences SSL EOF while local development does not:
     2. Setting realistic Chrome 125 cipher suites
     3. Using keep-alive connections to avoid repeated SSL handshakes
     4. Recreating the entire HTTP session on SSL failure (fresh TCP connection)
-    5. Exponential backoff with session recreation (up to ~5s total budget)
+    5. Exponential backoff with session recreation (up to ~35s total budget)
     6. Fast-fail reachability detection to avoid hanging on blocked IPs
     7. Fallback client initialization when rate-limited or blocked
 """
@@ -54,13 +54,23 @@ YT_HOST = "music.youtube.com"
 YT_BASE_URL = f"https://{YT_HOST}"
 
 # Time budgets (seconds)
-CONNECT_TIMEOUT = 3.0
-READ_TIMEOUT = 3.0
+# Generous read budgets: YouTube can legitimately take several seconds to
+# respond from distant/north-IP egress (and drops seem like they may just be
+# slow). Kept high enough that real responses aren't cut off, while the
+# reachability cache still fast-fails when YT truly is blocked.
+CONNECT_TIMEOUT = 5.0
+READ_TIMEOUT = 10.0
 # Diagnostic probe timeouts — we want enough time to get a response
 # (including bot challenge pages) without hanging forever.
-PROBE_CONNECT_TIMEOUT = 3.0
-PROBE_READ_TIMEOUT = 5.0
-MAX_RETRY_TOTAL_SECONDS = 5.0
+PROBE_CONNECT_TIMEOUT = 5.0
+PROBE_READ_TIMEOUT = 10.0
+# Transient probe retries (with small backoff) before declaring a host down.
+PROBE_RETRIES = 2
+PROBE_RETRY_DELAY = 1.0
+# Overall retry deadline across all attempts of a YTMusic call. With a 10s
+# read budget per attempt and up to MAX_ATTEMPTS=3 tries plus backoff, this
+# must comfortably exceed one slow attempt to keep retries meaningful.
+MAX_RETRY_TOTAL_SECONDS = 35.0
 # Cache the unreachable result for 2 minutes to avoid hammering YT
 # when it's known to be blocked from cloud IP ranges.
 REACHABILITY_CACHE_TTL = 120.0
@@ -466,6 +476,26 @@ class YTMusicManager:
 
         return result
 
+    @staticmethod
+    def _is_probe_transient(error: Optional[str]) -> bool:
+        """True if a probe error looks transient (timeout/conn), warranting a retry."""
+        if not error:
+            return False
+        lower = error.lower()
+        return (
+            "timeout" in lower
+            or "timed out" in lower
+            or "connectionerror" in lower
+            or "connectionrefused" in lower
+            or "connection refused" in lower
+            or "connection reset" in lower
+            or "connection aborted" in lower
+            or "eof occurred" in lower
+            or "wrong_version_number" in lower
+            or "ssl" in lower
+            or "handshake" in lower
+        )
+
     def _run_diagnostics(self) -> list[dict[str, Any]]:
         """Run probes against all diagnostic targets and log results."""
         results = []
@@ -483,6 +513,19 @@ class YTMusicManager:
 
             r = self._probe_url(label, url, timeout)
             r["dns_duration"] = dns_duration
+
+            # Bounded retry on transient transport failures (timeout/conn).
+            attempts = 1
+            while (
+                not r["connect_ok"]
+                and attempts < PROBE_RETRIES
+                and self._is_probe_transient(r["error"])
+            ):
+                attempts += 1
+                time.sleep(PROBE_RETRY_DELAY * attempts)
+                r = self._probe_url(label, url, timeout)
+                r["dns_duration"] = dns_duration
+            r["probe_attempts"] = attempts
 
             if r["connect_ok"]:
                 logger.info(
