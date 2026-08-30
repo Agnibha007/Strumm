@@ -921,6 +921,84 @@ def call_ytmusic_safe(method: str, *args, **kwargs) -> Any:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Failure-aware search (structured result, not just empty list)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class YTSearchOutcome:
+    """
+    Structured outcome of a YTMusic search so callers can distinguish a
+    genuine "no results" from a transient provider failure.  The playlist
+    importer MUST NOT treat a provider failure as the song being unavailable.
+
+    Fields:
+        found:   True when ``results`` is a non-empty list of search items.
+        status:  one of
+                 "ok"            -> search executed, zero results (genuine)
+                 "unreachable"   -> YT blocked/unreachable from this host
+                 "rate_limited"  -> HTTP 429 / quota exceeded
+                 "timeout"       -> connect/read timeout
+                 "error"         -> any other provider/network error
+        reason:  human-readable (safe, non-secret) diagnostic string.
+        results: list of raw search items on success.
+    """
+    found: bool = False
+    status: str = "ok"
+    reason: str = ""
+    results: list = None
+
+    def __post_init__(self):
+        if self.results is None:
+            self.results = []
+
+
+def search_ytmusic_detailed(q: str, filter: Optional[str] = None) -> YTSearchOutcome:
+    """
+    Search YouTube Music and return a structured ``YTSearchOutcome`` instead
+    of silently collapsing every failure into an empty list.
+
+    This is the importer-facing primitive.  ``search_ytmusic_safe`` remains
+    for backward compatibility (other callers that only care about results).
+    """
+    try:
+        kwargs = {"filter": filter} if filter else {}
+        result = _manager.call("search", q, **kwargs)
+        if not result:
+            # The manager reached YT but got an empty/None result.  Distinguish
+            # an unreachable host from a true zero-result search.
+            if is_reachable() is False:
+                return YTSearchOutcome(
+                    found=False, status="unreachable",
+                    reason="music.youtube.com not reachable from this host",
+                )
+            return YTSearchOutcome(found=False, status="ok", reason="no results")
+        return YTSearchOutcome(found=True, status="ok", results=result)
+    except YTMusicUnreachableError:
+        return YTSearchOutcome(
+            found=False, status="unreachable",
+            reason="music.youtube.com not reachable from this host",
+        )
+    except Exception as exc:
+        name = type(exc).__name__
+        msg = f"{exc!s}"[:200]
+        if _manager._is_rate_limit_error(exc):
+            return YTSearchOutcome(
+                found=False, status="rate_limited",
+                reason=f"rate limited: {name}: {msg}",
+            )
+        if _manager._is_timeout_error(exc):
+            return YTSearchOutcome(
+                found=False, status="timeout",
+                reason=f"timeout: {name}: {msg}",
+            )
+        return YTSearchOutcome(
+            found=False, status="error",
+            reason=f"{name}: {msg}",
+        )
+
+
 def cache_hit() -> None:
     """Increment the cache-hit counter in YTMusic metrics."""
     _manager.metrics_obj.record_cache_hit()

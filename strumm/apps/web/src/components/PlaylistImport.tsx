@@ -18,14 +18,31 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
   const [csvContent, setCsvContent] = useState("");
   
   const [loading, setLoading] = useState(false);
+  type ImportFailure = {
+    title: string;
+    artist: string;
+    album?: string;
+    status?: string;
+    reason?: string;
+    confidence?: number;
+    candidates?: any[];
+  };
+
   const [results, setResults] = useState<{
     matched: Song[];
     similar_matches: Array<Song & { match_type?: string; confidence?: number }>;
-    not_found: Array<{ title: string; artist: string; album?: string; candidates?: any[] }>;
+    not_found: ImportFailure[];
     duplicates: Song[];
+    failed: ImportFailure[];
+    ambiguous: ImportFailure[];
+    skipped: ImportFailure[];
     total_matched: number;
     total_similar: number;
+    total_not_found: number;
     total_failed: number;
+    total_ambiguous: number;
+    total_skipped: number;
+    total_tracks: number;
   } | null>(null);
   
   const [error, setError] = useState<string | null>(null);
@@ -199,10 +216,30 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
               <div className="text-[10px] uppercase text-muted">Duplicates</div>
             </div>
             <div className="bg-surface-elevated border border-border/40 p-3 rounded text-center">
-              <div className="text-lg font-bold text-primary">{results.total_failed}</div>
+              <div className="text-lg font-bold text-primary">{results.not_found.length}</div>
               <div className="text-[10px] uppercase text-muted">Missing</div>
             </div>
           </div>
+
+          {(results.failed?.length > 0 || results.ambiguous?.length > 0 || results.skipped?.length > 0) && (
+            <div className="text-[11px] text-muted flex flex-wrap gap-x-4 gap-y-1 border-t border-border/40 pt-3">
+              {results.failed?.length > 0 && (
+                <span>
+                  <span className="text-primary font-semibold">{results.failed.length} failed to resolve</span> (search/network)
+                </span>
+              )}
+              {results.ambiguous?.length > 0 && (
+                <span>
+                  <span className="text-amber-500 font-semibold">{results.ambiguous.length} ambiguous</span> (multiple candidates)
+                </span>
+              )}
+              {results.skipped?.length > 0 && (
+                <span>
+                  <span className="text-muted font-semibold">{results.skipped.length} skipped</span> (missing metadata)
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="max-height-[180px] overflow-y-auto space-y-2 border border-border/40 rounded p-3 bg-background/20">
             {results.matched.map((s) => (
@@ -250,8 +287,41 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
                 <span className="text-muted truncate max-w-[70%]">
                   {s.title} <span className="text-[10px]">by {s.artist}</span>
                 </span>
-                <span className="flex items-center gap-1 text-[10px] text-primary font-semibold uppercase">
+                <span title={s.reason} className="flex items-center gap-1 text-[10px] text-primary font-semibold uppercase">
                   <HelpCircle className="w-3 h-3" /> Missing
+                </span>
+              </div>
+            ))}
+
+            {results.failed?.map((s, idx) => (
+              <div key={"fail-" + idx} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
+                <span className="text-muted truncate max-w-[70%]">
+                  {s.title} <span className="text-[10px]">by {s.artist}</span>
+                </span>
+                <span title={s.reason} className="flex items-center gap-1 text-[10px] text-primary font-semibold uppercase">
+                  <AlertTriangle className="w-3 h-3" /> Couldn&apos;t Resolve
+                </span>
+              </div>
+            ))}
+
+            {results.ambiguous?.map((s, idx) => (
+              <div key={"amb-" + idx} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
+                <span className="text-muted truncate max-w-[70%]">
+                  {s.title} <span className="text-[10px]">by {s.artist}</span>
+                </span>
+                <span title={s.reason} className="flex items-center gap-1 text-[10px] text-amber-500 font-semibold uppercase">
+                  <HelpCircle className="w-3 h-3" /> Ambiguous
+                </span>
+              </div>
+            ))}
+
+            {results.skipped?.map((s, idx) => (
+              <div key={"skip-" + idx} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
+                <span className="text-muted truncate max-w-[70%]">
+                  {s.title} <span className="text-[10px]">by {s.artist}</span>
+                </span>
+                <span title={s.reason} className="flex items-center gap-1 text-[10px] text-muted font-semibold uppercase">
+                  Skipped
                 </span>
               </div>
             ))}
