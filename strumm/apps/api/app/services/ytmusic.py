@@ -1078,6 +1078,47 @@ class YTSearchOutcome:
             self.results = []
 
 
+# Which provider outcome statuses warrant trying the secondary fallback chain.
+_FALLBACK_STATUSES = {"unreachable", "timeout", "error"}
+
+
+def _apply_search_fallback(
+    outcome: YTSearchOutcome, q: str, filter: Optional[str]
+) -> YTSearchOutcome:
+    """
+    If ``outcome`` represents a provider failure / unreachable result and we're
+    searching for songs, try the secondary providers (YouTube Data API v3, then
+    yt-dlp) to still resolve tracks. Returns ``outcome`` unchanged when the
+    fallback can't help (non-song filter, zero fallback results).
+    """
+    if outcome.status not in _FALLBACK_STATUSES:
+        return outcome
+    if filter and filter != "songs":
+        # Fallback providers only return generic videos; keep the original
+        # failure for album/artist/playlist-filtered searches.
+        return outcome
+    try:
+        from app.services.ytfallback import search_fallback
+        fallback_results = search_fallback(q)
+    except Exception as exc:
+        logger.warning(
+            f"search fallback raised for q={q!r}: {type(exc).__name__}: {exc!s:.120}"
+        )
+        return outcome
+    if not fallback_results:
+        return outcome
+    logger.info(
+        f"search fallback resolved {len(fallback_results)} result(s) for "
+        f"q={q!r} (primary status={outcome.status})"
+    )
+    return YTSearchOutcome(
+        found=True,
+        status="ok",
+        reason=f"fallback ({outcome.status}); primary={outcome.reason}",
+        results=fallback_results,
+    )
+
+
 def search_ytmusic_detailed(q: str, filter: Optional[str] = None) -> YTSearchOutcome:
     """
     Search YouTube Music and return a structured ``YTSearchOutcome`` instead
@@ -1085,6 +1126,11 @@ def search_ytmusic_detailed(q: str, filter: Optional[str] = None) -> YTSearchOut
 
     This is the importer-facing primitive.  ``search_ytmusic_safe`` remains
     for backward compatibility (other callers that only care about results).
+
+    When YouTube Music is unreachable / failing from this host, this method
+    transparently falls back to the secondary providers (YouTube Data API v3,
+    then yt-dlp) so playlist imports can still resolve tracks. See
+    ``app.services.ytfallback`` for the fallback chain and result shape.
     """
     try:
         kwargs = {"filter": filter} if filter else {}
@@ -1093,17 +1139,19 @@ def search_ytmusic_detailed(q: str, filter: Optional[str] = None) -> YTSearchOut
             # The manager reached YT but got an empty/None result.  Distinguish
             # an unreachable host from a true zero-result search.
             if is_reachable() is False:
-                return YTSearchOutcome(
+                outcome = YTSearchOutcome(
                     found=False, status="unreachable",
                     reason="music.youtube.com not reachable from this host",
                 )
+                return _apply_search_fallback(outcome, q, filter)
             return YTSearchOutcome(found=False, status="ok", reason="no results")
         return YTSearchOutcome(found=True, status="ok", results=result)
     except YTMusicUnreachableError:
-        return YTSearchOutcome(
+        outcome = YTSearchOutcome(
             found=False, status="unreachable",
             reason="music.youtube.com not reachable from this host",
         )
+        return _apply_search_fallback(outcome, q, filter)
     except Exception as exc:
         name = type(exc).__name__
         msg = f"{exc!s}"[:200]
@@ -1113,14 +1161,16 @@ def search_ytmusic_detailed(q: str, filter: Optional[str] = None) -> YTSearchOut
                 reason=f"rate limited: {name}: {msg}",
             )
         if _manager._is_timeout_error(exc):
-            return YTSearchOutcome(
+            outcome = YTSearchOutcome(
                 found=False, status="timeout",
                 reason=f"timeout: {name}: {msg}",
             )
-        return YTSearchOutcome(
+            return _apply_search_fallback(outcome, q, filter)
+        outcome = YTSearchOutcome(
             found=False, status="error",
             reason=f"{name}: {msg}",
         )
+        return _apply_search_fallback(outcome, q, filter)
 
 
 def cache_hit() -> None:

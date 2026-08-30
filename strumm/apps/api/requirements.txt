@@ -16,6 +16,7 @@ Pillow>=11.0.0
 requests>=2.32.0
 dnspython>=2.6.0
 gunicorn>=22.0.0
+yt-dlp>=2024.12.13
 sentry-sdk[fastapi]>=2.0.0
 pytest>=9.0.0
 pytest-asyncio>=0.25.0
