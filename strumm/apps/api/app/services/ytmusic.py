@@ -27,11 +27,18 @@ Why Hugging Face Spaces experiences SSL EOF while local development does not:
     5. Exponential backoff with session recreation (up to ~35s total budget)
     6. Fast-fail reachability detection to avoid hanging on blocked IPs
     7. Fallback client initialization when rate-limited or blocked
+    8. Optionally routing every YTMusic request through a ZenRows residential
+       proxy (ZENROWS_PROXY_URL) so the egress IP is one YouTube doesn't block.
+       When enabled via the proxy, the reachability probes and all client calls
+       go through it. If the proxy is unavailable or not configured, we fail
+       closed: calls surface as unreachable / provider error rather than a
+       silent "no results".
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
 import ssl
 import socket
@@ -75,6 +82,26 @@ MAX_RETRY_TOTAL_SECONDS = 35.0
 # when it's known to be blocked from cloud IP ranges.
 REACHABILITY_CACHE_TTL = 120.0
 
+# -- egress proxy (ZenRows residential proxies) -----------------------------
+# YouTube's CDN blocks many cloud-provider IP ranges (HF Spaces / Render /
+# VPS egress). Routing all YTMusic traffic through a residential proxy changes
+# the egress IP to one YouTube doesn't block. Set ZENROWS_PROXY_URL (and
+# optionally ZENROWS_PROXY_ENABLED) in the environment to enable.
+#
+# ZenRows residential proxy URL format:
+#   http://<proxy_username>:<proxy_password>@superproxy.zenrows.com:1337
+# The proxy password may carry geo/rotation options (e.g. "_region-us").
+# See https://docs.zenrows.com/residential-proxies/get-started/first-request
+#
+# When the proxy is disabled OR the proxy itself fails, we fail closed: every
+# YTMusic call and probe will surface as unreachable / provider error so the
+# importer never silences a real outage into a false "not found".
+ZENROWS_PROXY_URL = (os.getenv("ZENROWS_PROXY_URL") or "").strip()
+ZENROWS_PROXY_ENABLED = (
+    os.getenv("ZENROWS_PROXY_ENABLED", "true" if ZENROWS_PROXY_URL else "false").lower()
+    == "true"
+)
+
 # Connection pool settings
 POOL_CONNECTIONS = 10
 POOL_MAXSIZE = 20
@@ -108,6 +135,26 @@ CIPHER_SUITES = (
     "ECDHE-RSA-AES128-SHA:"
     "ECDHE-RSA-AES256-SHA"
 )
+
+
+def _proxy_is_enabled() -> bool:
+    """True when a residential egress proxy is configured and active."""
+    return ZENROWS_PROXY_ENABLED and bool(ZENROWS_PROXY_URL)
+
+
+def _proxies_config() -> Optional[dict[str, str]]:
+    """
+    Return a ``requests`` proxies dict for the configured egress proxy.
+
+    Returns ``None`` when no proxy is configured (direct connection, the
+    historical default). Both http and https are routed through the proxy so
+    every YTMusic request (search, watch playlist, lyrics, probes) hops onto a
+    residential IP that YouTube doesn't block.
+    """
+    if not _proxy_is_enabled():
+        return None
+    return {"http": ZENROWS_PROXY_URL, "https": ZENROWS_PROXY_URL}
+
 
 # ---------------------------------------------------------------------------
 # Metrics
@@ -254,6 +301,14 @@ class SSLResilientAdapter(HTTPAdapter):
         kwargs["ssl_context"] = self._ssl_ctx_verified
         return super().init_poolmanager(*args, **kwargs)
 
+    def proxy_manager_for(self, *args, **kwargs) -> Any:
+        # When routing through an egress proxy (ZenRows residential), the
+        # proxied HTTPS tunnel is built via urllib3.ProxyManager. Apply the
+        # same Chrome-like TLS context so the fingerprint is consistent
+        # whether we connect directly or through the proxy.
+        kwargs.setdefault("ssl_context", self._ssl_ctx_verified)
+        return super().proxy_manager_for(*args, **kwargs)
+
     def send(self, request: requests.PreparedRequest, **kwargs) -> requests.Response:
         kwargs.setdefault("timeout", (CONNECT_TIMEOUT, READ_TIMEOUT))
         # Try with SSL verification first
@@ -302,6 +357,15 @@ class SessionManager:
             "Keep-Alive": "timeout=30, max=1000",
         })
 
+        # Route through the residential egress proxy when configured so
+        # YTMusic is reachable from cloud IP ranges that YouTube blocks.
+        proxy_cfg = _proxies_config()
+        if proxy_cfg:
+            session.proxies.update(proxy_cfg)
+            # Ignore ambient HTTP(S)_PROXY env vars so we always use the
+            # explicit ZenRows proxy (never an unintended system proxy).
+            session.trust_env = False
+
         return session
 
 
@@ -324,6 +388,17 @@ class YTMusicManager:
         self._reachability_cached: Optional[bool] = None
         self._reachability_probed: bool = False
         self._metrics = YTMusicMetrics()
+
+        if _proxy_is_enabled():
+            logger.info(
+                "YTMusic egress proxy ENABLED — routing all traffic via "
+                "ZenRows residential proxies"
+            )
+        else:
+            logger.info(
+                "YTMusic egress proxy disabled — connecting to YouTube Music "
+                "directly (may be blocked from cloud IP ranges)"
+            )
 
     # -- Public metrics -----------------------------------------------------
 
@@ -607,9 +682,10 @@ class YTMusicManager:
                 self._metrics.record_reachability_fail()
 
         if not reachable:
+            egress = "via residential proxy" if _proxy_is_enabled() else "directly"
             logger.error(
-                f"music.youtube.com REACHABILITY: FAIL — cached for {REACHABILITY_CACHE_TTL:.0f}s. "
-                f"Reason: {failure_reason}"
+                f"music.youtube.com REACHABILITY: FAIL {egress} — cached for "
+                f"{REACHABILITY_CACHE_TTL:.0f}s. Reason: {failure_reason}"
             )
         else:
             logger.info(
@@ -640,6 +716,11 @@ class YTMusicManager:
             client._session.headers.update({"User-Agent": DEFAULT_UA})
             # Try SSL verification; the SSLResilientAdapter will handle fallback
             client._session.verify = True
+            # Ensure the fallback also goes through the egress proxy (if any)
+            proxy_cfg = _proxies_config()
+            if proxy_cfg:
+                client._session.proxies.update(proxy_cfg)
+                client._session.trust_env = False
             logger.info("Fallback YTMusic client created successfully")
             return client
         except Exception as exc:
