@@ -260,6 +260,30 @@ export default function AudioEngine() {
     return true;
   }, [setPlayerRef]);
 
+  // Enter background mode for the given video and make sure the host <audio>
+  // element takes over the direct stream. Commits the background flag UP-FRONT,
+  // before any URL is resolved, so a URL that completes while the page is
+  // hidden (async yt-dlp extraction, seconds after lock-screen) hands straight
+  // over here — previously enterBackground bailed early on a missing URL and
+  // the pre-resolve completion path could never fire.
+  const ensureBackgroundAudio = useCallback((videoId: string) => {
+    if (!backgroundModeRef.current) backgroundModeRef.current = true;
+
+    if (getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId]) {
+      activateBackgroundAudio(videoId);
+      return;
+    }
+
+    resolveDirectAudioUrl(videoId).then((url) => {
+      if (!url || !backgroundModeRef.current) return;
+      directAudioUrlsRef.current[videoId] = url;
+      const state = usePlayerStore.getState();
+      if (state.isPlaying && state.currentSong?.videoId === videoId) {
+        activateBackgroundAudio(videoId);
+      }
+    });
+  }, [activateBackgroundAudio]);
+
   useEffect(() => {
     return () => {
       if (fadeIntervalRef.current) {
@@ -688,6 +712,38 @@ export default function AudioEngine() {
     };
   }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, activateBackgroundAudio]);
 
+  // Pre-warm direct audio URLs for the next few queue tracks so a lock-screen
+  // handover is already resolved by the time a song starts (extraction via the
+  // API can take seconds). Cheap — results are cached, requests are deduped.
+  useEffect(() => {
+    const upcoming: string[] = [];
+    const seen = new Set<string>();
+    for (let k = currentIndex + 1; k < queue.length && upcoming.length < 2; k++) {
+      const v = queue[k]?.videoId;
+      if (!v || seen.has(v) || getCachedDirectAudioUrl(v)) continue;
+      seen.add(v);
+      upcoming.push(v);
+    }
+    if (upcoming.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const v of upcoming) {
+        if (cancelled) return;
+        try {
+          const url = await resolveDirectAudioUrl(v);
+          if (url && !cancelled) directAudioUrlsRef.current[v] = url;
+        } catch (e) {
+          // Extraction failed for this track — skip and try the next.
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentIndex, queue, currentSong?.videoId]);
+
   // Hybrid background mode: mobile browsers suspend YouTube iframes (and the
   // whole tab's audio) when the screen locks, but keep a host <audio> element
   // alive. When the page is backgrounded, hand the current YouTube song to the
@@ -701,28 +757,38 @@ export default function AudioEngine() {
       if (!state.isPlaying || !song || song.metadata?.audioUrl) return;
       const videoId = song.videoId;
       if (!videoId) return;
-      if (getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId]) {
-        backgroundModeRef.current = true;
-        activateBackgroundAudio(videoId);
-      }
+      ensureBackgroundAudio(videoId);
     };
 
     const leaveBackground = () => {
       if (!backgroundModeRef.current) return;
       backgroundModeRef.current = false;
 
+      const state = usePlayerStore.getState();
       const audio = htmlAudioRef.current;
+      const song = state.currentSong;
+
       if (audio && !isSilentAudio(audio)) {
         try {
           audio.pause();
         } catch (e) {}
-        audio.removeAttribute("src");
         try {
+          audio.removeAttribute("src");
           audio.load();
         } catch (e) {}
       }
 
-      const state = usePlayerStore.getState();
+      // Restore the silent loop track so the host page stays the OS media
+      // session owner now that the audible source is the YouTube iframe again.
+      if (song && !song.metadata?.audioUrl && audio) {
+        try {
+          audio.src = SILENT_AUDIO_SRC;
+          audio.loop = true;
+          audio.volume = 1.0;
+        } catch (e) {}
+        if (state.isPlaying) audio.play().catch(() => {});
+      }
+
       if (!state.isPlaying) return;
       const yt = playerInstanceRef.current;
       if (!yt || typeof yt.getPlayerState !== "function") return;
@@ -751,7 +817,26 @@ export default function AudioEngine() {
       window.removeEventListener("pagehide", onPageHide);
       leaveBackground();
     };
-  }, [activateBackgroundAudio]);
+  }, [ensureBackgroundAudio]);
+
+  // Resilience net: while the page is backgrounded some OSes suspend the host
+  // <audio> element. Re-asserting play() every few seconds brings it back
+  // without user input whenever throttling allows a timer tick.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!backgroundModeRef.current) return;
+      const state = usePlayerStore.getState();
+      if (!state.isPlaying) return;
+      const audio = htmlAudioRef.current;
+      if (!audio || !audio.src || isSilentAudio(audio) || audio.error) return;
+      if (audio.paused && audio.readyState >= 2) {
+        try {
+          audio.play().catch(() => {});
+        } catch (e) {}
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Synchronize Media Session position state with actual playback position
   useEffect(() => {
@@ -974,8 +1059,11 @@ export default function AudioEngine() {
       // B. YouTube song
       // If the page is backgrounded (screen locked), keep playing through the
       // host <audio> element on its resolved direct stream instead of the
-      // iframe, which mobile OSes suspend while backgrounded.
-      if (backgroundModeRef.current && currentSong?.videoId && activateBackgroundAudio(currentSong.videoId)) {
+      // iframe, which mobile OSes suspend while backgrounded. When the direct
+      // URL isn't ready yet (fresh extraction) ensureBackgroundAudio commits
+      // the takeover request and fires the moment the URL lands.
+      if (backgroundModeRef.current && currentSong?.videoId) {
+        ensureBackgroundAudio(currentSong.videoId);
         return;
       }
       // Play a silent audio track so the host page retains the OS MediaSession keys.
