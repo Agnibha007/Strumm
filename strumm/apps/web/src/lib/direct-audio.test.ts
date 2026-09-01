@@ -53,6 +53,20 @@ describe("resolveDirectAudioUrl", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("dedupes concurrent resolutions of the same video id", async () => {
+    fetchMock.mockReturnValue(
+      okJson({ success: true, data: { videoId: "abc123", audioUrl: "https://googlevideo.example/a.m4a" } }),
+    );
+
+    const [a, b] = await Promise.all([
+      resolveDirectAudioUrl("abc123"),
+      resolveDirectAudioUrl("abc123"),
+    ]);
+    expect(a).toBe("https://googlevideo.example/a.m4a");
+    expect(b).toBe(a);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("returns null when the backend reports no direct audio", async () => {
     fetchMock.mockReturnValueOnce(okJson({ success: false, error: "unavailable" }));
     expect(await resolveDirectAudioUrl("abc123")).toBeNull();

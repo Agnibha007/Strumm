@@ -18,6 +18,7 @@ const CACHE_TTL_MS = 45 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 const cache = new Map<string, { url: string; at: number }>();
+const inflight = new Map<string, Promise<string | null>>();
 
 export function getCachedDirectAudioUrl(videoId: string): string | null {
   const entry = cache.get(videoId);
@@ -37,7 +38,8 @@ function cacheDirectAudioUrl(videoId: string, url: string) {
  * Resolve a direct audio URL for background / lock-screen playback.
  *
  * The URL is fetched once from `/play/{id}` and memoized client-side for
- * 45 minutes (server cache TTL is 2h). Returns null when the track has no
+ * 45 minutes (server cache TTL is 2h). Concurrent calls for the same video
+ * share one request (in-flight dedupe). Returns null when the track has no
  * direct audio (e.g. sign-in required) — callers silently fall back to the
  * YouTube iframe.
  */
@@ -47,6 +49,16 @@ export async function resolveDirectAudioUrl(videoId: string): Promise<string | n
   const cached = getCachedDirectAudioUrl(videoId);
   if (cached) return cached;
 
+  const inProgress = inflight.get(videoId);
+  if (inProgress) return inProgress;
+
+  const promise = fetchDirectAudio(videoId);
+  inflight.set(videoId, promise);
+  promise.finally(() => inflight.delete(videoId));
+  return promise;
+}
+
+async function fetchDirectAudio(videoId: string): Promise<string | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {

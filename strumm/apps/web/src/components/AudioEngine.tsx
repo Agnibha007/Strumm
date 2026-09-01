@@ -200,8 +200,10 @@ export default function AudioEngine() {
 
   // Switch a YouTube song onto the host <audio> element (background mode).
   // Returns false when there is no resolved direct URL (callers fall back to
-  // the iframe, which is the status quo behavior).
-  const activateBackgroundAudio = (videoId: string): boolean => {
+  // the iframe, which is the status quo behavior). Memoized with stable deps so
+  // its identity never changes between renders — it is a dependency of the
+  // pre-resolve effect keyed on the current song.
+  const activateBackgroundAudio = useCallback((videoId: string): boolean => {
     const state = usePlayerStore.getState();
     const song = state.currentSong;
     if (!song || song.metadata?.audioUrl) return false; // podcasts already host audio
@@ -219,7 +221,8 @@ export default function AudioEngine() {
     if (!audio) return false;
     try {
       audio.preload = "auto";
-      audio.volume = volume;
+      // Read volume fresh from the store so the callback stays stable.
+      audio.volume = usePlayerStore.getState().volume;
       audio.src = url;
     } catch (e) {
       return false;
@@ -255,7 +258,7 @@ export default function AudioEngine() {
       },
     });
     return true;
-  };
+  }, [setPlayerRef]);
 
   useEffect(() => {
     return () => {
