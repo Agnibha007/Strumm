@@ -229,15 +229,35 @@ export default function AudioEngine() {
     }
 
     const seekTo = Math.max(0, state.currentTime);
+    let appliedSeek = false;
     const applySeek = () => {
+      if (appliedSeek) return;
       try {
         audio.currentTime = seekTo;
+        appliedSeek = true;
       } catch (e) {}
     };
-    applySeek();
-    audio.addEventListener("loadedmetadata", applySeek, { once: true });
 
-    audio.play().catch(() => {});
+    // Start playback. The first play() right after setting a new src can be
+    // rejected on Android (media not loaded yet), and a pause leaves the tab
+    // inaudible — which makes Chrome pause its background timers, so the
+    // heartbeat below never runs. Re-assert play() once the stream is ready.
+    let started = false;
+    const startPlayback = () => {
+      if (started) return;
+      started = true;
+      try {
+        audio.play().catch(() => {});
+      } catch (e) {}
+    };
+
+    applySeek();
+    audio.addEventListener("loadedmetadata", () => {
+      applySeek();
+      startPlayback();
+    }, { once: true });
+    audio.addEventListener("canplay", startPlayback, { once: true });
+    startPlayback();
 
     // Delegate player controls to the host <audio> until we leave background mode.
     setPlayerRef({
