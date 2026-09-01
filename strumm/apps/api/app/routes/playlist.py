@@ -1356,6 +1356,7 @@ async def _run_import_pipeline(
         )
 
     all_matched = matched + similar_match
+    playlist_id = None
 
     if all_matched:
         new_playlist = {
@@ -1368,7 +1369,8 @@ async def _run_import_pipeline(
             "collaborators": [],
             "createdAt": datetime.utcnow()
         }
-        await database[db.PLAYLISTS].insert_one(new_playlist)
+        result = await database[db.PLAYLISTS].insert_one(new_playlist)
+        playlist_id = str(result.inserted_id)
 
     return {
         "success": True,
@@ -1388,6 +1390,7 @@ async def _run_import_pipeline(
             "total_skipped": len(skipped),
             "total_tracks": len(parsed_rows),
             "searches_used": ctx.searches_used,
+            "playlistId": playlist_id,
         }
     }
 

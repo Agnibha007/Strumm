@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
-import { Check, AlertTriangle, HelpCircle, ArrowRight, Play } from "lucide-react";
+import { Check, AlertTriangle, HelpCircle, ArrowRight, Play, Plus } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl, cleanText } from "web/lib/api";
+import SongArtwork from "web/components/SongArtwork";
 import { resolveTracksOnBrowser, BrowserMusicCandidate } from "web/services/search/BrowserYouTubeMusicResolver";
 
 interface PlaylistImportProps {
@@ -26,7 +27,15 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     status?: string;
     reason?: string;
     confidence?: number;
-    candidates?: any[];
+    candidates?: ImportCandidate[];
+  };
+
+  type ImportCandidate = {
+    videoId?: string;
+    title?: string;
+    artist?: string;
+    thumbnail?: string;
+    duration?: number;
   };
 
   const [results, setResults] = useState<{
@@ -44,11 +53,124 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     total_ambiguous: number;
     total_skipped: number;
     total_tracks: number;
+    playlistId?: string | null;
   } | null>(null);
   
   const [error, setError] = useState<string | null>(null);
   const { playSong, setQueue } = usePlayerStore();
   const token = useAuthStore((s) => s.token);
+
+  const [playlistId, setPlaylistId] = useState<string | null>(null);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [chooserBusy, setChooserBusy] = useState<Record<string, boolean>>({});
+  const [chooserError, setChooserError] = useState<string | null>(null);
+
+  const ensurePlaylist = async (): Promise<string> => {
+    if (playlistId) return playlistId;
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": token ? `Bearer ${token}` : "",
+    };
+    const res = await fetch(apiUrl("/playlists"), {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({
+        name: `Imported: ${cleanText(playlistName, 120) || "Playlist"}`,
+        visibility: "private",
+      }),
+    });
+    const json = await res.json();
+    if (!json.success || !json.data?.id) {
+      throw new Error(json.error || "Could not create the imported playlist.");
+    }
+    setPlaylistId(json.data.id as string);
+    return json.data.id as string;
+  };
+
+  const chooseCandidate = async (candidate: ImportCandidate) => {
+    const cid = candidate.videoId;
+    if (!cid || addedIds.has(cid) || chooserBusy[cid]) return;
+    setChooserBusy((b) => ({ ...b, [cid]: true }));
+    setChooserError(null);
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": token ? `Bearer ${token}` : "",
+    };
+    try {
+      const id = await ensurePlaylist();
+      const res = await fetch(apiUrl(`/playlists/${id}/songs`), {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({
+          song: {
+            videoId: cid,
+            title: candidate.title || "Untitled",
+            artist: candidate.artist || "Unknown Artist",
+            thumbnail: candidate.thumbnail || "",
+            duration: candidate.duration || 0,
+          },
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        if (String(json.error || "").toLowerCase().includes("already")) {
+          setAddedIds((prev) => new Set(prev).add(cid));
+        } else {
+          setChooserError(json.error || "Could not add the chosen track.");
+        }
+        return;
+      }
+      setAddedIds((prev) => new Set(prev).add(cid));
+    } catch {
+      setChooserError("Couldn't reach the server to add the chosen track.");
+    } finally {
+      setChooserBusy((b) => {
+        const next = { ...b };
+        delete next[cid];
+        return next;
+      });
+    }
+  };
+
+  const renderChooser = (item: ImportFailure) => {
+    const cands: ImportCandidate[] = (item.candidates || []).filter((c) => c && c.videoId);
+    if (cands.length === 0) return null;
+    return (
+      <div className="mt-2 pl-3 border-l-2 border-border/40 space-y-1.5">
+        <p className="text-[10px] uppercase tracking-wider text-muted">Choose a match to add</p>
+        {cands.map((c) => {
+          const cid = c.videoId as string;
+          const added = addedIds.has(cid);
+          const busy = !!chooserBusy[cid];
+          return (
+            <div key={cid} className="flex items-center gap-2 py-0.5">
+              <SongArtwork
+                song={{ videoId: cid, thumbnail: c.thumbnail || "", title: c.title || "" }}
+                className="w-8 h-8 rounded flex-shrink-0"
+                iconClassName="w-3 h-3"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] text-text truncate">{c.title}</p>
+                <p className="text-[10px] text-muted truncate">{c.artist}</p>
+              </div>
+              <button
+                onClick={() => chooseCandidate(c)}
+                disabled={added || busy}
+                className={`flex items-center gap-1 text-[10px] font-semibold uppercase px-2 py-1 rounded cursor-pointer transition ${
+                  added ? "text-emerald-500" : "text-accent hover:bg-accent/10"
+                }`}
+              >
+                {added ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                {added ? "Added" : busy ? "Adding…" : "Add"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const handleImport = async () => {
     if (!playlistName.trim()) {
@@ -59,6 +181,9 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     setLoading(true);
     setError(null);
     setResults(null);
+    setPlaylistId(null);
+    setAddedIds(new Set());
+    setChooserError(null);
     
     const source = activeTab === "csv" ? "csv" : (inputUrl.includes("spotify") ? "spotify" : "youtube");
     const data = activeTab === "csv" ? csvContent : inputUrl;
@@ -117,6 +242,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
       const json = await resolveResponse.json();
       if (json.success) {
         setResults(json.data);
+        setPlaylistId(json.data.playlistId ?? null);
         onImported?.();
       } else {
         setError(json.error || "Failed to import. Check format or connection.");
@@ -278,6 +404,12 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
             </div>
           )}
 
+          {chooserError && (
+            <div className="text-[11px] text-primary bg-primary/5 border border-primary/20 p-2 rounded">
+              {chooserError}
+            </div>
+          )}
+
           <div className="max-height-[180px] overflow-y-auto space-y-2 border border-border/40 rounded p-3 bg-background/20">
             {results.matched.map((s) => (
               <div key={s.videoId} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
@@ -320,35 +452,44 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
             ))}
 
             {results.not_found.map((s, idx) => (
-              <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
-                <span className="text-muted truncate max-w-[70%]">
-                  {s.title} <span className="text-[10px]">by {s.artist}</span>
-                </span>
-                <span title={s.reason} className="flex items-center gap-1 text-[10px] text-primary font-semibold uppercase">
-                  <HelpCircle className="w-3 h-3" /> Missing
-                </span>
+              <div key={idx} className="border-b border-border/10 last:border-0 py-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted truncate max-w-[70%]">
+                    {s.title} <span className="text-[10px]">by {s.artist}</span>
+                  </span>
+                  <span title={s.reason} className="flex items-center gap-1 text-[10px] text-primary font-semibold uppercase">
+                    <HelpCircle className="w-3 h-3" /> Missing
+                  </span>
+                </div>
+                {renderChooser(s)}
               </div>
             ))}
 
             {results.failed?.map((s, idx) => (
-              <div key={"fail-" + idx} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
-                <span className="text-muted truncate max-w-[70%]">
-                  {s.title} <span className="text-[10px]">by {s.artist}</span>
-                </span>
-                <span title={s.reason} className="flex items-center gap-1 text-[10px] text-primary font-semibold uppercase">
-                  <AlertTriangle className="w-3 h-3" /> Couldn&apos;t Resolve
-                </span>
+              <div key={"fail-" + idx} className="border-b border-border/10 last:border-0 py-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted truncate max-w-[70%]">
+                    {s.title} <span className="text-[10px]">by {s.artist}</span>
+                  </span>
+                  <span title={s.reason} className="flex items-center gap-1 text-[10px] text-primary font-semibold uppercase">
+                    <AlertTriangle className="w-3 h-3" /> Couldn&apos;t Resolve
+                  </span>
+                </div>
+                {renderChooser(s)}
               </div>
             ))}
 
             {results.ambiguous?.map((s, idx) => (
-              <div key={"amb-" + idx} className="flex items-center justify-between text-xs py-1 border-b border-border/10 last:border-0">
-                <span className="text-muted truncate max-w-[70%]">
-                  {s.title} <span className="text-[10px]">by {s.artist}</span>
-                </span>
-                <span title={s.reason} className="flex items-center gap-1 text-[10px] text-amber-500 font-semibold uppercase">
-                  <HelpCircle className="w-3 h-3" /> Ambiguous
-                </span>
+              <div key={"amb-" + idx} className="border-b border-border/10 last:border-0 py-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted truncate max-w-[70%]">
+                    {s.title} <span className="text-[10px]">by {s.artist}</span>
+                  </span>
+                  <span title={s.reason} className="flex items-center gap-1 text-[10px] text-amber-500 font-semibold uppercase">
+                    <HelpCircle className="w-3 h-3" /> Ambiguous
+                  </span>
+                </div>
+                {renderChooser(s)}
               </div>
             ))}
 
