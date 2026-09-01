@@ -10,6 +10,18 @@ type BeforeInstallPromptEvent = Event & {
 
 const PROMPT_STORAGE_KEY = "strumm-a2hs-prompt-shown";
 
+// The browser fires `beforeinstallprompt` once, early (before this component
+// usually mounts — it only renders when logged in). Hold the latest event at
+// module scope so the popup's Add button still has the install prompt whenever
+// it appears, instead of relying on a mount-time listener that can miss it.
+let savedInstallEvent: BeforeInstallPromptEvent | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    savedInstallEvent = e as BeforeInstallPromptEvent;
+  });
+}
+
 function isMobileDevice() {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(max-width: 768px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -21,7 +33,7 @@ function isStandalone() {
 }
 
 export default function AddToHomePrompt() {
-  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(savedInstallEvent);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isIos, setIsIos] = useState(false);
 
@@ -42,6 +54,7 @@ export default function AddToHomePrompt() {
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
+      savedInstallEvent = event as BeforeInstallPromptEvent;
       setInstallEvent(event as BeforeInstallPromptEvent);
       setShowPrompt(true);
       window.clearTimeout(fallbackTimer);
@@ -61,13 +74,14 @@ export default function AddToHomePrompt() {
   };
 
   const install = async () => {
-    if (!installEvent) {
+    const evt = installEvent || savedInstallEvent;
+    if (!evt) {
       dismiss();
       return;
     }
 
-    await installEvent.prompt();
-    await installEvent.userChoice.catch(() => null);
+    await evt.prompt();
+    await evt.userChoice.catch(() => null);
     dismiss();
   };
 
@@ -85,14 +99,14 @@ export default function AddToHomePrompt() {
               : "Install Strumm for faster mobile access and an app-style player."}
           </p>
           <div className="flex items-center gap-2 mt-3">
-            {!isIos && installEvent && (
+            {!isIos && (
               <button
                 type="button"
                 onClick={install}
                 className="px-3 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center gap-2"
               >
                 <Download className="w-3.5 h-3.5" />
-                Add
+                Add to Home Screen
               </button>
             )}
             <button
