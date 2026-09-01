@@ -1,28 +1,35 @@
 /**
- * BrowserYouTubeMusicResolver — resolves YouTube Music candidates from the
- * user's BROWSER, on their residential IP.
+ * BrowserYouTubeMusicResolver — resolves importer search candidates from the
+ * user's BROWSER using keyless public Piped instances (no API key / quota).
  *
- * Why this exists
- * ---------------
- * The backend (Hugging Face Spaces / cloud egress) is IP-blocked by YouTube's
- * CDN, so server-side ytmusicapi lookups fail. The user's browser is not
- * blocked, so youtubei.js' InnerTube client — in YT_MUSIC mode — can resolve
- * real YouTube Music results client-side.
+ * Why not youtubei.js' InnerTube?
+ * -------------------------------
+ * Originally this resolved via youtubei.js' InnerTube client in YT Music mode
+ * running in the browser. youtubei.js however always initializes through two
+ * cross-origin requests — ``www.youtube.com/youtubei/v1/config`` and
+ * ``www.youtube.com/iframe_api`` — and YouTube no longer sends the CORS
+ * headers third-party origins need (the config endpoint returns 403 with no
+ * ``Access-Control-Allow-Origin``, and ``/iframe_api`` returns 200 without
+ * one), so the InnerTube session can never initialize from an app origin.
+ * Piped instances answer every origin (``access-control-allow-origin: *``)
+ * and perform the YouTube request themselves, so they work in the browser on
+ * any network and never need a key.
  *
- * Imports
- * -------
- * Uses the browser build of youtubei.js (`youtubei.js/web`) so it can run in
- * the client bundle without Node-only shims. The module is marked client-only
- * and must only be imported from `"use client"` code paths.
- *
- * Output shape
- * ------------
- * Each candidate is shaped EXACTLY like the backend importer's raw provider
- * output so the Python `_rank_candidates` matcher consumes it unchanged:
+ * This uses the exact same provider as the web search box
+ * (``invidiousProvider``) and emits the same candidate contract as the backend
+ * importer's raw provider output, so the Python ``_rank_candidates`` /
+ * ``_build_song_item`` matcher consumes it unchanged.
  *
  *   { videoId, title, artists: [{ name }], artist, duration ("m:ss"),
  *     duration_seconds, thumbnails: [{ url }] }
  */
+
+// ---------------------------------------------------------------------------
+// Imports
+// ---------------------------------------------------------------------------
+
+import { invidiousProvider } from "web/services/search/InvidiousProvider";
+import type { SongResult } from "web/services/search/SearchProvider";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -143,53 +150,29 @@ export function musicItemToCandidate(item: any): BrowserMusicCandidate | null {
 }
 
 // ---------------------------------------------------------------------------
-// Lazy Innertube (YT Music) singleton — created once per page load and reused
-// ---------------------------------------------------------------------------
-
-let innertubePromise: Promise<any> | null = null;
-let innertubeInstance: any = null;
-let lastCreatedAt = 0;
-const INSTANCE_REFRESH_MS = 15 * 60 * 1000; // refresh every 15 minutes
-
-async function getYtMusicInnertube(): Promise<any> {
-  if (typeof window === "undefined") {
-    throw new Error("BrowserYouTubeMusicResolver must run in the browser");
-  }
-
-  const now = Date.now();
-  if (innertubeInstance && now - lastCreatedAt < INSTANCE_REFRESH_MS) {
-    return innertubeInstance;
-  }
-  if (innertubePromise) {
-    return innertubePromise;
-  }
-
-  innertubePromise = (async () => {
-    // Browser build of youtubei.js. Dynamic import avoids pulling the Node
-    // build into the server bundle.
-    const { Innertube } = await import("youtubei.js/web");
-    const instance = await Innertube.create({
-      // ClientType.MUSIC = "WEB_REMIX" (the YTMusic InnerTube client). The
-      // enum itself isn't re-exported from the "youtubei.js/web" entry point,
-      // so the raw enum value is provided.
-      client_type: "WEB_REMIX" as any,
-      // Local session generation avoids a server-IP round-trip at startup and
-      // keeps creation fast in the browser.
-      generate_session_locally: true,
-    });
-    innertubeInstance = instance;
-    lastCreatedAt = Date.now();
-    return innertubeInstance;
-  })().finally(() => {
-    innertubePromise = null;
-  });
-
-  return innertubePromise;
-}
-
-// ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Convert a Piped ``SongResult`` (as produced by ``invidiousProvider``) into
+ * the importer-shaped candidate. Invalid video ids / empty titles are skipped.
+ */
+export function songResultToCandidate(song: SongResult): BrowserMusicCandidate | null {
+  if (!song || !/^[a-zA-Z0-9_-]{11}$/.test(song.videoId || "")) return null;
+  const title = (song.title || "").trim();
+  if (!title) return null;
+  const artist = (song.artist || "").trim();
+  const durationSeconds = Math.max(0, Math.floor(song.duration || 0));
+  return {
+    videoId: song.videoId,
+    title,
+    artists: artist ? [{ name: artist }] : [],
+    artist: artist || "Unknown Artist",
+    duration: secondsToMmss(durationSeconds),
+    duration_seconds: durationSeconds,
+    thumbnails: song.thumbnail ? [{ url: song.thumbnail }] : [],
+  };
+}
 
 /**
  * Walk a parsed YT Music search tree and collect the song candidates.
@@ -225,26 +208,19 @@ export function collectSongCandidates(nodes: any[], limit = 10): BrowserMusicCan
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a single track query to YouTube Music candidates from the browser.
- * Returns an empty candidate array on any failure (caller falls back to the
- * server-side chain).
+ * Resolve a single track query to importer search candidates from the
+ * browser via the keyless Piped instances. Returns an empty candidate array
+ * on any failure (caller falls back to the server-side chain).
  */
 export async function resolveTrackOnBrowser(query: string, limit = 10): Promise<BrowserMusicCandidate[]> {
   if (!query || !query.trim()) return [];
 
-  let yt: any;
   try {
-    yt = await getYtMusicInnertube();
-  } catch (err) {
-    console.warn("BrowserYouTubeMusicResolver: Innertube init failed:", err);
-    return [];
-  }
-
-  try {
-    // YT Music search, filtered to songs. `filters` is the second positional
-    // arg (MusicSearchFilters: { type: 'song' }).
-    const search = await yt.music.search(query, { type: "song" });
-    return collectSongCandidates(search?.contents ?? [], limit);
+    const results = await invidiousProvider.search(query, "video");
+    return results.songs
+      .map(songResultToCandidate)
+      .filter((c): c is BrowserMusicCandidate => c !== null)
+      .slice(0, limit);
   } catch (err) {
     console.warn(`BrowserYouTubeMusicResolver: search failed for query "${query}":`, err);
     return [];
@@ -253,7 +229,7 @@ export async function resolveTrackOnBrowser(query: string, limit = 10): Promise<
 
 /**
  * Resolve many tracks' queries sequentially with a small concurrency cap to
- * avoid hammering InnerTube. Returns a map of query -> candidates.
+ * avoid hammering the Piped instances. Returns a map of query -> candidates.
  */
 export async function resolveTracksOnBrowser(
   queries: string[],

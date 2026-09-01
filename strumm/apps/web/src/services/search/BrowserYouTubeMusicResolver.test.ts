@@ -1,9 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { invidiousProvider } from "web/services/search/InvidiousProvider";
 import {
   secondsToMmss,
   musicItemToCandidate,
   collectSongCandidates,
+  songResultToCandidate,
+  resolveTrackOnBrowser,
 } from "web/services/search/BrowserYouTubeMusicResolver";
+
+vi.mock("web/services/search/InvidiousProvider", () => ({
+  invidiousProvider: {
+    name: "Piped (fallback)",
+    search: vi.fn(),
+    getVideoDetails: vi.fn(),
+    getPlaylistItems: vi.fn(),
+  },
+}));
 
 function song(id: string, title: string, artist: string, mmss = "3:00") {
   const parts = mmss.split(":").map(Number);
@@ -194,5 +206,96 @@ describe("collectSongCandidates", () => {
       "bbbbbbbbbbb",
       "ccccccccccc",
     ]);
+  });
+});
+
+describe("songResultToCandidate", () => {
+  it("maps a Piped SongResult to an importer-shaped candidate", () => {
+    const cand = songResultToCandidate({
+      videoId: "abc12345678",
+      title: "One Dance",
+      artist: "Drake",
+      thumbnail: "https://img/one.jpg",
+      duration: 175,
+    })!;
+    expect(cand).toEqual({
+      videoId: "abc12345678",
+      title: "One Dance",
+      artists: [{ name: "Drake" }],
+      artist: "Drake",
+      duration: "2:55",
+      duration_seconds: 175,
+      thumbnails: [{ url: "https://img/one.jpg" }],
+    });
+  });
+
+  it("skips invalid video ids, empty titles, and null input", () => {
+    expect(
+      songResultToCandidate({ videoId: "short", title: "x", artist: "a", thumbnail: "", duration: 0 }),
+    ).toBeNull();
+    expect(
+      songResultToCandidate({ videoId: "abc12345678", title: "  ", artist: "a", thumbnail: "", duration: 10 }),
+    ).toBeNull();
+    expect(songResultToCandidate(null as any)).toBeNull();
+  });
+
+  it("defaults artist and omits empty thumbnails", () => {
+    const cand = songResultToCandidate({
+      videoId: "abc12345678",
+      title: "No Artist",
+      artist: "",
+      thumbnail: "",
+      duration: 0,
+    })!;
+    expect(cand.artist).toBe("Unknown Artist");
+    expect(cand.artists).toEqual([]);
+    expect(cand.thumbnails).toEqual([]);
+    expect(cand.duration).toBe("");
+  });
+});
+
+describe("resolveTrackOnBrowser (Piped)", () => {
+  beforeEach(() => {
+    vi.mocked(invidiousProvider.search).mockReset();
+  });
+
+  it("maps Piped songs to candidates and applies the limit", async () => {
+    vi.mocked(invidiousProvider.search).mockResolvedValue({
+      songs: [
+        { videoId: "abc12345678", title: "One Dance", artist: "Drake", thumbnail: "t1", duration: 175 },
+        { videoId: "abc23456789", title: "God's Plan", artist: "Drake", thumbnail: "t2", duration: 198 },
+        { videoId: "abc34567890", title: "Hotline Bling", artist: "Drake", thumbnail: "t3", duration: 267 },
+      ],
+      albums: [],
+      artists: [],
+    });
+
+    const out = await resolveTrackOnBrowser("drake", 2);
+    expect(invidiousProvider.search).toHaveBeenCalledWith("drake", "video");
+    expect(out.map((c) => c.videoId)).toEqual(["abc12345678", "abc23456789"]);
+  });
+
+  it("skips non-11-char song ids returned by the provider", async () => {
+    vi.mocked(invidiousProvider.search).mockResolvedValue({
+      songs: [
+        { videoId: "PL12345678901234567890", title: "Playlist-ish", artist: "X", thumbnail: "", duration: 0 },
+        { videoId: "abc12345678", title: "Real Song", artist: "Y", thumbnail: "t", duration: 90 },
+      ],
+      albums: [],
+      artists: [],
+    });
+
+    const out = await resolveTrackOnBrowser("q");
+    expect(out.map((c) => c.videoId)).toEqual(["abc12345678"]);
+  });
+
+  it("returns empty on a provider error (caller falls back to server)", async () => {
+    vi.mocked(invidiousProvider.search).mockRejectedValue(new Error("fetch failed"));
+    expect(await resolveTrackOnBrowser("drake")).toEqual([]);
+  });
+
+  it("returns empty for blank queries without calling the provider", async () => {
+    expect(await resolveTrackOnBrowser("  ")).toEqual([]);
+    expect(invidiousProvider.search).not.toHaveBeenCalled();
   });
 });

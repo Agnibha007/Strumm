@@ -89,7 +89,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
       const tracks: Array<{ title: string; artist: string; album?: string }> = parseJson.tracks;
 
       // Step 2: resolve each unique track query in the browser with the
-      // youtubei.js YT_MUSIC client (user's residential IP, not cloud egress).
+      // keyless Piped instances (no API key/quota, works from any origin).
       // Degrades to an empty map when unavailable; the API then falls back to
       // its server-side provider chain per track.
       const indexedQueries = tracks.map((t, i) => ({
