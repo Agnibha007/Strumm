@@ -545,8 +545,10 @@ STATUS_AMBIGUOUS = "ambiguous"
 # The bound is guaranteed structurally by _build_query_plan (at most 3 entries:
 # title+artist, feat-stripped title, normalized title); no separate runtime cap.
 # Max distinct YTMusic HTTP searches per import (hard cap to protect the
-# provider from being overwhelmed by very large playlists).
-MAX_SEARCHES_PER_IMPORT = 60
+# provider from being overwhelmed by very large playlists). Generous enough
+# to fully cover a ~100-track playlist (up to 3 planned queries per track)
+# without stranding the tail when the fallback chain is resolving real hits.
+MAX_SEARCHES_PER_IMPORT = 300
 # Bounded concurrent search workers.
 IMPORT_CONCURRENCY = 3
 # Transient-failure retry budget.
