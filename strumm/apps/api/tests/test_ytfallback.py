@@ -189,31 +189,61 @@ class TestYtfallbackModule:
         monkeypatch.setattr(fb, "_ytdlp_available", lambda: False)
         assert fb.ytdlp_search("q") == []
 
-    def test_fallback_chain_tries_ytdata_then_ytdlp(self, monkeypatch):
+    def test_fallback_chain_tries_ytdata_then_piped_then_ytdlp(self, monkeypatch):
         import app.services.ytfallback as fb
-        ytdata_calls = []
-        ytdlp_calls = []
+        order = []
 
         def fake_ytdata(q, **k):
-            ytdata_calls.append(q)
+            order.append("ytdata")
+            return []
+
+        def fake_piped(q, **k):
+            order.append("piped")
             return []
 
         def fake_ytdlp(q, **k):
-            ytdlp_calls.append(q)
+            order.append("ytdlp")
             return [{"videoId": "abc12345678", "title": "t"}]
 
         monkeypatch.setattr(fb, "ytdata_search", fake_ytdata)
+        monkeypatch.setattr(fb, "piped_search", fake_piped)
         monkeypatch.setattr(fb, "ytdlp_search", fake_ytdlp)
         results = fb.search_fallback("my query")
-        assert ytdata_calls == ["my query"]
-        assert ytdlp_calls == ["my query"]
+        assert order == ["ytdata", "piped", "ytdlp"]
         assert len(results) == 1
 
     def test_fallback_stops_when_ytdata_has_results(self, monkeypatch):
         import app.services.ytfallback as fb
+        piped_calls = []
         ytdlp_calls = []
 
         def fake_ytdata(q, **k):
+            return [{"videoId": "abc12345678", "title": "t"}]
+
+        def fake_piped(q, **k):
+            piped_calls.append(q)
+            return [{"videoId": "zzz"}]
+
+        def fake_ytdlp(q, **k):
+            ytdlp_calls.append(q)
+            return [{"videoId": "zzz"}]
+
+        monkeypatch.setattr(fb, "ytdata_search", fake_ytdata)
+        monkeypatch.setattr(fb, "piped_search", fake_piped)
+        monkeypatch.setattr(fb, "ytdlp_search", fake_ytdlp)
+        results = fb.search_fallback("q")
+        assert piped_calls == []
+        assert ytdlp_calls == []
+        assert results[0]["videoId"] == "abc12345678"
+
+    def test_fallback_stops_when_piped_has_results(self, monkeypatch):
+        import app.services.ytfallback as fb
+        ytdlp_calls = []
+
+        def fake_ytdata(q, **k):
+            return []
+
+        def fake_piped(q, **k):
             return [{"videoId": "abc12345678", "title": "t"}]
 
         def fake_ytdlp(q, **k):
@@ -221,7 +251,137 @@ class TestYtfallbackModule:
             return [{"videoId": "zzz"}]
 
         monkeypatch.setattr(fb, "ytdata_search", fake_ytdata)
+        monkeypatch.setattr(fb, "piped_search", fake_piped)
         monkeypatch.setattr(fb, "ytdlp_search", fake_ytdlp)
         results = fb.search_fallback("q")
         assert ytdlp_calls == []
         assert results[0]["videoId"] == "abc12345678"
+
+    def test_piped_search_normalizes_results(self, monkeypatch):
+        import app.services.ytfallback as fb
+        payload = {"items": [
+            {
+                "url": "/watch?v=xpVfcZ0ZcFM",
+                "type": "stream",
+                "title": "God's Plan",
+                "uploaderName": "Drake",
+                "duration": 357,
+                "thumbnail": "https://img.example/th.jpg",
+            },
+            {
+                "url": "/watch?v=abc12345678",
+                "type": "stream",
+                "title": "A Song",
+                "uploaderName": "An Artist",
+                "duration": 198,
+                "thumbnail": "",
+            },
+        ]}
+        with patch.object(fb.requests, "get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = payload
+            results = fb.piped_search("drake")
+
+        assert len(results) == 2
+        r = results[0]
+        assert r["videoId"] == "xpVfcZ0ZcFM"
+        assert r["title"] == "God's Plan"
+        assert r["artists"] == [{"name": "Drake"}]
+        assert r["artist"] == "Drake"
+        assert r["duration_seconds"] == 357
+        assert r["duration"] == "5:57"
+        assert r["thumbnails"] == [{"url": "https://img.example/th.jpg"}]
+        assert results[1]["thumbnails"] == []
+        args, kwargs = mock_get.call_args
+        assert args[0].endswith("/search")
+        assert kwargs["params"]["q"] == "drake"
+        assert kwargs["params"]["filter"] == "videos"
+
+    def test_piped_skips_items_without_video_id(self, monkeypatch):
+        import app.services.ytfallback as fb
+        payload = {"items": [
+            {"url": "/channel/UC_abc", "title": "chan", "uploaderName": "X"},
+            {"url": "/watch?v=abc12345678", "title": "good", "duration": 100,
+             "thumbnail": "https://img.example/x.jpg"},
+        ]}
+        with patch.object(fb.requests, "get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = payload
+            results = fb.piped_search("q")
+        assert len(results) == 1
+        assert results[0]["videoId"] == "abc12345678"
+
+    def test_piped_rotates_on_instance_failure(self, monkeypatch):
+        import app.services.ytfallback as fb
+        call_hosts = []
+
+        def fake_get(url, **kwargs):
+            call_hosts.append(url)
+            if url.startswith(fb.PIPED_INSTANCES[0]):
+                raise Exception("connection refused")
+
+            class R:
+                status_code = 200
+
+                def json(self):
+                    return {"items": [{
+                        "url": "/watch?v=abc12345678", "title": "t",
+                        "uploaderName": "a", "duration": 60,
+                        "thumbnail": "https://img.example/x.jpg",
+                    }]}
+
+            return R()
+
+        monkeypatch.setattr(fb.requests, "get", fake_get)
+        results = fb.piped_search("q")
+        assert len(call_hosts) == 2
+        assert call_hosts[1].startswith(fb.PIPED_INSTANCES[1])
+        assert len(results) == 1
+
+    def test_piped_all_instances_fail_returns_empty(self, monkeypatch):
+        import app.services.ytfallback as fb
+
+        def fake_get(url, **kwargs):
+            raise Exception("boom")
+
+        monkeypatch.setattr(fb.requests, "get", fake_get)
+        assert fb.piped_search("q") == []
+
+    def test_piped_tries_http_error_then_success(self, monkeypatch):
+        import app.services.ytfallback as fb
+        payload = {"items": [{
+            "url": "/watch?v=abc12345678", "title": "t",
+            "uploaderName": "a", "duration": 60,
+            "thumbnail": "https://img.example/x.jpg",
+        }]}
+
+        def fake_get(url, **kwargs):
+            if url.startswith(fb.PIPED_INSTANCES[0]):
+                class R500:
+                    status_code = 500
+                return R500()
+            class R200:
+                status_code = 200
+
+                def json(self):
+                    return payload
+            return R200()
+
+        monkeypatch.setattr(fb.requests, "get", fake_get)
+        results = fb.piped_search("q")
+        assert len(results) == 1
+
+    def test_piped_limit_respected(self, monkeypatch):
+        import app.services.ytfallback as fb
+        payload = {"items": [
+            {"url": "/watch?v=abc12345678", "title": "one", "duration": 100,
+             "thumbnail": "https://img.example/a.jpg"},
+            {"url": "/watch?v=abc23456789", "title": "two", "duration": 100,
+             "thumbnail": "https://img.example/b.jpg"},
+        ]}
+        with patch.object(fb.requests, "get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = payload
+            results = fb.piped_search("q", limit=1)
+        assert len(results) == 1
+        assert results[0]["title"] == "one"

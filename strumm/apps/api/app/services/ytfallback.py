@@ -4,7 +4,7 @@ YouTube search fallback providers for the Python API backend.
 When YouTube Music (ytmusicapi) is unreachable from this host — e.g. because
 the hosting provider's egress IP is blocked by YouTube's CDN — playlist import
 matching can still resolve tracks through a secondary provider. This module
-implements two such providers, both returning results in the *same raw shape*
+implements three such providers, all returning results in the *same raw shape*
 the playlist importer already understands (``_rank_candidates`` /
 ``_build_song_item`` in ``app/routes/playlist.py``):
 
@@ -18,11 +18,17 @@ Provider order (first provider that returns results wins):
        units/day; each search costs 1 unit. Returns general YouTube videos,
        not curated YouTube Music tracks, so matching quality is lower than
        ytmusicapi but far better than failing the whole import.
-    2. yt-dlp             — installed as ``yt-dlp``. Uses yt-dlp's YouTube
+    2. Piped instances     — keyless public Piped instances (no API key, no
+       per-app quota). Piped is a privacy-focused YouTube proxy that performs
+       the YouTube request itself, so it is reachable even when this host's
+       egress IP is blocked by Google's CDN. Mirrors the web app's own Piped
+       ("invidiousProvider") search provider.
+    3. yt-dlp              — installed as ``yt-dlp``. Uses yt-dlp's YouTube
        search extractor for search/metadata only (no audio downloads).
 
-Both providers are optional and degrade gracefully when:
-    * the API key is unset / returns 403 (quota or auth), or
+All providers are optional and degrade gracefully when:
+    * the API key is unset / returns 403 (quota or auth),
+    * every Piped instance is unreachable / returns error, or
     * yt-dlp is not installed / raises at runtime.
 """
 
@@ -42,6 +48,19 @@ YOUTUBE_API_KEY = (os.getenv("YOUTUBE_API_KEY") or "").strip()
 
 YT_API_SEARCH = "https://www.googleapis.com/youtube/v3/search"
 YT_DATA_TIMEOUT = (3.0, 8.0)
+
+# Public Piped instance API roots, tried in order. Piped is keyless — no API
+# key, no per-app quota — and the instance performs the YouTube request, so
+# these stay reachable from cloud IPs that Google's CDN blocks directly.
+# The same list powers the web app's Piped search provider.
+PIPED_INSTANCES = [
+    "https://pipedapi.adminforge.de",
+    "https://api.piped.private.coffee",
+    "https://pipedapi.smnz.de",
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.r4fo.com",
+]
+PIPED_TIMEOUT = (3.0, 8.0)
 
 # UTC offset guard: Data API /search returns no duration. Flip to True to also
 # pass a duration if you add a /videos lookup. (Defaults off — cheap.)
@@ -231,6 +250,75 @@ def _looks_like_video_id(vid: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Piped provider (keyless, no quota)
+# ---------------------------------------------------------------------------
+
+
+def _extract_piped_video_id(url: str) -> Optional[str]:
+    """Pull a validated video id out of a Piped ``/watch?v=...`` url."""
+    if "?v=" not in url:
+        return None
+    vid = url.split("?v=", 1)[1].split("&", 1)[0].strip()
+    return vid if _looks_like_video_id(vid) else None
+
+
+def piped_search(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
+    """
+    Search YouTube via public Piped instances (keyless, no quota).
+
+    Instances are tried in order and the first one to return results wins.
+    Returns raw importer-shaped items; empty when every instance is
+    unreachable or returns nothing, so callers fall through gracefully.
+    """
+    for base in PIPED_INSTANCES:
+        try:
+            resp = requests.get(
+                f"{base}/search",
+                params={"q": query, "filter": "videos"},
+                timeout=PIPED_TIMEOUT,
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    f"Piped {base} HTTP {resp.status_code} for q={query!r}"
+                )
+                continue
+            payload = resp.json()
+        except Exception as exc:
+            logger.warning(
+                f"Piped {base} request failed for q={query!r}: "
+                f"{type(exc).__name__}: {exc!s:.120}"
+            )
+            continue
+
+        items = payload.get("items") or []
+        results: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            vid = _extract_piped_video_id(item.get("url") or "")
+            if not vid:
+                continue
+            title = item.get("title") or ""
+            artist = item.get("uploaderName") or ""
+            duration_seconds = int(item.get("duration") or 0)
+            thumb_url = item.get("thumbnail") or ""
+            results.append({
+                "videoId": vid,
+                "title": title,
+                "artists": [{"name": artist}] if artist else [],
+                "artist": artist,
+                "duration": _seconds_to_mmss(duration_seconds),
+                "duration_seconds": duration_seconds,
+                "thumbnails": [{"url": thumb_url}] if thumb_url else [],
+            })
+
+        if results:
+            return results[:limit]
+
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Public fallback chain
 # ---------------------------------------------------------------------------
 
@@ -239,10 +327,15 @@ def search_fallback(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
     """
     Try the secondary providers in order and return the first non-empty result.
 
-    Order: YouTube Data API v3, then yt-dlp. Both are optional and return
-    empty on failure, so a provider that isn't configured is simply skipped.
+    Order: YouTube Data API v3, then public Piped instances, then yt-dlp.
+    All are optional and return empty on failure, so a provider that isn't
+    configured (or can't be reached) is simply skipped.
     """
     results = ytdata_search(query, limit=limit)
+    if results:
+        return results
+
+    results = piped_search(query, limit=limit)
     if results:
         return results
 
