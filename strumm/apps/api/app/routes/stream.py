@@ -1,15 +1,19 @@
-"""Lightweight stream resolution endpoint.
+"""Stream resolution endpoints.
 
-No yt-dlp, ffmpeg, proxy scraping, or audio downloads.
-The backend returns only song metadata. The frontend uses YouTube's iframe API
-for actual playback, ensuring instant start and zero server-side media processing.
+Primary playback is server-agnostic: the frontend uses YouTube's iframe API for
+instant, zero-processing playback. For background/lock-screen listening (where
+mobile browsers suspend iframes), `/play/{id}` additionally extracts a direct
+audio URL via yt-dlp so the host page can play it in an `<audio>` element, and
+`/audio-proxy` streams that URL through the backend as a CORS/network fallback.
+No media is downloaded or stored — only metadata and a forwardable stream URL.
 """
 
 import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks, Request
+from fastapi.responses import StreamingResponse
 import asyncio
 
 from app.database import mongodb as db
@@ -126,6 +130,205 @@ async def resolve_track(
         }
 
 
+# ---------------------------------------------------------------------------
+# Direct audio — background / lock-screen playback
+# ---------------------------------------------------------------------------
+# The YouTube iframe pauses when mobile browsers background the page (screen
+# locked). A host-page `<audio>` element keeps playing, so /play extracts a
+# direct audio URL with yt-dlp (which handles YouTube's bot checks better than
+# ytmusicapi) and /audio-proxy streams it back as a fallback when the direct
+# googlevideo URL is unreachable from the client's network. Extracted URLs are
+# signed for ~6h, so the 2h TTL cache stays safely under the expiry.
+
+AUDIO_FORMAT_ORDER = {"m4a": 3, "mp4": 2, "webm": 2, "opus": 1, "ogg": 1}
+
+
+def _pick_best_audio(info: Optional[dict]) -> Optional[str]:
+    """Return the best playable audio URL from a yt-dlp info dict.
+
+    Prefer the already-selected ``url`` (set when a ``format`` is configured),
+    otherwise scan ``formats`` for the highest-quality audio-only stream.
+    """
+    if not isinstance(info, dict):
+        return None
+    url = info.get("url")
+    if isinstance(url, str) and url:
+        return url
+
+    best_score = -1.0
+    best_url: Optional[str] = None
+    formats = info.get("formats") or []
+    for f in formats:
+        if not isinstance(f, dict):
+            continue
+        u = f.get("url")
+        if not isinstance(u, str) or not u:
+            u = f.get("manifest_url")
+        if not isinstance(u, str) or not u:
+            continue
+        vcodec = (f.get("vcodec") or "none").lower()
+        ext = (f.get("ext") or f.get("extr") or "").lower()
+        audio_only = vcodec in ("none", "audio only")
+        score = (
+            (1000.0 if audio_only else 0.0)
+            + AUDIO_FORMAT_ORDER.get(ext, 0.0)
+            + (float(f.get("tbr") or 0.0) / 1000.0)
+        )
+        if score > best_score:
+            best_score = score
+            best_url = u
+    return best_url
+
+
+def _run_ytdlp_extract(video_id: str) -> dict:
+    """Extract audio info for ``video_id`` via yt-dlp (never downloads media)."""
+    import yt_dlp
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    attempts = [
+        {},
+        # tv/web clients commonly bypass anonymous bot-IP blocks.
+        {"extractor_args": {"youtube": {"player_client": ["tv", "web"]}}},
+    ]
+    last_error: Optional[Exception] = None
+    for override in attempts:
+        opts = {
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "skip_download": True,
+            "socket_timeout": 15,
+            "retries": 1,
+        }
+        opts.update(override)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if _pick_best_audio(info):
+                return info
+            break  # info present but no audio URL — don't re-run with same payload
+        except Exception as exc:  # noqa: BLE001 — surface as last_error
+            last_error = exc
+            logger.warning(
+                f"yt-dlp audio extraction failed for {video_id} "
+                f"({'default' if not override else 'tv' }): {exc!s:.160}"
+            )
+    raise RuntimeError(f"No audio URL could be extracted for {video_id}: {last_error}")
+
+
+def _audio_mime(ext: str) -> str:
+    if ext in ("m4a", "mp4"):
+        return "audio/mp4"
+    if ext in ("webm", "opus"):
+        return "audio/webm"
+    if ext in ("ogg", "mp3", "aac"):
+        return f"audio/{ext}"
+    return "audio/mp4"
+
+
+async def get_direct_audio(video_id: str) -> Optional[dict]:
+    """Return a cached direct-audio descriptor, extracting on cache miss."""
+    from app.services.cache import get_cached_stream, cache_stream, cache_key
+
+    key = cache_key("audiostream", video_id)
+    cached = get_cached_stream(key)
+    if isinstance(cached, dict) and cached.get("audioUrl"):
+        return cached
+
+    try:
+        info = await asyncio.to_thread(_run_ytdlp_extract, video_id)
+    except Exception as exc:
+        logger.warning(f"get_direct_audio failed for {video_id}: {exc!s:.160}")
+        return None
+
+    audio_url = _pick_best_audio(info)
+    if not audio_url:
+        return None
+
+    result = {
+        "videoId": video_id,
+        "audioUrl": audio_url,
+        "mimeType": _audio_mime(str(info.get("ext") or "")),
+        "title": info.get("title"),
+        "duration": info.get("duration"),
+    }
+    cache_stream(key, result)
+    return result
+
+
+@router.get("/play/{id}")
+async def play_track(id: str = Path(..., description="The YouTube videoId to play")):
+    """Resolve a direct audio URL for background / lock-screen playback.
+
+    Returns the extracted audio URL the host page can feed an ``<audio>``
+    element without an iframe. Status 200 with ``success: false`` means no
+    audio is available (e.g. sign-in required) — callers fall back to the
+    iframe player, which is unaffected.
+    """
+    video_id = sanitize_youtube_id(id)
+    audio = await get_direct_audio(video_id)
+    if not audio:
+        return {
+            "success": False,
+            "error": "Direct audio is not available for this track.",
+        }
+    return {"success": True, "data": audio}
+
+
+@router.get("/audio-proxy")
+async def proxy_audio(
+    request: Request,
+    url: str = Query(..., max_length=2000, description="Direct audio URL to proxy"),
+):
+    """Stream a resolved audio URL through the backend (CORS/network fallback).
+
+    Forwards ``Range`` headers so the host ``<audio>`` element can seek. Used
+    when playing the googlevideo URL directly fails from the client's network.
+    """
+    from app.services.security import assert_public_http_url
+    from app.services.http_client import get_http_client
+
+    try:
+        safe_url = assert_public_http_url(url)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid audio URL.") from exc
+
+    client = get_http_client()
+    upstream_headers = {"Referer": "https://www.youtube.com/"}
+    if request.headers.get("range"):
+        upstream_headers["Range"] = request.headers["range"]
+
+    try:
+        req = client.build_request("GET", safe_url, headers=upstream_headers)
+        response = await client.send(req, stream=True)
+    except Exception as exc:
+        logger.warning(f"Audio proxy upstream error: {exc!s:.160}")
+        raise HTTPException(status_code=502, detail="Unable to reach audio source.")
+
+    async def iter_bytes():
+        try:
+            async for chunk in response.aiter_raw():
+                if chunk:
+                    yield chunk
+        finally:
+            await response.aclose()
+
+    headers = {
+        k: v
+        for k, v in response.headers.items()
+        if k.lower()
+        in ("content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified")
+    }
+    headers["Access-Control-Allow-Origin"] = "*"
+    return StreamingResponse(
+        iter_bytes(),
+        status_code=response.status_code,
+        headers=headers,
+        media_type=response.headers.get("content-type", "audio/mp4"),
+    )
+
+
 @router.get("/podcast-audio")
 async def stream_podcast_audio(
     url: str = Query(..., max_length=1500),
@@ -224,6 +427,7 @@ async def proxy_image(
             headers={
                 "Cache-Control": "public, max-age=604800, immutable",
                 "CDN-Cache-Control": "public, max-age=604800, immutable",
+                "Access-Control-Allow-Origin": "*",
             },
         )
     except HTTPException:

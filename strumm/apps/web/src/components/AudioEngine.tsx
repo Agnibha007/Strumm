@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { evaluateCrossfadeTick, CROSSFADE_DURATION_MS } from "web/lib/crossfade";
+import { getCachedDirectAudioUrl, resolveDirectAudioUrl } from "web/lib/direct-audio";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import {
   getPodcastEpisodeId,
@@ -76,6 +77,12 @@ export default function AudioEngine() {
   const currentVideoIdRef = useRef<string | null>(null);
   const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Direct audio URLs resolved for background (lock-screen) playback.
+  const directAudioUrlsRef = useRef<Record<string, string>>({});
+  // True when a YouTube song has been handed to the host <audio> element
+  // because the page is backgrounded (screen locked). Foreground playback
+  // stays on the iframe.
+  const backgroundModeRef = useRef<boolean>(false);
 
   const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isFadingRef = useRef<boolean>(false);
@@ -112,7 +119,9 @@ export default function AudioEngine() {
   const setPlayerVolume = (volRatio: number) => {
     const targetVal = volRatio * volume;
 
-    if (htmlAudioRef.current && currentSong?.metadata?.audioUrl) {
+    // Apply to the host audio element whenever it holds real audio (a podcast
+    // episode, or a direct-audio stream in background mode).
+    if (htmlAudioRef.current && (currentSong?.metadata?.audioUrl || !isSilentAudio(htmlAudioRef.current))) {
       htmlAudioRef.current.volume = targetVal;
     }
 
@@ -155,6 +164,9 @@ export default function AudioEngine() {
       if (htmlAudioRef.current) {
         htmlAudioRef.current.play().catch(() => {});
       }
+    } else if (backgroundModeRef.current && htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+      // Background mode — the host <audio> is already on the direct stream.
+      htmlAudioRef.current.play().catch(() => {});
     } else {
       if (htmlAudioRef.current && isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.play().catch(() => {});
@@ -172,6 +184,8 @@ export default function AudioEngine() {
       if (htmlAudioRef.current) {
         htmlAudioRef.current.pause();
       }
+    } else if (backgroundModeRef.current && htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+      htmlAudioRef.current.pause();
     } else {
       if (htmlAudioRef.current && isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.pause();
@@ -182,6 +196,65 @@ export default function AudioEngine() {
         } catch (e) {}
       }
     }
+  };
+
+  // Switch a YouTube song onto the host <audio> element (background mode).
+  // Returns false when there is no resolved direct URL (callers fall back to
+  // the iframe, which is the status quo behavior).
+  const activateBackgroundAudio = (videoId: string): boolean => {
+    const state = usePlayerStore.getState();
+    const song = state.currentSong;
+    if (!song || song.metadata?.audioUrl) return false; // podcasts already host audio
+
+    const url = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
+    if (!url) return false;
+
+    if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
+      try {
+        playerInstanceRef.current.pauseVideo();
+      } catch (e) {}
+    }
+
+    const audio = htmlAudioRef.current;
+    if (!audio) return false;
+    try {
+      audio.preload = "auto";
+      audio.volume = volume;
+      audio.src = url;
+    } catch (e) {
+      return false;
+    }
+
+    const seekTo = Math.max(0, state.currentTime);
+    const applySeek = () => {
+      try {
+        audio.currentTime = seekTo;
+      } catch (e) {}
+    };
+    applySeek();
+    audio.addEventListener("loadedmetadata", applySeek, { once: true });
+
+    audio.play().catch(() => {});
+
+    // Delegate player controls to the host <audio> until we leave background mode.
+    setPlayerRef({
+      playVideo: () => {
+        if (htmlAudioRef.current) htmlAudioRef.current.play();
+      },
+      pauseVideo: () => {
+        if (htmlAudioRef.current) htmlAudioRef.current.pause();
+      },
+      seekTo: (sec: number) => {
+        if (htmlAudioRef.current) htmlAudioRef.current.currentTime = sec;
+      },
+      setVolume: (vol: number) => {
+        if (htmlAudioRef.current) htmlAudioRef.current.volume = vol / 100;
+      },
+      setPlaybackRate: (rate: number) => {
+        if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
+      },
+    });
+    return true;
   };
 
   useEffect(() => {
@@ -540,6 +613,143 @@ export default function AudioEngine() {
     }
   }, [currentSong]);
 
+  // Keep the screen (and the tab's CPU budget) awake while playback is active.
+  // Prevents the device locking early while the user is listening and stops
+  // background throttling of the player. Re-acquired automatically whenever
+  // the tab regains focus / visibility.
+  useEffect(() => {
+    let wakeLock: any = null;
+    const isSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
+
+    if (!isSupported) return;
+
+    const acquire = async () => {
+      const state = usePlayerStore.getState();
+      if (!state.isPlaying) return;
+      try {
+        wakeLock = await (navigator as any).wakeLock.request("screen");
+      } catch (e) {
+        // Wake Lock may be denied (no user gesture, battery saver) — ignore.
+        wakeLock = null;
+      }
+    };
+
+    const release = () => {
+      if (wakeLock) {
+        try {
+          wakeLock.release().catch(() => {});
+        } catch (e) {}
+        wakeLock = null;
+      }
+    };
+
+    if (isPlaying) {
+      acquire();
+    } else {
+      release();
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        acquire();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      release();
+    };
+  }, [isPlaying]);
+
+  // Pre-resolve a direct audio URL for the current YouTube song so switching
+  // to background (lock-screen) playback is instant. This never affects
+  // foreground playback — the iframe keeps playing until the screen locks.
+  useEffect(() => {
+    const videoId = currentSong?.videoId;
+    if (!videoId || currentSong?.metadata?.audioUrl) return;
+    if (getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId]) return;
+
+    let cancelled = false;
+    resolveDirectAudioUrl(videoId).then((url) => {
+      if (cancelled || !url) return;
+      directAudioUrlsRef.current[videoId] = url;
+      // The screen locked while extraction was in flight — take over now.
+      const state = usePlayerStore.getState();
+      if (backgroundModeRef.current && state.currentSong?.videoId === videoId && state.isPlaying) {
+        activateBackgroundAudio(videoId);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, activateBackgroundAudio]);
+
+  // Hybrid background mode: mobile browsers suspend YouTube iframes (and the
+  // whole tab's audio) when the screen locks, but keep a host <audio> element
+  // alive. When the page is backgrounded, hand the current YouTube song to the
+  // <audio> element (direct audio URL); on return to the foreground, stop the
+  // audio and resume the iframe where it left off.
+  useEffect(() => {
+    const enterBackground = () => {
+      if (backgroundModeRef.current) return;
+      const state = usePlayerStore.getState();
+      const song = state.currentSong;
+      if (!state.isPlaying || !song || song.metadata?.audioUrl) return;
+      const videoId = song.videoId;
+      if (!videoId) return;
+      if (getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId]) {
+        backgroundModeRef.current = true;
+        activateBackgroundAudio(videoId);
+      }
+    };
+
+    const leaveBackground = () => {
+      if (!backgroundModeRef.current) return;
+      backgroundModeRef.current = false;
+
+      const audio = htmlAudioRef.current;
+      if (audio && !isSilentAudio(audio)) {
+        try {
+          audio.pause();
+        } catch (e) {}
+        audio.removeAttribute("src");
+        try {
+          audio.load();
+        } catch (e) {}
+      }
+
+      const state = usePlayerStore.getState();
+      if (!state.isPlaying) return;
+      const yt = playerInstanceRef.current;
+      if (!yt || typeof yt.getPlayerState !== "function") return;
+      try {
+        if (yt.getPlayerState() === 2) yt.playVideo();
+        const ct = state.currentTime;
+        if (ct > 0 && typeof yt.seekTo === "function") yt.seekTo(ct, true);
+      } catch (e) {
+        // Player may still be (re)initializing — the existing
+        // visibilitychange handler retries when the tab regains focus.
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") enterBackground();
+      else leaveBackground();
+    };
+    // Safari fires pagehide (rather than visibilitychange) when the tab is
+    // backgrounded on some iOS versions — same handling.
+    const onPageHide = () => enterBackground();
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      leaveBackground();
+    };
+  }, [activateBackgroundAudio]);
+
   // Synchronize Media Session position state with actual playback position
   useEffect(() => {
     if (!("mediaSession" in navigator) || !currentSong) return;
@@ -759,6 +969,12 @@ export default function AudioEngine() {
       });
     } else {
       // B. YouTube song
+      // If the page is backgrounded (screen locked), keep playing through the
+      // host <audio> element on its resolved direct stream instead of the
+      // iframe, which mobile OSes suspend while backgrounded.
+      if (backgroundModeRef.current && currentSong?.videoId && activateBackgroundAudio(currentSong.videoId)) {
+        return;
+      }
       // Play a silent audio track so the host page retains the OS MediaSession keys.
       // This prevents the YouTube iframe from hijacking media hardware buttons.
       const silentAudioSrc = SILENT_AUDIO_SRC;

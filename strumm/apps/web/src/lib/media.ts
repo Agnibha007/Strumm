@@ -25,6 +25,10 @@ export function getArtworkCandidates(
   hero?: boolean,
 ) {
   const videoId = getSongVideoId(song);
+  const rawThumbnail = (song?.thumbnail || "").trim();
+  const songThumbnail = rawThumbnail.startsWith("http://")
+    ? rawThumbnail.replace("http://", "https://")
+    : rawThumbnail;
   const candidates: string[] = [];
 
   // Priority order: 16:9 thumbnails first (no letterboxing), then fallbacks
@@ -48,25 +52,32 @@ export function getArtworkCandidates(
       `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,      // 640x480 (4:3)
     ];
 
-    // For hero (large) images, add optimized proxy URLs first (WebP, resized)
-    if (hero) {
-      candidates.push(
-        ...hdUrls16_9.slice(0, 2).map((u) => getOptimizedArtworkUrl(u, 320)),
-      )
+    // The API-provided thumbnail (album art, or the Piped instance's CDN
+    // thumbnail for imported matches) is the only one we know actually exists
+    // for this track — try it FIRST via the same-origin /image-proxy (WebP,
+    // immutable cache, no hotlink/CORS issues), then directly, then the
+    // speculative YouTube URLs. Speculative `maxresdefault` URLs 404 for many
+    // music videos; keep them after the guaranteed thumbnail so artwork always
+    // renders and the console isn't flooded with expected 404s.
+    if (songThumbnail) {
+      candidates.push(getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160));
+      candidates.push(songThumbnail);
     }
 
-    // Prioritize 16:9 thumbnails (no letterboxing)
+    // 16:9 next (both proxied for large renders and raw for instant load).
+    if (hero) {
+      candidates.push(...hdUrls16_9.slice(0, 2).map((u) => getOptimizedArtworkUrl(u, 320)));
+    }
     candidates.push(...hdUrls16_9);
     // Then 4:3 as fallback
     candidates.push(...hdUrls4_3);
   }
 
-  // Fallback to API-provided thumbnail if available
-  if (song?.thumbnail) {
-    const thumb = song.thumbnail.startsWith("http://")
-      ? song.thumbnail.replace("http://", "https://")
-      : song.thumbnail;
-    candidates.push(thumb);
+  // Fallback to API-provided thumbnail for non-video tracks (podcasts, albums).
+  // Deduped via the Set below when the video branch already added it.
+  if (songThumbnail) {
+    candidates.push(getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160));
+    candidates.push(songThumbnail);
   }
 
   return [...new Set(candidates.filter(Boolean))];

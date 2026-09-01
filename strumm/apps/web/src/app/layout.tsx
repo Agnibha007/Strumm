@@ -65,7 +65,7 @@ export const metadata: Metadata = {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
       { url: "/strumm-icon.png", type: "image/png", sizes: "512x512" },
-      { url: "/strumm-icon.png", type: "image/png", sizes: "192x192" },
+      { url: "/strumm-icon-192.png", type: "image/png", sizes: "192x192" },
     ],
     apple: [
       { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },

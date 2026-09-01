@@ -52,11 +52,13 @@ YT_DATA_TIMEOUT = (3.0, 8.0)
 # Public Piped instance API roots, tried in order. Piped is keyless — no API
 # key, no per-app quota — and the instance performs the YouTube request, so
 # these stay reachable from cloud IPs that Google's CDN blocks directly.
-# The same list powers the web app's Piped search provider.
+# The same list powers the web app's Piped search provider. Kept in sync with
+# `strumm/apps/web/src/services/search/InvidiousProvider.ts` (2026-09):
+# instances that no longer serve the Piped API (`pipedapi.adminforge.de`,
+# `pipedapi.smnz.de`) were dropped; `api.piped.private.coffee` is verified
+# live. HTTP failures rotate to the next instance automatically.
 PIPED_INSTANCES = [
-    "https://pipedapi.adminforge.de",
     "https://api.piped.private.coffee",
-    "https://pipedapi.smnz.de",
     "https://pipedapi.kavin.rocks",
     "https://pipedapi.r4fo.com",
 ]

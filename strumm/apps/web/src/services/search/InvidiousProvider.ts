@@ -23,11 +23,14 @@ import { decodeHtml } from "web/lib/api";
 /**
  * Known‑good Piped instances checked periodically.
  * These are tried FIRST so searches don't block on the instance‑list fetch.
+ * Order matters: verified‑live instances lead (2026‑09). Dropped instances
+ * that no longer serve the Piped API — ``pipedapi.adminforge.de`` now
+ * redirects to a non‑Piped website and ``pipedapi.smnz.de`` is unreachable.
+ * Instances that fail at runtime are demoted per session (see ``fetchPiped``),
+ * so one dead instance can't spam errors for every query.
  */
 const HARDCODED_INSTANCES: string[] = [
-  "https://pipedapi.adminforge.de",
   "https://api.piped.private.coffee",
-  "https://pipedapi.smnz.de",
   "https://pipedapi.kavin.rocks",
   "https://pipedapi.r4fo.com",
 ];
@@ -60,6 +63,12 @@ let cachedInstances: {
   healthyUrls: Set<string>;
 } | null = null;
 const INSTANCE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// Session‑level demotion: instances that failed a real request are skipped
+// for the rest of the page session so a single dead instance can't spray a
+// console error for every query in an import.
+const unhealthyUrls = new Set<string>();
+const warnedUrls = new Set<string>();
 
 // Promise cache to deduplicate concurrent fetchInstanceList calls
 let pendingInstanceFetch: Promise<string[]> | null = null;
@@ -97,7 +106,9 @@ async function checkInstanceHealth(baseUrl: string): Promise<boolean> {
 
 /**
  * Run a health check on all known instances and update the healthy set.
- * Removes any unresponsive instances from the healthy set.
+ * Only ever REMOVES instances (an instance demoted for a real request
+ * failure or a failed ping stays out; live/discovered instances are seeded
+ * healthy and simply drop out over time if they stop responding).
  */
 async function runHealthCheck(): Promise<void> {
   if (!cachedInstances) return;
@@ -111,13 +122,9 @@ async function runHealthCheck(): Promise<void> {
   );
 
   for (const result of results) {
-    if (result.status === "fulfilled") {
-      const { url, healthy } = result.value;
-      if (healthy) {
-        cachedInstances!.healthyUrls.add(url);
-      } else {
-        cachedInstances!.healthyUrls.delete(url);
-      }
+    if (result.status === "fulfilled" && !result.value.healthy) {
+      cachedInstances!.healthyUrls.delete(result.value.url);
+      unhealthyUrls.add(result.value.url);
     }
   }
 }
@@ -151,8 +158,8 @@ async function discoverInstances(): Promise<string[]> {
     // Filter out any instances health checks have marked unhealthy
     const healthy = cachedInstances.healthyUrls;
     return healthy.size > 0
-      ? cachedInstances.apiUrls.filter((url) => healthy.has(url))
-      : cachedInstances.apiUrls;
+      ? cachedInstances.apiUrls.filter((url) => healthy.has(url) && !unhealthyUrls.has(url))
+      : cachedInstances.apiUrls.filter((url) => !unhealthyUrls.has(url));
   }
 
   // Build the full list: hardcoded → user‑configured → live discovery
@@ -198,6 +205,7 @@ async function discoverInstances(): Promise<string[]> {
         // Preserve healthy set; new live instances start as healthy
         healthyUrls: new Set([...cachedInstances!.healthyUrls, ...liveUrls]),
       };
+      for (const url of liveUrls) unhealthyUrls.delete(url);
       pendingInstanceFetch = null;
       return merged;
     }).catch(() => {
@@ -208,9 +216,11 @@ async function discoverInstances(): Promise<string[]> {
 
   // Return only healthy instances (or all if health check hasn't run yet)
   if (cachedInstances.healthyUrls.size > 0) {
-    return apiUrls.filter((url) => cachedInstances!.healthyUrls.has(url));
+    return apiUrls.filter(
+      (url) => cachedInstances!.healthyUrls.has(url) && !unhealthyUrls.has(url),
+    );
   }
-  return apiUrls;
+  return apiUrls.filter((url) => !unhealthyUrls.has(url));
 }
 
 /** Fetch the official Piped instance list and return healthy API URLs. */
@@ -254,16 +264,34 @@ async function fetchPiped<T>(path: string, timeoutMs = 8_000): Promise<T | null>
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
       if (!res.ok) {
-        console.warn(`PipedProvider: HTTP ${res.status} from ${base}${path}`);
+        demoteInstance(base);
+        if (!warnedUrls.has(base)) {
+          warnedUrls.add(base);
+          console.warn(`PipedProvider: HTTP ${res.status} from ${base}${path}`);
+        }
         continue;
       }
       return (await res.json()) as T;
     } catch (err: any) {
-      console.warn(`PipedProvider: Network error for ${base}${path}:`, err?.message ?? err);
+      demoteInstance(base);
+      if (!warnedUrls.has(base)) {
+        warnedUrls.add(base);
+        console.warn(`PipedProvider: Network error for ${base}${path}:`, err?.message ?? err);
+      }
     }
   }
 
   return null; // all instances failed
+}
+
+/**
+ * Demote an instance that just failed a real request so later queries skip it.
+ * Future searches in this session no longer pay the failed round‑trip or
+ * re‑emit the console error for it.
+ */
+function demoteInstance(baseUrl: string): void {
+  unhealthyUrls.add(baseUrl);
+  if (cachedInstances) cachedInstances.healthyUrls.delete(baseUrl);
 }
 
 // ---------------------------------------------------------------------------
