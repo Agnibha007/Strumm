@@ -6,6 +6,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { Check, AlertTriangle, HelpCircle, ArrowRight, Play } from "lucide-react";
 import { Song } from "@strumm/types";
 import { apiUrl, cleanText } from "web/lib/api";
+import { resolveTracksOnBrowser, BrowserMusicCandidate } from "web/services/search/BrowserYouTubeMusicResolver";
 
 interface PlaylistImportProps {
   onImported?: () => void;
@@ -61,23 +62,59 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     
     const source = activeTab === "csv" ? "csv" : (inputUrl.includes("spotify") ? "spotify" : "youtube");
     const data = activeTab === "csv" ? csvContent : inputUrl;
+    const payload = {
+      source,
+      name: cleanText(playlistName, 120),
+      data: activeTab === "csv" ? data.slice(0, 200000) : cleanText(data, 1000)
+    };
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": token ? `Bearer ${token}` : "",
+    };
     
     try {
-      const response = await fetch(apiUrl("/playlists/import"), {
+      // Step 1: parse (without resolving) so the browser knows the exact
+      // track list to look up with YouTube Music.
+      const parseResponse = await fetch(apiUrl("/playlists/import/parse"), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": token ? `Bearer ${token}` : "",
-        },
+        headers,
         credentials: "include",
-        body: JSON.stringify({
-          source,
-          name: cleanText(playlistName, 120),
-          data: activeTab === "csv" ? data.slice(0, 200000) : cleanText(data, 1000)
-        })
+        body: JSON.stringify(payload)
       });
-      
-      const json = await response.json();
+      const parseJson = await parseResponse.json();
+      if (!parseJson.success || !Array.isArray(parseJson.tracks) || parseJson.tracks.length === 0) {
+        setError(parseJson.error || "Failed to parse the playlist. Check format or connection.");
+        return;
+      }
+      const tracks: Array<{ title: string; artist: string; album?: string }> = parseJson.tracks;
+
+      // Step 2: resolve each unique track query in the browser with the
+      // youtubei.js YT_MUSIC client (user's residential IP, not cloud egress).
+      // Degrades to an empty map when unavailable; the API then falls back to
+      // its server-side provider chain per track.
+      const indexedQueries = tracks.map((t, i) => ({
+        index: i,
+        query: [t.title, t.artist].filter((s) => s && s.trim()).join(" ").trim() || t.title,
+      }));
+      const unique = Array.from(new Set(indexedQueries.map((q) => q.query)));
+      const resolved = await resolveTracksOnBrowser(unique, { limit: 8, concurrency: 3 });
+
+      const candidates: Record<number, BrowserMusicCandidate[]> = {};
+      for (const { index, query } of indexedQueries) {
+        const found = resolved[query];
+        if (found && found.length > 0) candidates[index] = found;
+      }
+
+      // Step 3: hand browser candidates (keyed by track index) to the API,
+      // which ranks them with its normal matcher and persists the playlist.
+      const resolveResponse = await fetch(apiUrl("/playlists/import/resolve"), {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ ...payload, candidates })
+      });
+
+      const json = await resolveResponse.json();
       if (json.success) {
         setResults(json.data);
         onImported?.();

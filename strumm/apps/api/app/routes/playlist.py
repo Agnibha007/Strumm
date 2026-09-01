@@ -951,15 +951,38 @@ async def _provider_search(ctx: ImportContext, query: str) -> dict:
     return result
 
 
-async def _search_candidates(ctx: ImportContext, title: str, artist: str, duration: int = 0) -> dict:
+async def _search_candidates(
+    ctx: ImportContext,
+    title: str,
+    artist: str,
+    duration: int = 0,
+    injected: Optional[list] = None,
+) -> dict:
     """
     Search for song candidates across the ordered fallback query plan.
+
+    ``injected`` (optional): a list of already-fetched, importer-shaped raw
+    candidates (e.g. resolved in the user's browser via YouTube Music) for the
+    primary query. When non-empty these are preferred and ranked directly —
+    the server-side provider chain is skipped (it is only used as a fallback
+    when nothing was injected). A None/empty ``injected`` falls through to the
+    normal provider search.
 
     Returns a dict:
       {"candidates": [(song_item, score)], "status": str, "reason": str}
     where status is the originating classification and reason explains why
     matching could not proceed (or that candidates were found).
     """
+    if injected:
+        ranked = _rank_candidates(
+            {"title": title, "artist": artist, "duration": duration}, injected
+        )
+        return {
+            "candidates": ranked,
+            "status": STATUS_MATCHED,
+            "reason": f"found {len(ranked)} browser candidate(s)",
+        }
+
     plan = _build_query_plan(title, artist)
     candidates: list = []
     last_status = STATUS_NOT_FOUND
@@ -991,9 +1014,14 @@ async def _search_candidates(ctx: ImportContext, title: str, artist: str, durati
     }
 
 
-async def _match_track(ctx: ImportContext, track: dict) -> dict:
+async def _match_track(ctx: ImportContext, track: dict, injected: Optional[list] = None) -> dict:
     """
     Run the progressive matching pipeline for a single imported track.
+
+    ``injected`` (optional): raw candidate items resolved by the browser's
+    YouTube Music lookup. Preferred over the server-side provider chain;
+    non-empty injected candidates short-circuit the provider search. When no
+    candidates were injected the server chain runs as a fallback.
 
     Returns a dict with keys:
       match, match_type, confidence, candidates (optional),
@@ -1057,8 +1085,10 @@ async def _match_track(ctx: ImportContext, track: dict) -> dict:
             "reason": "matched against local library (high confidence)",
         }
 
-    # ---- Stage 3: provider search with fallbacks ----
-    search_outcome = await _search_candidates(ctx, title, artist, track.get("duration", 0))
+    # ---- Stage 3: provider search (or browser-injected candidates) ----
+    search_outcome = await _search_candidates(
+        ctx, title, artist, track.get("duration", 0), injected=injected
+    )
     candidates_list = None
     search_failed = search_outcome["status"] not in (STATUS_MATCHED, STATUS_NOT_FOUND)
 
@@ -1126,6 +1156,242 @@ async def _match_track(ctx: ImportContext, track: dict) -> dict:
     }
 
 
+async def _run_import_pipeline(
+    ctx: ImportContext,
+    parsed_rows: list,
+    user_id: str,
+    source: str,
+    import_name: str,
+    resolve_map: Optional[dict] = None,
+) -> dict:
+    """
+    Run the progressive matching pipeline over ``parsed_rows`` and persist the
+    resulting song list as a new private playlist.
+
+    ``resolve_map`` (optional): mapping of track index -> list of raw
+    importer-shaped candidates resolved in the user's browser (YouTube Music).
+    When present, those candidates are preferred per track; tracks without
+    browser candidates fall back to the server-side provider chain.
+
+    Shared by ``POST /import`` (server-side resolution only) and
+    ``POST /import/resolve`` (browser-preferred resolution). Returns the same
+    ``{"success": True, "data": {...}}`` contract the web app renders.
+    """
+    database = db.get_db()
+    matched = []
+    similar_match = []
+    not_found = []
+    duplicates = []
+    skipped = []
+    failed = []
+    ambiguous = []
+
+    async def process_one(track: dict, injected: Optional[list] = None) -> dict:
+        title = track.get("title", "")
+        artist = track.get("artist", "")
+
+        if track.get("videoId"):
+            song_item = _build_song_item(track)
+            return {"kind": "exact", "song": song_item, "_track": {
+                "title": title, "artist": artist, "album": track.get("album", ""),
+            }}
+
+        result = await _match_track(ctx, track, injected=injected)
+
+        if result["match"] and result["confidence"] >= HIGH_CONFIDENCE_THRESHOLD:
+            return {"kind": "high", "result": result, "_track": {
+                "title": title, "artist": artist, "album": track.get("album", ""),
+            }}
+        if result["match"] and result["confidence"] >= SIMILAR_MATCH_THRESHOLD:
+            return {"kind": "similar", "result": result, "_track": {
+                "title": title, "artist": artist, "album": track.get("album", ""),
+            }}
+        if result["status"] == STATUS_AMBIGUOUS:
+            return {"kind": "ambiguous", "result": result, "_track": {
+                "title": title, "artist": artist, "album": track.get("album", ""),
+            }}
+        if result["status"] in (STATUS_SEARCH_FAILED, STATUS_UNREACHABLE,
+                                STATUS_RATE_LIMITED, STATUS_TIMEOUT, STATUS_PROVIDER_ERROR):
+            return {"kind": "failed", "result": result, "_track": {
+                "title": title, "artist": artist, "album": track.get("album", ""),
+            }}
+        if result["status"] == STATUS_INVALID_METADATA:
+            return {"kind": "skipped", "result": result, "_track": {
+                "title": title, "artist": artist, "album": track.get("album", ""),
+            }}
+        # Genuine not_found
+        return {"kind": "not_found", "result": result, "_track": {
+            "title": title, "artist": artist, "album": track.get("album", ""),
+        }}
+
+    # Handle exact (videoId) tracks first — no provider search needed.
+    exact_tracks = [(i, t) for i, t in enumerate(parsed_rows) if t.get("videoId")]
+    searchable = [(i, t) for i, t in enumerate(parsed_rows) if not t.get("videoId")]
+
+    for i, track in exact_tracks:
+        out = await process_one(track)
+        song_item = out["song"]
+        if _is_duplicate(ctx, song_item):
+            duplicates.append(song_item)
+        else:
+            _mark_matched(ctx, song_item)
+            matched.append(song_item)
+
+    # Search-bound tracks, processed with bounded concurrency, preserving order.
+    results = []
+    if searchable:
+        semaphore = asyncio.Semaphore(IMPORT_CONCURRENCY)
+
+        async def bounded(indexed_track):
+            i, track = indexed_track
+            async with semaphore:
+                injected = None
+                if resolve_map:
+                    injected = resolve_map.get(i)
+                return await process_one(track, injected)
+
+        results = await asyncio.gather(*(bounded(t) for t in searchable))
+
+    for out in results:
+        if out["kind"] == "high":
+            m = out["result"]["match"]
+            if _is_duplicate(ctx, m):
+                duplicates.append(m)
+            else:
+                _mark_matched(ctx, m)
+                if out["result"]["match_type"] == "exact":
+                    matched.append(m)
+                else:
+                    m["match_type"] = out["result"]["match_type"]
+                    m["confidence"] = out["result"]["confidence"]
+                    similar_match.append(m)
+        elif out["kind"] == "similar":
+            m = out["result"]["match"]
+            if _is_duplicate(ctx, m):
+                duplicates.append(m)
+            else:
+                _mark_matched(ctx, m)
+                m["match_type"] = "similar"
+                m["confidence"] = out["result"]["confidence"]
+                similar_match.append(m)
+        elif out["kind"] == "not_found":
+            not_found.append({
+                "title": out["_track"]["title"],
+                "artist": out["_track"]["artist"],
+                "album": out["_track"].get("album", ""),
+                "status": STATUS_NOT_FOUND,
+                "reason": out["result"].get("reason", "no match found"),
+                "candidates": out["result"].get("candidates"),
+            })
+        elif out["kind"] == "ambiguous":
+            ambiguous.append({
+                "title": out["_track"]["title"],
+                "artist": out["_track"]["artist"],
+                "album": out["_track"].get("album", ""),
+                "status": STATUS_AMBIGUOUS,
+                "reason": out["result"].get("reason", "ambiguous match"),
+                "confidence": round(out["result"].get("confidence", 0.0), 4),
+                "candidates": out["result"].get("candidates"),
+            })
+        elif out["kind"] == "failed":
+            failed.append({
+                "title": out["_track"]["title"],
+                "artist": out["_track"]["artist"],
+                "album": out["_track"].get("album", ""),
+                "status": out["result"].get("status", STATUS_SEARCH_FAILED),
+                "reason": out["result"].get("reason", "provider search failed"),
+                "candidates": out["result"].get("candidates"),
+            })
+        elif out["kind"] == "skipped":
+            skipped.append({
+                "title": out["_track"]["title"],
+                "artist": out["_track"]["artist"],
+                "album": out["_track"].get("album", ""),
+                "status": STATUS_INVALID_METADATA,
+                "reason": out["result"].get("reason", "unusable metadata"),
+            })
+
+    # Structured per-track import log (no secrets / personal data beyond the
+    # already-user-supplied track identity, useful for debugging reports).
+    for out in results:
+        if out["kind"] in ("high", "similar"):
+            m = out["result"]["match"]
+            ctx.track_logs.append({
+                "source_title": out["_track"]["title"],
+                "source_artists": out["_track"]["artist"],
+                "source_album": out["_track"].get("album", ""),
+                "matched_title": m.get("title"),
+                "match_method": out["result"].get("match_type", "none"),
+                "confidence": round(out["result"].get("confidence", 0.0), 4),
+                "final_status": STATUS_MATCHED,
+            })
+        elif out["kind"] == "not_found":
+            ctx.track_logs.append({
+                "source_title": out["_track"]["title"],
+                "source_artists": out["_track"]["artist"],
+                "source_album": out["_track"].get("album", ""),
+                "final_status": STATUS_NOT_FOUND,
+                "failure_reason": out["result"].get("reason", ""),
+            })
+        elif out["kind"] in ("failed", "ambiguous"):
+            ctx.track_logs.append({
+                "source_title": out["_track"]["title"],
+                "source_artists": out["_track"]["artist"],
+                "source_album": out["_track"].get("album", ""),
+                "final_status": out["result"].get("status", "unknown"),
+                "failure_reason": out["result"].get("reason", ""),
+                "candidate_count": len(out["result"].get("candidates") or []),
+            })
+
+    if ctx.track_logs:
+        logger.info(
+            f"[import] source={ctx.source} name={ctx.import_name!r} "
+            f"tracks={len(parsed_rows)} searches_used={ctx.searches_used} "
+            f"status={[l.get('final_status') for l in ctx.track_logs]}"
+        )
+    else:
+        logger.info(
+            f"[import] source={ctx.source} name={ctx.import_name!r} "
+            f"tracks={len(parsed_rows)} (all exact) searches_used=0"
+        )
+
+    all_matched = matched + similar_match
+
+    if all_matched:
+        new_playlist = {
+            "userId": ObjectId(user_id),
+            "name": f"Imported: {import_name}",
+            "description": f"Imported from {source} on {datetime.utcnow().strftime('%Y-%m-%d')}",
+            "songs": all_matched,
+            "visibility": "private",
+            "followers": 0,
+            "collaborators": [],
+            "createdAt": datetime.utcnow()
+        }
+        await database[db.PLAYLISTS].insert_one(new_playlist)
+
+    return {
+        "success": True,
+        "data": {
+            "matched": matched,
+            "similar_matches": similar_match,
+            "not_found": not_found,
+            "duplicates": duplicates,
+            "ambiguous": ambiguous,
+            "failed": failed,
+            "skipped": skipped,
+            "total_matched": len(matched),
+            "total_similar": len(similar_match),
+            "total_not_found": len(not_found),
+            "total_failed": len(failed),
+            "total_ambiguous": len(ambiguous),
+            "total_skipped": len(skipped),
+            "total_tracks": len(parsed_rows),
+            "searches_used": ctx.searches_used,
+        }
+    }
+
+
 @router.post("/import")
 async def import_playlist(
     payload: ImportRequest,
@@ -1141,13 +1407,6 @@ async def import_playlist(
         ctx.import_name = import_name
 
         parsed_rows = []
-        matched = []
-        similar_match = []
-        not_found = []
-        duplicates = []
-        skipped = []
-        failed = []
-        ambiguous = []
 
         if source == "csv":
             f = StringIO(import_data)
@@ -1205,214 +1464,176 @@ async def import_playlist(
                     "error": "No tracks found in the provided import data. Check your format and try again."
                 }
 
-        # Run the progressive matching pipeline with bounded concurrency.
-        # Direct videoId tracks (YouTube imports) are matched instantly.
-        # Searchable tracks run through the matcher in bounded parallel batches
-        # (IMPORT_CONCURRENCY) to avoid overwhelming the provider API.
-
-        async def process_one(track: dict):
-            title = track.get("title", "")
-            artist = track.get("artist", "")
-
-            if track.get("videoId"):
-                song_item = _build_song_item(track)
-                return {"kind": "exact", "song": song_item, "_track": {
-                    "title": title, "artist": artist, "album": track.get("album", ""),
-                }}
-
-            result = await _match_track(ctx, track)
-
-            if result["match"] and result["confidence"] >= HIGH_CONFIDENCE_THRESHOLD:
-                return {"kind": "high", "result": result, "_track": {
-                    "title": title, "artist": artist, "album": track.get("album", ""),
-                }}
-            if result["match"] and result["confidence"] >= SIMILAR_MATCH_THRESHOLD:
-                return {"kind": "similar", "result": result, "_track": {
-                    "title": title, "artist": artist, "album": track.get("album", ""),
-                }}
-            if result["status"] == STATUS_AMBIGUOUS:
-                return {"kind": "ambiguous", "result": result, "_track": {
-                    "title": title, "artist": artist, "album": track.get("album", ""),
-                }}
-            if result["status"] in (STATUS_SEARCH_FAILED, STATUS_UNREACHABLE,
-                                    STATUS_RATE_LIMITED, STATUS_TIMEOUT, STATUS_PROVIDER_ERROR):
-                return {"kind": "failed", "result": result, "_track": {
-                    "title": title, "artist": artist, "album": track.get("album", ""),
-                }}
-            if result["status"] == STATUS_INVALID_METADATA:
-                return {"kind": "skipped", "result": result, "_track": {
-                    "title": title, "artist": artist, "album": track.get("album", ""),
-                }}
-            # Genuine not_found
-            return {"kind": "not_found", "result": result, "_track": {
-                "title": title, "artist": artist, "album": track.get("album", ""),
-            }}
-
-        # Sequential loop with bounded concurrency over the search-bound tracks.
-        searchable = [t for t in parsed_rows if not t.get("videoId")]
-        exact_tracks = [t for t in parsed_rows if t.get("videoId")]
-
-        # Handle exact (videoId) tracks first — no provider search needed.
-        for track in exact_tracks:
-            out = await process_one(track)
-            song_item = out["song"]
-            if _is_duplicate(ctx, song_item):
-                duplicates.append(song_item)
-            else:
-                _mark_matched(ctx, song_item)
-                matched.append(song_item)
-
-        # Search-bound tracks, processed with bounded concurrency, preserving order.
-        results = []
-        if searchable:
-            semaphore = asyncio.Semaphore(IMPORT_CONCURRENCY)
-
-            async def bounded(track):
-                async with semaphore:
-                    return await process_one(track)
-
-            results = await asyncio.gather(*(bounded(t) for t in searchable))
-
-        for out in results:
-            if out["kind"] == "high":
-                m = out["result"]["match"]
-                if _is_duplicate(ctx, m):
-                    duplicates.append(m)
-                else:
-                    _mark_matched(ctx, m)
-                    if out["result"]["match_type"] == "exact":
-                        matched.append(m)
-                    else:
-                        m["match_type"] = out["result"]["match_type"]
-                        m["confidence"] = out["result"]["confidence"]
-                        similar_match.append(m)
-            elif out["kind"] == "similar":
-                m = out["result"]["match"]
-                if _is_duplicate(ctx, m):
-                    duplicates.append(m)
-                else:
-                    _mark_matched(ctx, m)
-                    m["match_type"] = "similar"
-                    m["confidence"] = out["result"]["confidence"]
-                    similar_match.append(m)
-            elif out["kind"] == "not_found":
-                not_found.append({
-                    "title": out["_track"]["title"],
-                    "artist": out["_track"]["artist"],
-                    "album": out["_track"].get("album", ""),
-                    "status": STATUS_NOT_FOUND,
-                    "reason": out["result"].get("reason", "no match found"),
-                    "candidates": out["result"].get("candidates"),
-                })
-            elif out["kind"] == "ambiguous":
-                ambiguous.append({
-                    "title": out["_track"]["title"],
-                    "artist": out["_track"]["artist"],
-                    "album": out["_track"].get("album", ""),
-                    "status": STATUS_AMBIGUOUS,
-                    "reason": out["result"].get("reason", "ambiguous match"),
-                    "confidence": round(out["result"].get("confidence", 0.0), 4),
-                    "candidates": out["result"].get("candidates"),
-                })
-            elif out["kind"] == "failed":
-                failed.append({
-                    "title": out["_track"]["title"],
-                    "artist": out["_track"]["artist"],
-                    "album": out["_track"].get("album", ""),
-                    "status": out["result"].get("status", STATUS_SEARCH_FAILED),
-                    "reason": out["result"].get("reason", "provider search failed"),
-                    "candidates": out["result"].get("candidates"),
-                })
-            elif out["kind"] == "skipped":
-                skipped.append({
-                    "title": out["_track"]["title"],
-                    "artist": out["_track"]["artist"],
-                    "album": out["_track"].get("album", ""),
-                    "status": STATUS_INVALID_METADATA,
-                    "reason": out["result"].get("reason", "unusable metadata"),
-                })
-
-        # Structured per-track import log (no secrets / personal data beyond the
-        # already-user-supplied track identity, useful for debugging reports).
-        for out in results:
-            if out["kind"] in ("high", "similar"):
-                m = out["result"]["match"]
-                ctx.track_logs.append({
-                    "source_title": out["_track"]["title"],
-                    "source_artists": out["_track"]["artist"],
-                    "source_album": out["_track"].get("album", ""),
-                    "matched_title": m.get("title"),
-                    "match_method": out["result"].get("match_type", "none"),
-                    "confidence": round(out["result"].get("confidence", 0.0), 4),
-                    "final_status": STATUS_MATCHED,
-                })
-            elif out["kind"] == "not_found":
-                ctx.track_logs.append({
-                    "source_title": out["_track"]["title"],
-                    "source_artists": out["_track"]["artist"],
-                    "source_album": out["_track"].get("album", ""),
-                    "final_status": STATUS_NOT_FOUND,
-                    "failure_reason": out["result"].get("reason", ""),
-                })
-            elif out["kind"] in ("failed", "ambiguous"):
-                ctx.track_logs.append({
-                    "source_title": out["_track"]["title"],
-                    "source_artists": out["_track"]["artist"],
-                    "source_album": out["_track"].get("album", ""),
-                    "final_status": out["result"].get("status", "unknown"),
-                    "failure_reason": out["result"].get("reason", ""),
-                    "candidate_count": len(out["result"].get("candidates") or []),
-                })
-
-        if ctx.track_logs:
-            logger.info(
-                f"[import] source={ctx.source} name={ctx.import_name!r} "
-                f"tracks={len(parsed_rows)} searches_used={ctx.searches_used} "
-                f"status={[l.get('final_status') for l in ctx.track_logs]}"
-            )
-        else:
-            logger.info(
-                f"[import] source={ctx.source} name={ctx.import_name!r} "
-                f"tracks={len(parsed_rows)} (all exact) searches_used=0"
-            )
-
-        all_matched = matched + similar_match
-
-        if all_matched:
-            new_playlist = {
-                "userId": ObjectId(current_user["id"]),
-                "name": f"Imported: {import_name}",
-                "description": f"Imported from {source} on {datetime.utcnow().strftime('%Y-%m-%d')}",
-                "songs": all_matched,
-                "visibility": "private",
-                "followers": 0,
-                "collaborators": [],
-                "createdAt": datetime.utcnow()
-            }
-            await database[db.PLAYLISTS].insert_one(new_playlist)
-
-        return {
-            "success": True,
-            "data": {
-                "matched": matched,
-                "similar_matches": similar_match,
-                "not_found": not_found,
-                "duplicates": duplicates,
-                "ambiguous": ambiguous,
-                "failed": failed,
-                "skipped": skipped,
-                "total_matched": len(matched),
-                "total_similar": len(similar_match),
-                "total_not_found": len(not_found),
-                "total_failed": len(failed),
-                "total_ambiguous": len(ambiguous),
-                "total_skipped": len(skipped),
-                "total_tracks": len(parsed_rows),
-                "searches_used": ctx.searches_used,
-            }
-        }
+        # Run the progressive matching pipeline (shared with the browser-
+        # assisted /import/resolve endpoint). Server-side resolution only here.
+        return await _run_import_pipeline(
+            ctx,
+            parsed_rows,
+            user_id=str(current_user["id"]),
+            source=source,
+            import_name=import_name,
+        )
     except Exception as e:
         logger.error(f"Error importing playlist: {str(e)}\n{traceback.format_exc()}")
+        return {"success": False, "error": "An internal error occurred."}
+
+
+async def _parse_import_rows(source: str, import_data: str) -> dict:
+    """Shared parse step for /import, /import/parse and /import/resolve."""
+    from io import StringIO as _StringIO
+    import csv as _csv
+
+    parsed_rows: list = []
+
+    if source == "csv":
+        f = _StringIO(import_data)
+        reader = _csv.DictReader(f)
+        if not reader.fieldnames or not any(k in [x.lower() for x in reader.fieldnames] for k in ["title", "name", "song"]):
+            f.seek(0)
+            for row in _csv.reader(_StringIO(import_data)):
+                if len(row) >= 2:
+                    parsed_rows.append({
+                        "title": row[0].strip(),
+                        "artist": row[1].strip(),
+                        "album": row[2].strip() if len(row) > 2 else ""
+                    })
+        else:
+            for row in reader:
+                norm = {k.lower(): v for k, v in row.items()}
+                title = norm.get("title") or norm.get("name") or norm.get("song", "")
+                artist = norm.get("artist") or norm.get("author") or norm.get("singer", "")
+                album = norm.get("album") or norm.get("record", "")
+                parsed_rows.append({"title": title.strip(), "artist": artist.strip(), "album": album.strip()})
+    elif source == "spotify" or "spotify.com" in import_data:
+        parsed_rows = await extract_spotify_playlist(import_data)
+    elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
+        parsed_rows = await extract_ytmusic_playlist(import_data)
+
+    if not parsed_rows and source in ["spotify", "youtube"]:
+        for line in import_data.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("http"):
+                continue
+            parts = line.split(" - ")
+            if len(parts) >= 2:
+                parsed_rows.append({"title": parts[0].strip(), "artist": parts[1].strip(), "album": ""})
+            else:
+                parsed_rows.append({"title": line, "artist": "", "album": ""})
+
+    return {"parsed_rows": parsed_rows}
+
+
+class ImportParseResponse(BaseModel):
+    success: bool
+    tracks: list = []
+    error: Optional[str] = None
+
+
+@router.post("/import/parse")
+async def import_parse(
+    payload: ImportRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Parse a Spotify / YT Music / CSV import into raw track rows WITHOUT
+    resolving them. Returns ``{success, tracks: [{title, artist, album,
+    duration}]}`` so the browser can resolve each track's YouTube Music
+    candidates client-side before calling ``/import/resolve``.
+    """
+    try:
+        source = sanitize_enum(payload.source, {"csv", "spotify", "youtube"}, "csv")
+        import_data = sanitize_multiline_text(payload.data, max_length=200000)
+        result = await _parse_import_rows(source, import_data)
+        parsed_rows = result["parsed_rows"]
+
+        if not parsed_rows:
+            error = (
+                "Failed to extract playlist tracks. Make sure the playlist is public and the URL is correct."
+                if "spotify.com" in import_data or import_data.strip().startswith("http")
+                else "No tracks found in the provided import data. Check your format and try again."
+            )
+            return {"success": False, "tracks": [], "error": error}
+
+        return {"success": True, "tracks": parsed_rows}
+    except Exception as e:
+        logger.error(f"Error parsing playlist: {str(e)}\n{traceback.format_exc()}")
+        return {"success": False, "tracks": [], "error": "An internal error occurred."}
+
+
+class ImportResolveRequest(BaseModel):
+    source: str
+    name: str
+    data: str  # URL or raw CSV string (same contract as ImportRequest)
+    candidates: dict = {}  # track index (int key -> str in JSON) -> [raw candidate dicts]
+
+
+class ImportResolveResponse(BaseModel):
+    success: bool
+
+
+@router.post("/import/resolve")
+async def import_resolve(
+    payload: ImportResolveRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Resolve a parsed import using BROWSER-SUPPLIED YouTube Music candidates.
+
+    The browser parses the playlist once (via /import/parse), resolves each
+    track's candidates client-side with youtubei.js (YT_MUSIC client on the
+    user's residential IP), and POSTs them here keyed by track index.
+
+    For each track: browser candidates (when present) are preferred and ranked
+    with the same scoring as server search; tracks without browser candidates
+    fall back to the server-side provider chain. Persists the result as a new
+    private playlist and returns the same response contract as /import.
+    """
+    ctx = ImportContext(source=payload.source)
+    try:
+        source = sanitize_enum(payload.source, {"csv", "spotify", "youtube"}, "csv")
+        import_name = sanitize_text(payload.name, max_length=120)
+        import_data = sanitize_multiline_text(payload.data, max_length=200000)
+        ctx.source = source
+        ctx.import_name = import_name
+
+        result = await _parse_import_rows(source, import_data)
+        parsed_rows = result["parsed_rows"]
+
+        if not parsed_rows:
+            return {
+                "success": False,
+                "error": "Failed to extract playlist tracks. Make sure the playlist is public and the URL is correct."
+            }
+
+        # Normalize the browser-supplied candidate map. JSON object keys are
+        # strings; convert them back to ints and drop malformed entries. Each
+        # candidate is passed to the matcher as importer-shaped raw data (the
+        # same shape ytmusicapi / fallback providers return).
+        resolve_map: Optional[dict] = {}
+        for key, raw_candidates in (payload.candidates or {}).items():
+            try:
+                idx = int(key)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(raw_candidates, list):
+                sanitized = [
+                    c
+                    for c in raw_candidates
+                    if isinstance(c, dict) and isinstance(c.get("videoId"), str) and c.get("videoId").strip()
+                ]
+                if sanitized:
+                    resolve_map[idx] = sanitized
+
+        return await _run_import_pipeline(
+            ctx,
+            parsed_rows,
+            user_id=str(current_user["id"]),
+            source=source,
+            import_name=import_name,
+            resolve_map=resolve_map or None,
+        )
+    except Exception as e:
+        logger.error(f"Error resolving playlist: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": "An internal error occurred."}
 
 
