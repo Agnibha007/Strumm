@@ -5,7 +5,10 @@ instant, zero-processing playback. For background/lock-screen listening (where
 mobile browsers suspend iframes), `/play/{id}` additionally extracts a direct
 audio URL via yt-dlp so the host page can play it in an `<audio>` element, and
 `/audio-proxy` streams that URL through the backend as a CORS/network fallback.
-No media is downloaded or stored — only metadata and a forwardable stream URL.
+When yt-dlp is bot-blocked from this host (common on cloud egress IPs),
+`/play` falls back to a public Piped instance's `/streams` endpoint so the
+audio URL still resolves. No media is downloaded or stored — only metadata and
+a forwardable stream URL.
 """
 
 import logging
@@ -24,7 +27,7 @@ router = APIRouter(tags=["stream"])
 
 
 async def get_song_metadata(video_id: str) -> Optional[dict]:
-    """Fetch song metadata from YTMusic or local cache."""
+    """Fetch song metadata from local cache (DB or in-memory), never YouTube."""
     # 0. Check in-memory TTL cache first
     from app.services.cache import get_cached_stream, cache_stream
     cache_key_str = f"stream:{video_id}"
@@ -55,38 +58,8 @@ async def get_song_metadata(video_id: str) -> Optional[dict]:
         cache_stream(cache_key_str, res)
         return res
 
-    # 2. Fetch from YTMusic
-    try:
-        from app.services.ytmusic import call_ytmusic_safe
-        watch = await asyncio.to_thread(lambda: call_ytmusic_safe("get_watch_playlist", videoId=video_id, limit=1))
-        if watch and watch.get("tracks"):
-            track = watch["tracks"][0]
-            duration_sec = track.get("length") or 200
-            artists_list = track.get("artists", [])
-            artist_name = ", ".join(
-                [a.get("name", "") for a in artists_list if a.get("name")]
-            ) if artists_list else "Unknown Artist"
-            thumbnails = track.get("thumbnail", [])
-            thumb_url = thumbnails[-1].get("url", "") if thumbnails else (
-                f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
-            )
-            album_info = track.get("album")
-            album_name = album_info.get("name", "") if album_info else ""
-
-            res = {
-                "videoId": video_id,
-                "title": track.get("title", "Untitled Track"),
-                "artist": artist_name,
-                "thumbnail": thumb_url,
-                "duration": duration_sec,
-                "metadata": {"album": album_name},
-            }
-            cache_stream(cache_key_str, res)
-            return res
-    except Exception as e:
-        logger.warning(f"Provider metadata fetch failed for {video_id}: {e}")
-
-    # 3. Fallback with basic info
+    # 2. Fallback with basic info (no server->YouTube egress; the client can
+    #    resolve richer metadata directly via Piped in the browser).
     res = {
         "videoId": video_id,
         "title": f"YouTube Track ({video_id})",
@@ -137,8 +110,10 @@ async def resolve_track(
 # locked). A host-page `<audio>` element keeps playing, so /play extracts a
 # direct audio URL with yt-dlp (which handles YouTube's bot checks better than
 # ytmusicapi) and /audio-proxy streams it back as a fallback when the direct
-# googlevideo URL is unreachable from the client's network. Extracted URLs are
-# signed for ~6h, so the 2h TTL cache stays safely under the expiry.
+# googlevideo URL is unreachable from the client's network. If yt-dlp itself is
+# bot-blocked from this host's IP, we fall back to a public Piped instance's
+# /streams endpoint, which performs the YouTube fetch server-side. Extracted
+# URLs are signed for ~6h, so the 2h TTL cache stays safely under the expiry.
 
 AUDIO_FORMAT_ORDER = {"m4a": 3, "mp4": 2, "webm": 2, "opus": 1, "ogg": 1}
 
@@ -227,6 +202,115 @@ def _audio_mime(ext: str) -> str:
     return "audio/mp4"
 
 
+# ---------------------------------------------------------------------------
+# Piped audio fallback — background audio when yt-dlp is bot-blocked
+# ---------------------------------------------------------------------------
+# YouTube blocks anonymous cloud egress IPs (yt-dlp fails with "EOF occurred
+# in violation of protocol"). Public Piped instances perform the YouTube fetch
+# server-side, so their ``/streams/{id}`` endpoint still yields playable audio
+# URLs from the same cloud range that direct yt-dlp can't reach. This mirrors
+# ``ytfallback.py``'s Piped search provider: same instance list (re-imported),
+# same rotate-on-failure behavior, and no change to the client/server contract
+# (``/play`` still just returns an ``audioUrl``).
+#
+# The live instance (``api.piped.private.coffee``) no longer returns discrete
+# ``audioStreams``; it serves a combined 360p MP4 (itag 18, ``videoOnly:
+# false``). An ``<audio>`` element plays just the audio track of an MP4, so we
+# prioritize a real audio-only stream when present and otherwise fall back to
+# the best combined MP4.
+
+
+def _run_piped_extract(video_id: str) -> Optional[dict]:
+    """Return a Piped audio descriptor for ``video_id``, or ``None`` on failure."""
+    from app.services.ytfallback import PIPED_INSTANCES
+    import requests as _req
+
+    for base in PIPED_INSTANCES:
+        try:
+            resp = _req.get(
+                f"{base}/streams/{video_id}",
+                params={"itag": "140"},
+                timeout=(3.0, 10.0),
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    f"Piped {base}/streams/{video_id} HTTP {resp.status_code}"
+                )
+                continue
+            payload = resp.json()
+        except Exception as exc:
+            logger.warning(
+                f"Piped {base}/streams/{video_id} failed: "
+                f"{type(exc).__name__}: {exc!s:.120}"
+            )
+            continue
+
+        if not isinstance(payload, dict):
+            continue
+
+        def _ext_from_mime(mime: str) -> str:
+            ext = (mime or "").split("/")[-1].split(";")[0].lower()
+            if ext == "m4a":
+                return "m4a"
+            if ext in ("mp4", "webm", "ogg", "opus", "aac", "mpeg"):
+                return ext
+            return "mp4"  # unknown sub-type — treat as MP4 container
+
+        # 1. Prefer a dedicated audio-only stream.
+        best_audio = None
+        for s in payload.get("audioStreams") or []:
+            if not isinstance(s, dict):
+                continue
+            u = (s.get("url") or "").strip()
+            if not u:
+                continue
+            ext = _ext_from_mime(s.get("mimeType") or "")
+            score = float(s.get("bitrate") or 0) + 100000.0
+            if best_audio is None or score > best_audio[0]:
+                best_audio = (score, u, ext)
+
+        # 2. Otherwise use a combined stream (e.g. itag 18) — an ``<audio>``
+        #    element plays just the audio track of an MP4, so this still works.
+        #    The Odysee-mirrored ``player.odycdn.com`` LBRY streams 401 for
+        #    browser/<audio> clients, so only the instance-proxied playback
+        #    URLs (e.g. ``proxy.<instance>/videoplayback``) are usable.
+        best_combined = None
+        for s in payload.get("videoStreams") or []:
+            if not isinstance(s, dict):
+                continue
+            if s.get("videoOnly"):
+                continue  # no audio track — useless for playback
+            u = (s.get("url") or "").strip()
+            if not u:
+                continue
+            if "player.odycdn.com" in u:
+                continue  # Odysee LBRY mirror returns 401 — not playable
+            mime = (s.get("mimeType") or "").lower()
+            # Prefer MP4 (widely playable); HLS needs the instance's aux stream
+            # and libav params, so skip pure HLS manifests (handled elsewhere).
+            if mime not in ("video/mp4", "audio/mp4", ""):
+                continue
+            ext = _ext_from_mime(s.get("mimeType") or "")
+            # heuristically favor low-quality combined streams (audio-first use)
+            score = 0.0
+            if "/videoplayback" in u:
+                score += 1000.0
+            score += float(s.get("bitrate") or 0)
+            if best_combined is None or score > best_combined[0]:
+                best_combined = (score, u, ext)
+
+        chosen = best_audio or best_combined
+        if chosen:
+            return {
+                "videoId": video_id,
+                "audioUrl": chosen[1],
+                "mimeType": _audio_mime(chosen[2]),
+                "title": payload.get("title") or "",
+                "duration": payload.get("duration"),
+            }
+    return None
+
+
 async def get_direct_audio(video_id: str) -> Optional[dict]:
     """Return a cached direct-audio descriptor, extracting on cache miss."""
     from app.services.cache import get_cached_stream, cache_stream, cache_key
@@ -240,21 +324,28 @@ async def get_direct_audio(video_id: str) -> Optional[dict]:
         info = await asyncio.to_thread(_run_ytdlp_extract, video_id)
     except Exception as exc:
         logger.warning(f"get_direct_audio failed for {video_id}: {exc!s:.160}")
-        return None
+        info = None
 
-    audio_url = _pick_best_audio(info)
-    if not audio_url:
-        return None
+    audio_url = _pick_best_audio(info) if isinstance(info, dict) else None
+    if audio_url:
+        result = {
+            "videoId": video_id,
+            "audioUrl": audio_url,
+            "mimeType": _audio_mime(str(info.get("ext") or "")),
+            "title": info.get("title"),
+            "duration": info.get("duration"),
+        }
+        cache_stream(key, result)
+        return result
 
-    result = {
-        "videoId": video_id,
-        "audioUrl": audio_url,
-        "mimeType": _audio_mime(str(info.get("ext") or "")),
-        "title": info.get("title"),
-        "duration": info.get("duration"),
-    }
-    cache_stream(key, result)
-    return result
+    # yt-dlp is bot-blocked from this host (common on cloud egress IPs).
+    # Fall back to a Piped instance so background / lock-screen audio still works.
+    fallback = await asyncio.to_thread(_run_piped_extract, video_id)
+    if fallback:
+        cache_stream(key, fallback)
+        return fallback
+
+    return None
 
 
 @router.get("/play/{id}")

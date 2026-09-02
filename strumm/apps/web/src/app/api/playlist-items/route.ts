@@ -1,11 +1,10 @@
 /**
  * Playlist items API route — retrieves all songs in a YouTube playlist via
- * the YouTubeProvider.  Real durations are batch-fetched from the /videos
- * endpoint so the frontend displays accurate track lengths.
+ * keyless public Piped instances (no server egress to YouTube).
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { youTubeProvider } from "web/services/search";
+import { invidiousProvider } from "web/services/search";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -19,7 +18,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const songs = await youTubeProvider.getPlaylistItems(playlistId);
+    const songs = await invidiousProvider.getPlaylistItems(playlistId);
     return NextResponse.json(
       { success: true, data: songs },
       { headers: { "Cache-Control": "public, max-age=300, s-maxage=300" } },

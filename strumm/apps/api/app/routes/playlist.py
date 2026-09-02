@@ -1645,6 +1645,11 @@ class ImportResolveRequest(BaseModel):
     name: str
     data: str  # URL or raw CSV string (same contract as ImportRequest)
     candidates: dict = {}  # track index (int key -> str in JSON) -> [raw candidate dicts]
+    tracks: list = []
+    # Browser-supplied parsed track rows: when present AND non-empty, the
+    # server uses them directly instead of re-parsing (and, for youtube source,
+    # re-fetching the playlist from YouTube). Each row: {title, artist, album?,
+    # duration?, videoId?}.
 
 
 class ImportResolveResponse(BaseModel):
@@ -1678,6 +1683,38 @@ async def import_resolve(
 
         result = await _parse_import_rows(source, import_data)
         parsed_rows = result["parsed_rows"]
+
+        # Browser-supplied parsed rows take precedence: they let the browser
+        # do the YouTube playlist extraction (via Piped) so this endpoint never
+        # has to egress to YouTube to re-derive the track list. Sanitized so
+        # malformed/empty rows can't crash downstream matching.
+        if isinstance(payload.tracks, list) and payload.tracks:
+            sanitized_rows = []
+            for t in payload.tracks:
+                if not isinstance(t, dict):
+                    continue
+                title = (t.get("title") or "").strip()
+                if not title:
+                    continue
+                row: Dict[str, Any] = {"title": title}
+                artist = (t.get("artist") or "").strip()
+                if artist:
+                    row["artist"] = artist
+                album = (t.get("album") or "").strip()
+                if album:
+                    row["album"] = album
+                try:
+                    duration = int(t.get("duration") or 0)
+                    if duration > 0:
+                        row["duration"] = duration
+                except (TypeError, ValueError):
+                    pass
+                video_id = (t.get("videoId") or "").strip()
+                if video_id:
+                    row["videoId"] = video_id
+                sanitized_rows.append(row)
+            if sanitized_rows:
+                parsed_rows = sanitized_rows
 
         if not parsed_rows:
             return {

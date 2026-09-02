@@ -1,4 +1,6 @@
 import { apiUrl } from "web/lib/api";
+import { fetchPipedStreams } from "web/services/search/InvidiousProvider";
+import type { PipedStreamsData } from "web/services/search/InvidiousProvider";
 
 export interface DirectAudioData {
   videoId: string;
@@ -37,11 +39,16 @@ function cacheDirectAudioUrl(videoId: string, url: string) {
 /**
  * Resolve a direct audio URL for background / lock-screen playback.
  *
- * The URL is fetched once from `/play/{id}` and memoized client-side for
- * 45 minutes (server cache TTL is 2h). Concurrent calls for the same video
- * share one request (in-flight dedupe). Returns null when the track has no
- * direct audio (e.g. sign-in required) — callers silently fall back to the
- * YouTube iframe.
+ * The URL is resolved from the BROWSER first: it queries public Piped
+ * instances (`/streams/{id}`), which serve a playable MP4/audio URL with open
+ * CORS — no server round-trip and unaffected by the API host's egress IP
+ * being blocked by YouTube. Only if every browser-side path fails do we fall
+ * back to the server's `/play/{id}`.
+ *
+ * The result is memoized client-side for 45 minutes. Concurrent calls for the
+ * same video share one request (in-flight dedupe). Returns null when the track
+ * has no direct audio (e.g. sign-in required) — callers silently fall back to
+ * the YouTube iframe.
  */
 export async function resolveDirectAudioUrl(videoId: string): Promise<string | null> {
   if (!videoId) return null;
@@ -52,11 +59,80 @@ export async function resolveDirectAudioUrl(videoId: string): Promise<string | n
   const inProgress = inflight.get(videoId);
   if (inProgress) return inProgress;
 
-  const promise = fetchDirectAudio(videoId);
+  const promise = resolveAudio(videoId);
   inflight.set(videoId, promise);
   promise.finally(() => inflight.delete(videoId));
   return promise;
 }
+
+async function resolveAudio(videoId: string): Promise<string | null> {
+  // 1. Browser-side: Piped /streams (no server egress to YouTube).
+  const piped = await fetchPipedAudio(videoId);
+  if (piped) {
+    cacheDirectAudioUrl(videoId, piped);
+    return piped;
+  }
+
+  // 2. Fall back to the server /play endpoint.
+  return fetchDirectAudio(videoId);
+}
+
+// ---------------------------------------------------------------------------
+// Browser-side Piped audio extraction
+// ---------------------------------------------------------------------------
+
+function isPlayableUrl(u: string | undefined): u is string {
+  return typeof u === "string" && u.trim().length > 0;
+}
+
+/** Normalize a MIME sub-type to a container we can classify. */
+function extFromMime(mime: string | undefined): string {
+  const ext = (mime ?? "").split("/")[1]?.split(";")[0].toLowerCase() ?? "";
+  if (["m4a", "mp4", "webm", "ogg", "opus", "aac"].includes(ext)) return ext;
+  return "mp4";
+}
+
+function pickPipedAudioStream(data: PipedStreamsData): string | null {
+  // 1. Prefer a dedicated audio-only stream.
+  let bestAudio: { score: number; url: string } | null = null;
+  for (const s of data.audioStreams ?? []) {
+    if (!isPlayableUrl(s.url)) continue;
+    const ext = extFromMime(s.mimeType ?? "");
+    const score = (Number(s.bitrate) || 0) + (ext === "m4a" ? 10000 : ext === "mp4" ? 5000 : 1000);
+    if (!bestAudio || score > bestAudio.score) bestAudio = { score, url: s.url };
+  }
+  if (bestAudio) return bestAudio.url;
+
+  // 2. Otherwise use a combined stream (e.g. itag 18) — an <audio> element
+  //    plays just the audio track of an MP4. Skip Odysee LBRY mirrors (they
+  //    return 401 for browser/<audio> clients) and pure-HLS manifests.
+  let bestCombined: { score: number; url: string } | null = null;
+  for (const s of data.videoStreams ?? []) {
+    if (!isPlayableUrl(s.url)) continue;
+    if (s.videoOnly) continue; // no audio track
+    if (s.url.includes("player.odycdn.com")) continue; // 401-dead LBRY mirror
+    const mime = (s.mimeType ?? "").toLowerCase();
+    if (mime && !["video/mp4", "audio/mp4"].includes(mime)) continue;
+    const score = (Number(s.bitrate) || 0) + (s.url.includes("/videoplayback") ? 1000 : 0);
+    if (!bestCombined || score > bestCombined.score) bestCombined = { score, url: s.url };
+  }
+  return bestCombined?.url ?? null;
+}
+
+async function fetchPipedAudio(videoId: string): Promise<string | null> {
+  let data: PipedStreamsData | null = null;
+  try {
+    data = await fetchPipedStreams(videoId);
+  } catch {
+    return null;
+  }
+  if (!data) return null;
+  return pickPipedAudioStream(data);
+}
+
+// ---------------------------------------------------------------------------
+// Server fallback
+// ---------------------------------------------------------------------------
 
 async function fetchDirectAudio(videoId: string): Promise<string | null> {
   const controller = new AbortController();

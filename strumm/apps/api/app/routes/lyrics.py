@@ -1,9 +1,7 @@
 import os
-import asyncio
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Path, Query
-import httpx
 from app.database import mongodb as db
 from app.services.security import sanitize_multiline_text, sanitize_text, sanitize_youtube_id
 from app.services.cache import cache_lyrics, get_cached_lyrics
@@ -95,37 +93,6 @@ async def fetch_lrclib_lyrics(title: str, artist: str, album: Optional[str] = No
         logger.warning(f"LRCLIB lookup failed for '{title}' by '{artist}': {type(e).__name__}: {e!r}")
     return None
 
-async def fetch_provider_lyrics(video_id: str) -> Optional[dict]:
-    """Fetch lyrics via ytmusicapi directly."""
-    try:
-        from app.services.ytmusic import call_ytmusic_safe
-
-        # First, get the watch playlist to find the lyrics browse ID
-        watch = await asyncio.to_thread(lambda: call_ytmusic_safe("get_watch_playlist", videoId=video_id, limit=1))
-        if not watch:
-            return None
-
-        lyrics_browse_id = watch.get("lyrics")
-        if isinstance(lyrics_browse_id, dict):
-            lyrics_browse_id = lyrics_browse_id.get("browseId")
-        if not isinstance(lyrics_browse_id, str) or not lyrics_browse_id:
-            return None
-
-        lyrics = await asyncio.to_thread(lambda: call_ytmusic_safe("get_lyrics", lyrics_browse_id))
-        plain = sanitize_multiline_text(lyrics.get("lyrics", ""), max_length=50000) if lyrics else ""
-        if not plain:
-            return None
-
-        return {
-            "plain": plain,
-            "synced": "",
-            "source": "ytmusic",
-            "isSynced": False,
-        }
-    except Exception as e:
-        logger.warning(f"YTMusic lyrics fallback failed for {video_id}: {str(e)}")
-    return None
-
 def unavailable_lyrics(title: str, artist: str) -> dict:
     return {
         "plain": f"Lyrics are not available for '{title}' by '{artist}' yet.",
@@ -186,10 +153,9 @@ async def get_lyrics(
             cache_lyrics(cache_key_str, result)
             return {"success": True, "data": result}
 
-        # 4. Fetch from external APIs (lrclib first, then provider fallback)
+        # 4. Fetch from external APIs (LRCLIB only — no server->YouTube egress;
+        #    the provider/YTMusic lyrics fallback is intentionally removed.)
         lyrics = await fetch_lrclib_lyrics(song_title, song_artist)
-        if not lyrics or not lyrics.get("plain") and not lyrics.get("synced"):
-            lyrics = await fetch_provider_lyrics(id)
         if not lyrics:
             lyrics = unavailable_lyrics(song_title, song_artist)
         

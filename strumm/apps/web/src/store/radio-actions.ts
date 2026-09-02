@@ -5,6 +5,7 @@
  * can stay lean.  Each factory receives `set` and `get` from the store.
  */
 import { Song } from "@strumm/types";
+import { resolveRelatedOnBrowser } from "web/services/search/BrowserYouTubeMusicResolver";
 import { apiFetch } from "web/lib/api-client";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
@@ -98,17 +99,19 @@ export function createRadioActions(
       set({ isRadioLoading: true });
 
       try {
-        const token = useAuthStore.getState().token;
-        // Pass session history as exclude so we don't repeat tracks
-        const excludeParam = radioHistory.length > 0
-          ? `&exclude=${radioHistory.join(",")}`
-          : "";
-        const data = await apiFetch<{ songs: Song[] }>(
-          `/radio/${seedVideoId}?limit=20${excludeParam}`,
-          { token },
-        );
-        if (data?.songs?.length > 0) {
-          get().startRadio(seedVideoId, data.songs);
+        // Resolve related tracks from the BROWSER first (Piped, no server
+        // egress to YouTube). Fall back to the server /radio endpoint only
+        // when the browser path finds nothing.
+        const songs = await resolveRadioTracks(seedVideoId, radioHistory);
+        if (songs && songs.length > 0) {
+          get().startRadio(seedVideoId, songs);
+        } else if (songs === null) {
+          // Server fallback errored — treat as a real failure.
+          set({ isRadioLoading: false });
+          useNotificationStore.getState().show(
+            "Couldn't start radio — no related tracks found for this song.",
+            "error",
+          );
         } else {
           set({ isRadioLoading: false });
           useNotificationStore.getState().show(
@@ -131,18 +134,10 @@ export function createRadioActions(
       if (!isRadio || !radioSeed) return;
 
       try {
-        const token = useAuthStore.getState().token;
-        // Pass full session history as exclude so backend returns fresh tracks
-        const excludeParam = radioHistory.length > 0
-          ? `&exclude=${radioHistory.join(",")}`
-          : "";
-        const data = await apiFetch<{ songs: Song[] }>(
-          `/radio/${radioSeed}?limit=20${excludeParam}`,
-          { token },
-        );
-        if (data?.songs) {
+        const songs = await resolveRadioTracks(radioSeed, radioHistory);
+        if (songs && songs.length > 0) {
           const existingVids = new Set(queue.map((s: Song) => s.videoId));
-          const newSongs = data.songs.filter((s: Song) => !existingVids.has(s.videoId));
+          const newSongs = songs.filter((s: Song) => !existingVids.has(s.videoId));
           if (newSongs.length > 0) {
             // Add new song videoIds to radio history for future dedup
             const newVids = newSongs.map((s: Song) => s.videoId).filter(Boolean) as string[];
@@ -153,6 +148,13 @@ export function createRadioActions(
           } else {
             console.warn("Radio: No new tracks available");
           }
+        } else {
+          console.warn("Radio: No new tracks available");
+          // Notify the user when nothing new could be loaded this round.
+          useNotificationStore.getState().show(
+            "Couldn't load more radio tracks.",
+            "warning",
+          );
         }
       } catch (e) {
         console.error("Failed to fetch more radio tracks:", e);
@@ -163,4 +165,30 @@ export function createRadioActions(
       }
     },
   };
+}
+
+/**
+ * Resolve radio-related tracks, preferring the browser (Piped relatedStreams)
+ * and falling back to the server /radio endpoint.
+ *
+ * Returns the resolved songs, or null when the browser path is empty and the
+ * server fallback also found nothing / threw — callers use null to surface a
+ * "couldn't load" notification.
+ */
+async function resolveRadioTracks(seedVideoId: string, history: string[]): Promise<Song[] | null> {
+  const browser = await resolveRelatedOnBrowser(seedVideoId, history);
+  if (browser.length > 0) return browser;
+
+  try {
+    const token = useAuthStore.getState().token;
+    const excludeParam = history.length > 0 ? `&exclude=${history.join(",")}` : "";
+    const data = await apiFetch<{ songs: Song[] }>(
+      `/radio/${seedVideoId}?limit=20${excludeParam}`,
+      { token },
+    );
+    return data?.songs ?? [];
+  } catch {
+    // Server unreachable / errored — surface as an empty result.
+    return null;
+  }
 }

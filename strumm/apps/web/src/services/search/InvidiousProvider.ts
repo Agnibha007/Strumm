@@ -248,6 +248,70 @@ export function refreshInstances(): void {
   cachedInstances = null;
 }
 
+/**
+ * Return the Piped instance API base URLs currently considered healthy, in
+ * order. Shared by search and browser-side direct-audio extraction so both use
+ * the same live/demoted instance set.
+ */
+export async function discoverPipedInstances(): Promise<string[]> {
+  return discoverInstances();
+}
+
+// ---------------------------------------------------------------------------
+// Piped /streams — shared by direct-audio and browser-side radio/metadata
+// ---------------------------------------------------------------------------
+
+/** A single Piped stream info response (``GET /streams/{id}``). */
+export interface PipedStreamsData {
+  title?: string;
+  duration?: number;
+  uploader?: string;
+  thumbnailUrl?: string;
+  audioStreams?: Array<{ url?: string; mimeType?: string; bitrate?: number }>;
+  videoStreams?: Array<{
+    url?: string;
+    mimeType?: string;
+    bitrate?: number;
+    videoOnly?: boolean;
+  }>;
+  relatedStreams?: Array<{
+    url?: string;
+    type?: string;
+    title?: string;
+    uploaderName?: string;
+    thumbnail?: string;
+    duration?: number;
+  }>;
+}
+
+/**
+ * Fetch ``/streams/{videoId}`` from the live Piped instances (in order),
+ * returning the first successful payload or ``null`` when every instance
+ * fails. Reuses search's instance discovery + runtime demotion, so a dead
+ * instance is skipped for later calls.
+ */
+export async function fetchPipedStreams(videoId: string): Promise<PipedStreamsData | null> {
+  const instances = await discoverInstances();
+  for (const base of instances) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8_000);
+      const res = await fetch(`${base}/streams/${encodeURIComponent(videoId)}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) {
+        demoteInstance(base);
+        continue;
+      }
+      return (await res.json()) as PipedStreamsData;
+    } catch {
+      demoteInstance(base);
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // HTTP client
 // ---------------------------------------------------------------------------

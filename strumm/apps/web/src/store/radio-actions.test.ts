@@ -32,6 +32,11 @@ vi.mock("web/store/useNotificationStore", () => ({
   },
 }));
 
+const resolveRelatedMock = vi.fn();
+vi.mock("web/services/search/BrowserYouTubeMusicResolver", () => ({
+  resolveRelatedOnBrowser: (...args: unknown[]) => resolveRelatedMock(...args),
+}));
+
 import { apiFetch } from "web/lib/api-client";
 import { useNotificationStore } from "web/store/useNotificationStore";
 
@@ -180,6 +185,9 @@ describe("setRadioSession", () => {
 describe("triggerRadio", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: browser-side Piped returns nothing so tests exercise the
+    // server /radio fallback (unless overridden).
+    resolveRelatedMock.mockResolvedValue([]);
   });
 
   it("does nothing if already playing radio on same seed", async () => {
@@ -210,6 +218,22 @@ describe("triggerRadio", () => {
     expect(state.queue).toEqual(songs);
     expect(state.radioHistory).toContain("vid1");
     expect(state.radioHistory).toContain("vid2");
+  });
+
+  it("prefers browser-side Piped related tracks without hitting the server", async () => {
+    const songs = [makeSong("vid1"), makeSong("vid2")];
+    resolveRelatedMock.mockResolvedValue(songs);
+
+    const { actions, state } = createMockStore();
+
+    await actions.triggerRadio("seed1");
+
+    expect(resolveRelatedMock).toHaveBeenCalledWith("seed1", []);
+    // Server /radio should NOT be called when the browser path succeeds.
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(state.isRadio).toBe(true);
+    expect(state.radioSeed).toBe("seed1");
+    expect(state.queue).toEqual(songs);
   });
 
   it("passes radioHistory as exclude param when history exists", async () => {
@@ -261,6 +285,7 @@ describe("triggerRadio", () => {
 describe("fetchMoreRadio", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resolveRelatedMock.mockResolvedValue([]);
   });
 
   it("returns early if radio is not active", async () => {

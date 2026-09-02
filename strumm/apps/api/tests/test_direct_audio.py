@@ -75,8 +75,74 @@ def test_audio_mime(ext, expected):
 
 
 async def test_get_direct_audio_returns_none_when_extract_fails():
-    with patch("app.routes.stream._run_ytdlp_extract", side_effect=RuntimeError("blocked")):
+    with patch("app.routes.stream._run_ytdlp_extract", side_effect=RuntimeError("blocked")), patch(
+        "app.routes.stream._run_piped_extract", return_value=None
+    ):
         assert await get_direct_audio("videofail01") is None
+
+
+async def test_get_direct_audio_falls_back_to_piped():
+    fallback = {
+        "videoId": "videofb01",
+        "audioUrl": "https://piped.example/audio.m4a",
+        "mimeType": "audio/mp4",
+        "title": "Fallback",
+        "duration": 200,
+    }
+    with patch("app.routes.stream._run_ytdlp_extract", side_effect=RuntimeError("blocked")), patch(
+        "app.routes.stream._run_piped_extract", return_value=fallback
+    ):
+        result = await get_direct_audio("videofb01")
+    assert result is not None
+    assert result["audioUrl"] == "https://piped.example/audio.m4a"
+    assert result["mimeType"] == "audio/mp4"
+
+
+async def test_get_direct_audio_prefers_ytdlp_over_piped():
+    fake = {
+        "title": "Song",
+        "duration": 247,
+        "ext": "m4a",
+        "url": "https://googlevideo.example/stream.m4a",
+    }
+    fallback = {"audioUrl": "https://piped.example/audio.m4a"}
+    with patch("app.routes.stream._run_ytdlp_extract", return_value=fake), patch(
+        "app.routes.stream._run_piped_extract", return_value=fallback
+    ) as mock_piped:
+        result = await get_direct_audio("videopref01")
+    assert result["audioUrl"] == "https://googlevideo.example/stream.m4a"
+    mock_piped.assert_not_called()
+
+
+def test_run_piped_extract_skips_odycdn_and_prefers_videoplayback():
+    from app.routes.stream import _run_piped_extract
+
+    payload = {
+        "title": "T",
+        "duration": 100,
+        "audioStreams": [],
+        "videoStreams": [
+            {"url": "https://player.odycdn.com/v6/streams/abc.mp4", "mimeType": "video/mp4", "videoOnly": False, "bitrate": 0},
+            {"url": "https://proxy.piped.example/videoplayback?itag=18", "mimeType": "video/mp4", "videoOnly": False, "bitrate": 0},
+            {"url": "https://proxy.piped.example/videoplayback?itag=22", "mimeType": "video/mp4", "videoOnly": True, "bitrate": 0},
+            {"url": "https://example/hls.m3u8", "mimeType": "application/x-mpegurl", "videoOnly": False, "bitrate": 0},
+        ],
+    }
+    import requests
+
+    with patch("requests.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = payload
+        from app.services.ytfallback import PIPED_INSTANCES
+
+        result = _run_piped_extract("videopath01")
+
+    assert result is not None
+    assert result["audioUrl"] == "https://proxy.piped.example/videoplayback?itag=18"
+    assert result["mimeType"] == "audio/mp4"
+    mock_get.assert_called_once()
+    # First call targets the first Piped instance.
+    assert PIPED_INSTANCES[0] in mock_get.call_args.args[0]
 
 
 async def test_get_direct_audio_extracts_and_caches():

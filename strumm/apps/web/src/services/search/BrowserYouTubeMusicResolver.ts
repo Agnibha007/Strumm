@@ -29,6 +29,8 @@
 // ---------------------------------------------------------------------------
 
 import { invidiousProvider } from "web/services/search/InvidiousProvider";
+import { fetchPipedStreams } from "web/services/search/InvidiousProvider";
+import type { Song } from "@strumm/types";
 import type { SongResult } from "web/services/search/SearchProvider";
 
 // ---------------------------------------------------------------------------
@@ -251,4 +253,110 @@ export async function resolveTracksOnBrowser(
   const workers = Array.from({ length: Math.min(concurrency, queries.length || 1) }, () => worker());
   await Promise.all(workers);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Browser-side metadata & radio
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the tracks of a YouTube / YouTube Music playlist URL from the
+ * BROWSER via Piped ``/playlists/{id}`` (open CORS, no server egress to
+ * YouTube). Returns importer-shaped raw track rows — each carrying a canonical
+ * ``videoId`` so the server matcher treats them as exact matches.
+ *
+ *   { title, artist, album, duration, videoId? }
+ *
+ * Returns an empty array when the URL isn't a YouTube playlist or Piped can't
+ * resolve it (caller falls back to the server-side parse).
+ */
+export async function extractPlaylistOnBrowser(url: string): Promise<
+  Array<{ title: string; artist: string; album?: string; duration?: number; videoId?: string }>
+> {
+  if (!url || !/youtube\.com|youtu\.be/i.test(url)) return [];
+  let playlistId: string | null = null;
+  const listMatch = url.match(/[?&]list=([^&#]+)/);
+  if (listMatch) playlistId = listMatch[1];
+  if (!playlistId) return [];
+
+  try {
+    const items = await invidiousProvider.getPlaylistItems(playlistId);
+    const rows = items
+      .filter((s) => /^[a-zA-Z0-9_-]{11}$/.test(s.videoId))
+      .map((s) => ({
+        title: (s.title || "").trim(),
+        artist: (s.artist || "Unknown Artist").trim(),
+        album: "",
+        duration: Number(s.duration) || 0,
+        videoId: s.videoId,
+      }));
+    // A playlist that resolved to zero *canonical* tracks is treated as a
+    // failure so the caller can fall back to the server-side provider chain.
+    return rows.length > 0 ? rows : [];
+  } catch (err) {
+    console.warn(`BrowserYouTubeMusicResolver: playlist extract failed:`, err);
+    return [];
+  }
+}
+
+/**
+ * Resolve a track's metadata from the BROWSER via Piped ``/streams/{id}``
+ * (open CORS, no server egress to YouTube). Returns a minimal ``Song``-shaped
+ * object or ``null`` when the track can't be resolved in the browser.
+ */
+export async function resolveMetadataOnBrowser(videoId: string): Promise<Song | null> {
+  if (!videoId) return null;
+  try {
+    const data = await fetchPipedStreams(videoId);
+    if (!data || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) return null;
+    const title = (data.title || "").trim();
+    const uploader = (data.uploader || "").trim();
+    const thumb = data.thumbnailUrl || "";
+    return {
+      videoId,
+      title: title || `YouTube Track (${videoId})`,
+      artist: uploader || "Unknown Artist",
+      thumbnail: thumb,
+      duration: Number(data.duration) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve radio / related tracks from the BROWSER via Piped ``/streams/{id}``
+ * ``relatedStreams`` (the equivalent of YT Music's "related"/watch playlist
+ * but served by a public instance the browser can reach directly). Tracks
+ * already in ``exclude`` are dropped. Returns an array of ``Song``.
+ */
+export async function resolveRelatedOnBrowser(
+  videoId: string,
+  exclude: string[] = [],
+): Promise<Song[]> {
+  if (!videoId) return [];
+  try {
+    const data = await fetchPipedStreams(videoId);
+    if (!data || !Array.isArray(data.relatedStreams)) return [];
+    const excluded = new Set(exclude || []);
+    const seen = new Set<string>();
+    const songs: Song[] = [];
+    for (const r of data.relatedStreams) {
+      if (r?.type && r.type !== "stream") continue;
+      const m = typeof r?.url === "string" ? r.url.match(/[?&]v=([^&]+)/) : null;
+      const id = m ? m[1] : null;
+      if (!id || excluded.has(id) || seen.has(id) || !/^[a-zA-Z0-9_-]{11}$/.test(id)) continue;
+      seen.add(id);
+      songs.push({
+        videoId: id,
+        title: (r.title || "Untitled").trim(),
+        artist: (r.uploaderName || "Unknown Artist").trim(),
+        thumbnail: r.thumbnail || "",
+        duration: Number(r.duration) || 0,
+      });
+    }
+    return songs;
+  } catch {
+    return [];
+  }
 }

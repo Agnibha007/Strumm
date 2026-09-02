@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invidiousProvider } from "web/services/search/InvidiousProvider";
+import { fetchPipedStreams } from "web/services/search/InvidiousProvider";
 import {
   secondsToMmss,
   musicItemToCandidate,
   collectSongCandidates,
   songResultToCandidate,
   resolveTrackOnBrowser,
+  resolveMetadataOnBrowser,
+  resolveRelatedOnBrowser,
+  extractPlaylistOnBrowser,
 } from "web/services/search/BrowserYouTubeMusicResolver";
 
 vi.mock("web/services/search/InvidiousProvider", () => ({
@@ -15,6 +19,7 @@ vi.mock("web/services/search/InvidiousProvider", () => ({
     getVideoDetails: vi.fn(),
     getPlaylistItems: vi.fn(),
   },
+  fetchPipedStreams: vi.fn(),
 }));
 
 function song(id: string, title: string, artist: string, mmss = "3:00") {
@@ -297,5 +302,96 @@ describe("resolveTrackOnBrowser (Piped)", () => {
   it("returns empty for blank queries without calling the provider", async () => {
     expect(await resolveTrackOnBrowser("  ")).toEqual([]);
     expect(invidiousProvider.search).not.toHaveBeenCalled();
+  });
+});
+
+describe("browser-side metadata & related (Piped /streams)", () => {
+  beforeEach(() => {
+    vi.mocked(fetchPipedStreams).mockReset();
+  });
+
+  it("resolveMetadataOnBrowser maps the stream info to a Song", async () => {
+    vi.mocked(fetchPipedStreams).mockResolvedValue({
+      title: "One Dance",
+      uploader: "Drake",
+      thumbnailUrl: "https://thumbs.example/1.jpg",
+      duration: 175,
+    });
+    const meta = await resolveMetadataOnBrowser("abc12345678");
+    expect(meta).toEqual({
+      videoId: "abc12345678",
+      title: "One Dance",
+      artist: "Drake",
+      thumbnail: "https://thumbs.example/1.jpg",
+      duration: 175,
+    });
+  });
+
+  it("resolveMetadataOnBrowser returns null for invalid id / missing data", async () => {
+    expect(await resolveMetadataOnBrowser("")).toBeNull();
+    expect(await resolveMetadataOnBrowser(null as unknown as string)).toBeNull();
+  });
+
+  it("resolveMetadataOnBrowser returns null when Piped fails", async () => {
+    vi.mocked(fetchPipedStreams).mockRejectedValue(new TypeError("fetch failed"));
+    expect(await resolveMetadataOnBrowser("abc12345678")).toBeNull();
+  });
+
+  it("resolveRelatedOnBrowser maps related streams to Songs and drops excluded ids", async () => {
+    vi.mocked(fetchPipedStreams).mockResolvedValue({
+      title: "Seed",
+      relatedStreams: [
+        { url: "/watch?v=aaa11111111", type: "stream", title: "A", uploaderName: "Art1", duration: 100 },
+        { url: "/watch?v=bbb22222222", type: "stream", title: "B", uploaderName: "Art2", duration: 200 },
+        { url: "/watch?v=aaa11111111", type: "stream", title: "A dup", uploaderName: "Art1", duration: 100 },
+        { url: "/channel/UCxxxx", type: "channel", title: "Channel", uploaderName: "Art", duration: 0 },
+        { url: "/watch?v=ccc33333333", type: "stream", title: "Excluded", uploaderName: "Art3", duration: 300 },
+      ],
+    });
+    const songs = await resolveRelatedOnBrowser("abc12345678", ["ccc33333333"]);
+    expect(songs.map((s) => s.videoId)).toEqual(["aaa11111111", "bbb22222222"]);
+    expect(songs[0].artist).toBe("Art1");
+  });
+
+  it("resolveRelatedOnBrowser returns [] when Piped fails", async () => {
+    vi.mocked(fetchPipedStreams).mockRejectedValue(new TypeError("fetch failed"));
+    expect(await resolveRelatedOnBrowser("abc12345678")).toEqual([]);
+  });
+});
+
+describe("extractPlaylistOnBrowser (Piped /playlists)", () => {
+  beforeEach(() => {
+    vi.mocked(invidiousProvider.getPlaylistItems).mockReset();
+  });
+
+  it("extracts importer rows from a YouTube URL", async () => {
+    vi.mocked(invidiousProvider.getPlaylistItems).mockResolvedValue([
+      { videoId: "aaa11111111", title: "One Dance", artist: "Drake", thumbnail: "", duration: 175 },
+      { videoId: "bbb22222222", title: "God's Plan", artist: "Drake", thumbnail: "", duration: 198 },
+    ]);
+    const rows = await extractPlaylistOnBrowser("https://music.youtube.com/playlist?list=PLabc123");
+    expect(invidiousProvider.getPlaylistItems).toHaveBeenCalledWith("PLabc123");
+    expect(rows).toEqual([
+      { title: "One Dance", artist: "Drake", album: "", duration: 175, videoId: "aaa11111111" },
+      { title: "God's Plan", artist: "Drake", album: "", duration: 198, videoId: "bbb22222222" },
+    ]);
+  });
+
+  it("returns [] for a non-YouTube URL or missing list id", async () => {
+    expect(await extractPlaylistOnBrowser("https://open.spotify.com/playlist/xyz")).toEqual([]);
+    expect(await extractPlaylistOnBrowser("https://youtube.com/watch?v=abc12345678")).toEqual([]);
+    expect(invidiousProvider.getPlaylistItems).not.toHaveBeenCalled();
+  });
+
+  it("drops non-canonical videoIds and returns [] when none survive", async () => {
+    vi.mocked(invidiousProvider.getPlaylistItems).mockResolvedValue([
+      { videoId: "MPREb_malformedid", title: "Album", artist: "A", thumbnail: "", duration: 100 },
+    ]);
+    expect(await extractPlaylistOnBrowser("https://youtube.com/playlist?list=PLabc123")).toEqual([]);
+  });
+
+  it("returns [] when Piped fails", async () => {
+    vi.mocked(invidiousProvider.getPlaylistItems).mockRejectedValue(new TypeError("fetch failed"));
+    expect(await extractPlaylistOnBrowser("https://youtube.com/playlist?list=PLabc123")).toEqual([]);
   });
 });

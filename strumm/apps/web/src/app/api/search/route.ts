@@ -1,18 +1,15 @@
 /**
- * Search API route — proxies search requests from the browser to the
- * YouTube Data API v3 via the YouTubeProvider, with an automatic fallback
- * to a public Piped instance (InvidiousProvider) when the API key is
- * missing or quota is exceeded.
+ * Search API route — resolves searches via keyless public Piped instances only.
  *
- * The browser never contacts YouTube directly.  All requests go through
- * this same-origin route, so there are no CORS issues.
- *
- * Requires the `YOUTUBE_API_KEY` environment variable to be set on the
- * Vercel/Next.js server for the primary path.
+ * Requests to YouTube are never made from this server. The route and the
+ * browser-side ``searchYouTube`` client both talk to Piped (a privacy-facing
+ * YouTube proxy), which performs the YouTube request itself. The route exists
+ * as a same-origin fallback so the browser never has to hold the Piped
+ * instance list / CORS concern on its own.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { youTubeProvider, youTubeInnerTubeProvider, invidiousProvider, YouTubeAuthError } from "web/services/search";
+import { invidiousProvider } from "web/services/search";
 
 // ---------------------------------------------------------------------------
 // Route handler
@@ -33,101 +30,44 @@ export async function GET(request: NextRequest) {
   const validTypes = ["all", "video", "playlist", "channel"];
   const filter = validTypes.includes(type) ? type : "all";
 
-  let warning: string | null = null;
-  let results: { songs: any[]; albums: any[]; artists: any[] } | null = null;
-  let source = "";
-
-  // -----------------------------------------------------------------------
-  // 1. Try youtubei.js (InnerTube) — no credentials needed, most reliable
-  // -----------------------------------------------------------------------
   try {
-    results = await youTubeInnerTubeProvider.search(q, filter);
-    source = youTubeInnerTubeProvider.name;
-  } catch (err: any) {
-    console.warn("YouTube InnerTube search failed, falling back to YouTube API:", err?.message ?? err);
-    warning = "Search is using a fallback provider.";
-  }
+    const pipedResults = await invidiousProvider.search(q, filter);
+    const hasResults =
+      pipedResults &&
+      (pipedResults.songs.length > 0 || pipedResults.albums.length > 0 || pipedResults.artists.length > 0);
 
-  // -----------------------------------------------------------------------
-  // 2. Fallback: YouTube Data API v3 (when InnerTube fails)
-  // -----------------------------------------------------------------------
-  if (!results || (results.songs.length === 0 && results.albums.length === 0 && results.artists.length === 0)) {
-    try {
-      const ytResults = await youTubeProvider.search(q, filter);
-      if (ytResults && (ytResults.songs.length > 0 || ytResults.albums.length > 0 || ytResults.artists.length > 0)) {
-        results = ytResults;
-        source = youTubeProvider.name;
-      }
-    } catch (err: any) {
-      if (err instanceof YouTubeAuthError) {
-        console.warn("YouTube API auth error, falling back to Piped:", err.message);
-      } else {
-        console.warn("YouTube API error, falling back to Piped:", err?.message ?? err);
-      }
-      if (!warning) {
-        warning = "YouTube search is temporarily unavailable. Using fallback search.";
-      }
-    }
-  }
-
-  // -----------------------------------------------------------------------
-  // 3. Last resort: Invidious / Piped public instances
-  // -----------------------------------------------------------------------
-  if (!results || (results.songs.length === 0 && results.albums.length === 0 && results.artists.length === 0)) {
-    try {
-      const pipedResults = await invidiousProvider.search(q, filter);
-      if (pipedResults && (pipedResults.songs.length > 0 || pipedResults.albums.length > 0 || pipedResults.artists.length > 0)) {
-        results = pipedResults;
-        source = invidiousProvider.name;
-      }
-    } catch (err: any) {
-      console.error("All search providers failed:", err?.message ?? err);
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Search is currently unavailable. Please try again later.",
-          warning: "All search providers are unavailable.",
-          data: { songs: [], albums: [], artists: [] },
+    if (hasResults) {
+      const response: Record<string, any> = {
+        success: true as const,
+        data: {
+          songs: pipedResults.songs,
+          albums: pipedResults.albums,
+          artists: pipedResults.artists,
+          source: invidiousProvider.name,
         },
-        { status: 503 },
-      );
+      };
+      return NextResponse.json(response, {
+        headers: { "Cache-Control": "public, max-age=60, s-maxage=60" },
+      });
     }
-  }
 
-  // -----------------------------------------------------------------------
-  // 3. Check for empty results and set warning when appropriate
-  // -----------------------------------------------------------------------
-  if (results) {
-    const response: Record<string, any> = {
-      success: true as const,
-      data: {
-        songs: results.songs,
-        albums: results.albums,
-        artists: results.artists,
-        source,
+    return NextResponse.json(
+      {
+        success: false,
+        error: "No results found.",
+        data: { songs: [], albums: [], artists: [] },
       },
-    };
-
-    // Attach warning when the primary provider failed and fallback was used
-    if (warning) {
-      response.warning = warning;
-    }
-
-    // Allow Vercel Edge / CDN to cache identical queries for 30 seconds
-    // (shorter TTL when fallback is active so results refresh sooner)
-    const maxAge = warning ? 30 : 60;
-    return NextResponse.json(response, {
-      headers: { "Cache-Control": `public, max-age=${maxAge}, s-maxage=${maxAge}` },
-    });
+      { status: 200 },
+    );
+  } catch (err: any) {
+    console.error("Search failed:", err?.message ?? err);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Search is currently unavailable. Please try again later.",
+        data: { songs: [], albums: [], artists: [] },
+      },
+      { status: 503 },
+    );
   }
-
-  // Should not reach here, but handle gracefully
-  return NextResponse.json(
-    {
-      success: false,
-      error: "Search failed unexpectedly.",
-      data: { songs: [], albums: [], artists: [] },
-    },
-    { status: 500 },
-  );
 }

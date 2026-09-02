@@ -7,7 +7,7 @@ import { Check, AlertTriangle, HelpCircle, ArrowRight, Play, Plus } from "lucide
 import { Song } from "@strumm/types";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
-import { resolveTracksOnBrowser, BrowserMusicCandidate } from "web/services/search/BrowserYouTubeMusicResolver";
+import { resolveTracksOnBrowser, extractPlaylistOnBrowser, BrowserMusicCandidate } from "web/services/search/BrowserYouTubeMusicResolver";
 
 interface PlaylistImportProps {
   onImported?: () => void;
@@ -199,25 +199,51 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     };
     
     try {
-      // Step 1: parse (without resolving) so the browser knows the exact
-      // track list to look up with YouTube Music.
-      const parseResponse = await fetch(apiUrl("/playlists/import/parse"), {
-        method: "POST",
-        headers,
-        credentials: "include",
-        body: JSON.stringify(payload)
-      });
-      const parseJson = await parseResponse.json();
-      if (!parseJson.success || !Array.isArray(parseJson.tracks) || parseJson.tracks.length === 0) {
-        setError(parseJson.error || "Failed to parse the playlist. Check format or connection.");
-        return;
+      // Step 1: determine the exact track list. YouTube playlists are parsed
+      // IN THE BROWSER via keyless Piped instances (no server egress to
+      // YouTube); Spotify / CSV are parsed server-side via /import/parse.
+      let tracks: Array<{ title: string; artist: string; album?: string }> = [];
+      let youtubePlaylistRows: Array<{
+        title: string; artist: string; album?: string; duration?: number; videoId?: string;
+      }> = [];
+
+      if (source === "youtube") {
+        // Browser-side YT playlist extraction (Piped). Each row carries a
+        // canonical videoId, so resolution below is a pure exact match.
+        youtubePlaylistRows = await extractPlaylistOnBrowser(payload.data);
+        tracks = youtubePlaylistRows.map((t) => ({
+          title: t.title,
+          artist: t.artist,
+          album: t.album || "",
+        }));
+
+        if (tracks.length === 0) {
+          setError(
+            "Couldn't reach YouTube Music right now to load that playlist. Wait a few minutes and try again."
+          );
+          return;
+        }
+      } else {
+        const parseResponse = await fetch(apiUrl("/playlists/import/parse"), {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify(payload)
+        });
+        const parseJson = await parseResponse.json();
+        if (!parseJson.success || !Array.isArray(parseJson.tracks) || parseJson.tracks.length === 0) {
+          setError(parseJson.error || "Failed to parse the playlist. Check format or connection.");
+          return;
+        }
+        tracks = parseJson.tracks;
       }
-      const tracks: Array<{ title: string; artist: string; album?: string }> = parseJson.tracks;
 
       // Step 2: resolve each unique track query in the browser with the
       // keyless Piped instances (no API key/quota, works from any origin).
-      // Degrades to an empty map when unavailable; the API then falls back to
-      // its server-side provider chain per track.
+      // For YouTube imports the tracks already carry canonical videoIds, so
+      // candidates fall back to those exact rows and the server matches them
+      // directly. Degrades to an empty map when unavailable; the API then
+      // falls back to its server-side provider chain per track.
       const indexedQueries = tracks.map((t, i) => ({
         index: i,
         query: [t.title, t.artist].filter((s) => s && s.trim()).join(" ").trim() || t.title,
@@ -230,6 +256,24 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
         const found = resolved[query];
         if (found && found.length > 0) candidates[index] = found;
       }
+      // For YouTube imports, prefer the exact extracted rows so tracks that
+      // Piped couldn't search are still carried as exact (videoId) matches.
+      if (source === "youtube" && youtubePlaylistRows.length > 0) {
+        for (let i = 0; i < youtubePlaylistRows.length; i++) {
+          const row = youtubePlaylistRows[i];
+          if (row.videoId && !candidates[i]) {
+            candidates[i] = [{
+              videoId: row.videoId,
+              title: row.title,
+              artist: row.artist,
+              artists: row.artist.split(", ").filter(Boolean).map((name) => ({ name })),
+              duration: "",
+              duration_seconds: row.duration || 0,
+              thumbnails: [],
+            }];
+          }
+        }
+      }
 
       // Step 3: hand browser candidates (keyed by track index) to the API,
       // which ranks them with its normal matcher and persists the playlist.
@@ -237,7 +281,13 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
         method: "POST",
         headers,
         credentials: "include",
-        body: JSON.stringify({ ...payload, candidates })
+        body: JSON.stringify({
+          ...payload,
+          candidates,
+          // For YouTube imports pass the browser-extracted rows so the server
+          // never re-fetches the playlist from YouTube (Piped did it here).
+          tracks: source === "youtube" ? youtubePlaylistRows : [],
+        })
       });
 
       const json = await resolveResponse.json();
