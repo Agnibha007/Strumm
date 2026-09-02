@@ -218,10 +218,33 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
         }));
 
         if (tracks.length === 0) {
-          setError(
-            "Couldn't reach YouTube Music right now to load that playlist. Wait a few minutes and try again."
-          );
-          return;
+          // Piped /playlists didn't return anything (e.g. YouTube bot-blocking
+          // the instance). Fall back to the server's YouTube Music extractor
+          // before giving up — a different endpoint/egress, so it can still
+          // succeed where Piped couldn't.
+          const fb = await fetch(apiUrl("/playlists/import/parse"), {
+            method: "POST",
+            headers,
+            credentials: "include",
+            body: JSON.stringify(payload),
+          });
+          const fbJson = await fb.json();
+          if (
+            fbJson?.success &&
+            Array.isArray(fbJson.tracks) &&
+            fbJson.tracks.length > 0
+          ) {
+            tracks = fbJson.tracks.map((t: { title?: string; artist?: string; album?: string }) => ({
+              title: (t.title || "").trim(),
+              artist: (t.artist || "Unknown Artist").trim(),
+              album: t.album || "",
+            }));
+          } else {
+            setError(
+              "Couldn't reach YouTube Music right now to load that playlist. Wait a few minutes and try again."
+            );
+            return;
+          }
         }
       } else {
         const parseResponse = await fetch(apiUrl("/playlists/import/parse"), {
