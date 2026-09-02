@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
-import { Radio, Users, Plus, Loader2, ArrowRight, ShieldCheck, User } from "lucide-react";
+import { Radio, Users, Plus, Loader2, ArrowRight, ShieldCheck, User, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -25,12 +25,16 @@ export default function RoomsPage() {
   const router = useRouter();
   
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [suggestions, setSuggestions] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomVisibility, setNewRoomVisibility] = useState<"public" | "circle">("public");
   const [creating, setCreating] = useState(false);
   const [, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Room[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const fetchRooms = async () => {
     if (!user) return;
@@ -49,9 +53,49 @@ export default function RoomsPage() {
     }
   };
 
+  const fetchSuggestions = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(apiUrl("/social/rooms/suggestions"), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success) {
+        setSuggestions(json.data || []);
+      }
+    } catch (e) {
+      // Suggestions are non-critical — swallow failures quietly.
+    }
+  };
+
+  // Stale-guard: ignore responses from searches that were superseded (slow
+  // network could otherwise flash outdated results into the results list).
+  const handleSearch = async (query: string) => {
+    const q = query.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const response = await fetch(apiUrl(`/social/rooms/search?q=${encodeURIComponent(q)}`), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success) {
+        setSearchResults(json.data || []);
+      }
+    } catch (e) {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchRooms();
+      fetchSuggestions();
     }
   }, [user]);
 
@@ -104,6 +148,47 @@ export default function RoomsPage() {
     );
   }
 
+  const renderRoomCard = (room: Room) => (
+    <Link href={`/rooms/${room.id}`} key={room.id}>
+      <span className="block p-5 bg-surface/30 hover:bg-surface-elevated/40 border border-border/60 rounded-2xl cursor-pointer transition min-w-0 relative overflow-hidden group h-full">
+        <div className="flex items-center justify-between mb-3 min-w-0">
+          <h4 className="text-base font-editorial font-bold text-text truncate max-w-[80%]">
+            {room.name}
+          </h4>
+          <ArrowRight className="w-4 h-4 text-muted group-hover:text-primary transition flex-shrink-0" />
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-muted/80 mb-4 min-w-0">
+          <User className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="truncate">Hosted by {room.hostName}</span>
+        </div>
+
+        {room.currentTrack ? (
+          <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg flex flex-col gap-1 min-w-0 mb-4">
+            <span className="text-[9px] uppercase tracking-wider text-primary font-bold">Currently Playing</span>
+            <span className="text-xs font-semibold text-text truncate leading-snug">{room.currentTrack.title}</span>
+            <span className="text-[10px] text-muted truncate">{room.currentTrack.artist}</span>
+          </div>
+        ) : (
+          <div className="text-[10px] text-muted italic p-2.5 border border-border/10 rounded-lg bg-surface-elevated/20 truncate mb-4">
+            No song loaded
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-t border-border/20 pt-4 text-[10px] uppercase font-semibold text-muted tracking-wider">
+          <span className="flex items-center gap-1">
+            <Users className="w-3.5 h-3.5" />
+            {room.members.length} listening
+          </span>
+          <span className="flex items-center gap-1">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            {room.visibility}
+          </span>
+        </div>
+      </span>
+    </Link>
+  );
+
   return (
     <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden soft-enter">
       {/* Header */}
@@ -128,6 +213,46 @@ export default function RoomsPage() {
         </button>
       </div>
 
+      {/* Room Search */}
+      <form
+        onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }}
+        className="flex gap-2 max-w-xl"
+      >
+        <div className="flex-1 flex items-center gap-2 bg-surface/30 border border-border/60 rounded-xl px-3">
+          <Search className="w-4 h-4 text-muted flex-shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch(searchQuery)}
+            placeholder="Search for a shared room..."
+            className="flex-1 bg-transparent py-2.5 text-sm text-text focus:outline-none"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={searching}
+          className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-hover transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+        >
+          {searching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+          Search
+        </button>
+      </form>
+
+      {/* Search results */}
+      {searchQuery.trim() && (
+        <div className="space-y-4 min-w-0">
+          <h3 className="font-editorial text-lg text-text font-bold">Results for &quot;{searchQuery.trim()}&quot;</h3>
+          {!searching && searchResults.length === 0 ? (
+            <p className="text-xs text-muted italic">No rooms match that search.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
+              {searchResults.map((room) => renderRoomCard(room))}
+            </div>
+          )}
+        </div>
+      )}
+
       {rooms.length === 0 ? (
         <div className="p-16 border border-dashed border-border/60 rounded-2xl text-center bg-surface/20 space-y-3">
           <Radio className="w-8 h-8 text-muted mx-auto opacity-70 animate-pulse" />
@@ -144,46 +269,17 @@ export default function RoomsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
-          {rooms.map((room) => (
-            <Link href={`/rooms/${room.id}`} key={room.id}>
-              <span className="block p-5 bg-surface/30 hover:bg-surface-elevated/40 border border-border/60 rounded-2xl cursor-pointer transition min-w-0 relative overflow-hidden group">
-                <div className="flex items-center justify-between mb-3 min-w-0">
-                  <h4 className="text-base font-editorial font-bold text-text truncate max-w-[80%]">
-                    {room.name}
-                  </h4>
-                  <ArrowRight className="w-4 h-4 text-muted group-hover:text-primary transition flex-shrink-0" />
-                </div>
-                
-                <div className="flex items-center gap-2 text-xs text-muted/80 mb-4 min-w-0">
-                  <User className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="truncate">Hosted by {room.hostName}</span>
-                </div>
+          {rooms.map((room) => renderRoomCard(room))}
+        </div>
+      )}
 
-                {room.currentTrack ? (
-                  <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg flex flex-col gap-1 min-w-0 mb-4">
-                    <span className="text-[9px] uppercase tracking-wider text-primary font-bold">Currently Playing</span>
-                    <span className="text-xs font-semibold text-text truncate leading-snug">{room.currentTrack.title}</span>
-                    <span className="text-[10px] text-muted truncate">{room.currentTrack.artist}</span>
-                  </div>
-                ) : (
-                  <div className="text-[10px] text-muted italic p-2.5 border border-border/10 rounded-lg bg-surface-elevated/20 truncate mb-4">
-                    No song loaded
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between border-t border-border/20 pt-4 text-[10px] uppercase font-semibold text-muted tracking-wider">
-                  <span className="flex items-center gap-1">
-                    <Users className="w-3.5 h-3.5" />
-                    {room.members.length} listening
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    {room.visibility}
-                  </span>
-                </div>
-              </span>
-            </Link>
-          ))}
+      {/* Suggested rooms (fresh public rooms you aren't hosting/member of) */}
+      {suggestions.length > 0 && (
+        <div className="space-y-4 min-w-0 border-t border-border/20 pt-8">
+          <h3 className="font-editorial text-lg text-text font-bold">Discover Rooms</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
+            {suggestions.map((room) => renderRoomCard(room))}
+          </div>
         </div>
       )}
 

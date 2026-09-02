@@ -20,12 +20,24 @@ export function getOptimizedArtworkUrl(rawUrl: string, width: number): string {
   return apiUrl(`/image-proxy?url=${encodeURIComponent(rawUrl)}&w=${width}&quality=80`);
 }
 
+const ARTWORK_CACHE_LIMIT = 2000;
+const artworkCandidatesCache = new Map<string, string[]>();
+
 export function getArtworkCandidates(
   song?: Pick<Song, "videoId" | "thumbnail"> | null,
   hero?: boolean,
 ) {
+  // Pure function of (videoId, thumbnail, hero) — memoize at module scope
+  // instead of per-component useMemo (hooks are the forbidden pattern here;
+  // see the SongArtwork note). Grids render dozens of tiles per frame, so this
+  // avoids recomputing ~13 URLs per artwork on every render while remaining
+  // bounded for a session.
   const videoId = getSongVideoId(song);
   const rawThumbnail = (song?.thumbnail || "").trim();
+  const cacheKey = `${hero ? "h" : "n"}|${videoId}|${rawThumbnail}`;
+  const cached = artworkCandidatesCache.get(cacheKey);
+  if (cached) return cached;
+
   const songThumbnail = rawThumbnail.startsWith("http://")
     ? rawThumbnail.replace("http://", "https://")
     : rawThumbnail;
@@ -80,7 +92,12 @@ export function getArtworkCandidates(
     candidates.push(songThumbnail);
   }
 
-  return [...new Set(candidates.filter(Boolean))];
+  const result = [...new Set(candidates.filter(Boolean))];
+  if (artworkCandidatesCache.size >= ARTWORK_CACHE_LIMIT) {
+    artworkCandidatesCache.clear();
+  }
+  artworkCandidatesCache.set(cacheKey, result);
+  return result;
 }
 
 export function getBestArtwork(song?: Pick<Song, "videoId" | "thumbnail"> | null, hero?: boolean) {

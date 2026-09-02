@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from app.services.security import sanitize_enum, sanitize_multiline_text, sanitize_positive_int, sanitize_text, sanitize_youtube_id
+from app.services.security import PODCAST_EPISODE_ID_RE, is_valid_youtube_id, sanitize_enum, sanitize_multiline_text, sanitize_positive_int, sanitize_text
 
 # --- Common Schemas ---
 class SongMetadata(BaseModel):
@@ -30,7 +30,13 @@ class SongSchema(BaseModel):
     def validate_video_id(cls, value: Optional[str]) -> Optional[str]:
         if not value:
             return value
-        return sanitize_youtube_id(value)
+        cleaned = value.strip()
+        # Songs persisted via SongSchema must carry either a canonical YouTube
+        # video ID or a synthetic podcast-episode videoId. Anything else is
+        # rejected (raise) so malformed external ids never reach storage.
+        if is_valid_youtube_id(cleaned) or PODCAST_EPISODE_ID_RE.fullmatch(cleaned):
+            return cleaned
+        raise ValueError("Invalid YouTube video ID.")
 
     @field_validator("title", "artist")
     @classmethod

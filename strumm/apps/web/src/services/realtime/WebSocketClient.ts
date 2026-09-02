@@ -75,16 +75,15 @@ export class WebSocketClient {
 
   /**
    * Open (or re-open) the WebSocket connection with the given JWT.
+   *
+   * The access token is only verified during the AUTHENTICATE handshake, so a
+   * mid-connection token refresh does NOT invalidate the open socket. We update
+   * the stored token in place and only (re)connect when nothing is open. This
+   * prevents tearing down (and re-registering, re-authenticating, and re-syncing
+   * state on) the connection on every access-token refresh.
    */
   connect(token: string): void {
-    const tokenChanged = this._token !== token;
     this._token = token;
-
-    if (tokenChanged && this._ws) {
-      // Token changed (e.g., after refresh) — force reconnect with new token
-      this._closeWs();
-      this._reconnectAttempt = 0;
-    }
 
     if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) {
       return; // already connected or connecting

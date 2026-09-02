@@ -197,6 +197,15 @@ class ConnectionManager:
     def room_connection_count(self, room_id: str) -> int:
         return len(self._room_connections.get(room_id, []))
 
+    def room_connected_user_ids(self, room_id: str) -> List[str]:
+        """Return the user IDs with live room connections, in join order.
+
+        Used (e.g.) to pick the longest-connected remaining member when a room
+        host disconnects. ``disconnect_room`` must be called first so the
+        departed user is excluded.
+        """
+        return [uid for uid, _ in self._room_connections.get(room_id, [])]
+
     def get_user_connections(self, user_id: str) -> List[WebSocket]:
         return self._user_connections.get(user_id, [])
 

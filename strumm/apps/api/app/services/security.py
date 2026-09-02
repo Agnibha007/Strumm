@@ -14,6 +14,10 @@ from fastapi import Header, HTTPException, status
 MAX_TEXT_LENGTH = 500
 MAX_LONG_TEXT_LENGTH = 5000
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,32}$")
+# Canonical YouTube video ID format (base64url, exactly 11 chars).
+YOUTUBE_VIDEO_ID_STRICT_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+# Podcast episodes use a synthetic "podcast-<ObjectId-hex>" videoId namespace.
+PODCAST_EPISODE_ID_RE = re.compile(r"^podcast-[0-9a-fA-F]{24}$")
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,30}$")
 
 
@@ -45,6 +49,33 @@ def sanitize_youtube_id(value: str) -> str:
     if not YOUTUBE_VIDEO_ID_RE.fullmatch(video_id):
         raise ValueError("Invalid YouTube video ID.")
     return video_id
+
+
+def is_valid_youtube_id(value: Any) -> bool:
+    """True iff ``value`` is a canonical YouTube video ID.
+
+    Enforces the strict canonical format ``^[A-Za-z0-9_-]{11}$``. Leading and
+    trailing whitespace is ignored for the check; callers persist the stripped
+    form. Non-strings (int, None, dict…) are invalid.
+    """
+    if not isinstance(value, str):
+        return False
+    return bool(YOUTUBE_VIDEO_ID_STRICT_RE.fullmatch(value.strip()))
+
+
+def sanitize_youtube_id_strict(value: Optional[str]) -> str:
+    """Return the stripped canonical video ID or raise ValueError.
+
+    Rejects anything that is not a well-formed 11-char YouTube video ID. This
+    is the server-side trust-boundary validator for externally supplied
+    YouTube video IDs (browser candidates, parsed provider IDs).
+    """
+    if not isinstance(value, str):
+        raise ValueError("Invalid YouTube video ID.")
+    cleaned = value.strip()
+    if not YOUTUBE_VIDEO_ID_STRICT_RE.fullmatch(cleaned):
+        raise ValueError("Invalid YouTube video ID.")
+    return cleaned
 
 
 def sanitize_enum(value: Optional[str], allowed: Iterable[str], default: str) -> str:

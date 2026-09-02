@@ -27,6 +27,7 @@ interface RoomDetails {
   };
   queue: any[];
   visibility: string;
+  controllers?: string[];
 }
 
 export default function RoomDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -52,6 +53,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const [inputText, setInputText] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
   const isHost = room && user ? room.hostId === user.id : false;
+  // Host OR an approved controller can drive playback (backend enforces too).
+  const canControl = isHost || !!room?.controllers?.includes(user?.id ?? "");
   const [suggestQuery, setSuggestQuery] = useState("");
   const [suggestResults, setSuggestResults] = useState<any[]>([]);
 
@@ -92,8 +95,13 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       if (json.success) {
         setRoom(json.data);
         // Initialize active members with all members from initial fetch
-        // (will be updated in real-time via WebSocket)
-        setActiveMemberIds(new Set(json.data.members.map((m: any) => m.id)));
+        // (will be updated in real-time via WebSocket). members is an array of
+        // user-ID strings (not objects), so flatten both shapes defensively.
+        setActiveMemberIds(new Set(
+          (json.data.members || [])
+            .map((m: any) => (typeof m === "string" ? m : m?.id))
+            .filter(Boolean)
+        ));
       }
     } catch (e) {
       console.error("Failed to load room details:", e);
@@ -126,8 +134,12 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     if (baseWs.endsWith("/")) {
       baseWs = baseWs.slice(0, -1);
     }
-    const wsUrl = baseWs + `/social/rooms/${id}/ws?token=${token}`;
-    const ws = new WebSocket(wsUrl);
+    // Token goes in the Sec-WebSocket-Protocol header (never in the URL) so it
+    // can't leak into server access logs or Referer headers. The backend
+    // accepts "authorization, <token>"; the query-param fallback stays for
+    // older clients.
+    const wsUrl = baseWs + `/social/rooms/${id}/ws`;
+    const ws = new WebSocket(wsUrl, ["authorization", token]);
     socketRef.current = ws;
 
     // Add current user to active members on connect
@@ -225,6 +237,22 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         setRoom(prev => prev ? { ...prev, queue: [...(prev.queue || []), eventData.song] } : null);
       } 
       
+      else if (wsEvent === "room:host_transferred") {
+        const newHostId = eventData.hostId;
+        setMessages(prev => [...prev, {
+          sender: "System",
+          text: `${eventData.hostName || "Someone"} is now hosting the room.`,
+        }]);
+        setRoom(prev => prev ? { ...prev, hostId: newHostId } : null);
+        if (newHostId === user?.id) {
+          fetchRoomInfo();
+        }
+      }
+
+      else if (wsEvent === "room:controllers_updated") {
+        setRoom(prev => prev ? { ...prev, controllers: eventData.controllers || [] } : null);
+      }
+
       else if (wsEvent === "room:deleted" || payload.type === "room_deleted") {
         alert("This Strumm Room has been deleted by the host.");
         router.push("/rooms");
@@ -256,7 +284,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
 
   // Host Action Broadcasters
   useEffect(() => {
-    if (!isHost || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (!canControl || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
 
     // Broadcast track update and update local room state for host
     if (currentSong) {
@@ -268,14 +296,14 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       // Immediately reflect change in UI for host
       setRoom(prev => prev ? { ...prev, currentTrack: song } : null);
     }
-  }, [currentSong?.videoId, isHost]);
+  }, [currentSong?.videoId, canControl]);
 
   // Host Playback Sync Broadcaster
   const lastTimeRef = useRef(currentTime);
   const lastPlayingRef = useRef(isPlaying);
 
   useEffect(() => {
-    if (!isHost || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (!canControl || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
 
     // 1. Play/Pause State Transition
     if (isPlaying !== lastPlayingRef.current) {
@@ -297,7 +325,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }));
     }
     lastTimeRef.current = currentTime;
-  }, [isPlaying, currentTime, isHost]);
+  }, [isPlaying, currentTime, canControl]);
 
   const sendPlaybackState = (event: "play" | "pause" | "seek") => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
@@ -324,6 +352,21 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       console.error(e);
       alert("Error deleting room.");
     }
+  };
+
+  // Leave = close the socket. The backend's disconnect handling removes the
+  // member from the room (and auto-transfers hosting if the host leaves), so no
+  // dedicated leave endpoint is needed.
+  const handleLeaveRoom = () => {
+    socketRef.current?.close();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
+    Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
+    peerConnectionsRef.current = {};
+    setVoiceActive(false);
+    router.push("/rooms");
   };
 
   const handleSuggestSearch = async () => {
@@ -516,6 +559,13 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={handleLeaveRoom}
+            className="py-2 px-4 bg-surface border border-border/60 hover:bg-surface-elevated text-text rounded-xl text-xs font-semibold cursor-pointer transition"
+          >
+            Leave Room
+          </button>
+
+          <button
             onClick={toggleVoiceChat}
             className={`py-2 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition ${
               voiceActive 
@@ -561,8 +611,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                 <p className="text-xs text-muted italic">Waiting for host to load a song...</p>
               )}
 
-              {/* Host Control Actions */}
-              {isHost && room.currentTrack && (
+              {/* Playback Controls */}
+              {canControl && room.currentTrack && (
                 <div className="flex items-center justify-center md:justify-start gap-4 mt-4">
                   <button
                     onClick={() => {
@@ -622,7 +672,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           {/* Collaborative Queue Song suggestion inputs */}
           <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
             <h3 className="font-editorial text-lg text-text font-bold">
-              {isHost ? "Search & Control Music" : "Suggest Songs"}
+              {canControl ? "Search & Control Music" : "Suggest Songs"}
             </h3>
             <div className="flex gap-2">
               <input
@@ -650,7 +700,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                       <span className="text-[10px] text-muted truncate block">{song.artist}</span>
                     </div>
                     <div className="flex gap-2 ml-4">
-                      {isHost ? (
+                      {canControl ? (
                         <>
                           <button
                             onClick={() => playSong(song, [song])}

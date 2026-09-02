@@ -19,6 +19,8 @@ from app.routes.playlist import (
     _classify_track_metadata,
     _match_track,
     _provider_search,
+    _rank_candidates,
+    _variant_penalty,
     STATUS_MATCHED,
     STATUS_NOT_FOUND,
     STATUS_UNREACHABLE,
@@ -180,9 +182,9 @@ async def test_provider_search_caches_same_query(monkeypatch):
 @pytest.mark.asyncio
 async def test_match_track_exact_video_id(monkeypatch):
     ctx = ImportContext()
-    res = await _match_track(ctx, {"title": "Song", "artist": "Artist", "videoId": "abc123"})
+    res = await _match_track(ctx, {"title": "Song", "artist": "Artist", "videoId": "dQw4w9WgXcQ"})
     assert res["status"] == STATUS_MATCHED
-    assert res["match"]["videoId"] == "abc123"
+    assert res["match"]["videoId"] == "dQw4w9WgXcQ"
     assert res["match_type"] == "exact"
 
 
@@ -236,6 +238,72 @@ async def test_match_track_exact_search_match(monkeypatch, mock_db):
         res = await _match_track(ctx, {"title": "Exact Song", "artist": "Exact Artist"})
         assert res["status"] == STATUS_MATCHED
         assert res["match"]["videoId"] == "c1"
+
+
+# ---------------------------------------------------------------------------
+# Variant qualifier penalty (Bug 5 regression): a wrong live/acoustic/remix
+# version must not outrank the correct recording.
+# ---------------------------------------------------------------------------
+
+
+def test_variant_penalty_live_vs_plain():
+    # Source has no qualifier, candidate is a live version -> 0.08.
+    assert _variant_penalty("Rockstar", "Rockstar (Live)") == 0.08
+    # Symmetric: the penalty is applied whichever side carries the qualifier.
+    assert _variant_penalty("Rockstar (Live)", "Rockstar") == 0.08
+
+
+def test_variant_penalty_live_vs_acoustic():
+    # Both sides carry *different* qualifiers -> 0.12.
+    assert _variant_penalty("Rockstar (Live)", "Rockstar (Acoustic)") == 0.12
+
+
+def test_variant_penalty_identical_or_non_variant():
+    # Same qualifier set (or neither side has qualifiers) -> no penalty.
+    assert _variant_penalty("Rockstar", "Rockstar") == 0.0
+    assert _variant_penalty("Rockstar (Live)", "Rockstar (Live)") == 0.0
+
+
+def test_rank_candidates_studio_beats_live():
+    """When otherwise similar, the correct (studio/plain) recording must be
+    ranked above the (Live) variant. Verifies the final selected candidate via
+    _rank_candidates, not just the internal penalty constant."""
+    imported = {"title": "Rockstar", "artist": "Post Malone", "duration": 200}
+    candidates = [
+        raw_candidate("studio00001", "Rockstar", "Post Malone"),
+        raw_candidate("live0000001", "Rockstar (Live)", "Post Malone"),
+        raw_candidate("acoustic000", "Rockstar (Acoustic)", "Post Malone"),
+    ]
+    ranked = _rank_candidates(imported, candidates)
+    assert ranked, "expected at least one ranked candidate"
+    top_video_id, _ = ranked[0]
+    assert top_video_id["videoId"] == "studio00001"
+    # The live/acoustic variants must be ranked BELOW the plain studio cut.
+    ranked_ids = [item["videoId"] for item, _ in ranked]
+    assert ranked_ids.index("studio00001") < ranked_ids.index("live0000001")
+    assert ranked_ids.index("studio00001") < ranked_ids.index("acoustic000")
+
+
+# ---------------------------------------------------------------------------
+# Server-side videoId validation (P2): Stage-1 exact-match gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_match_track_invalid_video_id_does_not_exact_match(monkeypatch, mock_db):
+    """A malformed videoId must not short-circuit to an exact match: the track
+    falls through to search so a real canonical id can be resolved instead."""
+    with patch("app.routes.playlist.db.get_db", return_value=mock_db):
+        ctx = ImportContext()
+        results = [raw_candidate("searchvid01", "Heer", "A R Rahman")]
+        mock_ytmusic_search(monkeypatch, make_outcome("ok", results=results))
+        res = await _match_track(
+            ctx, {"title": "Heer", "artist": "A R Rahman", "videoId": "abc123"}
+        )
+        assert res["status"] == STATUS_MATCHED
+        # Resolved via search, NOT via the (invalid) exact id.
+        assert res["match_type"] != "exact"
+        assert res["match"]["videoId"] == "searchvid01"
 
 
 # ---------------------------------------------------------------------------
@@ -342,4 +410,7 @@ async def test_import_csv_mixed_statuses(client, monkeypatch):
     )
     assert data.get("total_failed") == len(data["failed"])
     assert data.get("total_not_found") == len(data["not_found"])
+    # Response contract: per-bucket totals are always returned, including the
+    # duplicate count (added for frontend/backend consistency).
+    assert data.get("total_duplicates") == len(data["duplicates"])
     assert data.get("searches_used", 0) >= 1

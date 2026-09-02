@@ -31,8 +31,8 @@ sentry_sdk.init(
     dsn=os.environ.get("SENTRY_DSN"),
     environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
     release=os.environ.get("SENTRY_RELEASE"),
-    traces_sample_rate=1.0,
-    enable_logs=True,
+    traces_sample_rate=0.1,  # sample performance traces; error events are never sampled away
+    enable_logs=False,       # don't forward INFO logs to Sentry (noise/volume)
     send_default_pii=True,
     before_send_transaction=_sentry_filter_health_check,
 )
@@ -345,6 +345,8 @@ app.add_middleware(UnifiedBackendMiddleware)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception on {request.method} {request.url.path}: {type(exc).__name__}: {exc}")
+    import sentry_sdk
+    sentry_sdk.capture_exception(exc)
     return JSONResponse(
         status_code=500,
         content={"success": False, "error": "An internal server error occurred."}

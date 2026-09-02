@@ -14,7 +14,7 @@ from datetime import datetime
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
-from app.services.security import escaped_regex, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
+from app.services.security import escaped_regex, is_valid_youtube_id, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from app.services.cache import cache_search, get_cached_search
 from app.services.normalizer import (
     canonical_song_key,
@@ -472,6 +472,15 @@ async def extract_spotify_playlist(url: str) -> list:
     return []
 
 
+class YTMusicImportUnavailable(Exception):
+    """YouTube Music playlist fetch failed for a transient provider reason.
+
+    Raised so call sites can surface the *true* reason to the user instead of
+    collapsing every failure into a misleading 'make sure the playlist is
+    public' error. Never raised for a genuinely empty playlist.
+    """
+
+
 async def extract_ytmusic_playlist(url: str) -> list:
     """Extract playlist tracks from YouTube Music URL using ytmusicapi directly."""
     playlist_id = None
@@ -486,9 +495,19 @@ async def extract_ytmusic_playlist(url: str) -> list:
         import asyncio
 
         playlist = await asyncio.to_thread(lambda: call_ytmusic_safe("get_playlist", playlist_id, limit=None))
-        if not playlist:
-            return []
+        if playlist is None:
+            # The manager reached its resilience ceiling (unreachable / timeout /
+            # rate-limit). Surface it; a successful call returns a dict even for
+            # an empty playlist.
+            raise YTMusicImportUnavailable(
+                "Cannot reach YouTube Music right now (unreachable, timed out, or rate-limited). "
+                "Wait a few minutes and try again."
+            )
         tracks = playlist.get("tracks", [])
+        if not tracks:
+            # Reachable but genuinely empty (or fully unavailable tracks) — let
+            # the caller fall back to line-by-line parsing instead of erroring.
+            return []
         parsed = []
         for t in tracks:
             title = t.get("title")
@@ -511,9 +530,13 @@ async def extract_ytmusic_playlist(url: str) -> list:
 
             parsed.append(item)
         return parsed
+    except YTMusicImportUnavailable:
+        raise
     except Exception as e:
         logger.error(f"Error fetching YTMusic playlist: {str(e)}")
-        return []
+        raise YTMusicImportUnavailable(
+            "YouTube Music playlist fetch failed. Try again in a few minutes."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -566,6 +589,10 @@ class ImportContext:
     """
     source: str = ""
     import_name: str = ""
+    # Authenticated user who owns this import. Stage-2 local-library matching
+    # is scoped to this id so one user's import can never harvest other users'
+    # songs/videoIds from the shared collections.
+    user_id: str = ""
     imported_video_ids: set = field(default_factory=set)
     imported_canonical_keys: set = field(default_factory=set)
     searched_queries: set = field(default_factory=set)
@@ -655,7 +682,7 @@ def _build_song_item(song: dict) -> dict:
             thumbnail = last.get("url", "") if isinstance(last, dict) else ""
 
     return {
-        "videoId": song.get("videoId", ""),
+        "videoId": str(song.get("videoId", "") or "").strip(),
         "title": song.get("title", ""),
         "artist": artist,
         "thumbnail": thumbnail,
@@ -974,14 +1001,24 @@ async def _search_candidates(
     matching could not proceed (or that candidates were found).
     """
     if injected:
-        ranked = _rank_candidates(
-            {"title": title, "artist": artist, "duration": duration}, injected
-        )
-        return {
-            "candidates": ranked,
-            "status": STATUS_MATCHED,
-            "reason": f"found {len(ranked)} browser candidate(s)",
-        }
+        # Defense in depth: browser-supplied candidates are UNTRUSTED input.
+        # Drop any candidate whose videoId is not a canonical 11-char YouTube
+        # id before ranking, so it can never become the matched song. If every
+        # injected candidate is invalid, fall through to the provider chain.
+        valid_injected = [
+            c for c in injected
+            if isinstance(c, dict) and is_valid_youtube_id(c.get("videoId"))
+        ]
+        if valid_injected:
+            ranked = _rank_candidates(
+                {"title": title, "artist": artist, "duration": duration}, valid_injected
+            )
+            return {
+                "candidates": ranked,
+                "status": STATUS_MATCHED,
+                "reason": f"found {len(ranked)} browser candidate(s)",
+            }
+        # All injected candidates were invalid -> behave like not-injected.
 
     plan = _build_query_plan(title, artist)
     candidates: list = []
@@ -1041,8 +1078,12 @@ async def _match_track(ctx: ImportContext, track: dict, injected: Optional[list]
         }
 
     # ---- Stage 1: Exact identifier (provider videoId) ----
+    # Only a well-formed canonical YouTube video ID may short-circuit to an
+    # exact match. Malformed/externally-supplied ids (wrong shape, too short/
+    # long, bad chars) must NOT become a matched song — they fall through to
+    # Stages 2-3 where a real id can be resolved.
     video_id = track.get("videoId")
-    if video_id:
+    if is_valid_youtube_id(video_id):
         candidate = _build_song_item(track)
         return {
             "match": candidate,
@@ -1053,28 +1094,51 @@ async def _match_track(ctx: ImportContext, track: dict, injected: Optional[list]
         }
 
     # ---- Stage 2: canonical-title DB lookup (liked + playlists) ----
+    # Scoped to the CURRENT authenticated user: only the user's own liked
+    # songs and playlists they own (or are a collaborator on) are consulted.
+    # Without the user id no local-library matching runs — a missing id must
+    # never fall back to an unscoped global scan.
     database = db.get_db()
     best_match = None
     best_score = 0.0
 
-    for coll, path in ((db.LIKED_SONGS, "song"), (db.PLAYLISTS, "songs")):
-        cursor = database[coll].find({}, {path: 1, "_id": 0})
-        async for doc in cursor:
-            items = doc.get(path) if path == "songs" else [doc.get(path)]
-            if not items:
-                continue
-            if not isinstance(items, list):
-                items = [items]
-            for song in items:
-                if not isinstance(song, dict):
+    user_id_str = ctx.user_id or ""
+    if user_id_str:
+        possible_ids = [user_id_str]
+        if ObjectId.is_valid(user_id_str):
+            possible_ids.append(ObjectId(user_id_str))
+
+        # Filter shapes mirror the repository's existing conventions:
+        #   likes    -> {"userId": {"$in": [str, ObjectId]}}
+        #   playlists-> owner-in OR collaborator-in (== get_playlists).
+        scoped_queries = (
+            (db.LIKED_SONGS, "song", {"userId": {"$in": possible_ids}}),
+            (db.PLAYLISTS, "songs", {
+                "$or": [
+                    {"userId": {"$in": possible_ids}},
+                    {"collaborators": user_id_str},
+                ]
+            }),
+        )
+
+        for coll, path, query in scoped_queries:
+            cursor = database[coll].find(query, {path: 1, "_id": 0})
+            async for doc in cursor:
+                items = doc.get(path) if path == "songs" else [doc.get(path)]
+                if not items:
                     continue
-                score = _compute_fuzzy_score(
-                    title, artist,
-                    song.get("title", ""), song.get("artist", ""),
-                )
-                if score > best_score:
-                    best_score = score
-                    best_match = song
+                if not isinstance(items, list):
+                    items = [items]
+                for song in items:
+                    if not isinstance(song, dict):
+                        continue
+                    score = _compute_fuzzy_score(
+                        title, artist,
+                        song.get("title", ""), song.get("artist", ""),
+                    )
+                    if score > best_score:
+                        best_score = score
+                        best_match = song
 
     if best_match and best_score >= HIGH_CONFIDENCE_THRESHOLD:
         return {
@@ -1178,6 +1242,8 @@ async def _run_import_pipeline(
     ``{"success": True, "data": {...}}`` contract the web app renders.
     """
     database = db.get_db()
+    # Scope local-library matching to the importing user.
+    ctx.user_id = user_id
     matched = []
     similar_match = []
     not_found = []
@@ -1190,7 +1256,10 @@ async def _run_import_pipeline(
         title = track.get("title", "")
         artist = track.get("artist", "")
 
-        if track.get("videoId"):
+        # Exact track: ONLY a well-formed canonical YouTube videoId may be
+        # persisted as-is. Malformed ids are treated as searchable metadata
+        # (they must not become a matched song).
+        if is_valid_youtube_id(track.get("videoId")):
             song_item = _build_song_item(track)
             return {"kind": "exact", "song": song_item, "_track": {
                 "title": title, "artist": artist, "album": track.get("album", ""),
@@ -1225,8 +1294,8 @@ async def _run_import_pipeline(
         }}
 
     # Handle exact (videoId) tracks first — no provider search needed.
-    exact_tracks = [(i, t) for i, t in enumerate(parsed_rows) if t.get("videoId")]
-    searchable = [(i, t) for i, t in enumerate(parsed_rows) if not t.get("videoId")]
+    exact_tracks = [(i, t) for i, t in enumerate(parsed_rows) if is_valid_youtube_id(t.get("videoId"))]
+    searchable = [(i, t) for i, t in enumerate(parsed_rows) if not is_valid_youtube_id(t.get("videoId"))]
 
     for i, track in exact_tracks:
         out = await process_one(track)
@@ -1389,6 +1458,7 @@ async def _run_import_pipeline(
             "total_ambiguous": len(ambiguous),
             "total_skipped": len(skipped),
             "total_tracks": len(parsed_rows),
+            "total_duplicates": len(duplicates),
             "searches_used": ctx.searches_used,
             "playlistId": playlist_id,
         }
@@ -1437,7 +1507,11 @@ async def import_playlist(
             parsed_rows = await extract_spotify_playlist(import_data)
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-            parsed_rows = await extract_ytmusic_playlist(import_data)
+            try:
+                parsed_rows = await extract_ytmusic_playlist(import_data)
+            except YTMusicImportUnavailable as exc:
+                logger.warning("YTMusic import unavailable for user %s: %s", current_user["id"], exc)
+                return {"success": False, "error": str(exc)}
 
         if not parsed_rows and source in ["spotify", "youtube"]:
             for line in import_data.split("\n"):
@@ -1558,6 +1632,9 @@ async def import_parse(
             return {"success": False, "tracks": [], "error": error}
 
         return {"success": True, "tracks": parsed_rows}
+    except YTMusicImportUnavailable as exc:
+        logger.warning("YTMusic parse unavailable for user %s: %s", current_user["id"], exc)
+        return {"success": False, "tracks": [], "error": str(exc)}
     except Exception as e:
         logger.error(f"Error parsing playlist: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "tracks": [], "error": "An internal error occurred."}
@@ -1619,11 +1696,17 @@ async def import_resolve(
             except (TypeError, ValueError):
                 continue
             if isinstance(raw_candidates, list):
-                sanitized = [
-                    c
-                    for c in raw_candidates
-                    if isinstance(c, dict) and isinstance(c.get("videoId"), str) and c.get("videoId").strip()
-                ]
+                sanitized = []
+                for c in raw_candidates:
+                    if not isinstance(c, dict):
+                        continue
+                    vid = c.get("videoId")
+                    # Browser candidates are UNTRUSTED: only a well-formed
+                    # canonical YouTube video ID survives; the id is stored
+                    # stripped of surrounding whitespace.
+                    if not is_valid_youtube_id(vid):
+                        continue
+                    sanitized.append({**c, "videoId": vid.strip()})
                 if sanitized:
                     resolve_map[idx] = sanitized
 

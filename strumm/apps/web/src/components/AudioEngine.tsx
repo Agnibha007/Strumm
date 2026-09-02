@@ -19,6 +19,15 @@ import {
 // of letting the cross-origin YouTube iframe hijack them.
 const SILENT_AUDIO_SRC = "/silence.wav";
 
+// Sub-audible position drift below this (seconds) doesn't trigger a seek when
+// handing a backgrounded YouTube song back to the iframe — avoids visible
+// jumps/stutter on tab return.
+const AUDIBLE_DRIFT_THRESHOLD_S = 2;
+
+// How long to wait for the YouTube iframe to confirm it is actually playing
+// before tearing down the background direct-audio stream anyway.
+const BACKGROUND_RESUME_TIMEOUT_MS = 5000;
+
 function isSilentAudio(audio: HTMLAudioElement | null | undefined): boolean {
   if (!audio) return false;
   const src = audio.src || "";
@@ -622,6 +631,20 @@ export default function AudioEngine() {
       if (document.visibilityState !== "visible") return;
       const state = usePlayerStore.getState();
       if (!state.isPlaying) return;
+      // Podcasts source audio from the host <audio> element, not the iframe —
+      // poke it back into life instead of driving the (idle) YouTube player.
+      if (state.currentSong?.metadata?.audioUrl) {
+        const audio = htmlAudioRef.current;
+        if (audio && audio.paused && audio.readyState >= 2) {
+          try {
+            audio.play().catch(() => {});
+          } catch (e) {}
+        }
+        return;
+      }
+      // While background mode is handing playback back to the iframe, the
+      // leaveBackground flow owns resume — don't double-drive it here.
+      if (backgroundModeRef.current) return;
       const yt = playerInstanceRef.current;
       if (!yt || typeof yt.getPlayerState !== "function") return;
       try {
@@ -788,38 +811,121 @@ export default function AudioEngine() {
       const audio = htmlAudioRef.current;
       const song = state.currentSong;
 
-      if (audio && !isSilentAudio(audio)) {
-        try {
-          audio.pause();
-        } catch (e) {}
-        try {
-          audio.removeAttribute("src");
-          audio.load();
-        } catch (e) {}
+      const restoreIframePlayerRef = () => {
+        const yt = playerInstanceRef.current;
+        if (!yt || typeof yt.playVideo !== "function") return;
+        setPlayerRef({
+          playVideo: () => {
+            if (typeof yt.playVideo === "function") yt.playVideo();
+          },
+          pauseVideo: () => {
+            if (typeof yt.pauseVideo === "function") yt.pauseVideo();
+          },
+          seekTo: (sec: number) => {
+            if (typeof yt.seekTo === "function") yt.seekTo(sec, true);
+          },
+          setVolume: (vol: number) => {
+            if (typeof yt.setVolume === "function") yt.setVolume(vol);
+          },
+          setPlaybackRate: (rate: number) => {
+            if (typeof yt.setPlaybackRate === "function") yt.setPlaybackRate(rate);
+          },
+          setPlaybackQuality: (quality: string) => {
+            if (typeof yt.setPlaybackQuality === "function") yt.setPlaybackQuality(quality);
+          },
+        });
+      };
+
+      const teardownDirectAudio = () => {
+        transitioningRef.current = true;
+        if (audio) {
+          try {
+            audio.pause();
+          } catch (e) {}
+          try {
+            audio.removeAttribute("src");
+            audio.load();
+          } catch (e) {}
+          // Restore the silent loop track so the host page stays the OS media
+          // session owner now that the audible source is the YouTube iframe.
+          try {
+            audio.src = SILENT_AUDIO_SRC;
+            audio.loop = true;
+            audio.volume = 1.0;
+            if (usePlayerStore.getState().isPlaying) audio.play().catch(() => {});
+          } catch (e) {}
+        }
+        restoreIframePlayerRef();
+        transitioningRef.current = false;
+      };
+
+      // Not active / paused in the background: just stop the direct stream
+      // quietly and restore iframe controls so the next play() isn't routed to
+      // a stale <audio>. Podcasts never took background mode — the iframe never
+      // sourced their audio, so only restore controls and leave the <audio>
+      // element untouched (its src is the live podcast stream).
+      if (!song) {
+        teardownDirectAudio();
+        return;
+      }
+      if (song.metadata?.audioUrl || !state.isPlaying) {
+        if (song.metadata?.audioUrl) {
+          restoreIframePlayerRef();
+        } else {
+          teardownDirectAudio();
+        }
+        return;
       }
 
-      // Restore the silent loop track so the host page stays the OS media
-      // session owner now that the audible source is the YouTube iframe again.
-      if (song && !song.metadata?.audioUrl && audio) {
+      // Resume the iframe first: the browser suspended it while hidden, so it
+      // needs a play() (and possibly a small correctional seek) before it makes
+      // sound again. Only seek when the drift is audible — a sub-second seek on
+      // return is exactly the stutter we're removing here.
+      const resumeIframe = (): boolean => {
+        const yt = playerInstanceRef.current;
+        if (!yt || typeof yt.getPlayerState !== "function") return false;
         try {
-          audio.src = SILENT_AUDIO_SRC;
-          audio.loop = true;
-          audio.volume = 1.0;
-        } catch (e) {}
-        if (state.isPlaying) audio.play().catch(() => {});
+          const ytState = yt.getPlayerState();
+          if (ytState === 2 && typeof yt.playVideo === "function") yt.playVideo();
+          const ct = state.currentTime;
+          if (ct > 0 && typeof yt.seekTo === "function" && typeof yt.getCurrentTime === "function") {
+            const drift = Math.abs(yt.getCurrentTime() - ct);
+            if (drift > AUDIBLE_DRIFT_THRESHOLD_S) yt.seekTo(ct, true);
+          }
+          return ytState === 1 || ytState === 3;
+        } catch (e) {
+          return false;
+        }
+      };
+
+      // Mark the swap so the transient pause the teardown triggers on the host
+      // <audio> isn't misinterpreted as real user/driver intent.
+      transitioningRef.current = true;
+
+      const started = resumeIframe();
+      if (started) {
+        // Iframe is already audible — cut the direct stream immediately so we
+        // never overlap two sources of the same song.
+        teardownDirectAudio();
+        return;
       }
 
-      if (!state.isPlaying) return;
-      const yt = playerInstanceRef.current;
-      if (!yt || typeof yt.getPlayerState !== "function") return;
-      try {
-        if (yt.getPlayerState() === 2) yt.playVideo();
-        const ct = state.currentTime;
-        if (ct > 0 && typeof yt.seekTo === "function") yt.seekTo(ct, true);
-      } catch (e) {
-        // Player may still be (re)initializing — the existing
-        // visibilitychange handler retries when the tab regains focus.
-      }
+      // Keep the direct stream alive (no dead air) while the iframe warms up;
+      // tear it down the moment it reports playing, or after a hard timeout so
+      // we never strand a background stream under a restored foreground player.
+      const deadline = Date.now() + BACKGROUND_RESUME_TIMEOUT_MS;
+      const pollResume = () => {
+        if (resumeIframe()) {
+          teardownDirectAudio();
+          return;
+        }
+        if (Date.now() >= deadline) {
+          teardownDirectAudio();
+          return;
+        }
+        window.setTimeout(pollResume, 250);
+      };
+      pollResume();
     };
 
     const onVisibilityChange = () => {
@@ -837,7 +943,7 @@ export default function AudioEngine() {
       window.removeEventListener("pagehide", onPageHide);
       leaveBackground();
     };
-  }, [ensureBackgroundAudio]);
+  }, [ensureBackgroundAudio, setPlayerRef]);
 
   // Resilience net: while the page is backgrounded some OSes suspend the host
   // <audio> element. Re-asserting play() every few seconds brings it back

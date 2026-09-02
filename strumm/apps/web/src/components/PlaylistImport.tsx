@@ -52,6 +52,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     total_failed: number;
     total_ambiguous: number;
     total_skipped: number;
+    total_duplicates: number;
     total_tracks: number;
     playlistId?: string | null;
   } | null>(null);
@@ -375,7 +376,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
               <div className="text-[10px] uppercase text-muted">Similar</div>
             </div>
             <div className="bg-surface-elevated border border-border/40 p-3 rounded text-center">
-              <div className="text-lg font-bold text-amber-500">{results.duplicates.length}</div>
+              <div className="text-lg font-bold text-amber-500">{results.total_duplicates}</div>
               <div className="text-[10px] uppercase text-muted">Duplicates</div>
             </div>
             <div className="bg-surface-elevated border border-border/40 p-3 rounded text-center">

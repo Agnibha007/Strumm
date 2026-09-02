@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates } from "web/lib/media";
+import { preloadImage, type ImagePriority } from "web/lib/image-loader";
 
 interface SongArtworkProps {
   song?: Pick<Song, "videoId" | "thumbnail" | "title"> | null;
@@ -40,6 +41,17 @@ export default function SongArtwork({
     setLoaded(false);
     setErrored(false);
   }, [song?.videoId, song?.thumbnail]);
+
+  // Feed every candidate through the shared loader so a grid of artworks
+  // (search/discovery/rooms) downloads through a single throttled, deduped,
+  // priority-ordered pipeline instead of dozens of parallel requests. The
+  // element's own onLoad/onError still drive the candidate fallback chain.
+  useEffect(() => {
+    const basePriority: ImagePriority = priority ? 0 : 2;
+    candidates.forEach((src, i) => {
+      preloadImage(src, i === 0 ? basePriority : 3);
+    });
+  }, [candidates, priority]);
 
   const src = candidates[index];
 

@@ -132,8 +132,8 @@ async def test_search_candidates_injected_preferred_no_provider_call(monkeypatch
     monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", boom)
 
     injected = [
-        browser_candidate("vid-a", "Exact Song", "Exact Artist", "3:30"),
-        browser_candidate("vid-b", "Exact Song", "Exact Artist (Live)", "4:05"),
+        browser_candidate("vidaaaaaaaa", "Exact Song", "Exact Artist", "3:30"),
+        browser_candidate("vidbbbbbbbb", "Exact Song", "Exact Artist (Live)", "4:05"),
     ]
     res = await _search_candidates(ctx, "Exact Song", "Exact Artist", 210, injected=injected)
 
@@ -142,7 +142,7 @@ async def test_search_candidates_injected_preferred_no_provider_call(monkeypatch
     assert calls["n"] == 0
     assert ctx.searches_used == 0
     assert len(res["candidates"]) == 2
-    assert res["candidates"][0][0]["videoId"] == "vid-a"
+    assert res["candidates"][0][0]["videoId"] == "vidaaaaaaaa"
 
 
 @pytest.mark.asyncio
@@ -192,14 +192,14 @@ async def test_match_track_injected_preferred(monkeypatch, mock_db):
 
         monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", boom)
 
-        injected = [browser_candidate("br0", "Exact Song", "Exact Artist", "3:45")]
+        injected = [browser_candidate("br0br0br0br", "Exact Song", "Exact Artist", "3:45")]
         res = await _match_track(
             ctx, {"title": "Exact Song", "artist": "Exact Artist", "duration": 225},
             injected=injected,
         )
 
         assert res["status"] == STATUS_MATCHED
-        assert res["match"]["videoId"] == "br0"
+        assert res["match"]["videoId"] == "br0br0br0br"
         # Search-derived matches are labelled 'similar' (same as the provider
         # chain) unless the track carried a direct videoId.
         assert res["match_type"] == "similar"
@@ -241,7 +241,7 @@ async def test_match_track_injected_weak_single_candidate_is_not_found(monkeypat
 
         monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", boom)
 
-        injected = [browser_candidate("br-x", "Totally Different Title", "Other Artist")]
+        injected = [browser_candidate("brXbrXbrXbr", "Totally Different Title", "Other Artist")]
         res = await _match_track(
             ctx, {"title": "Some Track", "artist": "The Real Artist", "duration": 200},
             injected=injected,
@@ -286,7 +286,7 @@ async def test_pipeline_resolve_map_prefers_browser_then_falls_back(monkeypatch,
                 {"title": "Song One", "artist": "Artist One", "album": ""},
                 {"title": "Song Two", "artist": "Artist Two", "album": ""},
             ]
-            resolve_map = {0: [browser_candidate("browser-0", "Song One", "Artist One", "3:10")]}
+            resolve_map = {0: [browser_candidate("browser-0xx", "Song One", "Artist One", "3:10")]}
 
             result = await _run_import_pipeline(
                 ctx, parsed, user_id="507f1f77bcf86cd799439011", source="csv", import_name="Test", resolve_map=resolve_map
@@ -297,7 +297,7 @@ async def test_pipeline_resolve_map_prefers_browser_then_falls_back(monkeypatch,
 
         matched = result["data"]["matched"]
         vid_ids = {s["videoId"] for s in result["data"]["matched"] + result["data"]["similar_matches"]}
-        assert "browser-0" in vid_ids
+        assert "browser-0xx" in vid_ids
         assert "server-1" in vid_ids
         # Browser candidates consumed no search budget (only track 1 searched).
         assert result["data"]["searches_used"] == 1
@@ -305,7 +305,7 @@ async def test_pipeline_resolve_map_prefers_browser_then_falls_back(monkeypatch,
         insert_call = mock_db[mock_db.PLAYLISTS].insert_one.await_args
         assert insert_call is not None
         inserted = insert_call.args[0]
-        assert {"browser-0", "server-1"}.issubset({s["videoId"] for s in inserted["songs"]})
+        assert {"browser-0xx", "server-1"}.issubset({s["videoId"] for s in inserted["songs"]})
 
 
 @pytest.mark.asyncio
@@ -404,7 +404,7 @@ async def test_import_resolve_uses_browser_candidates(client):
                 "name": "Test",
                 "data": CSV,
                 "candidates": {
-                    "0": [browser_candidate("br-heer", "Heer", "A R Rahman", "5:53")],
+                    "0": [browser_candidate("brHeerHeerH", "Heer", "A R Rahman", "5:53")],
                     "9": {"garbage": "ignored"},
                 },
             },
@@ -418,7 +418,7 @@ async def test_import_resolve_uses_browser_candidates(client):
     data = body["data"]
     matched_ids = {s["videoId"] for s in data["matched"] + data["similar_matches"]}
     # Browser candidate used for Heer (no provider search for it).
-    assert "br-heer" in matched_ids
+    assert "brHeerHeerH" in matched_ids
     # Rare Song fell back to the server provider result.
     assert "srv-rare" in matched_ids
     assert data["total_matched"] + data["total_similar"] == 2
@@ -448,8 +448,8 @@ async def test_import_resolve_sanitizes_bad_candidates(client):
                         {"title": "no video id here"},
                         {"videoId": "  "},
                         "not-a-dict",
-                        browser_candidate("br-ok", "Heer", "A R Rahman"),
-                        browser_candidate("br-ok2", "Heer", "A R Rahman"),
+                        browser_candidate("brOkbrOkbrO", "Heer", "A R Rahman"),
+                        browser_candidate("brOkbrOkbrK", "Heer", "A R Rahman"),
                     ],
                 },
             },
@@ -464,7 +464,7 @@ async def test_import_resolve_sanitizes_bad_candidates(client):
     # The invalid entries were dropped, so only valid injected candidates were
     # ranked; the top-ranked one became the song. Track 1 (no browser
     # candidates) fell back to the server chain, hence exactly 1 search.
-    assert "br-ok" in matched_ids
+    assert "brOkbrOkbrO" in matched_ids
     assert body["data"]["searches_used"] == 1
 
 
@@ -716,8 +716,8 @@ async def test_import_resolve_all_tracks_have_browser_candidates_skip_provider(c
                 "name": "Test",
                 "data": CSV,
                 "candidates": {
-                    "0": [browser_candidate("br-heer", "Heer", "A R Rahman", "5:53")],
-                    "1": [browser_candidate("br-rare", "Rare Song", "Nobody", "4:02")],
+                    "0": [browser_candidate("brHeerHeerH", "Heer", "A R Rahman", "5:53")],
+                    "1": [browser_candidate("brRareRareR", "Rare Song", "Nobody", "4:02")],
                 },
             },
         )
@@ -729,7 +729,7 @@ async def test_import_resolve_all_tracks_have_browser_candidates_skip_provider(c
     assert body["success"] is True
     data = body["data"]
     matched_ids = {s["videoId"] for s in data["matched"] + data["similar_matches"]}
-    assert matched_ids == {"br-heer", "br-rare"}
+    assert matched_ids == {"brHeerHeerH", "brRareRareR"}
     assert data["searches_used"] == 0
     assert data["total_tracks"] == 2
 
@@ -780,7 +780,9 @@ async def test_import_resolve_duplicate_index_last_key_wins(client):
     """Object keys "0" and "00" both coerce to index 0; the later key
     overwrites deterministically, so br-b (not br-a) becomes the track."""
     def fake(q, filter=None):
-        return make_outcome("ok", results=[raw_candidate("srv-rare", "Rare Song", "Nobody")])
+        if "rare" in q.lower():
+            return make_outcome("ok", results=[raw_candidate("srv-rare", "Rare Song", "Nobody")])
+        return make_outcome("ok", results=[raw_candidate("srv-heer", "Heer", "A R Rahman")])
 
     import app.services.ytmusic as yt
     orig = yt.search_ytmusic_detailed
@@ -793,8 +795,8 @@ async def test_import_resolve_duplicate_index_last_key_wins(client):
                 "name": "Test",
                 "data": CSV,
                 "candidates": {
-                    "0": [browser_candidate("br-a", "Heer", "A R Rahman", "5:53")],
-                    "00": [browser_candidate("br-b", "Heer", "A R Rahman", "5:53")],
+                    "0": [browser_candidate("brAbrAbrAbr", "Heer", "A R Rahman", "5:53")],
+                    "00": [browser_candidate("brBbrBbrBbr", "Heer", "A R Rahman", "5:53")],
                 },
             },
         )
@@ -805,8 +807,8 @@ async def test_import_resolve_duplicate_index_last_key_wins(client):
     body = response.json()
     assert body["success"] is True
     matched_ids = {s["videoId"] for s in body["data"]["matched"] + body["data"]["similar_matches"]}
-    assert "br-b" in matched_ids
-    assert "br-a" not in matched_ids
+    assert "brBbrBbrBbr" in matched_ids
+    assert "brAbrAbrAbr" not in matched_ids
 
 
 @pytest.mark.asyncio
@@ -842,7 +844,7 @@ async def test_import_resolve_numeric_video_id_candidate_dropped(client):
                 "candidates": {
                     "0": [
                         {"videoId": 12345, "title": "Heer", "artist": "A R Rahman"},
-                        browser_candidate("br-ok", "Heer", "A R Rahman"),
+                        browser_candidate("brOkbrOkbrO", "Heer", "A R Rahman"),
                     ],
                 },
             },
@@ -860,7 +862,93 @@ async def test_import_resolve_numeric_video_id_candidate_dropped(client):
     assert mixed.status_code == 200
     assert mixed_body["success"] is True
     mixed_ids = {s["videoId"] for s in mixed_body["data"]["matched"] + mixed_body["data"]["similar_matches"]}
-    assert "br-ok" in mixed_ids
+    assert "brOkbrOkbrO" in mixed_ids
+
+
+@pytest.mark.asyncio
+async def test_import_resolve_strict_video_id_validation(client):
+    """P2: /import/resolve enforces the canonical 11-char videoId format on
+    browser-supplied candidates. Every malformed id (too short, too long, bad
+    chars, blank, non-string) is dropped; a VALID sibling candidate still
+    resolves — one bad candidate can never poison the track."""
+    def fake(q, filter=None):
+        if "rare" in q.lower():
+            # Track 2 "Rare Song" (no browser candidates) falls back to search.
+            return make_outcome("ok", results=[raw_candidate("srv-rare", "Rare Song", "Nobody")])
+        return make_outcome("ok", results=[raw_candidate("srv-heer", "Heer", "A R Rahman")])
+
+    import app.services.ytmusic as yt
+    orig = yt.search_ytmusic_detailed
+    yt.search_ytmusic_detailed = fake
+    try:
+        response = await client.post(
+            "/playlists/import/resolve",
+            json={
+                "source": "csv",
+                "name": "Test",
+                "data": CSV,
+                "candidates": {
+                    "0": [
+                        {"videoId": "abc123", "title": "Heer", "artist": "A R Rahman"},
+                        {"videoId": "dQw4w9WgXcQabcdef", "title": "Heer", "artist": "A R Rahman"},
+                        {"videoId": "not-a-video!", "title": "Heer", "artist": "A R Rahman"},
+                        {"videoId": "  ", "title": "Heer", "artist": "A R Rahman"},
+                        {"videoId": "", "title": "Heer", "artist": "A R Rahman"},
+                        {"videoId": 12345, "title": "Heer", "artist": "A R Rahman"},
+                        {"title": "no id at all"},
+                        browser_candidate("brOkbrOkbrO", "Heer", "A R Rahman"),
+                    ],
+                },
+            },
+        )
+    finally:
+        yt.search_ytmusic_detailed = orig
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    data = body["data"]
+    matched_ids = {s["videoId"] for s in data["matched"] + data["similar_matches"]}
+    # Rejecting the six malformed candidates must not block the valid sibling.
+    assert "brOkbrOkbrO" in matched_ids
+    # None of the malformed ids can ever become a matched song.
+    for bad in ("abc123", "dQw4w9WgXcQabcdef", "not-a-video!"):
+        assert bad not in matched_ids
+    # Track 2 (no browser candidates) fell back to the server chain.
+    assert "srv-rare" in matched_ids
+    assert data["searches_used"] == 1
+
+
+@pytest.mark.asyncio
+async def test_import_resolve_whitespace_wrapped_video_id_normalized(client):
+    """P2: whitespace-wrapped canonical ids pass validation (strip-then-check)
+    and are persisted in their stripped canonical form — never verbatim."""
+    import app.services.ytmusic as yt
+    orig = yt.search_ytmusic_detailed
+    yt.search_ytmusic_detailed = lambda q, filter=None: make_outcome("ok", results=[])
+    try:
+        response = await client.post(
+            "/playlists/import/resolve",
+            json={
+                "source": "csv",
+                "name": "Test",
+                "data": CSV,
+                "candidates": {
+                    "0": [browser_candidate("  dQw4w9WgXcQ  ", "Heer", "A R Rahman", "5:53")],
+                    "1": [browser_candidate("dQw4w9WgXcQ", "Rare Song", "Nobody", "4:02")],
+                },
+            },
+        )
+    finally:
+        yt.search_ytmusic_detailed = orig
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    data = body["data"]
+    matched_ids = {s["videoId"] for s in data["matched"] + data["similar_matches"]}
+    assert "dQw4w9WgXcQ" in matched_ids
+    assert all(v == v.strip() for v in matched_ids)
 
 
 @pytest.mark.asyncio
@@ -882,9 +970,9 @@ async def test_import_resolve_ambiguous_candidates_go_through_matcher(client):
                 "data": "title,artist\nSong X,Nobody\n",
                 "candidates": {
                     "0": [
-                        browser_candidate("br-a", "Song X", "Artist A", "3:01"),
-                        browser_candidate("br-b", "Song X", "Artist C", "3:02"),
-                        browser_candidate("br-c", "Song X", "Artist F", "3:04"),
+                        browser_candidate("brAbrAbrAbr", "Song X", "Artist A", "3:01"),
+                        browser_candidate("brBbrBbrBbr", "Song X", "Artist C", "3:02"),
+                        browser_candidate("brCbrCbrCbr", "Song X", "Artist F", "3:04"),
                     ],
                 },
             },

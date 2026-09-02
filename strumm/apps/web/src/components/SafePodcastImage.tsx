@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, type ImgHTMLAttributes } from "react";
 import { apiUrl } from "web/lib/api";
+import { preloadImage } from "web/lib/image-loader";
 
 type SafePodcastImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
   src?: string;
@@ -24,6 +25,15 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
     setLoaded(false);
     setErrored(false);
     attemptsRef.current = 0;
+
+    // Prime the host URL and its proxy fallback through the shared throttled
+    // loader, so a page of podcast art downloads at bounded concurrency with
+    // dedup instead of a burst of parallel requests.
+    const secured = toSecureUrl(src);
+    if (secured) {
+      preloadImage(secured, 2);
+      preloadImage(apiUrl(`/image-proxy?url=${encodeURIComponent(secured)}`), 3);
+    }
   }, [src]);
 
   const handleLoad = () => {

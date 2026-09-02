@@ -6,7 +6,7 @@ import { apiUrl } from "web/lib/api";
 import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED } from "web/services/realtime";
+import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED, ROOM_CREATED, ROOM_UPDATED, ROOM_DELETED } from "web/services/realtime";
 
 interface FriendActivity {
   id: string;
@@ -123,22 +123,39 @@ export default function FriendActivitySidebar({
       );
     });
 
-    // Refresh full data when WebSocket reconnects
+    // Refresh full data when WebSocket reconnects (server replays room events)
     const unsubConnected = dispatch.on(WS_CONNECTED, () => {
       fetchActivity();
     });
 
-    // Also periodically refresh rooms list (rooms are not yet fully WS-driven)
-    const refreshInterval = setInterval(() => {
-      fetch(apiUrl("/social/rooms"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-        .then(r => r.json())
-        .then(json => {
-          if (json.success) setActiveRooms(json.data || []);
-        })
-        .catch(() => {});
-    }, 30000); // Every 30s instead of every 8s
+    // ---- Rooms list is fully WS-driven (no polling) ----
+    // Backend broadcasts room:created/updated/deleted to the host's circle on
+    // the global /ws, so the sidebar only needs to apply deltas. A friend
+    // hosting a room is, by construction, a circle member.
+    const applyRoomEvent = (data: any, upsert: boolean) => {
+      if (!data?.roomId) return;
+      if (!upsert) {
+        setActiveRooms((prev) => prev.filter((r) => r.id !== data.roomId));
+        return;
+      }
+      if (data.visibility !== "public") return;
+      setActiveRooms((prev) => {
+        const room: ActiveRoom = {
+          id: data.roomId,
+          name: data.name || "Strumm Room",
+          hostId: data.hostId,
+        };
+        const idx = prev.findIndex((r) => r.id === data.roomId);
+        if (idx === -1) return [...prev, room];
+        const next = [...prev];
+        next[idx] = room;
+        return next;
+      });
+    };
+
+    const unsubRoomCreated = dispatch.on(ROOM_CREATED, (data) => applyRoomEvent(data, true));
+    const unsubRoomUpdated = dispatch.on(ROOM_UPDATED, (data) => applyRoomEvent(data, true));
+    const unsubRoomDeleted = dispatch.on(ROOM_DELETED, (data) => applyRoomEvent(data, false));
 
     return () => {
       unsubOnline();
@@ -146,7 +163,9 @@ export default function FriendActivitySidebar({
       unsubListening();
       unsubNotListening();
       unsubConnected();
-      clearInterval(refreshInterval);
+      unsubRoomCreated();
+      unsubRoomUpdated();
+      unsubRoomDeleted();
     };
   }, [user, token, fetchActivity]);
 
