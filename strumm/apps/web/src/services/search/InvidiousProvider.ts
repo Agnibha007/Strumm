@@ -85,83 +85,6 @@ const warnedUrls = new Set<string>();
 // Promise cache to deduplicate concurrent fetchInstanceList calls
 let pendingInstanceFetch: Promise<string[]> | null = null;
 
-// Health-check state
-let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
-const HEALTH_CHECK_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const HEALTH_CHECK_TIMEOUT = 4_000; // 4s per instance
-
-/**
- * Ping a Piped instance to verify it is responsive.
- * Uses the health endpoint; falls back to a HEAD request on the base URL.
- */
-async function checkInstanceHealth(baseUrl: string): Promise<boolean> {
-  // Try the dedicated /healthz endpoint first
-  for (const path of ["/healthz", "/health", "/"]) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
-      const res = await fetch(`${baseUrl}${path}`, {
-        method: "HEAD",
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok || res.status === 404) {
-        // 404 means the endpoint doesn't exist but the server is alive
-        return true;
-      }
-    } catch {
-      // Try the next path
-    }
-  }
-  return false;
-}
-
-/**
- * Run a health check on all known instances and update the healthy set.
- * Only ever REMOVES instances (an instance demoted for a real request
- * failure or a failed ping stays out; live/discovered instances are seeded
- * healthy and simply drop out over time if they stop responding).
- */
-async function runHealthCheck(): Promise<void> {
-  if (!cachedInstances) return;
-
-  // Only health-check instances the browser can actually reach (CORS-open).
-  // Checking CORS-hostile instances from a browser origin is pointless — every
-  // probe is thrown away by the browser and only spams the console.
-  const current = cachedInstances.apiUrls.filter((url) => BROWSER_SAFE_INSTANCES.has(url));
-  const results = await Promise.allSettled(
-    current.map(async (url) => {
-      const healthy = await checkInstanceHealth(url);
-      return { url, healthy };
-    }),
-  );
-
-  for (const result of results) {
-    if (result.status === "fulfilled" && !result.value.healthy) {
-      cachedInstances!.healthyUrls.delete(result.value.url);
-      unhealthyUrls.add(result.value.url);
-    }
-  }
-}
-
-/**
- * Start the periodic health‑check background loop.
- * Runs immediately (non‑blocking) and then every HEALTH_CHECK_INTERVAL.
- */
-function startHealthChecks(): void {
-  if (healthCheckInterval) return; // already running
-
-  // Run first check after a short delay so initial search isn't blocked
-  const initialDelay = setTimeout(() => {
-    runHealthCheck().catch(() => {});
-    clearTimeout(initialDelay);
-  }, 5_000);
-
-  healthCheckInterval = setInterval(() => {
-    runHealthCheck().catch(() => {});
-  }, HEALTH_CHECK_INTERVAL);
-}
-
 /**
  * Returns the list of Piped instance API URLs to try, in order.
  * Hardcoded instances come first (always available, no fetch needed),
@@ -198,8 +121,6 @@ async function discoverInstances(): Promise<string[]> {
       // Seed the healthy set with all instances initially
       healthyUrls: new Set(apiUrls),
     };
-    // Start background health checks
-    startHealthChecks();
   }
 
   // Fetch the official instance list in the BACKGROUND — don't await it
