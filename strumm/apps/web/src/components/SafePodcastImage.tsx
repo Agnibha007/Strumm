@@ -4,6 +4,12 @@ import { useEffect, useState, useRef, type ImgHTMLAttributes } from "react";
 import { apiUrl } from "web/lib/api";
 import { preloadImage } from "web/lib/image-loader";
 
+/**
+ * Maximum time (ms) to show the skeleton before forcing the fallback icon.
+ * Prevents podcast artwork from being stuck in a perpetual loading state.
+ */
+const LOAD_TIMEOUT_MS = 12_000;
+
 type SafePodcastImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
   src?: string;
 };
@@ -19,6 +25,7 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const attemptsRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setCurrentSrc(toSecureUrl(src));
@@ -34,7 +41,17 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
       preloadImage(secured, 2);
       preloadImage(apiUrl(`/image-proxy?url=${encodeURIComponent(secured)}`), 3);
     }
+
+    // Safety net: dismiss skeleton if nothing loads within the timeout.
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setErrored(true), LOAD_TIMEOUT_MS);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [src]);
+
+  // Clear the timeout as soon as the image is confirmed loaded.
+  useEffect(() => {
+    if (loaded && timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+  }, [loaded]);
 
   const handleLoad = () => {
     setLoaded(true);

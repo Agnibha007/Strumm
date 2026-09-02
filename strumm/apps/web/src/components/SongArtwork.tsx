@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates } from "web/lib/media";
 import { preloadImage, type ImagePriority } from "web/lib/image-loader";
+
+/**
+ * Maximum time (ms) to show the skeleton before forcing the fallback icon.
+ * Prevents images from being stuck in a perpetual loading state when every
+ * candidate URL hangs (slow CDN, zombie connection, etc.).
+ */
+const LOAD_TIMEOUT_MS = 12_000;
 
 interface SongArtworkProps {
   song?: Pick<Song, "videoId" | "thumbnail" | "title"> | null;
@@ -41,6 +48,18 @@ export default function SongArtwork({
     setLoaded(false);
     setErrored(false);
   }, [song?.videoId, song?.thumbnail]);
+
+  // Safety net: if every candidate hangs, dismiss the skeleton so the
+  // user never sees a permanently stuck shimmer.
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (loaded || errored) {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      return;
+    }
+    timerRef.current = setTimeout(() => setErrored(true), LOAD_TIMEOUT_MS);
+    return () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; } };
+  }, [loaded, errored, song?.videoId]);
 
   // Feed every candidate through the shared loader so a grid of artworks
   // (search/discovery/rooms) downloads through a single throttled, deduped,

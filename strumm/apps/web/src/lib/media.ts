@@ -43,53 +43,37 @@ export function getArtworkCandidates(
     : rawThumbnail;
   const candidates: string[] = [];
 
-  // Priority order: 16:9 thumbnails first (no letterboxing), then fallbacks
+  // The API-provided thumbnail is the only URL we *know* exists for this
+  // track. Always list it FIRST so artwork is visible immediately (proxy →
+  // raw), then speculative YouTube URLs serve as fallbacks.
+  if (songThumbnail) {
+    candidates.push(getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160));
+    candidates.push(songThumbnail);
+  }
+
+  // Speculative YouTube thumbnail URLs for video tracks (most music videos
+  // don't have maxresdefault, so keep these AFTER the guaranteed thumbnail).
   if (videoId && !videoId.startsWith("podcast-")) {
-    // 16:9 thumbnails - no letterboxing, match video aspect ratio
+    // 16:9 thumbnails — no letterboxing, match video aspect ratio.
+    // Use only one host per URL to avoid duplicates (i.ytimg.com and
+    // img.youtube.com serve the same images).
     const hdUrls16_9 = [
-      `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,  // 1280x720 (16:9)
-      `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
       `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,      // 320x180 (16:9)
-      `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+      `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,  // 1280x720 (16:9)
       `https://img.youtube.com/vi/${videoId}/0.jpg`,          // 1280x720 (16:9)
-      `https://img.youtube.com/vi/${videoId}/1.jpg`,          // 1280x720 (16:9)
+      `https://img.youtube.com/vi/${videoId}/1.jpg`,
       `https://img.youtube.com/vi/${videoId}/2.jpg`,
       `https://img.youtube.com/vi/${videoId}/3.jpg`,
     ];
 
-    // 4:3 thumbnails - often have baked-in letterboxing (use as fallback)
+    // 4:3 thumbnails — often have baked-in letterboxing (use as last resort)
     const hdUrls4_3 = [
       `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,      // 480x360 (4:3)
-      `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,      // 640x480 (4:3)
     ];
 
-    // The API-provided thumbnail (album art, or the Piped instance's CDN
-    // thumbnail for imported matches) is the only one we know actually exists
-    // for this track — try it FIRST via the same-origin /image-proxy (WebP,
-    // immutable cache, no hotlink/CORS issues), then directly, then the
-    // speculative YouTube URLs. Speculative `maxresdefault` URLs 404 for many
-    // music videos; keep them after the guaranteed thumbnail so artwork always
-    // renders and the console isn't flooded with expected 404s.
-    if (songThumbnail) {
-      candidates.push(getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160));
-      candidates.push(songThumbnail);
-    }
-
-    // 16:9 next (both proxied for large renders and raw for instant load).
-    if (hero) {
-      candidates.push(...hdUrls16_9.slice(0, 2).map((u) => getOptimizedArtworkUrl(u, 320)));
-    }
     candidates.push(...hdUrls16_9);
-    // Then 4:3 as fallback
     candidates.push(...hdUrls4_3);
-  }
-
-  // Fallback to API-provided thumbnail for non-video tracks (podcasts, albums).
-  // Deduped via the Set below when the video branch already added it.
-  if (songThumbnail) {
-    candidates.push(getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160));
-    candidates.push(songThumbnail);
   }
 
   const result = [...new Set(candidates.filter(Boolean))];

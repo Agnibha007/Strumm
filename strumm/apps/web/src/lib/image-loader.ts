@@ -26,6 +26,12 @@ const MAX_CONCURRENCY = 6;
 const MAX_ATTEMPTS = 2;
 const RETRY_BACKOFF_MS = 600;
 const CACHE_LIMIT = 600;
+/**
+ * If an image doesn't fire onload/onerror within this window, consider the
+ * load stuck (slow CDN / zombie connection) and treat it as a failure so the
+ * component can move on to the next candidate or show the fallback icon.
+ */
+const LOAD_TIMEOUT_MS = 8_000;
 
 type QueueEntry = {
   url: string;
@@ -108,7 +114,11 @@ class ImageLoader {
       const img = new Image();
       img.decoding = "async";
       img.referrerPolicy = "no-referrer";
+      let done = false;
       const onDone = (ok: boolean) => {
+        if (done) return; // timeout already fired or onload after error
+        done = true;
+        clearTimeout(timer);
         this.active -= 1;
         this.inflight.delete(url);
         if (ok) {
@@ -125,6 +135,9 @@ class ImageLoader {
       img.onload = () => onDone(true);
       img.onerror = () => onDone(false);
       img.src = url;
+      // Safety net: if the load hangs (slow CDN, zombie connection),
+      // don't let the image stay inflight forever.
+      const timer = window.setTimeout(() => onDone(false), LOAD_TIMEOUT_MS);
     };
 
     // First attempt immediately; retries (bounded) get a short backoff so a
