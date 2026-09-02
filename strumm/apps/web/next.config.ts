@@ -66,7 +66,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), interest-cohort=(), accelerometer=(), gyroscope=(), payment=(), usb=()"
+            value: "camera=(), microphone=(), geolocation=(), accelerometer=(), gyroscope=(), payment=(), usb=()"
           }
         ]
       }
