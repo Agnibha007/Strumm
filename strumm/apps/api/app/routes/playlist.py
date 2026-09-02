@@ -1681,15 +1681,20 @@ async def import_resolve(
         ctx.source = source
         ctx.import_name = import_name
 
-        result = await _parse_import_rows(source, import_data)
-        parsed_rows = result["parsed_rows"]
-
         # Browser-supplied parsed rows take precedence: they let the browser
         # do the YouTube playlist extraction (via Piped) so this endpoint never
-        # has to egress to YouTube to re-derive the track list. Sanitized so
-        # malformed/empty rows can't crash downstream matching.
+        # has to egress to YouTube to re-derive the track list.  When the
+        # browser already provided tracks (e.g. YouTube source where Piped
+        # extracted the playlist client-side), we skip the server-side parse
+        # entirely — it would call ytmusicapi which fails from cloud IPs where
+        # YouTube CDN blocks the egress.  Only fall back to the server-side
+        # parse when no browser tracks were supplied (CSV, Spotify, or a
+        # YouTube import where browser extraction failed and the server must
+        # try its own extractor).
+        parsed_rows: list = []
         if isinstance(payload.tracks, list) and payload.tracks:
-            sanitized_rows = []
+            # Sanitize so malformed/empty rows can't crash downstream matching.
+            sanitized_rows: list = []
             for t in payload.tracks:
                 if not isinstance(t, dict):
                     continue
@@ -1713,8 +1718,15 @@ async def import_resolve(
                 if video_id:
                     row["videoId"] = video_id
                 sanitized_rows.append(row)
-            if sanitized_rows:
-                parsed_rows = sanitized_rows
+            parsed_rows = sanitized_rows
+
+        if not parsed_rows:
+            # No browser-supplied rows: parse the URL/data server-side.
+            # For YouTube source this calls ytmusicapi which may fail from
+            # cloud IP ranges (caught as YTMusicImportUnavailable by the
+            # caller).  For CSV/Spotify this is always a local parse.
+            result = await _parse_import_rows(source, import_data)
+            parsed_rows = result["parsed_rows"]
 
         if not parsed_rows:
             return {
