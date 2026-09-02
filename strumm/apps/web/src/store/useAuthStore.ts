@@ -285,6 +285,18 @@ async function performRefresh(): Promise<RefreshResult> {
       // Non-JSON body (e.g. a gateway error page) — treat as a failed refresh.
     }
 
+    // A body-driven refresh that returns 401 usually means the in-memory token
+    // is stale (another tab already rotated it, so the server overwrote the
+    // matching hash). The current httpOnly cookie is authoritative. Retry once
+    // with the pure cookie, and if that succeeds, drop the stale token so every
+    // later refresh uses the cookie again. Preserves the post-Google-sign-in
+    // first refresh (no cookie yet → this retry also 401s → same outcome).
+    if (!res.ok && res.status === 401 && refreshToken) {
+      useAuthStore.setState({ refreshToken: null });
+      await new Promise((r) => setTimeout(r, 250));
+      return performRefresh();
+    }
+
     if (res.ok && json?.success && json.data?.token) {
       useAuthStore.setState({
         token: json.data.token,
