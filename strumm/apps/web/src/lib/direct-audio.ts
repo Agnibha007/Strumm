@@ -17,9 +17,17 @@ interface DirectAudioResponse {
 }
 
 const CACHE_TTL_MS = 45 * 60 * 1000;
+// A track that failed to resolve (e.g. YouTube bot-blocking every source) is
+// remembered so we don't re-probe Piped + the server for the same videoId on
+// the next pre-resolve / lock-screen tick. Short enough that a blocked track
+// gets retried once the block clears, long enough to keep playback snappy when
+// many tracks are blocked at once.
+const NEGATIVE_CACHE_TTL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 const cache = new Map<string, { url: string; at: number }>();
+// True when we already know this video has no resolvable direct audio.
+const negativeCache = new Map<string, number>();
 const inflight = new Map<string, Promise<string | null>>();
 
 export function getCachedDirectAudioUrl(videoId: string): string | null {
@@ -34,6 +42,21 @@ export function getCachedDirectAudioUrl(videoId: string): string | null {
 
 function cacheDirectAudioUrl(videoId: string, url: string) {
   cache.set(videoId, { url, at: Date.now() });
+  negativeCache.delete(videoId);
+}
+
+function isNegativeCached(videoId: string): boolean {
+  const at = negativeCache.get(videoId);
+  if (at === undefined) return false;
+  if (Date.now() - at > NEGATIVE_CACHE_TTL_MS) {
+    negativeCache.delete(videoId);
+    return false;
+  }
+  return true;
+}
+
+function cacheNoDirectAudio(videoId: string) {
+  negativeCache.set(videoId, Date.now());
 }
 
 /**
@@ -56,6 +79,10 @@ export async function resolveDirectAudioUrl(videoId: string): Promise<string | n
   const cached = getCachedDirectAudioUrl(videoId);
   if (cached) return cached;
 
+  // A recent failed resolution (bot-block) returns immediately instead of
+  // re-probing every source for the same video.
+  if (isNegativeCached(videoId)) return null;
+
   const inProgress = inflight.get(videoId);
   if (inProgress) return inProgress;
 
@@ -74,7 +101,13 @@ async function resolveAudio(videoId: string): Promise<string | null> {
   }
 
   // 2. Fall back to the server /play endpoint.
-  return fetchDirectAudio(videoId);
+  const direct = await fetchDirectAudio(videoId);
+  if (direct) return direct;
+
+  // No source could serve this track (e.g. YouTube bot-blocking every egress).
+  // Remember it briefly so repeated pre-resolves don't hammer the sources.
+  cacheNoDirectAudio(videoId);
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,4 +189,5 @@ async function fetchDirectAudio(videoId: string): Promise<string | null> {
 
 export function clearDirectAudioCache() {
   cache.clear();
+  negativeCache.clear();
 }

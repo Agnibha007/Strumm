@@ -124,4 +124,17 @@ describe("resolveDirectAudioUrl", () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     expect(await resolveDirectAudioUrl(VIDEO)).toBeNull();
   });
+
+  it("negative-caches a failed resolution so it doesn't re-probe every source", async () => {
+    // Both sources fail -> null, and the videoId is remembered as blocked.
+    streamsMock.mockResolvedValue({ audioStreams: [], videoStreams: [] });
+    fetchMock.mockReturnValueOnce(okJson({ success: false, error: "unavailable" }));
+    expect(await resolveDirectAudioUrl(VIDEO)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Immediate re-request returns null WITHOUT re-probing (negative cache).
+    expect(await resolveDirectAudioUrl(VIDEO)).toBeNull();
+    expect(streamsMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
