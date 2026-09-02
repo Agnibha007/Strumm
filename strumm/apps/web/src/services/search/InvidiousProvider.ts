@@ -35,6 +35,18 @@ const HARDCODED_INSTANCES: string[] = [
   "https://pipedapi.r4fo.com",
 ];
 
+/**
+ * Instances known to answer browser origins with ``Access-Control-Allow-
+ * Origin: *``. The others (kavin.rocks, r4fo.com) historically omit the CORS
+ * header, so any browser ``fetch`` to them is thrown away by the browser with
+ * a CORS TypeError — pure console noise on every resolution. Browser-side
+ * fetches try ONLY these first; the rest are kept for server-side contexts
+ * and as a last resort.
+ */
+const BROWSER_SAFE_INSTANCES = new Set([
+  "https://api.piped.private.coffee",
+]);
+
 const INSTANCE_LIST_URL = "https://piped-instances.kavin.rocks/";
 
 interface PipedInstanceEntry {
@@ -113,7 +125,10 @@ async function checkInstanceHealth(baseUrl: string): Promise<boolean> {
 async function runHealthCheck(): Promise<void> {
   if (!cachedInstances) return;
 
-  const current = cachedInstances.apiUrls;
+  // Only health-check instances the browser can actually reach (CORS-open).
+  // Checking CORS-hostile instances from a browser origin is pointless — every
+  // probe is thrown away by the browser and only spams the console.
+  const current = cachedInstances.apiUrls.filter((url) => BROWSER_SAFE_INSTANCES.has(url));
   const results = await Promise.allSettled(
     current.map(async (url) => {
       const healthy = await checkInstanceHealth(url);
@@ -254,7 +269,10 @@ export function refreshInstances(): void {
  * the same live/demoted instance set.
  */
 export async function discoverPipedInstances(): Promise<string[]> {
-  return discoverInstances();
+  const all = await discoverInstances();
+  // Order CORS-safe instances first so browser fetches aren't held up by
+  // instances that will fail a browser fetch (CORS) regardless of uptime.
+  return [...[...all].filter((u) => BROWSER_SAFE_INSTANCES.has(u)), ...[...all].filter((u) => !BROWSER_SAFE_INSTANCES.has(u))];
 }
 
 // ---------------------------------------------------------------------------
@@ -291,17 +309,21 @@ export interface PipedStreamsData {
  * instance is skipped for later calls.
  */
 export async function fetchPipedStreams(videoId: string): Promise<PipedStreamsData | null> {
-  const instances = await discoverInstances();
+  const instances = await discoverPipedInstances();
   for (const base of instances) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8_000);
+      const timeout = setTimeout(() => controller.abort(), 4_000);
       const res = await fetch(`${base}/streams/${encodeURIComponent(videoId)}`, {
         signal: controller.signal,
       });
       clearTimeout(timeout);
       if (!res.ok) {
         demoteInstance(base);
+        // A decisive non-2xx (e.g. YouTube bot-block 500) means this instance
+        // can't serve this video at all — don't burn time on the remaining
+        // CORS-hostile instances for the same network-independent 500.
+        if (res.status >= 500) break;
         continue;
       }
       return (await res.json()) as PipedStreamsData;
@@ -317,14 +339,14 @@ export async function fetchPipedStreams(videoId: string): Promise<PipedStreamsDa
 // ---------------------------------------------------------------------------
 
 async function fetchPiped<T>(path: string, timeoutMs = 8_000): Promise<T | null> {
-  const instances = await discoverInstances();
+  const instances = await discoverPipedInstances();
 
   for (let i = 0; i < instances.length; i++) {
     const base = instances[i];
     const url = `${base}${path}`;
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const timeout = setTimeout(() => controller.abort(), Math.min(timeoutMs, 6_000));
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
       if (!res.ok) {
@@ -333,6 +355,9 @@ async function fetchPiped<T>(path: string, timeoutMs = 8_000): Promise<T | null>
           warnedUrls.add(base);
           console.warn(`PipedProvider: HTTP ${res.status} from ${base}${path}`);
         }
+        // A clean 5xx is a network-independent bot-block / outage: stop paying
+        // timeouts on the remaining (CORS-hostile) instances for the same call.
+        if (res.status >= 500) break;
         continue;
       }
       return (await res.json()) as T;
