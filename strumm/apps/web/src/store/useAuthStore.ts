@@ -111,7 +111,7 @@ export const useAuthStore = create<AuthState>()(
             // with 401 (the session is genuinely gone). Anything else (network
             // error, cold start, rotation race) keeps the session so the
             // background retry in initializeAuth can recover it.
-            if (!hasUsableAccessToken(get().token) && result.status === 401) {
+            if (isAccessTokenExpiredOrAbsent(get().token) && result.status === 401) {
               get().clearLocalSession();
             }
             return false;
@@ -141,14 +141,14 @@ export const useAuthStore = create<AuthState>()(
                   err instanceof ApiError &&
                   err.status &&
                   [401, 403].includes(err.status) &&
-                  !hasUsableAccessToken(get().token)
+                  isAccessTokenExpiredOrAbsent(get().token)
                 ) {
                   get().clearLocalSession();
                 }
                 return false;
               }
             }
-            if (!hasUsableAccessToken(get().token) && result.status === 401) {
+            if (isAccessTokenExpiredOrAbsent(get().token) && result.status === 401) {
               get().clearLocalSession();
             }
             return false;
@@ -192,12 +192,20 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 // A stale refresh token from a multi-tab rotation race must not log the user
 // out while this token remains valid — only once it has expired (and refresh
 // keeps failing) is the session considered gone.
-function hasUsableAccessToken(token: string | null): boolean {
-  if (!token) return false;
+// True only when the access token is genuinely gone or already past its expiry.
+// Used for the destructive "session is really dead" decision. Unlike the older
+// proactive-refresh predicate this does NOT treat a <60s-from-expiry token as
+// unusable: a multi-tab refresh-token rotation race can leave a tab with an
+// expired refresh token but a still-valid access token — that is a recoverable
+// condition, not a reason to wipe the local session. Only once the access token
+// itself is truly expired AND refresh keeps 401ing does the background retry
+// conclude the session is gone.
+function isAccessTokenExpiredOrAbsent(token: string | null): boolean {
+  if (!token) return true;
   const payload = decodeJwtPayload(token);
-  if (!payload?.exp) return false;
+  if (!payload?.exp) return true;
   const expiresAt = Number(payload.exp) * 1000;
-  return expiresAt - Date.now() > 60 * 1000;
+  return expiresAt - Date.now() <= 0;
 }
 
 // Access token lifetime in ms (1 hour — matches ACCESS_TOKEN_EXPIRE on the API)
@@ -326,7 +334,10 @@ async function retryRefreshInBackground() {
       scheduleActivityRefresh();
       return;
     }
-    if (result.status === 401 && !hasUsableAccessToken(useAuthStore.getState().token)) {
+    if (
+      result.status === 401 &&
+      isAccessTokenExpiredOrAbsent(useAuthStore.getState().token)
+    ) {
       useAuthStore.getState().clearLocalSession();
       return;
     }
@@ -364,7 +375,7 @@ function scheduleRefresh(attempt = 0) {
     }
     // A confirmed dead session stops being retried; transient failures get
     // another attempt with backoff.
-    if (result.status === 401 && !hasUsableAccessToken(useAuthStore.getState().token)) {
+    if (result.status === 401 && isAccessTokenExpiredOrAbsent(useAuthStore.getState().token)) {
       useAuthStore.getState().clearLocalSession();
       return;
     }
