@@ -191,9 +191,13 @@ export function refreshInstances(): void {
  */
 export async function discoverPipedInstances(): Promise<string[]> {
   const all = await discoverInstances();
-  // Order CORS-safe instances first so browser fetches aren't held up by
-  // instances that will fail a browser fetch (CORS) regardless of uptime.
-  return [...[...all].filter((u) => BROWSER_SAFE_INSTANCES.has(u)), ...[...all].filter((u) => !BROWSER_SAFE_INSTANCES.has(u))];
+  // Browser-side resolution can ONLY use instances that answer browser origins
+  // with Access-Control-Allow-Origin. The CORS-hostile instances (kavin.rocks,
+  // r4fo.com, most `piped-instances.kavin.rocks` listings) never send the header,
+  // so every fetch to them is thrown away by the browser with a CORS TypeError
+  // — pure console noise regardless of their uptime. Filter them out entirely
+  // here; they remain available to the server-side fallback in the API.
+  return [...all].filter((u) => BROWSER_SAFE_INSTANCES.has(u));
 }
 
 // ---------------------------------------------------------------------------
