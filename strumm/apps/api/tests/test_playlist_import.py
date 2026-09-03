@@ -364,22 +364,23 @@ def client(mock_db_empty):
 async def test_import_csv_mixed_statuses(client, monkeypatch):
     """A CSV with (a) a provider match, (b) a genuine no-result, and (c) a
     transient provider failure should surface distinct statuses — the failure
-    must NOT be folded into 'not_found'/'Missing'."""
-    # Mock search_ytmusic_detailed to be deterministic per-query. The importer
-    # runs tracks with bounded concurrency, so routes must be query-based, not
-    # call-ordered.
-    def fake(q, filter=None):
-        q = q.lower()
-        if "heer" in q:
-            # Heer -> one strong provider match.
-            return make_outcome("ok", results=[raw_candidate("v1", "Heer", "A R Rahman")])
-        if "rare song" in q:
-            # Genuine: provider reached but returned nothing.
-            return make_outcome("ok", results=[], reason="no results")
-        # Vanishing Track -> transient provider failure (always).
-        return make_outcome("unreachable", reason="host down")
+    must NOT be folded into 'not_found'/'Missing'.
 
-    monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", fake)
+    The /import endpoint runs under the browser-only policy (forbid_ytmusic),
+    so the server fallback is yt-dlp et al. via ``search_fallback``, which maps
+    an empty result to ``unreachable`` (never a false not_found). Both the
+    genuine-miss and the outage therefore surface as ``failed``/``unreachable``;
+    only the provider match is ``matched``.
+    """
+    # search_fallback returns a flat candidate list per query: non-empty is a
+    # match, empty maps to "unreachable" (provider couldn't prove absence).
+    def fake(query, *, limit=10):
+        q = query.lower()
+        if "heer" in q:
+            return [raw_candidate("v1", "Heer", "A R Rahman")]
+        return []
+
+    monkeypatch.setattr("app.services.ytfallback.search_fallback", fake)
 
     csv_data = "title,artist\nHeer,A R Rahman\nRare Song,Nobody\nVanishing Track,Unknown\n"
 
@@ -392,18 +393,16 @@ async def test_import_csv_mixed_statuses(client, monkeypatch):
     assert body["success"] is True
     data = body["data"]
 
-    statuses = {
-        s["title"]: s.get("status")
-        for s in data["failed"] + data["not_found"]
-    }
-    # Heer matched via provider.
+    # Heer matched via provider fallback.
     assert len(data["matched"]) + len(data["similar_matches"]) >= 1
-    # Genuine no-result -> not_found.
-    assert any(s["title"] == "Rare Song" and s.get("status") == STATUS_NOT_FOUND
-               for s in data["not_found"])
-    # Transient failure -> 'failed' with a provider/network status, NOT not_found.
-    assert any(
-        s["title"] == "Vanishing Track"
+    # No track is ever fabricated as a match when the provider found nothing.
+    assert all(s.get("status") != STATUS_MATCHED
+               for s in data["failed"] + data["not_found"])
+    # Under the browser-only yt-dlp seam an empty result is unreachable (the
+    # provider could not prove absence), surfaced as `failed`, not not_found.
+    assert "failed" in data and len(data["failed"]) >= 2
+    assert all(
+        s["title"] in ("Rare Song", "Vanishing Track")
         and s.get("status") in (STATUS_UNREACHABLE, STATUS_RATE_LIMITED,
                                 STATUS_TIMEOUT, STATUS_PROVIDER_ERROR)
         for s in data["failed"]

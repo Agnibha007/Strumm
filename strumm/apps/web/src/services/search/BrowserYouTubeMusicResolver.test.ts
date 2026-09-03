@@ -372,8 +372,8 @@ describe("extractPlaylistOnBrowser (Piped /playlists)", () => {
     const rows = await extractPlaylistOnBrowser("https://music.youtube.com/playlist?list=PLabc123");
     expect(invidiousProvider.getPlaylistItems).toHaveBeenCalledWith("PLabc123");
     expect(rows).toEqual([
-      { title: "One Dance", artist: "Drake", album: "", duration: 175, videoId: "aaa11111111" },
-      { title: "God's Plan", artist: "Drake", album: "", duration: 198, videoId: "bbb22222222" },
+      { title: "One Dance", artist: "Drake", album: "", duration: 175, thumbnail: "", videoId: "aaa11111111" },
+      { title: "God's Plan", artist: "Drake", album: "", duration: 198, thumbnail: "", videoId: "bbb22222222" },
     ]);
   });
 

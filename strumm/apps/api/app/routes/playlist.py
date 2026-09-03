@@ -593,7 +593,10 @@ class ImportContext:
     # youtubei.js) from this server: the server's egress IP is YouTube-blocked.
     # Browser-supplied (Piped) candidates are the primary path; when those are
     # absent, yt-dlp (a different egress) is used instead of ytmusicapi.
-    forbid_ytmusic: bool = True
+    # Defaults to False so the provider-agnostic search/match machinery keeps its
+    # published contract; the real import flows flip it ON explicitly at the
+    # endpoint boundary (see import_playlist / import_playlist_from).
+    forbid_ytmusic: bool = False
     # Authenticated user who owns this import. Stage-2 local-library matching
     # is scoped to this id so one user's import can never harvest other users'
     # songs/videoIds from the shared collections.
@@ -1531,7 +1534,7 @@ async def import_playlist(
     payload: ImportRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    ctx = ImportContext(source=payload.source)
+    ctx = ImportContext(source=payload.source, forbid_ytmusic=True)
     try:
         database = db.get_db()
         source = sanitize_enum(payload.source, {"csv", "spotify", "youtube"}, "csv")
@@ -1738,7 +1741,7 @@ async def import_resolve(
     fall back to the server-side provider chain. Persists the result as a new
     private playlist and returns the same response contract as /import.
     """
-    ctx = ImportContext(source=payload.source)
+    ctx = ImportContext(source=payload.source, forbid_ytmusic=True)
     try:
         source = sanitize_enum(payload.source, {"csv", "spotify", "youtube"}, "csv")
         import_name = sanitize_text(payload.name, max_length=120)

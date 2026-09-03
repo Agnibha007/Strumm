@@ -169,7 +169,7 @@ async def test_search_candidates_injected_empty_falls_back_to_provider(monkeypat
     """Empty injected list must fall through to the fallback provider chain,
     which (browser-only policy) goes through yt-dlp/public providers, never
     ytmusicapi."""
-    ctx = ImportContext()
+    ctx = ImportContext(forbid_ytmusic=True)
 
     monkeypatch.setattr(
         "app.services.ytfallback.search_fallback",
@@ -185,7 +185,7 @@ async def test_search_candidates_injected_empty_falls_back_to_provider(monkeypat
 @pytest.mark.asyncio
 async def test_search_candidates_injected_none_falls_back_to_provider(monkeypatch):
     """None injected behaves exactly like the un-injected path (old default)."""
-    ctx = ImportContext()
+    ctx = ImportContext(forbid_ytmusic=True)
 
     monkeypatch.setattr(
         "app.services.ytfallback.search_fallback",
@@ -233,7 +233,7 @@ async def test_match_track_injected_empty_uses_server_fallback(monkeypatch, mock
     """Empty injected candidates let the fallback provider chain resolve the
     track (browser-only policy: via yt-dlp/public providers, never ytmusicapi)."""
     with patch("app.routes.playlist.db.get_db", return_value=mock_db):
-        ctx = ImportContext()
+        ctx = ImportContext(forbid_ytmusic=True)
 
         monkeypatch.setattr(
             "app.services.ytfallback.search_fallback",
@@ -256,7 +256,7 @@ async def test_match_track_injected_weak_single_candidate_is_not_found(monkeypat
     semantics mean the provider chain is NOT consulted, so the track is
     genuinely not matched (not_found), never a false provider failure."""
     with patch("app.routes.playlist.db.get_db", return_value=mock_db):
-        ctx = ImportContext()
+        ctx = ImportContext(forbid_ytmusic=True)
 
         def boom(q, filter=None):
             raise AssertionError("provider must not run when injected candidates exist")
@@ -272,7 +272,7 @@ async def test_match_track_injected_weak_single_candidate_is_not_found(monkeypat
 
         # Also: with NO injected candidates and a provider outage, the same
         # track must NOT be mislabelled as not_found.
-        ctx2 = ImportContext()
+        ctx2 = ImportContext(forbid_ytmusic=True)
 
         monkeypatch.setattr(
             "app.services.ytfallback.search_fallback", fake_fallback(("", []))
@@ -300,7 +300,7 @@ async def test_pipeline_resolve_map_prefers_browser_then_falls_back(monkeypatch,
             fake_fallback(("", [raw_candidate("server-1", "Song Two", "Artist Two")])),
         )
 
-        ctx = ImportContext()
+        ctx = ImportContext(forbid_ytmusic=True)
         parsed = [
             {"title": "Song One", "artist": "Artist One", "album": ""},
             {"title": "Song Two", "artist": "Artist Two", "album": ""},
@@ -333,7 +333,7 @@ async def test_pipeline_resolve_map_missing_index_falls_back(monkeypatch, mock_d
             fake_fallback(("", [raw_candidate("srv", "Only Song", "Only Artist")])),
         )
 
-        ctx = ImportContext()
+        ctx = ImportContext(forbid_ytmusic=True)
         parsed = [{"title": "Only Song", "artist": "Only Artist", "album": ""}]
         result = await _run_import_pipeline(
             ctx, parsed, user_id="507f1f77bcf86cd799439011", source="csv", import_name="Test",
