@@ -228,6 +228,86 @@ def test_b2_endpoint_host_regression_keeps_s3_prefix(monkeypatch):
     assert not host.startswith("3.")
 
 
+def test_get_client_passes_correct_s3_endpoint_host(monkeypatch):
+    """Assert the *client* is actually constructed with the correct S3 host.
+
+    Presigned-URL hostnames come from the endpoint passed to Minio; this pins
+    the constructed endpoint to 's3.eu-central-003...' (never '3.eu-central-003'),
+    which is the host whose DNS failure was observed in the browser.
+    """
+    import sys
+    from types import ModuleType
+
+    captured = {}
+
+    fake_minio_cls = type("Minio", (), {})
+    fake_minio_cls.__init__ = lambda self, endpoint, **kwargs: captured.update(
+        endpoint=endpoint, kwargs=kwargs
+    )
+
+    fake_minio = ModuleType("minio")
+    fake_minio.Minio = fake_minio_cls
+    monkeypatch.setitem(sys.modules, "minio", fake_minio)
+
+    monkeypatch.setattr(storage, "B2_ENDPOINT", "https://s3.eu-central-003.backblazeb2.com")
+    monkeypatch.setattr(storage, "B2_KEY_ID", "K123")
+    monkeypatch.setattr(storage, "B2_APP_KEY", "secret")
+    monkeypatch.setattr(storage, "B2_BUCKET", "strumm-media-prod")
+    monkeypatch.setattr(storage, "B2_REGION", "eu-central-003")
+
+    storage._get_client()
+
+    assert captured["endpoint"] == "s3.eu-central-003.backblazeb2.com"
+    assert not captured["endpoint"].startswith("3.")
+    # Region/signing config must be preserved.
+    assert captured["kwargs"]["region"] == "eu-central-003"
+    assert captured["kwargs"]["secure"] is True
+
+
+def test_presigned_url_uses_correct_endpoint_host(monkeypatch):
+    """Upload + download presigned URLs must use the configured S3 host.
+
+    MinIO derives each presigned URL's host from the endpoint the client was
+    constructed with. This test drives the real _get_client() path with a fake
+    MinIO that builds its URL from that very endpoint, so both generated URLs
+    must reference 's3.eu-central-003.backblazeb2.com' (never '3.eu-central-003').
+    """
+    import sys
+    from types import ModuleType
+
+    class FakeMinio:
+        def __init__(self, endpoint, access_key, secret_key, region, secure):
+            self.endpoint = endpoint
+            self._secure = secure
+
+        def get_presigned_url(self, method, bucket_name, object_name, expires, **kwargs):
+            scheme = "https" if self._secure else "http"
+            return f"{scheme}://{self.endpoint}/{bucket_name}/{object_name}?X-Amz-Signature=abc&method={method.lower()}"
+
+    fake_minio = ModuleType("minio")
+    fake_minio.Minio = FakeMinio
+    monkeypatch.setitem(sys.modules, "minio", fake_minio)
+
+    monkeypatch.setattr(storage, "B2_ENDPOINT", "https://s3.eu-central-003.backblazeb2.com")
+    monkeypatch.setattr(storage, "B2_KEY_ID", "K123")
+    monkeypatch.setattr(storage, "B2_APP_KEY", "secret")
+    monkeypatch.setattr(storage, "B2_BUCKET", "strumm-media-prod")
+    monkeypatch.setattr(storage, "B2_REGION", "eu-central-003")
+
+    upload = create_upload_url(
+        "avatar", "507f1f77bcf86cd799439011", "me.png",
+        content_type="image/png", size=1000,
+    )
+    download = create_download_url("users/507f1f77bcf86cd799439011/avatar/abc-me.png")
+
+    expected_host = "s3.eu-central-003.backblazeb2.com"
+    assert upload["uploadUrl"].startswith(f"https://{expected_host}/strumm-media-prod/")
+    assert download["downloadUrl"].startswith(f"https://{expected_host}/strumm-media-prod/")
+    # The host must be 's3.eu-central-003...' — never the mangled '3.eu-central-003...'.
+    assert not upload["uploadUrl"].startswith("https://3.eu-central-003.backblazeb2.com/")
+    assert not download["downloadUrl"].startswith("https://3.eu-central-003.backblazeb2.com/")
+
+
 # ---------------------------------------------------------------------------
 # Storage service: object keys & sanitization
 # ---------------------------------------------------------------------------
