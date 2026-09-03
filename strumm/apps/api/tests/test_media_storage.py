@@ -200,6 +200,34 @@ def test_storage_unavailable_raised_when_not_configured(monkeypatch):
         storage._get_client()
 
 
+@pytest.mark.parametrize(
+    "endpoint,expected",
+    [
+        # Backblaze S3-compatible endpoint. The leading 's' of 's3' must be kept.
+        ("https://s3.eu-central-003.backblazeb2.com", "s3.eu-central-003.backblazeb2.com"),
+        ("https://s3.eu-central-003.backblazeb2.com/", "s3.eu-central-003.backblazeb2.com"),
+        ("https://s3.us-west-000.backblazeb2.com", "s3.us-west-000.backblazeb2.com"),
+        # Local / non-B2 endpoints must not be mangled either.
+        ("http://localhost:9000", "localhost:9000"),
+        ("https://", ""),
+    ],
+)
+def test_b2_endpoint_host_strips_only_the_scheme(endpoint, expected, monkeypatch):
+    """Presigned-URL host comes from the client endpoint; stripping the scheme
+    via removeprefix must NOT consume characters from the hostname itself."""
+    monkeypatch.setattr(storage, "B2_ENDPOINT", endpoint)
+    assert storage._b2_endpoint_host() == expected
+
+
+def test_b2_endpoint_host_regression_keeps_s3_prefix(monkeypatch):
+    """Guard against the str.lstrip character-set bug that turned
+    's3.eu-central-003...' into '3.eu-central-003...' (DNS failure)."""
+    monkeypatch.setattr(storage, "B2_ENDPOINT", "https://s3.eu-central-003.backblazeb2.com")
+    host = storage._b2_endpoint_host()
+    assert host.startswith("s3.")
+    assert not host.startswith("3.")
+
+
 # ---------------------------------------------------------------------------
 # Storage service: object keys & sanitization
 # ---------------------------------------------------------------------------

@@ -182,6 +182,21 @@ def validate_size(category: str, size: int) -> int:
 
 # -- Low-level client -------------------------------------------------------
 
+def _b2_endpoint_host() -> str:
+    """Return the host[:port] for the S3 client from the configured endpoint.
+
+    Backblaze's S3-compatible endpoint is ``https://s3.<region>.backblazeb2.com``.
+    We strip the scheme by *prefix* only (``removeprefix``). Using ``str.lstrip``
+    is a known pitfall here: its argument is a character *set*, so stripping
+    ``"https://"`` would also greedily consume the ``s`` that starts the ``s3``
+    host, producing ``3.<region>.backblazeb2.com`` and a DNS-unresolvable host.
+    """
+    host = B2_ENDPOINT
+    for scheme in ("https://", "http://"):
+        host = host.removeprefix(scheme)
+    return host.rstrip("/")
+
+
 def _get_client() -> Any:
     """Build (or return) the MinIO client for the configured B2 endpoint.
 
@@ -201,7 +216,7 @@ def _get_client() -> Any:
         ) from exc
 
     return Minio(
-        B2_ENDPOINT.lstrip("https://").lstrip("http://"),
+        _b2_endpoint_host(),
         access_key=B2_KEY_ID,
         secret_key=B2_APP_KEY,
         region=B2_REGION or None,

@@ -15,7 +15,7 @@ function buildCspHeader(nonce: string): string {
     // <head> receives it explicitly (see layout.tsx).
     `script-src 'self' 'nonce-${nonce}' https://www.youtube.com https://www.youtube-nocookie.com https://s.ytimg.com https://static.cloudflareinsights.com`,
     `frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com`,
-    `img-src 'self' data: https:`,
+    `img-src 'self' data: https: blob:`,
     `media-src 'self' https: data: blob:`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com`,
