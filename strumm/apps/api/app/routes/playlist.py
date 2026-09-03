@@ -539,43 +539,6 @@ async def extract_ytmusic_playlist(url: str) -> list:
         )
 
 
-async def _ytdlp_extract_playlist(url: str) -> list:
-    """Extract playlist tracks with yt-dlp (allowed fallback egress).
-
-    Browser-only import policy: this server NEVER egresses to YouTube Music
-    (ytmusicapi / youtubei.js) — its egress IP is YouTube-blocked. The browser's
-    Piped extractor is the primary path; when it yields nothing, this yt-dlp
-    extractor (a different network path) can still recover the concrete tracks.
-    Returns ``[]`` on any failure so callers fall through to the line-by-line
-    parser / structured error handling.
-    """
-    try:
-        from app.services.ytfallback import ytdlp_playlist
-
-        rows = await asyncio.to_thread(ytdlp_playlist, url)
-        parsed = []
-        for r in rows:
-            item = {
-                "title": r.get("title") or "",
-                "artist": r.get("artist") or "",
-                "album": r.get("album") or "",
-                "duration": r.get("duration_seconds") or r.get("duration") or 0,
-            }
-            if r.get("videoId"):
-                item["videoId"] = r["videoId"]
-            thumb = (r.get("thumbnails") or [{}])[-1].get("url") if r.get("thumbnails") else ""
-            if thumb:
-                item["thumbnail"] = thumb
-            if item["title"]:
-                parsed.append(item)
-        return parsed
-    except Exception as exc:
-        logger.warning(
-            f"yt-dlp playlist extract failed for url={url!r}: {type(exc).__name__}: {exc!s:.120}"
-        )
-        return []
-
-
 # ---------------------------------------------------------------------------
 # Progressive Song Matching Pipeline
 # ---------------------------------------------------------------------------
@@ -1608,14 +1571,11 @@ async def import_playlist(
             parsed_rows = await extract_spotify_playlist(import_data)
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-            # Browser-only policy: the client (Piped) is the primary path. This
-            # server never egresses to YouTube Music (ytmusicapi) — its IP is
-            # YouTube-blocked. As an allowed fallback, yt-dlp (a different
-            # egress) can still fetch a playlist URL when the browser couldn't.
-            if any(u in import_data for u in ("youtube.com", "youtu.be")):
-                parsed_rows = await _ytdlp_extract_playlist(import_data)
-            else:
-                parsed_rows = []
+            # Browser-only policy: YouTube track extraction must happen in the
+            # browser (Piped). Do NOT egress to YouTube Music from this server
+            # (its IP is YouTube-blocked). Yield nothing; the line-by-line
+            # parser below may still recover metadata-only rows.
+            parsed_rows = []
 
         if not parsed_rows and source in ["spotify", "youtube"]:
             for line in import_data.split("\n"):
@@ -1688,14 +1648,11 @@ async def _parse_import_rows(source: str, import_data: str) -> dict:
     elif source == "spotify" or "spotify.com" in import_data:
         parsed_rows = await extract_spotify_playlist(import_data)
     elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-        # Browser-only policy: the client (Piped) is the primary path. This
-        # server never egresses to YouTube Music (ytmusicapi) — its IP is
-        # YouTube-blocked. As an allowed fallback, yt-dlp (a different egress)
-        # can still fetch a playlist URL when the browser couldn't.
-        if any(u in import_data for u in ("youtube.com", "youtu.be")):
-            parsed_rows = await _ytdlp_extract_playlist(import_data)
-        else:
-            parsed_rows = []
+        # Browser-only policy: YouTube extracts must come from the browser
+        # (Piped). The API server's egress IP is YouTube-blocked, so we never
+        # egress to YouTube Music (ytmusicapi) here. Yield no rows so the
+        # caller reports a clear "unreachable" rather than a silent failure.
+        parsed_rows = []
 
     if not parsed_rows and source in ["spotify", "youtube"]:
         for line in import_data.split("\n"):

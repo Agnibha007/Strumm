@@ -43,9 +43,25 @@ const HARDCODED_INSTANCES: string[] = [
  * fetches try ONLY these first; the rest are kept for server-side contexts
  * and as a last resort.
  */
-const BROWSER_SAFE_INSTANCES = new Set([
-  "https://api.piped.private.coffee",
-]);
+/**
+ * Hardcoded instances proven to answer browser origins with
+ * ``Access-Control-Allow-Origin: *``. ``api.piped.private.coffee`` is the
+ * long-standing trusteed seed and is always kept, so a browser can never be
+ * left with zero instances just because a probe happens to fail.
+ *
+ * Historically kavin.rocks / r4fo.com omitted the CORS header, so a browser
+ * ``fetch`` to them was thrown away with a CORS TypeError — pure console noise.
+ * Rather than trusting a static single-instance allow-list (the old single
+ * point of failure whenever that one instance bot-blocks), the browser
+ * additionally acquires the OTHER instances via a runtime CORS probe (see
+ * ``probeBrowserSafeInstances``) and only uses them if they demonstrably send
+ * the CORS header right now. An instance that starts (or stops) sending CORS
+ * is picked up (or dropped) automatically on the next probe.
+ */
+const TRUSTED_BROWSER_INSTANCES = ["https://api.piped.private.coffee"];
+
+/** How long a browser CORS-probe result is trusted before re-probing. */
+const CORS_PROBE_TTL = 15 * 60 * 1000;
 
 const INSTANCE_LIST_URL = "https://piped-instances.kavin.rocks/";
 
@@ -185,19 +201,88 @@ export function refreshInstances(): void {
 }
 
 /**
- * Return the Piped instance API base URLs currently considered healthy, in
- * order. Shared by search and browser-side direct-audio extraction so both use
- * the same live/demoted instance set.
+ * Browser-side CORS-probe cache so we don't hammer candidate instances.
+ */
+let corsProbeCache: {
+  corsSafeUrls: string[];
+  checkedAt: number;
+} | null = null;
+
+/**
+ * Fast path: the trusted seed instances, pruned of any demoted (dead /
+ * bot-blocked) ones. This is what a healthy app returns on every resolve —
+ * no probe, no extra fetch, identical latency to the old single-instance path.
+ */
+function healthyTrustedInstances(): string[] {
+  return TRUSTED_BROWSER_INSTANCES.filter((u) => !unhealthyUrls.has(u));
+}
+
+/**
+ * Return the Piped instance API base URLs the BROWSER can call, in order.
+ *
+ * The happy path is just the trusted seed (``api.piped.private.coffee``) —
+ * no extra network, no added latency. The single point of failure is closed by
+ * the fallback: whenever every trusted seed instance has been demoted (dead,
+ * offline, or bot-blocked — the exact failure that used to kill an import with
+ * no recovery), we discover the wider instance pool and keep whichever ones
+ * actually answer browser origins, via a CORS probe.
+ *
+ * Browser cross-origin ``fetch`` is only usable when an instance sends
+ * ``Access-Control-Allow-Origin``; anything else is thrown away by the browser
+ * as a CORS TypeError (silent failure + console spam). We probe the *exact*
+ * endpoint the app calls (``/streams/{id}``) and only add an instance when it
+ * demonstrably sends a permissive origin header right now. A stale probe
+ * result is trusted for ``CORS_PROBE_TTL`` so we probe rarely, and the result
+ * is refreshed automatically on the next window.
  */
 export async function discoverPipedInstances(): Promise<string[]> {
+  const trusted = healthyTrustedInstances();
+  if (trusted.length > 0) return trusted;
+
+  const fresh = corsProbeCache && Date.now() - corsProbeCache.checkedAt < CORS_PROBE_TTL;
+  if (fresh) {
+    // Still probe a bit for the seed even while the seed is down — instances
+    // come back. Until it does, use whatever CORS-open alternates we know.
+    const alternates = corsProbeCache!.corsSafeUrls.filter(
+      (u) => !TRUSTED_BROWSER_INSTANCES.includes(u) && !unhealthyUrls.has(u),
+    );
+    if (alternates.length > 0) return alternates;
+  }
+
   const all = await discoverInstances();
-  // Browser-side resolution can ONLY use instances that answer browser origins
-  // with Access-Control-Allow-Origin. The CORS-hostile instances (kavin.rocks,
-  // r4fo.com, most `piped-instances.kavin.rocks` listings) never send the header,
-  // so every fetch to them is thrown away by the browser with a CORS TypeError
-  // — pure console noise regardless of their uptime. Filter them out entirely
-  // here; they remain available to the server-side fallback in the API.
-  return [...all].filter((u) => BROWSER_SAFE_INSTANCES.has(u));
+  const inBrowser =
+    typeof globalThis !== "undefined" && typeof (globalThis as any).fetch === "function";
+
+  const results = await Promise.all(
+    [...new Set(all)]
+      .filter((u) => !TRUSTED_BROWSER_INSTANCES.includes(u))
+      .map(async (u) => {
+        if (!inBrowser) return { u, ok: true }; // non-browser (server) context: trust discovery
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 4_000);
+        try {
+          const res = await fetch(`${u}/streams/dQw4w9WgXcQ`, {
+            signal: controller.signal,
+            redirect: "follow",
+          });
+          const head = res.headers.get("access-control-allow-origin");
+          return { u, ok: head != null && (head === "*" || head.startsWith("http")) };
+        } catch {
+          return { u, ok: false };
+        } finally {
+          clearTimeout(t);
+        }
+      }),
+  );
+
+  const corsSafeUrls = [...TRUSTED_BROWSER_INSTANCES];
+  for (const { u, ok } of results) if (ok) corsSafeUrls.push(u);
+  corsProbeCache = { corsSafeUrls, checkedAt: Date.now() };
+
+  // Within this probe, an alternate that *just* demoted on a real request is
+  // still listed here by the current cache; the caller's own demotion handles
+  // it. Return the CORS-open set excluding already-unhealthy instances.
+  return corsSafeUrls.filter((u) => !unhealthyUrls.has(u));
 }
 
 // ---------------------------------------------------------------------------

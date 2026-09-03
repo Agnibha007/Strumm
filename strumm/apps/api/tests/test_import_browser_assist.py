@@ -25,13 +25,11 @@ from app.routes.playlist import (
     _match_track,
     _run_import_pipeline,
     _search_candidates,
-    _ytdlp_extract_playlist,
     STATUS_MATCHED,
     STATUS_NOT_FOUND,
     STATUS_UNREACHABLE,
     HIGH_CONFIDENCE_THRESHOLD,
 )
-from app.services.ytfallback import ytdlp_playlist
 
 
 # ---------------------------------------------------------------------------
@@ -578,30 +576,16 @@ async def test_import_parse_spotify_url_returns_tracks(monkeypatch, client):
 @pytest.mark.asyncio
 async def test_import_parse_ytmusic_url_never_egresses(monkeypatch, client):
     """Browser-only policy: YouTube URL parse must NEVER call the server-side
-    YouTube Music extractor (extract_ytmusic_playlist / ytmusicapi). The API's
-    egress IP is YouTube-blocked; the only server-side YouTube egress allowed is
-    yt-dlp (ytfallback.ytdlp_playlist), a different network path."""
-    ytmusic_called = {"n": 0}
-    ytdlp_called = {"n": 0}
+    YouTube Music extractor (extract_ytmusic_playlist). The API's egress IP is
+    YouTube-blocked, so a bare YouTube URL (no line-by-line rows) yields an
+    empty parse instead of egressing to ytmusicapi."""
+    called = {"n": 0}
 
-    async def fake_ytmusic(url):
-        ytmusic_called["n"] += 1
+    async def fake_extract(url):
+        called["n"] += 1
         return [{"title": "Heer", "artist": "A R Rahman"}]
 
-    def fake_ytdlp(url, *, limit=200):
-        ytdlp_called["n"] += 1
-        return [{
-            "videoId": "dQw4w9WgXcQ",
-            "title": "Heer",
-            "artist": "A R Rahman",
-            "album": "",
-            "duration": "5:53",
-            "duration_seconds": 353,
-            "thumbnails": [{"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"}],
-        }]
-
-    monkeypatch.setattr("app.routes.playlist.extract_ytmusic_playlist", fake_ytmusic)
-    monkeypatch.setattr("app.services.ytfallback.ytdlp_playlist", fake_ytdlp)
+    monkeypatch.setattr("app.routes.playlist.extract_ytmusic_playlist", fake_extract)
 
     response = await client.post(
         "/playlists/import/parse",
@@ -614,18 +598,9 @@ async def test_import_parse_ytmusic_url_never_egresses(monkeypatch, client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["success"] is True
-    assert body["tracks"] == [{
-        "title": "Heer",
-        "artist": "A R Rahman",
-        "album": "",
-        "duration": 353,
-        "videoId": "dQw4w9WgXcQ",
-        "thumbnail": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-    }]
-    # ytmusicapi must NEVER be invoked; yt-dlp is the allowed server egress.
-    assert ytmusic_called["n"] == 0
-    assert ytdlp_called["n"] == 1
+    assert body["success"] is False
+    assert body["tracks"] == []
+    assert called["n"] == 0  # the server extractor must never be invoked
 
 
 @pytest.mark.asyncio
@@ -683,10 +658,6 @@ async def test_import_parse_extraction_failure_structured_error(monkeypatch, cli
 
     monkeypatch.setattr("app.routes.playlist.extract_spotify_playlist", fake_empty)
     monkeypatch.setattr("app.routes.playlist.extract_ytmusic_playlist", fake_empty)
-    monkeypatch.setattr(
-        "app.services.ytfallback.ytdlp_playlist",
-        lambda url, *, limit=200: [],
-    )
 
     spotify = await client.post(
         "/playlists/import/parse",
@@ -1021,107 +992,3 @@ async def test_import_resolve_provider_failure_reported_as_failed(client):
     assert len(data["failed"]) == 2
     assert all(t["status"] == "unreachable" for t in data["failed"])
     assert data["not_found"] == []
-
-
-# ---------------------------------------------------------------------------
-# yt-dlp playlist extraction (allowed server-side YouTube fallback egress)
-# ---------------------------------------------------------------------------
-
-
-def test_ytdlp_playlist_maps_raw_entries(monkeypatch):
-    """ytfallback.ytdlp_playlist turns a fetched playlist's entries into the
-    importer's raw shape (videoId/title/artist/album/thumbnails) and never
-    touches ytmusicapi."""
-    fake_info = {
-        "id": "PLabc",
-        "title": "Fanmade Vids",
-        "entries": [
-            {
-                "id": "dQw4w9WgXcQ",
-                "title": "One Dance",
-                "artist": "Drake",
-                "album": "Views",
-                "duration": 353,
-                "thumbnails": [
-                    {"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg", "width": 320, "height": 180},
-                    {"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg", "width": 1280, "height": 720},
-                ],
-            },
-            {
-                "id": "bbb22222222",
-                "title": "God's Plan",
-                "uploader": "Drake",
-                "duration": 198,
-                "thumbnails": [{"url": "https://i.ytimg.com/vi/bbb22222222/mqdefault.jpg", "width": 320, "height": 180}],
-            },
-        ],
-    }
-
-    class FakeYDL:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def extract_info(self, url, download=False):
-            assert "list=" in url
-            return fake_info
-
-    import app.services.ytfallback as ytfb
-    monkeypatch.setattr(ytfb, "_ytdlp_available", lambda: True)
-
-    # Install a fake yt_dlp on sys.modules so the lazy `import yt_dlp` inside
-    # ytdlp_playlist resolves to FakeYDL without touching the network.
-    import sys
-    import types
-    fake_mod = types.ModuleType("yt_dlp")
-    fake_mod.YoutubeDL = FakeYDL
-    sys.modules["yt_dlp"] = fake_mod
-    try:
-        rows = ytdlp_playlist("https://music.youtube.com/playlist?list=PLabc")
-    finally:
-        sys.modules.pop("yt_dlp", None)
-
-    assert [r["videoId"] for r in rows] == ["dQw4w9WgXcQ", "bbb22222222"]
-    # Largest thumbnail wins.
-    assert rows[0]["thumbnails"][0]["url"] == "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg"
-    assert rows[0]["album"] == "Views"
-    assert rows[0]["artist"] == "Drake"
-    assert rows[1]["artist"] == "Drake"  # uploader fallback
-    assert rows[1]["duration_seconds"] == 198
-
-
-@pytest.mark.asyncio
-async def test_ytdlp_extract_playlist_maps_to_import_rows(monkeypatch):
-    """_ytdlp_extract_playlist (allowed browser-only fallback) maps raw
-    yt-dlp rows to the importer's {title,artist,album,duration,videoId,
-    thumbnail} contract, and returns [] on failure."""
-    rows = [{
-        "videoId": "dQw4w9WgXcQ",
-        "title": "One Dance",
-        "artist": "Drake",
-        "album": "Views",
-        "duration_seconds": 353,
-        "thumbnails": [{"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"}],
-    }]
-    monkeypatch.setattr("app.services.ytfallback.ytdlp_playlist", lambda *a, **k: rows)
-
-    out = await _ytdlp_extract_playlist("https://music.youtube.com/playlist?list=PLabc")
-    assert out == [{
-        "title": "One Dance",
-        "artist": "Drake",
-        "album": "Views",
-        "duration": 353,
-        "videoId": "dQw4w9WgXcQ",
-        "thumbnail": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-    }]
-
-    # Failure -> [] (caller falls through to line-by-line / structured error).
-    def boom(*a, **k):
-        raise RuntimeError("yt-dlp down")
-    monkeypatch.setattr("app.services.ytfallback.ytdlp_playlist", boom)
-    assert await _ytdlp_extract_playlist("https://youtu.be/playlist?list=PLx") == []
