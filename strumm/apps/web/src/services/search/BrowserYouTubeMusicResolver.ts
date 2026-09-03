@@ -271,7 +271,10 @@ export async function resolveTracksOnBrowser(
  * resolve it (caller falls back to the server-side parse).
  */
 export async function extractPlaylistOnBrowser(url: string): Promise<
-  Array<{ title: string; artist: string; album?: string; duration?: number; videoId?: string }>
+  Array<{
+    title: string; artist: string; album?: string; duration?: number;
+    thumbnail?: string; videoId?: string;
+  }>
 > {
   if (!url || !/youtube\.com|youtu\.be/i.test(url)) return [];
   let playlistId: string | null = null;
@@ -288,6 +291,7 @@ export async function extractPlaylistOnBrowser(url: string): Promise<
         artist: (s.artist || "Unknown Artist").trim(),
         album: "",
         duration: Number(s.duration) || 0,
+        thumbnail: (s.thumbnail || "").trim(),
         videoId: s.videoId,
       }));
     // A playlist that resolved to zero *canonical* tracks is treated as a

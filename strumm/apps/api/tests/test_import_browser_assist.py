@@ -42,6 +42,25 @@ def make_outcome(status="ok", results=None, reason="ok"):
     return MagicMock(found=found, status=status, reason=reason, results=results or [])
 
 
+def fake_fallback(*results):
+    """Build a ``search_fallback`` dispatcher returning a list of raw
+    candidates per query (browser-only policy: import fallbacks go through
+    yt-dlp/public providers, never ytmusicapi). Mirrors
+    ``app.services.ytfallback.search_fallback``'s list-return contract."""
+    def _fallback(query, *, limit=10):
+        hits = []
+        for cond, items in results:
+            if callable(cond):
+                if cond(query):
+                    hits = items
+                    break
+            elif cond in query.lower():
+                hits = items
+                break
+        return hits or []
+    return _fallback
+
+
 def browser_candidate(video_id, title, artist, mmss="3:00"):
     """Candidate shape produced by the web BrowserYouTubeMusicResolver."""
     parts = mmss.split(":")
@@ -147,13 +166,15 @@ async def test_search_candidates_injected_preferred_no_provider_call(monkeypatch
 
 @pytest.mark.asyncio
 async def test_search_candidates_injected_empty_falls_back_to_provider(monkeypatch):
-    """Empty injected list must fall through to the normal provider chain."""
+    """Empty injected list must fall through to the fallback provider chain,
+    which (browser-only policy) goes through yt-dlp/public providers, never
+    ytmusicapi."""
     ctx = ImportContext()
 
-    def fake(q, filter=None):
-        return make_outcome("ok", results=[raw_candidate("sv", "Exact Song", "Exact Artist")])
-
-    monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", fake)
+    monkeypatch.setattr(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(("", [raw_candidate("sv", "Exact Song", "Exact Artist")])),
+    )
     res = await _search_candidates(ctx, "Exact Song", "Exact Artist", 180, injected=[])
 
     assert res["status"] == STATUS_MATCHED
@@ -166,10 +187,10 @@ async def test_search_candidates_injected_none_falls_back_to_provider(monkeypatc
     """None injected behaves exactly like the un-injected path (old default)."""
     ctx = ImportContext()
 
-    def fake(q, filter=None):
-        return make_outcome("ok", results=[raw_candidate("sv2", "Song", "Artist")])
-
-    monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", fake)
+    monkeypatch.setattr(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(("", [raw_candidate("sv2", "Song", "Artist")])),
+    )
     res = await _search_candidates(ctx, "Song", "Artist", 180, injected=None)
 
     assert res["status"] == STATUS_MATCHED
@@ -209,14 +230,15 @@ async def test_match_track_injected_preferred(monkeypatch, mock_db):
 
 @pytest.mark.asyncio
 async def test_match_track_injected_empty_uses_server_fallback(monkeypatch, mock_db):
-    """Empty injected candidates let the server-side provider resolve the track."""
+    """Empty injected candidates let the fallback provider chain resolve the
+    track (browser-only policy: via yt-dlp/public providers, never ytmusicapi)."""
     with patch("app.routes.playlist.db.get_db", return_value=mock_db):
         ctx = ImportContext()
 
-        def fake(q, filter=None):
-            return make_outcome("ok", results=[raw_candidate("svf", "Exact Song", "Exact Artist")])
-
-        monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", fake)
+        monkeypatch.setattr(
+            "app.services.ytfallback.search_fallback",
+            fake_fallback(("", [raw_candidate("svf", "Exact Song", "Exact Artist")])),
+        )
 
         res = await _match_track(
             ctx, {"title": "Exact Song", "artist": "Exact Artist", "duration": 180},
@@ -252,10 +274,9 @@ async def test_match_track_injected_weak_single_candidate_is_not_found(monkeypat
         # track must NOT be mislabelled as not_found.
         ctx2 = ImportContext()
 
-        def failing(q, filter=None):
-            return make_outcome("unreachable", reason="outage")
-
-        monkeypatch.setattr("app.services.ytmusic.search_ytmusic_detailed", failing)
+        monkeypatch.setattr(
+            "app.services.ytfallback.search_fallback", fake_fallback(("", []))
+        )
         res2 = await _match_track(
             ctx2, {"title": "Some Track", "artist": "The Real Artist", "duration": 200},
             injected=[],
@@ -271,29 +292,24 @@ async def test_match_track_injected_weak_single_candidate_is_not_found(monkeypat
 
 @pytest.mark.asyncio
 async def test_pipeline_resolve_map_prefers_browser_then_falls_back(monkeypatch, mock_db):
-    """Track 0 matched via browser vid; track 1 (no injected) matched via server."""
+    """Track 0 matched via browser vid; track 1 (no injected) matched via
+    fallback provider (yt-dlp/public, never ytmusicapi)."""
     with patch("app.routes.playlist.db.get_db", return_value=mock_db):
-        import app.services.ytmusic as yt
+        monkeypatch.setattr(
+            "app.services.ytfallback.search_fallback",
+            fake_fallback(("", [raw_candidate("server-1", "Song Two", "Artist Two")])),
+        )
 
-        def fake(q, filter=None):
-            return make_outcome("ok", results=[raw_candidate("server-1", "Song Two", "Artist Two")])
+        ctx = ImportContext()
+        parsed = [
+            {"title": "Song One", "artist": "Artist One", "album": ""},
+            {"title": "Song Two", "artist": "Artist Two", "album": ""},
+        ]
+        resolve_map = {0: [browser_candidate("browser-0xx", "Song One", "Artist One", "3:10")]}
 
-        orig = yt.search_ytmusic_detailed
-        yt.search_ytmusic_detailed = fake
-        try:
-            ctx = ImportContext()
-            parsed = [
-                {"title": "Song One", "artist": "Artist One", "album": ""},
-                {"title": "Song Two", "artist": "Artist Two", "album": ""},
-            ]
-            resolve_map = {0: [browser_candidate("browser-0xx", "Song One", "Artist One", "3:10")]}
-
-            result = await _run_import_pipeline(
-                ctx, parsed, user_id="507f1f77bcf86cd799439011", source="csv", import_name="Test", resolve_map=resolve_map
-            )
-
-        finally:
-            yt.search_ytmusic_detailed = orig
+        result = await _run_import_pipeline(
+            ctx, parsed, user_id="507f1f77bcf86cd799439011", source="csv", import_name="Test", resolve_map=resolve_map
+        )
 
         matched = result["data"]["matched"]
         vid_ids = {s["videoId"] for s in result["data"]["matched"] + result["data"]["similar_matches"]}
@@ -310,24 +326,19 @@ async def test_pipeline_resolve_map_prefers_browser_then_falls_back(monkeypatch,
 
 @pytest.mark.asyncio
 async def test_pipeline_resolve_map_missing_index_falls_back(monkeypatch, mock_db):
-    """Indexes absent from resolve_map always use the server provider chain."""
+    """Indexes absent from resolve_map always use the fallback provider chain."""
     with patch("app.routes.playlist.db.get_db", return_value=mock_db):
-        import app.services.ytmusic as yt
+        monkeypatch.setattr(
+            "app.services.ytfallback.search_fallback",
+            fake_fallback(("", [raw_candidate("srv", "Only Song", "Only Artist")])),
+        )
 
-        def fake(q, filter=None):
-            return make_outcome("ok", results=[raw_candidate("srv", "Only Song", "Only Artist")])
-
-        orig = yt.search_ytmusic_detailed
-        yt.search_ytmusic_detailed = fake
-        try:
-            ctx = ImportContext()
-            parsed = [{"title": "Only Song", "artist": "Only Artist", "album": ""}]
-            result = await _run_import_pipeline(
-                ctx, parsed, user_id="507f1f77bcf86cd799439011", source="csv", import_name="Test",
-                resolve_map={7: [browser_candidate("other", "X", "Y")]},  # index 7 != 0
-            )
-        finally:
-            yt.search_ytmusic_detailed = orig
+        ctx = ImportContext()
+        parsed = [{"title": "Only Song", "artist": "Only Artist", "album": ""}]
+        result = await _run_import_pipeline(
+            ctx, parsed, user_id="507f1f77bcf86cd799439011", source="csv", import_name="Test",
+            resolve_map={7: [browser_candidate("other", "X", "Y")]},  # index 7 != 0
+        )
 
         matched = result["data"]["matched"] + result["data"]["similar_matches"]
         assert [s["videoId"] for s in matched] == ["srv"]
@@ -386,17 +397,17 @@ CSV = "title,artist,album\nHeer,A R Rahman,Jab Tak Hai Jaan\nRare Song,Nobody,\n
 
 @pytest.mark.asyncio
 async def test_import_resolve_uses_browser_candidates(client):
-    """Browser candidate for track 0 is matched; track 1 falls back server-side."""
-    def fake(q, filter=None):
-        q = q.lower()
-        if "rare song" in q:
-            return make_outcome("ok", results=[raw_candidate("srv-rare", "Rare Song", "Nobody")])
-        return make_outcome("ok", results=[])
-
-    import app.services.ytmusic as yt
-    orig = yt.search_ytmusic_detailed
-    yt.search_ytmusic_detailed = fake
-    try:
+    """Browser candidate for track 0 is matched; track 1 falls back to the
+    fallback provider chain (browser-only policy)."""
+    monkeypatch_patch = patch(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(
+            ("rare song", [raw_candidate("srv-rare", "Rare Song", "Nobody")]),
+            ("", []),
+        ),
+    )
+    mp = monkeypatch_patch
+    with mp:
         response = await client.post(
             "/playlists/import/resolve",
             json={
@@ -409,8 +420,6 @@ async def test_import_resolve_uses_browser_candidates(client):
                 },
             },
         )
-    finally:
-        yt.search_ytmusic_detailed = orig
 
     assert response.status_code == 200
     body = response.json()
@@ -419,7 +428,7 @@ async def test_import_resolve_uses_browser_candidates(client):
     matched_ids = {s["videoId"] for s in data["matched"] + data["similar_matches"]}
     # Browser candidate used for Heer (no provider search for it).
     assert "brHeerHeerH" in matched_ids
-    # Rare Song fell back to the server provider result.
+    # Rare Song fell back to the fallback provider result.
     assert "srv-rare" in matched_ids
     assert data["total_matched"] + data["total_similar"] == 2
 
@@ -471,14 +480,11 @@ async def test_import_resolve_sanitizes_bad_candidates(client):
 @pytest.mark.asyncio
 async def test_import_resolve_all_bad_candidates_falls_back_to_server(client):
     """When every injected candidate is malformed, the track falls back to the
-    server provider chain (same as having no browser candidates)."""
-    def fake(q, filter=None):
-        return make_outcome("ok", results=[raw_candidate("srv-heer", "Heer", "A R Rahman")])
-
-    import app.services.ytmusic as yt
-    orig = yt.search_ytmusic_detailed
-    yt.search_ytmusic_detailed = fake
-    try:
+    fallback provider chain (same as having no browser candidates)."""
+    with patch(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(("", [raw_candidate("srv-heer", "Heer", "A R Rahman")])),
+    ):
         response = await client.post(
             "/playlists/import/resolve",
             json={
@@ -490,8 +496,6 @@ async def test_import_resolve_all_bad_candidates_falls_back_to_server(client):
                 },
             },
         )
-    finally:
-        yt.search_ytmusic_detailed = orig
 
     assert response.status_code == 200
     body = response.json()
@@ -502,20 +506,16 @@ async def test_import_resolve_all_bad_candidates_falls_back_to_server(client):
 
 @pytest.mark.asyncio
 async def test_import_resolve_no_candidates_is_pure_server_fallback(client):
-    """With no candidates map the endpoint behaves like /import (server-side)."""
-    def fake(q, filter=None):
-        return make_outcome("ok", results=[raw_candidate("srv-heer", "Heer", "A R Rahman")])
-
-    import app.services.ytmusic as yt
-    orig = yt.search_ytmusic_detailed
-    yt.search_ytmusic_detailed = fake
-    try:
+    """With no candidates map the endpoint behaves like /import (server-side
+    fallback via yt-dlp/public providers — never ytmusicapi)."""
+    with patch(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(("", [raw_candidate("srv-heer", "Heer", "A R Rahman")])),
+    ):
         response = await client.post(
             "/playlists/import/resolve",
             json={"source": "csv", "name": "Test", "data": CSV, "candidates": {}},
         )
-    finally:
-        yt.search_ytmusic_detailed = orig
 
     assert response.status_code == 200
     body = response.json()
@@ -574,22 +574,16 @@ async def test_import_parse_spotify_url_returns_tracks(monkeypatch, client):
 
 
 @pytest.mark.asyncio
-async def test_import_parse_ytmusic_url_returns_tracks(monkeypatch, client):
-    """YT Music URL parse keeps the extractor's extra fields (duration,
-    videoId, thumbnail) — swallowed by nothing on the parse path."""
-    rows = [
-        {
-            "title": "Heer",
-            "artist": "A R Rahman",
-            "album": "",
-            "duration": 353,
-            "videoId": "dQw4w9WgXcQ",
-            "thumbnail": "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-        }
-    ]
+async def test_import_parse_ytmusic_url_never_egresses(monkeypatch, client):
+    """Browser-only policy: YouTube URL parse must NEVER call the server-side
+    YouTube Music extractor (extract_ytmusic_playlist). The API's egress IP is
+    YouTube-blocked, so a bare YouTube URL (no line-by-line rows) yields an
+    empty parse instead of egressing to ytmusicapi."""
+    called = {"n": 0}
 
     async def fake_extract(url):
-        return rows
+        called["n"] += 1
+        return [{"title": "Heer", "artist": "A R Rahman"}]
 
     monkeypatch.setattr("app.routes.playlist.extract_ytmusic_playlist", fake_extract)
 
@@ -604,8 +598,9 @@ async def test_import_parse_ytmusic_url_returns_tracks(monkeypatch, client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["success"] is True
-    assert body["tracks"] == rows
+    assert body["success"] is False
+    assert body["tracks"] == []
+    assert called["n"] == 0  # the server extractor must never be invoked
 
 
 @pytest.mark.asyncio
@@ -631,23 +626,27 @@ async def test_import_parse_track_order_and_duplicates_preserved(monkeypatch, cl
 @pytest.mark.asyncio
 async def test_import_parse_missing_metadata_rows_survive(monkeypatch, client):
     """Rows with incomplete metadata (no artist / no album / empty dict) are
-    passed through untouched so the browser can still attempt resolution."""
-    rows = [{}, {"title": "Only Title"}, {"title": "T", "artist": "A", "album": None}]
+    passed through untouched so the browser can still attempt resolution. For
+    YouTube input, the browser-only policy means parse never egresses to
+    ytmusicapi; only the line-by-line fallback (metadata-only) can yield rows."""
+    called = {"n": 0}
 
     async def fake_extract(url):
-        return rows
+        called["n"] += 1
+        return [{"title": "Heer", "artist": "A R Rahman"}]
 
     monkeypatch.setattr("app.routes.playlist.extract_ytmusic_playlist", fake_extract)
 
     response = await client.post(
         "/playlists/import/parse",
-        json={"source": "youtube", "name": "Test", "data": "https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=PLx"},
+        json={"source": "youtube", "name": "Test", "data": "Only Title - Some Singer"},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
-    assert body["tracks"] == rows
+    assert body["tracks"] == [{"title": "Only Title", "artist": "Some Singer", "album": ""}]
+    assert called["n"] == 0
 
 
 @pytest.mark.asyncio
@@ -737,17 +736,14 @@ async def test_import_resolve_all_tracks_have_browser_candidates_skip_provider(c
 @pytest.mark.asyncio
 async def test_import_resolve_out_of_range_and_nonint_indexes_ignored(client):
     """Indexes that are out of range or non-int are dropped; the affected
-    tracks still resolve through the normal server fallback."""
-    def fake(q, filter=None):
-        q = q.lower()
-        if "rare song" in q:
-            return make_outcome("ok", results=[raw_candidate("srv-rare", "Rare Song", "Nobody")])
-        return make_outcome("ok", results=[raw_candidate("srv-heer", "Heer", "A R Rahman")])
-
-    import app.services.ytmusic as yt
-    orig = yt.search_ytmusic_detailed
-    yt.search_ytmusic_detailed = fake
-    try:
+    tracks still resolve through the fallback provider chain."""
+    with patch(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(
+            ("rare song", [raw_candidate("srv-rare", "Rare Song", "Nobody")]),
+            ("", [raw_candidate("srv-heer", "Heer", "A R Rahman")]),
+        ),
+    ):
         response = await client.post(
             "/playlists/import/resolve",
             json={
@@ -762,8 +758,6 @@ async def test_import_resolve_out_of_range_and_nonint_indexes_ignored(client):
                 },
             },
         )
-    finally:
-        yt.search_ytmusic_detailed = orig
 
     assert response.status_code == 200
     body = response.json()
@@ -771,7 +765,7 @@ async def test_import_resolve_out_of_range_and_nonint_indexes_ignored(client):
     data = body["data"]
     matched_ids = {s["videoId"] for s in data["matched"] + data["similar_matches"]}
     assert matched_ids == {"srv-heer", "srv-rare"}
-    # Both tracks fell back to the server chain.
+    # Both tracks fell back to the fallback chain.
     assert data["searches_used"] == 2
 
 
@@ -815,14 +809,11 @@ async def test_import_resolve_duplicate_index_last_key_wins(client):
 async def test_import_resolve_numeric_video_id_candidate_dropped(client):
     """A non-string videoId candidate is malformed: it must be dropped, not
     crash the import. Valid siblings still resolve."""
-    def fake(q, filter=None):
-        return make_outcome("ok", results=[raw_candidate("srv-heer", "Heer", "A R Rahman")])
-
-    import app.services.ytmusic as yt
-    orig = yt.search_ytmusic_detailed
-    yt.search_ytmusic_detailed = fake
-    try:
-        # Only a numeric videoId -> candidate dropped -> server fallback.
+    with patch(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(("", [raw_candidate("srv-heer", "Heer", "A R Rahman")])),
+    ):
+        # Only a numeric videoId -> candidate dropped -> fallback provider.
         pure = await client.post(
             "/playlists/import/resolve",
             json={
@@ -849,8 +840,6 @@ async def test_import_resolve_numeric_video_id_candidate_dropped(client):
                 },
             },
         )
-    finally:
-        yt.search_ytmusic_detailed = orig
 
     pure_body = pure.json()
     assert pure.status_code == 200
@@ -871,16 +860,13 @@ async def test_import_resolve_strict_video_id_validation(client):
     browser-supplied candidates. Every malformed id (too short, too long, bad
     chars, blank, non-string) is dropped; a VALID sibling candidate still
     resolves — one bad candidate can never poison the track."""
-    def fake(q, filter=None):
-        if "rare" in q.lower():
-            # Track 2 "Rare Song" (no browser candidates) falls back to search.
-            return make_outcome("ok", results=[raw_candidate("srv-rare", "Rare Song", "Nobody")])
-        return make_outcome("ok", results=[raw_candidate("srv-heer", "Heer", "A R Rahman")])
-
-    import app.services.ytmusic as yt
-    orig = yt.search_ytmusic_detailed
-    yt.search_ytmusic_detailed = fake
-    try:
+    with patch(
+        "app.services.ytfallback.search_fallback",
+        fake_fallback(
+            ("rare", [raw_candidate("srv-rare", "Rare Song", "Nobody")]),
+            ("", [raw_candidate("srv-heer", "Heer", "A R Rahman")]),
+        ),
+    ):
         response = await client.post(
             "/playlists/import/resolve",
             json={
@@ -901,8 +887,6 @@ async def test_import_resolve_strict_video_id_validation(client):
                 },
             },
         )
-    finally:
-        yt.search_ytmusic_detailed = orig
 
     assert response.status_code == 200
     body = response.json()
@@ -914,7 +898,7 @@ async def test_import_resolve_strict_video_id_validation(client):
     # None of the malformed ids can ever become a matched song.
     for bad in ("abc123", "dQw4w9WgXcQabcdef", "not-a-video!"):
         assert bad not in matched_ids
-    # Track 2 (no browser candidates) fell back to the server chain.
+    # Track 2 (no browser candidates) fell back to the fallback chain.
     assert "srv-rare" in matched_ids
     assert data["searches_used"] == 1
 
@@ -995,19 +979,11 @@ async def test_import_resolve_ambiguous_candidates_go_through_matcher(client):
 async def test_import_resolve_provider_failure_reported_as_failed(client):
     """A provider outage during fallback is surfaced as `failed`/`unreachable`
     per track — NEVER classified as not_found."""
-    def failing(q, filter=None):
-        return make_outcome("unreachable", reason="provider outage")
-
-    import app.services.ytmusic as yt
-    orig = yt.search_ytmusic_detailed
-    yt.search_ytmusic_detailed = failing
-    try:
+    with patch("app.services.ytfallback.search_fallback", fake_fallback(("", []))):
         response = await client.post(
             "/playlists/import/resolve",
             json={"source": "csv", "name": "Test", "data": CSV, "candidates": {}},
         )
-    finally:
-        yt.search_ytmusic_detailed = orig
 
     assert response.status_code == 200
     body = response.json()

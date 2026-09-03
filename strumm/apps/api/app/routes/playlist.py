@@ -589,6 +589,11 @@ class ImportContext:
     """
     source: str = ""
     import_name: str = ""
+    # When True, the import must NEVER egress to YouTube Music (ytmusicapi /
+    # youtubei.js) from this server: the server's egress IP is YouTube-blocked.
+    # Browser-supplied (Piped) candidates are the primary path; when those are
+    # absent, yt-dlp (a different egress) is used instead of ytmusicapi.
+    forbid_ytmusic: bool = True
     # Authenticated user who owns this import. Stage-2 local-library matching
     # is scoped to this id so one user's import can never harvest other users'
     # songs/videoIds from the shared collections.
@@ -687,6 +692,7 @@ def _build_song_item(song: dict) -> dict:
         "artist": artist,
         "thumbnail": thumbnail,
         "duration": duration or 0,
+        "album": song.get("album", "") or "",
     }
 
 
@@ -932,7 +938,16 @@ async def _provider_search(ctx: ImportContext, query: str) -> dict:
 
     retryable = {STATUS_UNREACHABLE, STATUS_RATE_LIMITED, STATUS_TIMEOUT, STATUS_PROVIDER_ERROR}
     for attempt in range(1, IMPORT_RETRY_ATTEMPTS + 1):
-        outcome = await asyncio.to_thread(search_ytmusic_detailed, query, "songs")
+        if ctx.forbid_ytmusic:
+            # Hard-block: never egress to YouTube Music (ytmusicapi) from this
+            # server. The server's IP is YouTube-blocked, so the only browser-
+            # safe source of search results is yt-dlp, which uses a different
+            # network path. When it finds nothing we report provider_error so
+            # the track surfaces as "failed/unresolved" rather than silently
+            # falling through to ytmusicapi.
+            outcome = await _ytdlp_search_import(query)
+        else:
+            outcome = await asyncio.to_thread(search_ytmusic_detailed, query, "songs")
         if outcome.found:
             result = {
                 "found": True,
@@ -976,6 +991,52 @@ async def _provider_search(ctx: ImportContext, query: str) -> dict:
     }
     ctx.search_results_cache[cache_key] = result
     return result
+
+
+class _ImportFallbackOutcome:
+    """Duck-typed stand-in for ``YTSearchOutcome`` used by the yt-dlp-only
+    (no-ytmusicapi) import search path. Keeps the module free of a hard
+    dependency on ytmusic internals while preserving the shared shape."""
+
+    __slots__ = ("found", "status", "reason", "results")
+
+    def __init__(self, found: bool, status: str, reason: str, results: list):
+        self.found = found
+        self.status = status
+        self.reason = reason
+        self.results = results or []
+
+
+async def _ytdlp_search_import(query: str) -> "_ImportFallbackOutcome":
+    """
+    Browser-only import search: NEVER egresses to YouTube Music from this
+    server. Uses ``ytfallback.search_fallback`` (YouTube Data API -> Piped ->
+    yt-dlp), which intentionally never touches ytmusicapi/youtubei.js.
+
+    Returns an ``_ImportFallbackOutcome``; a total/transient failure maps to
+    status ``unreachable``/``error`` so the caller reports it as failed rather
+    than fabricating a ``not_found``.
+    """
+    from app.services.ytfallback import search_fallback
+
+    try:
+        results = await asyncio.to_thread(search_fallback, query)
+    except Exception as exc:
+        name = type(exc).__name__
+        return _ImportFallbackOutcome(
+            found=False, status="error",
+            reason=f"yt-dlp import search raised: {name}: {exc!s}"[:200],
+            results=[],
+        )
+    if results:
+        return _ImportFallbackOutcome(
+            found=True, status="ok", reason="yt-dlp import search", results=results
+        )
+    return _ImportFallbackOutcome(
+        found=False, status="unreachable",
+        reason="yt-dlp import search returned no results (server egress blocked)",
+        results=[],
+    )
 
 
 async def _search_candidates(
@@ -1507,11 +1568,11 @@ async def import_playlist(
             parsed_rows = await extract_spotify_playlist(import_data)
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-            try:
-                parsed_rows = await extract_ytmusic_playlist(import_data)
-            except YTMusicImportUnavailable as exc:
-                logger.warning("YTMusic import unavailable for user %s: %s", current_user["id"], exc)
-                return {"success": False, "error": str(exc)}
+            # Browser-only policy: YouTube track extraction must happen in the
+            # browser (Piped). Do NOT egress to YouTube Music from this server
+            # (its IP is YouTube-blocked). Yield nothing; the line-by-line
+            # parser below may still recover metadata-only rows.
+            parsed_rows = []
 
         if not parsed_rows and source in ["spotify", "youtube"]:
             for line in import_data.split("\n"):
@@ -1584,7 +1645,11 @@ async def _parse_import_rows(source: str, import_data: str) -> dict:
     elif source == "spotify" or "spotify.com" in import_data:
         parsed_rows = await extract_spotify_playlist(import_data)
     elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-        parsed_rows = await extract_ytmusic_playlist(import_data)
+        # Browser-only policy: YouTube extracts must come from the browser
+        # (Piped). The API server's egress IP is YouTube-blocked, so we never
+        # egress to YouTube Music (ytmusicapi) here. Yield no rows so the
+        # caller reports a clear "unreachable" rather than a silent failure.
+        parsed_rows = []
 
     if not parsed_rows and source in ["spotify", "youtube"]:
         for line in import_data.split("\n"):

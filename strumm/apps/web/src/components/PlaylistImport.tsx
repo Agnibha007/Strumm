@@ -204,7 +204,8 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
       // YouTube); Spotify / CSV are parsed server-side via /import/parse.
       let tracks: Array<{ title: string; artist: string; album?: string }> = [];
       let youtubePlaylistRows: Array<{
-        title: string; artist: string; album?: string; duration?: number; videoId?: string;
+        title: string; artist: string; album?: string; duration?: number;
+        thumbnail?: string; videoId?: string;
       }> = [];
 
       if (source === "youtube") {
@@ -292,7 +293,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
               artists: row.artist.split(", ").filter(Boolean).map((name) => ({ name })),
               duration: "",
               duration_seconds: row.duration || 0,
-              thumbnails: [],
+              thumbnails: row.thumbnail ? [{ url: row.thumbnail }] : [],
             }];
           }
         }
