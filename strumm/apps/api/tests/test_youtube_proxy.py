@@ -176,6 +176,31 @@ async def test_proxy_streams_includes_direct_audio_and_related(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_proxy_streams_degrades_to_empty_when_all_providers_blocked(monkeypatch):
+    """When direct-audio AND watch-playlist both fail (e.g. host IP blocked by
+    YouTube), the route still returns a well-formed payload with empty arrays
+    rather than erroring — the frontend treats that as "no data" and moves on.
+    """
+    from app.routes import youtube
+
+    monkeypatch.setattr("app.routes.stream.get_direct_audio", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "app.services.ytmusic.call_ytmusic_safe",
+        lambda method, **k: None,
+    )
+    fake_client = MagicMock()
+    fake_client.get = AsyncMock(side_effect=RuntimeError("piped unreachable"))
+    monkeypatch.setattr(youtube, "get_http_client", lambda: fake_client)
+
+    result = await youtube.proxy_streams("dQw4w9WgXcQ")
+    assert result["success"] is True
+    data = result["data"]
+    assert data["audioStreams"] == []
+    assert data["videoStreams"] == []
+    assert data["relatedStreams"] == []
+
+
+@pytest.mark.asyncio
 async def test_proxy_related_returns_songs(monkeypatch):
     from app.routes import youtube
 

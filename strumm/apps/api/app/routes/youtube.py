@@ -306,18 +306,112 @@ def _pick_piped_base() -> str:
     return PIPED_INSTANCES[0] if PIPED_INSTANCES else "https://api.piped.private.coffee"
 
 
+# Overall budget for /yt/streams. The browser's ``proxyGet`` aborts at 12s, so
+# this endpoint MUST resolve well under that even on a cold cache. The provider
+# lookups run concurrently (not stacked) inside this deadline; on expiry we
+# return whatever resolved so the audio/related pickers still get usable data
+# instead of the browser timing out to a null.
+STREAMS_BUDGET = 10.0
+
+
+async def _resolve_watch_related(vid: str) -> list[dict]:
+    """Related / radio tracks from the YTMusic watch playlist (primary)."""
+    related: list[dict] = []
+    try:
+        from app.services.ytmusic import call_ytmusic_safe
+
+        watch = await asyncio.to_thread(
+            lambda: call_ytmusic_safe("get_watch_playlist", videoId=vid, limit=15)
+        )
+        for t in (watch or {}).get("tracks") or []:
+            if not isinstance(t, dict):
+                continue
+            rvid = str(t.get("videoId") or "").strip()
+            title = str(t.get("title") or "").strip()
+            if not rvid or not title:
+                continue
+            related.append({
+                "url": f"/watch?v={rvid}",
+                "type": "stream",
+                "title": title,
+                "thumbnail": _piped_pick_thumb(t.get("thumbnail") or t.get("thumbnails"), rvid),
+                "uploaderName": _piped_artist(t.get("artists")),
+                "duration": int(t.get("length") or 0),
+            })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"ytmusic watch playlist failed for {vid}: {exc!s:.120}")
+    return related
+
+
+async def _resolve_piped_streams(vid: str) -> tuple[list[dict], list[dict], dict]:
+    """One-shot Piped ``/streams/{vid}`` fallback: audio, video, metadata."""
+    audio: list[dict] = []
+    video: list[dict] = []
+    meta: dict[str, Any] = {}
+    try:
+        client = get_http_client()
+        base = _pick_piped_base()
+        resp = await client.get(f"{base}/streams/{vid}", timeout=PIPED_TIMEOUT)
+        if resp.status_code != 200:
+            logger.warning(f"Piped streams {vid} HTTP {resp.status_code}")
+            return audio, video, meta
+        p = resp.json()
+        if not isinstance(p, dict):
+            return audio, video, meta
+        meta = p
+        for s in p.get("audioStreams") or []:
+            if s and isinstance(s, dict) and s.get("url"):
+                audio.append({
+                    "url": s["url"],
+                    "mimeType": str(s.get("mimeType") or "audio/mp4"),
+                    "bitrate": int(s.get("bitrate") or 0),
+                })
+        for s in p.get("videoStreams") or []:
+            if s and isinstance(s, dict) and s.get("url"):
+                video.append({
+                    "url": s["url"],
+                    "mimeType": str(s.get("mimeType") or "video/mp4"),
+                    "bitrate": int(s.get("bitrate") or 0),
+                    "videoOnly": bool(s.get("videoOnly")),
+                })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Piped streams {vid} failed: {exc!s:.120}")
+    return audio, video, meta
+
+
+def _piped_related_items(payload: dict) -> list[dict]:
+    """Map a Piped ``/streams`` payload's ``relatedStreams`` to our shape."""
+    out: list[dict] = []
+    for r in payload.get("relatedStreams") or []:
+        if not isinstance(r, dict):
+            continue
+        rvid = str(_extract_video_id(r.get("url") or "") or "").strip()
+        if not rvid:
+            continue
+        out.append({
+            "url": f"/watch?v={rvid}",
+            "type": "stream",
+            "title": str(r.get("title") or "Untitled"),
+            "thumbnail": str(r.get("thumbnail") or ""),
+            "uploaderName": str(r.get("uploaderName") or "Unknown Artist"),
+            "duration": int(r.get("duration") or 0),
+        })
+    return out
+
+
 @router.get("/streams/{video_id}")
 async def proxy_streams(video_id: str):
     """Return song metadata + related tracks in Piped's ``/streams/{id}`` shape.
 
     The frontend's audio picker and related-track mapper consume this. We never
     proxy media bytes — this is metadata plus a resolved direct-audio URL.
+
+    Latency: the watch-playlist (related) and direct-audio lookups run
+    CONCURRENTLY, and the whole route is bounded by ``STREAMS_BUDGET`` (10s)
+    so it stays well under the browser's 12s client timeout. If a slow provider
+    exceeds the budget we return whatever already resolved rather than hang.
     """
     vid = sanitize_youtube_id(video_id)
-    related: list[dict] = []
-
-    # Mirror the existing server /play path so background audio still resolves.
-    from app.routes.stream import get_direct_audio, _audio_mime
 
     payload: dict[str, Any] = {
         "title": "",
@@ -326,41 +420,43 @@ async def proxy_streams(video_id: str):
         "duration": 0,
         "audioStreams": [],
         "videoStreams": [],
-        "relatedStreams": related,
+        "relatedStreams": [],
     }
 
-    # 1. Related / radio tracks from YTMusic watch playlist (primary).
-    try:
-        from app.services.ytmusic import call_ytmusic_safe
+    from app.routes.stream import get_direct_audio
 
-        watch = await asyncio.to_thread(
-            lambda: call_ytmusic_safe("get_watch_playlist", videoId=vid, limit=15)
-        )
-        if watch and watch.get("tracks"):
-            for t in watch["tracks"]:
-                if not isinstance(t, dict):
-                    continue
-                rvid = str(t.get("videoId") or "").strip()
-                title = str(t.get("title") or "").strip()
-                if not rvid or not title:
-                    continue
-                related.append({
-                    "url": f"/watch?v={rvid}",
-                    "type": "stream",
-                    "title": title,
-                    "thumbnail": _piped_pick_thumb(t.get("thumbnail") or t.get("thumbnails"), rvid),
-                    "uploaderName": _piped_artist(t.get("artists")),
-                    "duration": int(t.get("length") or 0),
-                })
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"ytmusic watch playlist failed for {vid}: {exc!s:.120}")
+    async def _task_direct() -> Optional[dict]:
+        try:
+            return await get_direct_audio(vid)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"direct audio failed for {vid}: {exc!s:.120}")
+            return None
 
-    # 2. Direct audio resolution (yt-dlp -> Piped fallback), same as /play.
+    related: list[dict] = []
     direct: Optional[dict] = None
+    piped_payload: dict = {}
+
+    # Concurrent + deadline-bounded resolve: watch-related and direct-audio run
+    # together; the Piped fallback runs only if both come back empty, within
+    # the same overall budget.
+    async def _run():
+        nonlocal related, direct, piped_payload
+        related, direct = await asyncio.gather(
+            _resolve_watch_related(vid),
+            _task_direct(),
+        )
+        if not direct and not related:
+            audio, video, meta = await _resolve_piped_streams(vid)
+            piped_payload = meta
+            if audio and not direct:
+                payload["audioStreams"] = audio
+            if video and not _direct_url_set(payload):
+                payload["videoStreams"] = video
+
     try:
-        direct = await get_direct_audio(vid)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"direct audio failed for {vid}: {exc!s:.120}")
+        await asyncio.wait_for(_run(), timeout=STREAMS_BUDGET)
+    except asyncio.TimeoutError:
+        logger.warning(f"/yt/streams budget exceeded for {vid}; returning partial")
 
     if direct and direct.get("audioUrl"):
         payload["videoStreams"].append({
@@ -377,58 +473,25 @@ async def proxy_streams(video_id: str):
         payload["title"] = str(direct.get("title") or "")
         payload["duration"] = int(direct.get("duration") or 0)
 
-    # 3. Fall back to a server-side Piped /streams fetch for metadata/related.
-    if not payload["audioStreams"] or not related:
-        try:
-            client = get_http_client()
-            base = _pick_piped_base()
-            resp = await client.get(f"{base}/streams/{vid}", timeout=PIPED_TIMEOUT)
-            if resp.status_code == 200:
-                p = resp.json()
-                payload["title"] = payload["title"] or str(p.get("title") or "")
-                payload["uploader"] = str(p.get("uploader") or payload["uploader"])
-                payload["duration"] = payload["duration"] or int(p.get("duration") or 0)
-                if p.get("thumbnailUrl"):
-                    payload["thumbnailUrl"] = str(p["thumbnailUrl"])
-                if not payload["audioStreams"]:
-                    for s in p.get("audioStreams") or []:
-                        if s and isinstance(s, dict) and s.get("url"):
-                            payload["audioStreams"].append({
-                                "url": s["url"],
-                                "mimeType": str(s.get("mimeType") or "audio/mp4"),
-                                "bitrate": int(s.get("bitrate") or 0),
-                            })
-                if not payload["videoStreams"]:
-                    for s in p.get("videoStreams") or []:
-                        if s and isinstance(s, dict) and s.get("url"):
-                            payload["videoStreams"].append({
-                                "url": s["url"],
-                                "mimeType": str(s.get("mimeType") or "video/mp4"),
-                                "bitrate": int(s.get("bitrate") or 0),
-                                "videoOnly": bool(s.get("videoOnly")),
-                            })
-                if not related:
-                    for r in p.get("relatedStreams") or []:
-                        if not isinstance(r, dict):
-                            continue
-                        rvid = str(_extract_video_id(r.get("url") or "") or "").strip()
-                        if not rvid:
-                            continue
-                        related.append({
-                            "url": f"/watch?v={rvid}",
-                            "type": "stream",
-                            "title": str(r.get("title") or "Untitled"),
-                            "thumbnail": str(r.get("thumbnail") or ""),
-                            "uploaderName": str(r.get("uploaderName") or "Unknown Artist"),
-                            "duration": int(r.get("duration") or 0),
-                        })
-            else:
-                logger.warning(f"Piped streams {vid} HTTP {resp.status_code}")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Piped streams {vid} failed: {exc!s:.120}")
+    # Merge related (watch playlist wins; else Piped relatedStreams).
+    if related:
+        payload["relatedStreams"] = related
+    elif piped_payload:
+        payload["relatedStreams"] = _piped_related_items(piped_payload)
 
-    payload["relatedStreams"] = related
+    # Metadata niceties from Piped if the direct descriptor didn't carry them.
+    if piped_payload:
+        payload["title"] = payload["title"] or str(piped_payload.get("title") or "")
+        payload["uploader"] = payload["uploader"] or str(piped_payload.get("uploader") or "")
+        payload["duration"] = payload["duration"] or int(piped_payload.get("duration") or 0)
+        if piped_payload.get("thumbnailUrl"):
+            payload["thumbnailUrl"] = str(piped_payload["thumbnailUrl"])
+
     return {"success": True, "data": payload}
+
+
+def _direct_url_set(payload: dict) -> bool:
+    return bool(payload.get("audioStreams"))
 
 
 # ---------------------------------------------------------------------------
