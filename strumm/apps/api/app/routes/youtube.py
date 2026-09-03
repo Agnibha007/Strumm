@@ -311,7 +311,7 @@ def _pick_piped_base() -> str:
 # lookups run concurrently (not stacked) inside this deadline; on expiry we
 # return whatever resolved so the audio/related pickers still get usable data
 # instead of the browser timing out to a null.
-STREAMS_BUDGET = 10.0
+STREAMS_BUDGET = 8.0
 
 
 async def _resolve_watch_related(vid: str) -> list[dict]:
@@ -436,22 +436,34 @@ async def proxy_streams(video_id: str):
     direct: Optional[dict] = None
     piped_payload: dict = {}
 
-    # Concurrent + deadline-bounded resolve: watch-related and direct-audio run
-    # together; the Piped fallback runs only if both come back empty, within
-    # the same overall budget.
+    async def _task_piped() -> dict:
+        try:
+            audio, video, meta = await _resolve_piped_streams(vid)
+            if meta:
+                return {"audio": audio, "video": video, "meta": meta}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Piped streams fallback failed for {vid}: {exc!s:.120}")
+        return {}
+
+    # Concurrent + deadline-bounded resolve. From the HF host YouTube blocks
+    # ytmusicapi and yt-dlp outright (they burn the whole budget timing out),
+    # while a Piped instance often answers fast — so we run the Piped fallback
+    # AT THE SAME TIME as the heavy providers and prefer whichever resolves
+    # first, guaranteeing the browser never waits for blocked providers that
+    # would push it past its 12s client timeout.
     async def _run():
         nonlocal related, direct, piped_payload
-        related, direct = await asyncio.gather(
+        related, direct, piped = await asyncio.gather(
             _resolve_watch_related(vid),
             _task_direct(),
+            _task_piped(),
         )
         if not direct and not related:
-            audio, video, meta = await _resolve_piped_streams(vid)
-            piped_payload = meta
-            if audio and not direct:
-                payload["audioStreams"] = audio
-            if video and not _direct_url_set(payload):
-                payload["videoStreams"] = video
+            piped_payload = piped.get("meta") or {}
+            if piped.get("audio") and not _direct_url_set(payload):
+                payload["audioStreams"] = piped["audio"]
+            if piped.get("video") and not _direct_url_set(payload):
+                payload["videoStreams"] = piped["video"]
 
     try:
         await asyncio.wait_for(_run(), timeout=STREAMS_BUDGET)
