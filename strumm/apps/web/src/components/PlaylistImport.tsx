@@ -220,9 +220,9 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
 
         if (tracks.length === 0) {
           // Piped /playlists didn't return anything (e.g. YouTube bot-blocking
-          // the instance). Fall back to the server's YouTube Music extractor
-          // before giving up — a different endpoint/egress, so it can still
-          // succeed where Piped couldn't.
+          // the instance). Fall back to the server's yt-dlp extractor before
+          // giving up — yt-dlp uses a different network path, so it can still
+          // succeed where Piped couldn't, and never egresses to ytmusicapi.
           const fb = await fetch(apiUrl("/playlists/import/parse"), {
             method: "POST",
             headers,
@@ -235,14 +235,28 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
             Array.isArray(fbJson.tracks) &&
             fbJson.tracks.length > 0
           ) {
-            tracks = fbJson.tracks.map((t: { title?: string; artist?: string; album?: string }) => ({
+            const serverRows = fbJson.tracks as Array<{
+              title?: string; artist?: string; album?: string;
+              duration?: number; thumbnail?: string; videoId?: string;
+            }>;
+            tracks = serverRows.map((t) => ({
               title: (t.title || "").trim(),
               artist: (t.artist || "Unknown Artist").trim(),
               album: t.album || "",
             }));
+            // Carry the server rows' canonical ids/art so resolution below can
+            // fall back to exact matches instead of a full provider search.
+            youtubePlaylistRows = serverRows.map((t) => ({
+              title: (t.title || "").trim(),
+              artist: (t.artist || "").trim(),
+              album: t.album || "",
+              duration: t.duration || 0,
+              thumbnail: t.thumbnail || "",
+              videoId: t.videoId || "",
+            }));
           } else {
             setError(
-              "Couldn't reach YouTube Music right now to load that playlist. Wait a few minutes and try again."
+              "Couldn't load that playlist right now — the catalog is temporarily unreachable. Wait a few minutes and try again."
             );
             return;
           }

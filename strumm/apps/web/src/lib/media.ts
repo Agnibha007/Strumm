@@ -11,12 +11,27 @@ export function getSongVideoId(song?: Pick<Song, "videoId" | "thumbnail"> | null
   return song?.videoId || getYouTubeIdFromThumbnail(song?.thumbnail) || "";
 }
 
+const YT_IMAGE_HOSTS = ["i.ytimg.com", "img.youtube.com", "ytimg.com", "lh3.googleusercontent.com"];
+
+function isYouTubeImageHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return YT_IMAGE_HOSTS.some((h) => host === h || host.endsWith("." + h));
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Return an optimized image URL through the backend's /image-proxy endpoint.
- * The backend will resize, convert to WebP, and aggressively cache the result.
+ * The API server's egress IP is blocked by YouTube's CDN, so /image-proxy
+ * cannot fetch YouTube-hosted thumbnails (they'd 502 -> blank art). YouTube
+ * images load fine straight from the BROWSER, so we skip the proxy for those
+ * hosts and use the raw URL directly. The proxy is kept only for non-YouTube
+ * image sources (Spotify/CDN-hosted art).
  */
 export function getOptimizedArtworkUrl(rawUrl: string, width: number): string {
   if (!rawUrl) return "";
+  if (isYouTubeImageHost(rawUrl)) return rawUrl;
   return apiUrl(`/image-proxy?url=${encodeURIComponent(rawUrl)}&w=${width}&quality=80`);
 }
 
@@ -44,11 +59,18 @@ export function getArtworkCandidates(
   const candidates: string[] = [];
 
   // The API-provided thumbnail is the only URL we *know* exists for this
-  // track. Always list it FIRST so artwork is visible immediately (proxy →
-  // raw), then speculative YouTube URLs serve as fallbacks.
+  // track. Always list it FIRST so artwork is visible immediately (YouTube-
+  // hosted thumbnails load directly from the browser — the server proxy is
+  // YouTube-CDN-blocked — non-YouTube sources go through the optimizing
+  // proxy), then speculative YouTube URLs serve as fallbacks.
   if (songThumbnail) {
-    candidates.push(getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160));
-    candidates.push(songThumbnail);
+    const first = getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160);
+    candidates.push(first);
+    // For non-YouTube hosts the proxy is the optimized form; for YouTube hosts
+    // getOptimizedArtworkUrl already returns the raw URL, so don't duplicate.
+    if (!isYouTubeImageHost(songThumbnail)) {
+      candidates.push(songThumbnail);
+    }
   }
 
   // Speculative YouTube thumbnail URLs for video tracks (most music videos
