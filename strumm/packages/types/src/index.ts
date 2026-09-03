@@ -1,5 +1,49 @@
 export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk' | 'Sage Forest' | 'Midnight Amethyst' | 'Glacial Blue';
 
+// ---------------------------------------------------------------------------
+// Object-storage (Backblaze B2) media types
+// ---------------------------------------------------------------------------
+
+/** Categories of user-uploaded media stored in B2. */
+export type MediaCategory = 'avatar' | 'image' | 'audio';
+
+/** Result of requesting a direct-upload URL from the backend. */
+export interface UploadUrlResult {
+  mediaId: string;
+  objectKey: string;
+  category: MediaCategory;
+  uploadUrl: string;
+  contentType?: string;
+  expiresIn: number;
+}
+
+/** Result of requesting a private download URL from the backend. */
+export interface DownloadUrlResult {
+  url: string;
+  objectKey: string;
+  expiresIn: number;
+}
+
+/** Result of resolving the current user's avatar media to a GET URL. */
+export interface AvatarUrlResult {
+  url: string;
+  mediaId: string;
+  expiresIn: number;
+}
+
+/** A media record stored in the backend (object key, not a permanent URL). */
+export interface MediaRecord {
+  id: string;
+  ownerId: string;
+  category: MediaCategory;
+  objectKey: string;
+  mime?: string;
+  filename?: string;
+  size: number;
+  status: 'pending' | 'ready' | 'deleted';
+  createdAt?: string;
+}
+
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -19,8 +63,9 @@ export interface PublicProfile {
   username: string;
   displayName: string;
   avatar?: string;
+  avatarMediaId?: string;
+  avatarExpiresIn?: number;
   bio?: string;
-  soundDNA?: SoundDNA;
   role?: string;
   badges?: User['badges'];
   statistics?: UserStatistics;
@@ -52,6 +97,8 @@ export interface User {
   username: string;
   displayName: string;
   avatar?: string;
+  avatarMediaId?: string;
+  avatarExpiresIn?: number;
   bio?: string;
   role?: string;
   providers: string[];

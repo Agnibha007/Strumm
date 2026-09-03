@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
+from app.services.avatar import decorate_user_avatar
 from bson import ObjectId
 
 logger = logging.getLogger("strumm-statistics")
@@ -410,6 +411,7 @@ async def get_global_leaderboard():
                 "_id": 0,
                 "displayName": {"$ifNull": ["$displayName", "Anonymous"]},
                 "avatar": {"$ifNull": ["$avatar", None]},
+                "avatarMediaId": 1,
                 "totalMinutes": {"$divide": ["$statistics.totalListeningTime", 60]}
             }},
             {"$sort": {"totalMinutes": -1}},
@@ -418,6 +420,7 @@ async def get_global_leaderboard():
         cursor = database[db.USERS].aggregate(pipeline)
         leaders = []
         async for doc in cursor:
+            await decorate_user_avatar(doc)
             leaders.append({
                 "displayName": doc["displayName"],
                 "avatar": doc.get("avatar"),

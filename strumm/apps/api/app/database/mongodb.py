@@ -84,3 +84,6 @@ NOTIFICATIONS = "notifications"
 
 # Auth collections
 SESSIONS = "sessions"
+
+# Object-storage (B2) media records
+MEDIA = "media"

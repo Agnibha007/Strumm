@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import BrandLogo from "web/components/BrandLogo";
 import { signOut } from "next-auth/react";
+import { useUserAvatar } from "web/lib/useUserAvatar";
 
 const bottomNavItems = [
   { label: "Home", href: "/", icon: Home },
@@ -46,6 +47,7 @@ const moreItems = [
 export default function MobileBottomNav() {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const avatarUrl = useUserAvatar(user);
   const [showMore, setShowMore] = useState(false);
 
   const isActive = (href: string) => {
@@ -166,9 +168,9 @@ export default function MobileBottomNav() {
               {user && (
                 <div className="px-5 py-4 border-b border-border/20 bg-surface/30">
                   <div className="flex items-center gap-3">
-                    {user.avatar ? (
+                    {avatarUrl ? (
                       <img
-                        src={user.avatar}
+                        src={avatarUrl}
                         alt={user.displayName}
                         loading="lazy"
                         decoding="async"

@@ -11,6 +11,7 @@ import {
   AlertTriangle, RefreshCw, Mail, LogOut
 } from "lucide-react";
 import { apiUrl, cleanText } from "web/lib/api";
+import { uploadAvatar } from "web/lib/media-api";
 
 const QUALITY_OPTIONS = [
   { id: "data-saver", label: "Data Saver", detail: "Lower video quality and lighter media preload.", icon: WifiLow },
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [username, setUsername] = useState(user?.username || "");
   const [avatar, setAvatar] = useState(user?.avatar || "");
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -134,18 +136,16 @@ export default function SettingsPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 1.5 * 1024 * 1024) {
-      setError("File size must be less than 1.5MB.");
+    if (file.size > 2 * 1024 * 1024) {
+      setError("File size must be less than 2MB.");
+      setPendingAvatarFile(null);
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        setAvatar(reader.result);
-        setError(null);
-      }
-    };
-    reader.readAsDataURL(file);
+    // Store the file for upload on save; use a local object URL just for preview.
+    setPendingAvatarFile(file);
+    const preview = URL.createObjectURL(file);
+    setAvatar(preview);
+    setError(null);
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -154,18 +154,49 @@ export default function SettingsPage() {
     setError(null);
     setSuccess(null);
     try {
+      const body: Record<string, string> = {
+        displayName: cleanText(displayName, 120),
+        username: cleanText(username, 50).trim().toLowerCase(),
+      };
+
+      // If the user picked a new avatar file, upload it directly to B2 and
+      // repoint the profile's avatarMediaId. Fall back to legacy base64 only
+      // if B2 is unavailable (e.g. migration in progress / storage disabled).
+      if (pendingAvatarFile) {
+        try {
+          const { mediaId } = await uploadAvatar(pendingAvatarFile);
+          body.avatarMediaId = mediaId;
+        } catch (uploadErr) {
+          const reader = new FileReader();
+          const base64 = await new Promise<string>((resolve) => {
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : "");
+            reader.readAsDataURL(pendingAvatarFile);
+          });
+          if (!base64.startsWith("data:image/")) {
+            throw uploadErr;
+          }
+          body.avatar = base64;
+        }
+        setPendingAvatarFile(null);
+      } else if (avatar.startsWith("data:image/") || avatar.startsWith("http")) {
+        // Legacy avatar: a freshly pasted data-URI or external URL — send as-is.
+        // B2 signed URLs (current avatar without an edit) are ignored so the
+        // existing avatarMediaId is preserved.
+        if (avatar.startsWith("data:image/") || !avatar.includes("X-Amz-Signature")) {
+          body.avatar = avatar;
+        }
+      }
+
       const response = await fetch(apiUrl("/profile"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          displayName: cleanText(displayName, 120),
-          username: cleanText(username, 50).trim().toLowerCase(),
-          avatar: avatar.startsWith("data:image/") ? avatar : cleanText(avatar, 1500),
-        }),
+        body: JSON.stringify(body),
       });
       const json = await response.json();
       if (json.success && json.data) {
         setUser(json.data);
+        setAvatar(json.data.avatar || "");
         setSuccess("Profile settings updated successfully.");
       } else {
         setError(json.error || "Failed to update profile.");
@@ -533,7 +564,7 @@ export default function SettingsPage() {
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="relative flex-grow">
                       <Image className="absolute left-3.5 top-3.5 w-4 h-4 text-muted" aria-hidden="true" />
-                      <input type="text" value={avatar.startsWith("data:image/") ? "[Uploaded Base64 Image]" : avatar} onChange={(e) => { if (!e.target.value.startsWith("[Uploaded")) setAvatar(e.target.value); }} placeholder="https://example.com/avatar.jpg" className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition text-xs font-mono" />
+                      <input type="text" value={avatar.startsWith("data:image/") || pendingAvatarFile ? "[Uploaded Image]" : avatar} onChange={(e) => { if (!e.target.value.startsWith("[Uploaded")) { setAvatar(e.target.value); setPendingAvatarFile(null); } }} placeholder="https://example.com/avatar.jpg" className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition text-xs font-mono" />
                     </div>
                     <label className="py-2 px-4 bg-surface-elevated hover:bg-surface border border-border/80 text-text text-xs rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none">
                       <Upload className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
@@ -541,10 +572,10 @@ export default function SettingsPage() {
                       <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                     </label>
                   </div>
-                  {avatar.startsWith("data:image/") && (
+                  {(avatar.startsWith("data:image/") || pendingAvatarFile) && (
                     <div className="mt-2 flex items-center gap-3">
                       <img src={avatar} alt="Profile preview" className="w-12 h-12 rounded-full object-cover border border-primary shadow" />
-                      <button type="button" onClick={() => setAvatar("")} className="text-[10px] text-primary hover:underline font-semibold">Remove uploaded image</button>
+                      <button type="button" onClick={() => { setAvatar(user?.avatar || ""); setPendingAvatarFile(null); }} className="text-[10px] text-primary hover:underline font-semibold">Remove uploaded image</button>
                     </div>
                   )}
                 </div>

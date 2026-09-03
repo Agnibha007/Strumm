@@ -8,6 +8,7 @@ from app.models.schemas import SongSchema, UserSettingsSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
 from app.services.normalizer import canonical_artist, normalize_artist, classify_genre
 from app.services.email_service import send_account_deleted_email
+from app.services.avatar import decorate_user_avatar
 from pydantic import BaseModel
 import asyncio
 import logging
@@ -16,6 +17,40 @@ import re
 import traceback as _traceback
 logger = logging.getLogger("strumm-user")
 router = APIRouter(tags=["user"])
+
+
+async def _get_owned_avatar_media(database, media_id_str, owner_id):
+    """Return a ready, undeleted *avatar* media record owned by ``owner_id``."""
+    if not ObjectId.is_valid(str(media_id_str)):
+        return None
+    try:
+        return await database[db.MEDIA].find_one({
+            "_id": ObjectId(str(media_id_str)),
+            "ownerId": owner_id,
+            "category": "avatar",
+            "status": "ready",
+            "deletedAt": None,
+        })
+    except Exception:
+        return None
+
+
+async def _soft_delete_avatar_media(database, media_id_str):
+    """Soft-delete a (now-displaced) B2 avatar record + remove its B2 object."""
+    if not ObjectId.is_valid(str(media_id_str)):
+        return
+    record = await database[db.MEDIA].find_one({"_id": ObjectId(str(media_id_str))})
+    if not record:
+        return
+    from app.services import storage as _storage
+    try:
+        _storage.delete_object(record["objectKey"])
+    except _storage.StorageError:
+        logger.warning(f"failed to delete displaced avatar object key={record['objectKey']!r}")
+    await database[db.MEDIA].update_one(
+        {"_id": record["_id"]},
+        {"$set": {"status": "deleted", "deletedAt": datetime.utcnow(), "updatedAt": datetime.utcnow()}},
+    )
 
 # Helper to calculate sound DNA
 def calculate_sound_dna(histories: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -372,6 +407,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             "topArtists": stats["topArtists"],
             "topSongs": stats["topSongs"]
         }
+        await decorate_user_avatar(user_data)
         return {
             "success": True,
             "data": user_data
@@ -391,6 +427,7 @@ async def update_profile(
     displayName: Optional[str] = Body(None),
     username: Optional[str] = Body(None),
     avatar: Optional[str] = Body(None),
+    avatarMediaId: Optional[str] = Body(None),
     theme: Optional[str] = Body(None),
     settings: Optional[UserSettingsSchema] = Body(None),
     current_user: dict = Depends(get_current_user)
@@ -417,10 +454,23 @@ async def update_profile(
             if not cleaned_display_name:
                 return {"success": False, "error": "Display name cannot be empty."}
             update_data["displayName"] = cleaned_display_name
-        if avatar is not None:
+        old_avatar_media_id = current_user.get("avatarMediaId")
+        if avatarMediaId is not None:
+            # B2-backed avatar: the new object must already be confirmed by the
+            # frontend (POST /media/confirm) before we repoint the reference.
+            new_media = await _get_owned_avatar_media(database, avatarMediaId, current_user["id"])
+            if new_media is None:
+                return {"success": False, "error": "Avatar media was not found or is not ready."}
+            update_data["avatarMediaId"] = avatarMediaId
+            # Drop the legacy base64 so we don't store both; the media record is
+            # now the source of truth.
+            update_data["avatar"] = ""
+        elif avatar is not None:
             is_data_uri = avatar.startswith("data:image/")
             max_len = 2_500_000 if is_data_uri else 1500
             update_data["avatar"] = sanitize_text(avatar, max_length=max_len)
+            # A legacy base64 upload clears any previous B2 reference.
+            update_data["avatarMediaId"] = ""
         if theme is not None:
             update_data["theme"] = sanitize_text(theme, max_length=80)
             
@@ -442,6 +492,12 @@ async def update_profile(
         del user["_id"]
         if "createdAt" in user:
             user["createdAt"] = user["createdAt"].isoformat()
+        await decorate_user_avatar(user)
+
+        # If we swapped in a new B2 avatar, the old B2 avatar can now be
+        # cleaned up (new one is confirmed & referenced at this point).
+        if old_avatar_media_id and old_avatar_media_id != update_data.get("avatarMediaId"):
+            await _soft_delete_avatar_media(database, old_avatar_media_id)
 
         return {
             "success": True,
@@ -1392,13 +1448,14 @@ async def search_users(
         regex_query = escaped_regex(cleaned_query)
         user_cursor = database[db.USERS].find(
             {"displayName": regex_query, "settings.privacy": "public"},
-            {"displayName": 1, "username": 1, "avatar": 1, "theme": 1},
+            {"displayName": 1, "username": 1, "avatar": 1, "avatarMediaId": 1, "theme": 1},
         ).limit(limit)
 
         users = []
         async for u in user_cursor:
+            await decorate_user_avatar(u)
             users.append({
-                "id": str(u["_id"]),
+                "id": str(u.get("_id")),
                 "displayName": u.get("displayName"),
                 "username": u.get("username"),
                 "avatar": u.get("avatar"),
@@ -1464,6 +1521,7 @@ async def get_public_profile(username: str):
             "username": user["username"],
             "displayName": user["displayName"],
             "avatar": user.get("avatar"),
+            "avatarMediaId": user.get("avatarMediaId"),
             "theme": user.get("theme", "Obsidian"),
             "soundDNA": stats["soundDNA"],
             "totalMinutes": stats["totalMinutes"],
@@ -1472,6 +1530,7 @@ async def get_public_profile(username: str):
             "memories": memories,
             "createdAt": user["createdAt"].isoformat() if "createdAt" in user else None
         }
+        await decorate_user_avatar(public_data)
         
         return {"success": True, "data": public_data}
     except Exception as e:
@@ -1534,6 +1593,7 @@ async def get_users_public_profile(username: str):
             "username": user["username"],
             "displayName": user["displayName"],
             "avatar": user.get("avatar"),
+            "avatarMediaId": user.get("avatarMediaId"),
             "bio": user.get("bio", ""),
             "passport": {
                 "createdAt": user["createdAt"].isoformat() if "createdAt" in user else None,
@@ -1550,6 +1610,7 @@ async def get_users_public_profile(username: str):
             "publicPlaylists": playlists,
             "memories": memories
         }
+        await decorate_user_avatar(public_data)
         
         return {"success": True, "data": public_data}
     except Exception as e:

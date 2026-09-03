@@ -13,6 +13,7 @@ from bson import ObjectId
 from datetime import datetime
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
+from app.services.avatar import decorate_user_avatar
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, is_valid_youtube_id, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from app.services.cache import cache_search, get_cached_search
@@ -137,17 +138,17 @@ async def get_playlists(
             if collab_ids:
                 collab_users = await database[db.USERS].find(
                     {"_id": {"$in": [parse_object_id(cid) for cid in collab_ids if ObjectId.is_valid(cid)]}},
-                    {"displayName": 1, "username": 1, "avatar": 1}
+                    {"displayName": 1, "username": 1, "avatar": 1, "avatarMediaId": 1}
                 ).to_list(length=50)
-                doc["collaborators_profiles"] = [
-                    {
+                doc["collaborators_profiles"] = []
+                for u in collab_users:
+                    await decorate_user_avatar(u)
+                    doc["collaborators_profiles"].append({
                         "id": str(u["_id"]),
                         "displayName": u.get("displayName"),
                         "username": u.get("username"),
                         "avatar": u.get("avatar")
-                    }
-                    for u in collab_users
-                ]
+                    })
             else:
                 doc["collaborators_profiles"] = []
 
@@ -189,17 +190,17 @@ async def get_playlist(
         if collab_ids:
             collab_users = await database[db.USERS].find(
                 {"_id": {"$in": [parse_object_id(cid) for cid in collab_ids if ObjectId.is_valid(cid)]}},
-                {"displayName": 1, "username": 1, "avatar": 1}
+                {"displayName": 1, "username": 1, "avatar": 1, "avatarMediaId": 1}
             ).to_list(length=50)
-            playlist["collaborators_profiles"] = [
-                {
+            playlist["collaborators_profiles"] = []
+            for u in collab_users:
+                await decorate_user_avatar(u)
+                playlist["collaborators_profiles"].append({
                     "id": str(u["_id"]),
                     "displayName": u.get("displayName"),
                     "username": u.get("username"),
                     "avatar": u.get("avatar")
-                }
-                for u in collab_users
-            ]
+                })
         else:
             playlist["collaborators_profiles"] = []
 

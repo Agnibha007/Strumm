@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import mongodb as db
-from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback
+from app.routes import auth, stream, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 from app.services.normalizer import clean_song_text_fields
@@ -169,6 +169,9 @@ async def _create_indexes(database):
         ("feedback.status", lambda: database["feedback"].create_index("status")),
         ("podcastprogress.compound", lambda: database[db.PODCAST_PROGRESS].create_index([("userId", 1), ("episodeId", 1)], unique=True)),
         ("podcastprogress.userId", lambda: database[db.PODCAST_PROGRESS].create_index("userId")),
+        # Object-storage (B2) media records
+        ("media.ownerId_category", lambda: database[db.MEDIA].create_index([("ownerId", 1), ("category", 1)])),
+        ("media.objectKey", lambda: database[db.MEDIA].create_index([("objectKey", 1), ("deletedAt", 1)], unique=True, sparse=True)),
     ]
 
     created = 0
@@ -456,6 +459,7 @@ app.include_router(social.router)
 app.include_router(statistics.router)
 app.include_router(collaboration.router)
 app.include_router(feedback.router)
+app.include_router(media.router)
 
 # WebSocket realtime router (global connection at /ws)
 app.include_router(realtime_router)

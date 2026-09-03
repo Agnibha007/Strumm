@@ -7,6 +7,7 @@ from app.routes.dependencies import get_current_user
 from app.models.schemas import SongSchema
 from app.services.security import parse_object_id, sanitize_text
 from app.services.auth_utils import decode_access_token
+from app.services.avatar import decorate_user_avatar, resolve_avatar_url
 from app.services.realtime.connection_manager import manager as realtime_manager
 from app.services.realtime.events import (
     ROOM_CREATED,
@@ -256,6 +257,7 @@ async def send_friend_request(userId: str, current_user: dict = Depends(get_curr
     database = db.get_db()
     my_id = current_user["id"]
     target_id = userId
+    await decorate_user_avatar(current_user)
     
     if my_id == target_id:
         raise HTTPException(status_code=400, detail="You cannot invite yourself into your Circle.")
@@ -318,6 +320,7 @@ async def accept_friend_request(requestId: str, current_user: dict = Depends(get
     database = db.get_db()
     my_id = current_user["id"]
     oid = parse_object_id(requestId)
+    await decorate_user_avatar(current_user)
     
     connection = await database[db.CONNECTIONS].find_one({"_id": oid})
     if not connection:
@@ -392,6 +395,7 @@ async def get_friend_requests(current_user: dict = Depends(get_current_user)):
     for doc in request_docs:
         sender = senders_map.get(doc["requesterId"])
         if sender:
+            await decorate_user_avatar(sender)
             doc["sender"] = {
                 "id": str(sender["_id"]),
                 "displayName": sender.get("displayName"),
@@ -474,6 +478,7 @@ async def get_circle(current_user: dict = Depends(get_current_user)):
         # Get precomputed taste match score
         taste_match_score = taste_scores.get(friend_id, 50)
         
+        await decorate_user_avatar(f_user)
         friends.append({
             "id": friend_id,
             "displayName": f_user.get("displayName"),
@@ -846,6 +851,7 @@ async def get_room(roomId: str, current_user: dict = Depends(get_current_user)):
     for mid in member_ids:
         m_user = profiles_by_id.get(mid)
         if m_user:
+            await decorate_user_avatar(m_user)
             members_profiles.append({
                 "id": mid,
                 "displayName": m_user.get("displayName", "Someone"),
@@ -886,6 +892,7 @@ async def delete_room(roomId: str, current_user: dict = Depends(get_current_user
 async def generate_blend(targetUserId: str, current_user: dict = Depends(get_current_user)):
     database = db.get_db()
     my_id = current_user["id"]
+    await decorate_user_avatar(current_user)
     
     target_user = await database[db.USERS].find_one({"_id": parse_object_id(targetUserId)})
     if not target_user:
@@ -1105,6 +1112,7 @@ async def send_direct_message(
     database = db.get_db()
     my_id = current_user["id"]
     receiver_id = payload.receiverId
+    await decorate_user_avatar(current_user)
     
     my_id_oid = parse_object_id(my_id)
     receiver_id_oid = parse_object_id(receiver_id)
@@ -1229,6 +1237,7 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
     join_data = {"userId": userId}
     user_doc = await _fetch_user_doc(database, userId)
     if user_doc:
+        await decorate_user_avatar(user_doc)
         join_data["displayName"] = user_doc.get("displayName", "Someone")
         join_data["avatar"] = user_doc.get("avatar")
     else:
@@ -1461,6 +1470,7 @@ async def get_all_circle_data(current_user: dict = Depends(get_current_user)):
         if not f_user:
             continue
             
+        await decorate_user_avatar(f_user)
         last_active = f_user.get("lastActive")
         is_online = False
         if last_active:
@@ -1492,6 +1502,7 @@ async def get_all_circle_data(current_user: dict = Depends(get_current_user)):
     for doc in requests:
         sender = users_map.get(doc["requesterId"])
         if sender:
+            await decorate_user_avatar(sender)
             doc["sender"] = {
                 "id": str(sender["_id"]),
                 "displayName": sender.get("displayName"),

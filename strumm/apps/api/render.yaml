@@ -33,3 +33,14 @@ services:
         sync: false
       - key: DNS_NAMESERVERS
         value: 1.1.1.1,8.8.8.8
+      # Backblaze B2 object storage (private bucket)
+      - key: B2_ENDPOINT
+        value: https://s3.eu-central-003.backblazeb2.com
+      - key: B2_REGION
+        value: eu-central-003
+      - key: B2_BUCKET_NAME
+        value: strumm-media-prod
+      - key: B2_KEY_ID
+        sync: false
+      - key: B2_APPLICATION_KEY
+        sync: false

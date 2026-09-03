@@ -107,6 +107,11 @@ Indexes are created automatically on startup via `_create_indexes()` in `main.py
 | `EXPOSE_DEV_OTP`        | Optional  | Expose OTP in dev responses for testing        |
 | `DNS_NAMESERVERS`       | Optional  | Custom DNS resolvers (default: `1.1.1.1,8.8.8.8`) |
 | `MIGRATION_JSON_DIR`    | Optional  | Path to legacy data JSON files for migration   |
+| `B2_ENDPOINT`           | Optional  | Backblaze B2 S3 endpoint (`https://s3.eu-central-003.backblazeb2.com`) |
+| `B2_REGION`             | Optional  | Backblaze B2 region (`eu-central-003`)          |
+| `B2_BUCKET_NAME`        | Optional  | Backblaze B2 bucket (e.g. `strumm-media-prod`)  |
+| `B2_KEY_ID`             | Optional  | Backblaze application key ID (secret)           |
+| `B2_APPLICATION_KEY`    | Optional  | Backblaze application key secret (secret)       |
 
 ### 4.2 Frontend (`apps/web/`)
 
@@ -144,6 +149,70 @@ All collection name constants are defined in `apps/api/app/database/mongodb.py`.
 | `lyrics_cache`          | Cached lyrics data (TTL-managed in-app)              |
 | `songMemories`          | User song memories/notes                             |
 | `follows`               | Content follows (artists, playlists)                 |
+| `media`                 | Object-storage (B2) records — object key, owner, status |
+
+### 5.1 Object Storage — Backblaze B2
+
+Strumm stores user-uploaded media in a **private** Backblaze B2 bucket using the
+**S3-compatible** API (MinIO client). The backend never exposes the B2
+application key to the frontend — it only issues short-lived **presigned**
+URLs.
+
+**Service:** `apps/api/app/services/storage.py` — the only module that knows
+about B2/S3. It exposes:
+
+- `create_upload_url(...)` → presigned PUT URL + object key (direct upload)
+- `create_download_url(...)` → presigned GET URL (private download/playback)
+- `delete_object(object_key)` → authorized delete (respects versioning)
+- `object_exists(object_key)` → existence check
+
+**Routes:** `apps/api/app/routes/media.py`
+
+| Endpoint               | Method | Auth | Purpose                                          |
+|------------------------|--------|------|--------------------------------------------------|
+| `/media/upload-url`    | POST   | ✅   | Validate + issue presigned PUT URL, persist record |
+| `/media/confirm`       | POST   | ✅   | Mark a just-uploaded record as `ready`           |
+| `/media/download-url`  | GET    | ✅   | Authorize ownership + issue short-lived GET URL  |
+| `/media/`              | DELETE | ✅   | Authorize + delete an owned object               |
+
+**Object-key structure** (sanitized, collision-resistant unique segment):
+
+```
+users/{ownerId}/avatar/{uuid}-{filename}      # avatars
+media/{ownerId}/{mediaId}/{uuid}-{filename}   # images / general media
+audio/{ownerId}/{mediaId}/{uuid}-{filename}   # audio
+```
+
+**B2 bucket configuration** (must be set manually in the Backblaze dashboard):
+
+1. Bucket is **private** (`strumm-media-prod`), encryption SSE-B2, versioning
+   "Keep all versions". The backend soft-deletes (`deletedAt`) while the bucket
+   retains version history.
+2. Create an **application key** with access limited to this bucket (not a
+   master key). Set `B2_KEY_ID` / `B2_APPLICATION_KEY` server-side only.
+3. **CORS** on the bucket (S3-compatible) so browsers can upload directly and
+   fetch private media. In the Backblaze dashboard, set the bucket CORS rules to:
+
+```json
+[
+  {
+    "corsRuleName": "StrummWeb",
+    "allowedOrigins": [
+      "https://strumm.me",
+      "https://www.strumm.me",
+      "http://localhost:3000",
+      "http://localhost:5173"
+    ],
+    "allowedHeaders": ["*"],
+    "allowedMethods": ["GET", "HEAD", "PUT"],
+    "exposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]
+```
+
+Presigned GET URLs honor HTTP Range requests, so video/audio playback works
+directly from the bucket without proxying bytes through the backend.
 
 ---
 

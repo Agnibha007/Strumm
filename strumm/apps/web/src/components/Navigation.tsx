@@ -21,10 +21,12 @@ import {
 } from "lucide-react";
 import BrandLogo from "web/components/BrandLogo";
 import MobileBottomNav from "web/components/MobileBottomNav";
+import { useUserAvatar } from "web/lib/useUserAvatar";
 
 export default function Navigation() {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const avatarUrl = useUserAvatar(user);
 
   const navItems = [
     { label: "Home", href: "/", icon: Home },
@@ -96,9 +98,9 @@ export default function Navigation() {
       {user && (
         <div className="p-4 border-t border-border/40 bg-surface/30 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            {user.avatar ? (
+            {avatarUrl ? (
               <img
-                src={user.avatar}
+                src={avatarUrl}
                 alt={user.displayName}
                 loading="lazy"
                 decoding="async"
