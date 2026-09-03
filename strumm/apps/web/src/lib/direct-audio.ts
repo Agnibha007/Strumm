@@ -62,11 +62,12 @@ function cacheNoDirectAudio(videoId: string) {
 /**
  * Resolve a direct audio URL for background / lock-screen playback.
  *
- * The URL is resolved from the BROWSER first: it queries public Piped
- * instances (`/streams/{id}`), which serve a playable MP4/audio URL with open
- * CORS — no server round-trip and unaffected by the API host's egress IP
- * being blocked by YouTube. Only if every browser-side path fails do we fall
- * back to the server's `/play/{id}`.
+ * The URL is resolved through the backend proxy first — the Strumm backend
+ * resolves it via its yt-dlp / Piped fallback chain (same-origin `/proxy`,
+ * no CORS, unaffected by which public Piped instances are up). Only if that
+ * yields nothing do we fall back to the server's `/play/{id}` route (which
+ * uses the same backend resolver). No large media bytes are proxied — this is
+ * a metadata/URL resolution only.
  *
  * The result is memoized client-side for 45 minutes. Concurrent calls for the
  * same video share one request (in-flight dedupe). Returns null when the track
@@ -111,7 +112,7 @@ async function resolveAudio(videoId: string): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Browser-side Piped audio extraction
+// Backend-proxy audio extraction
 // ---------------------------------------------------------------------------
 
 function isPlayableUrl(u: string | undefined): u is string {

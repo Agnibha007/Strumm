@@ -1,11 +1,10 @@
 /**
- * Search API route — resolves searches via keyless public Piped instances only.
+ * Search API route — resolves searches via the Strumm backend proxy.
  *
- * Requests to YouTube are never made from this server. The route and the
- * browser-side ``searchYouTube`` client both talk to Piped (a privacy-facing
- * YouTube proxy), which performs the YouTube request itself. The route exists
- * as a same-origin fallback so the browser never has to hold the Piped
- * instance list / CORS concern on its own.
+ * Present as a same-origin fallback for the browser search client. Both the
+ * route and the browser client go through the Strumm backend (`/proxy/yt/*`),
+ * which handles YouTube Music / Piped / yt-dlp fallbacks server-side, so the
+ * browser never calls public Piped instances directly.
  */
 
 import { NextRequest, NextResponse } from "next/server";

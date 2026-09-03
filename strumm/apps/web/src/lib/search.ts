@@ -1,14 +1,11 @@
 /**
- * Search API client — resolves searches from the BROWSER via keyless public
- * Piped instances (no server egress to YouTube, no CORS issues), with a
- * same-origin /api/search fallback that is itself Piped-only.
+ * Search API client — resolves searches through the Strumm backend proxy
+ * (same-origin `/proxy/yt/*`), which handles YouTube Music / Piped / yt-dlp
+ * fallbacks server-side. The browser never calls public Piped instances or
+ * YouTube directly.
  *
- * Primary path:  browser → Piped public instance (direct, open CORS)
- * Fallback path: browser → /api/search (Next.js, Piped-only)
- *
- * Requests to YouTube are never made from this app's servers — the browser
- * talks to Piped (a privacy-facing YouTube proxy) which performs the YouTube
- * request for it.
+ * Primary path:  browser → /proxy/yt/search (FastAPI → YouTube Music)
+ * Fallback path: browser → /api/search (Next.js, same backend proxy)
  */
 
 import { invidiousProvider } from "web/services/search";

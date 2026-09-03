@@ -1,21 +1,10 @@
 /**
- * BrowserYouTubeMusicResolver — resolves importer search candidates from the
- * user's BROWSER using keyless public Piped instances (no API key / quota).
+ * BrowserYouTubeMusicResolver — resolves importer search candidates through the
+ * Strumm backend proxy (same-origin `/proxy/yt/*`). YouTube Music / Piped /
+ * yt-dlp fallbacks run SERVER-SIDE; the browser never calls public Piped
+ * instances or YouTube directly.
  *
- * Why not youtubei.js' InnerTube?
- * -------------------------------
- * Originally this resolved via youtubei.js' InnerTube client in YT Music mode
- * running in the browser. youtubei.js however always initializes through two
- * cross-origin requests — ``www.youtube.com/youtubei/v1/config`` and
- * ``www.youtube.com/iframe_api`` — and YouTube no longer sends the CORS
- * headers third-party origins need (the config endpoint returns 403 with no
- * ``Access-Control-Allow-Origin``, and ``/iframe_api`` returns 200 without
- * one), so the InnerTube session can never initialize from an app origin.
- * Piped instances answer every origin (``access-control-allow-origin: *``)
- * and perform the YouTube request themselves, so they work in the browser on
- * any network and never need a key.
- *
- * This uses the exact same provider as the web search box
+ * This uses the exact same provider surface as the web search box
  * (``invidiousProvider``) and emits the same candidate contract as the backend
  * importer's raw provider output, so the Python ``_rank_candidates`` /
  * ``_build_song_item`` matcher consumes it unchanged.

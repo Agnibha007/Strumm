@@ -52,16 +52,44 @@ YT_DATA_TIMEOUT = (3.0, 8.0)
 # Public Piped instance API roots, tried in order. Piped is keyless — no API
 # key, no per-app quota — and the instance performs the YouTube request, so
 # these stay reachable from cloud IPs that Google's CDN blocks directly.
-# The same list powers the web app's Piped search provider. Kept in sync with
-# `strumm/apps/web/src/services/search/InvidiousProvider.ts` (2026-09):
-# instances that no longer serve the Piped API (`pipedapi.adminforge.de`,
-# `pipedapi.smnz.de`) were dropped; `api.piped.private.coffee` is verified
-# live. HTTP failures rotate to the next instance automatically.
-PIPED_INSTANCES = [
+#
+# The list is CONFIGURABLE at runtime via the ``PIPED_INSTANCES`` env var
+# (comma-separated URLs). When unset it defaults to the maintained list below,
+# which mirrors the web app's former Piped search provider seed (2026-09):
+# `api.piped.private.coffee` is verified live. HTTP failures rotate to the next
+# instance automatically, so an instance that is added later (or removed) can
+# be flipped via env without a code deploy.
+PIPED_DEFAULT_INSTANCES = [
     "https://api.piped.private.coffee",
     "https://pipedapi.kavin.rocks",
     "https://pipedapi.r4fo.com",
 ]
+
+
+def _load_piped_instances() -> list[str]:
+    """Read the configured Piped instance roots, validating each entry.
+
+    Values may be comma-separated in the ``PIPED_INSTANCES`` env var. Entries
+    are stripped of trailing slashes; blank entries are dropped. On any parsing
+    problem the default list is used so a broken env value can never leave the
+    provider with zero instances.
+    """
+    raw = (os.getenv("PIPED_INSTANCES") or "").strip()
+    if not raw:
+        return list(PIPED_DEFAULT_INSTANCES)
+    entries = [
+        p.strip().rstrip("/") for p in raw.split(",") if p.strip() and p.strip().rstrip("/")
+    ]
+    if not entries or not all(e.startswith("http") for e in entries):
+        logger.warning(
+            "PIPED_INSTANCES env var is empty or invalid; using default instances."
+        )
+        return list(PIPED_DEFAULT_INSTANCES)
+    return entries
+
+
+PIPED_INSTANCES = _load_piped_instances()
+
 PIPED_TIMEOUT = (3.0, 8.0)
 
 # UTC offset guard: Data API /search returns no duration. Flip to True to also
