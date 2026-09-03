@@ -111,8 +111,10 @@ self.addEventListener("fetch", (event) => {
           // Non-HTML subresource failed and isn't cached (e.g. a route prefetch
           // or an uncached asset). Return an empty success instead of a 503 so
           // the console isn't spammed with "503 (Offline)" for an optional
-          // asset; a fetch of this shape is never critical to render.
-          return new Response("", { status: 204, statusText: "No Content" });
+          // asset; a fetch of this shape is never critical to render. A 2xx
+          // "no content" status must NOT carry a body (spec throws if we pass
+          // one), so pass null.
+          return new Response(null, { status: 204, statusText: "No Content" });
         });
     }),
   );

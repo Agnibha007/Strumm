@@ -356,18 +356,13 @@ interface PipedSearchResponse {
 }
 
 interface PipedPlaylistDetail {
-  videos: Array<{
-    url: string;
-    title: string;
-    thumbnail: string;
-    uploaderName: string;
-    uploaderUrl: string;
-    uploadedDate: string;
-    duration: number;
-    views: number;
-    uploaderVerified: boolean;
-  }>;
+  name?: string;
+  // NOTE: Piped's `/playlists/{id}` places the actual tracks in
+  // `relatedStreams` (same shape as a channel's uploads); `videos` is merely
+  // an integer COUNT of videos, never an array of items.
+  relatedStreams?: Array<PipedStreamItem>;
   nextpage?: string;
+  videos?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -472,25 +467,51 @@ export const invidiousProvider: SearchProvider = {
   },
 
   async getPlaylistItems(playlistId: string): Promise<SongResult[]> {
-    const data = await fetchPiped<PipedPlaylistDetail>(
-      `/playlists/${encodeURIComponent(playlistId)}`,
-      10_000,
-    );
+    const items: SongResult[] = [];
+    const encoded = encodeURIComponent(playlistId);
 
-    if (!data || !Array.isArray(data.videos)) return [];
+    // Piped paginates playlists: the first call returns `relatedStreams`
+    // (the tracks) plus a `nextpage` token; follow-up call goes to the
+    // `/nextpage/playlists/{id}` endpoint with that token. Walk the pages
+    // until `nextpage` is absent, a non-playlist token appears, or we cap.
+    let nextpage: string | undefined;
+    let guard = 0;
+    do {
+      const path = nextpage
+        ? `/nextpage/playlists/${encoded}?nextpage=${encodeURIComponent(nextpage)}`
+        : `/playlists/${encoded}`;
+      const data = await fetchPiped<PipedPlaylistDetail>(path, 10_000);
+      if (!data) break;
 
-    return data.videos
-      .map((v) => {
-        const videoId = extractVideoId(v.url);
-        if (!videoId) return null;
-        return normalizeSong(
-          videoId,
-          decodeHtml(v.title) ?? "Untitled",
-          decodeHtml(v.uploaderName) ?? "Unknown Artist",
-          v.thumbnail,
-          v.duration ?? 0,
-        );
-      })
-      .filter(Boolean) as SongResult[];
+      const batch = (data.relatedStreams || [])
+        .map((v) => {
+          const videoId = extractVideoId(v.url);
+          if (!videoId) return null;
+          return normalizeSong(
+            videoId,
+            decodeHtml(v.title) ?? "Untitled",
+            decodeHtml(v.uploaderName) ?? "Unknown Artist",
+            v.thumbnail,
+            v.duration ?? 0,
+          );
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null)
+        .map((s) => ({
+          videoId: s.videoId,
+          title: s.title,
+          artist: s.artist,
+          thumbnail: s.thumbnail,
+          duration: s.duration,
+        }));
+      items.push(...batch);
+
+      nextpage = data.nextpage;
+      // Cap defensively: a well-formed playlist terminates when nextpage runs
+      // out; this guard prevents pathological infinite loops from a malformed
+      // instance response whose nextpage never advances.
+      guard++;
+    } while (nextpage && guard < 50);
+
+    return items;
   },
 };
