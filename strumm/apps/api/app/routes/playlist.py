@@ -590,12 +590,12 @@ class ImportContext:
     source: str = ""
     import_name: str = ""
     # When True, the import must NEVER egress to YouTube Music (ytmusicapi /
-    # youtubei.js) from this server: the server's egress IP is YouTube-blocked.
-    # Browser-supplied (Piped) candidates are the primary path; when those are
-    # absent, yt-dlp (a different egress) is used instead of ytmusicapi.
-    # Defaults to False so the provider-agnostic search/match machinery keeps its
-    # published contract; the real import flows flip it ON explicitly at the
-    # endpoint boundary (see import_playlist / import_playlist_from).
+    # youtubei.js) from this server for per-track SEARCH matching. The browser
+    # (Piped) is the sole YouTube search path; the server falls back to
+    # ``ytfallback.search_fallback`` instead. Defaults to False so the
+    # provider-agnostic search machinery keeps its published contract; the
+    # import endpoints flip it ON so per-track matching never hits the
+    # YouTube-blocked ytmusic search directly.
     forbid_ytmusic: bool = False
     # Authenticated user who owns this import. Stage-2 local-library matching
     # is scoped to this id so one user's import can never harvest other users'
@@ -1571,11 +1571,18 @@ async def import_playlist(
             parsed_rows = await extract_spotify_playlist(import_data)
 
         elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-            # Browser-only policy: YouTube track extraction must happen in the
-            # browser (Piped). Do NOT egress to YouTube Music from this server
-            # (its IP is YouTube-blocked). Yield nothing; the line-by-line
-            # parser below may still recover metadata-only rows.
-            parsed_rows = []
+            # The browser (Piped) is the primary path and normally supplies the
+            # tracks via /import/resolve. When the browser couldn't (Piped
+            # bot-blocked / unreachable), fall back to the server's ytmusicapi
+            # extractor — whose session is routed through a residential egress
+            # proxy (ZENROWS_PROXY_URL) so it can reach YouTube where the
+            # browser Piped instance can't. If ytmusic is also unreachable this
+            # raises YTMusicImportUnavailable and we fall through to the
+            # line-by-line parser / a clear error (never a silent false miss).
+            try:
+                parsed_rows = await extract_ytmusic_playlist(import_data)
+            except YTMusicImportUnavailable:
+                parsed_rows = []
 
         if not parsed_rows and source in ["spotify", "youtube"]:
             for line in import_data.split("\n"):
@@ -1648,11 +1655,15 @@ async def _parse_import_rows(source: str, import_data: str) -> dict:
     elif source == "spotify" or "spotify.com" in import_data:
         parsed_rows = await extract_spotify_playlist(import_data)
     elif source == "youtube" or "youtube.com" in import_data or "youtu.be" in import_data:
-        # Browser-only policy: YouTube extracts must come from the browser
-        # (Piped). The API server's egress IP is YouTube-blocked, so we never
-        # egress to YouTube Music (ytmusicapi) here. Yield no rows so the
-        # caller reports a clear "unreachable" rather than a silent failure.
-        parsed_rows = []
+        # The browser (Piped) is the primary path; when it couldn't resolve the
+        # playlist, fall back to the server's ytmusicapi extractor (routed
+        # through the residential egress proxy when ZENROWS_PROXY_URL is set).
+        # If ytmusic is also unreachable this yields no rows and the caller
+        # reports a clear "unreachable" rather than a silent failure.
+        try:
+            parsed_rows = await extract_ytmusic_playlist(import_data)
+        except YTMusicImportUnavailable:
+            parsed_rows = []
 
     if not parsed_rows and source in ["spotify", "youtube"]:
         for line in import_data.split("\n"):

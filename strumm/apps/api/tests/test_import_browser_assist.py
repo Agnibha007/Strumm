@@ -574,16 +574,15 @@ async def test_import_parse_spotify_url_returns_tracks(monkeypatch, client):
 
 
 @pytest.mark.asyncio
-async def test_import_parse_ytmusic_url_never_egresses(monkeypatch, client):
-    """Browser-only policy: YouTube URL parse must NEVER call the server-side
-    YouTube Music extractor (extract_ytmusic_playlist). The API's egress IP is
-    YouTube-blocked, so a bare YouTube URL (no line-by-line rows) yields an
-    empty parse instead of egressing to ytmusicapi."""
+async def test_import_parse_ytmusic_url_uses_server_extractor(monkeypatch, client):
+    """A bare YouTube playlist URL falls back to the server's ytmusicapi
+    extractor (routed through the residential egress proxy) when the browser
+    Piped path yielded nothing: parse returns the extracted tracks."""
     called = {"n": 0}
 
     async def fake_extract(url):
         called["n"] += 1
-        return [{"title": "Heer", "artist": "A R Rahman"}]
+        return [{"title": "Heer", "artist": "A R Rahman", "album": "", "duration": 353, "videoId": "dQw4w9WgXcQ"}]
 
     monkeypatch.setattr("app.routes.playlist.extract_ytmusic_playlist", fake_extract)
 
@@ -598,9 +597,12 @@ async def test_import_parse_ytmusic_url_never_egresses(monkeypatch, client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["success"] is False
-    assert body["tracks"] == []
-    assert called["n"] == 0  # the server extractor must never be invoked
+    assert body["success"] is True
+    assert body["tracks"] == [{
+        "title": "Heer", "artist": "A R Rahman", "album": "",
+        "duration": 353, "videoId": "dQw4w9WgXcQ",
+    }]
+    assert called["n"] == 1  # the server extractor IS the fallback for the URL
 
 
 @pytest.mark.asyncio
@@ -627,13 +629,17 @@ async def test_import_parse_track_order_and_duplicates_preserved(monkeypatch, cl
 async def test_import_parse_missing_metadata_rows_survive(monkeypatch, client):
     """Rows with incomplete metadata (no artist / no album / empty dict) are
     passed through untouched so the browser can still attempt resolution. For
-    YouTube input, the browser-only policy means parse never egresses to
-    ytmusicapi; only the line-by-line fallback (metadata-only) can yield rows."""
+    YouTube input without a playlist URL, the ytmusicapi extractor is invoked
+    but returns no rows (no ``list=``), so only the line-by-line fallback
+    (metadata-only) can yield rows."""
     called = {"n": 0}
 
     async def fake_extract(url):
         called["n"] += 1
-        return [{"title": "Heer", "artist": "A R Rahman"}]
+        # The real extractor returns [] early when the input carries no
+        # ``list=`` (not a playlist URL), so the line-by-line parser is what
+        # yields the metadata-only row below.
+        return []
 
     monkeypatch.setattr("app.routes.playlist.extract_ytmusic_playlist", fake_extract)
 
@@ -646,7 +652,7 @@ async def test_import_parse_missing_metadata_rows_survive(monkeypatch, client):
     body = response.json()
     assert body["success"] is True
     assert body["tracks"] == [{"title": "Only Title", "artist": "Some Singer", "album": ""}]
-    assert called["n"] == 0
+    assert called["n"] == 1  # extractor invoked (no list id -> returns []) then line-by-line
 
 
 @pytest.mark.asyncio
