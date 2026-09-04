@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { apiUrl } from "web/lib/api";
+import SongArtwork from "web/components/SongArtwork";
 import { Users, Sparkles, UserMinus, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
@@ -357,7 +358,7 @@ export default function CirclePage() {
                 </div>
                 {includeSong && (
                   <div className="p-2 bg-background/30 border border-border/20 rounded-lg flex items-center gap-2 min-w-0">
-                    <img src={currentSong.thumbnail} alt={currentSong.title} loading="lazy" decoding="async" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                    <SongArtwork song={currentSong} className="w-8 h-8 rounded flex-shrink-0" />
                     <div className="min-w-0 flex-1">
                       <span className="text-[10px] text-text font-semibold block truncate leading-snug">{currentSong.title}</span>
                       <span className="text-[9px] text-muted block truncate">{currentSong.artist}</span>
