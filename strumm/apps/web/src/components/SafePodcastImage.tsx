@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, type ImgHTMLAttributes } from "react";
+import { useEffect, useState, useRef, useCallback, type ImgHTMLAttributes } from "react";
 import { apiUrl } from "web/lib/api";
 import { preloadImage } from "web/lib/image-loader";
 
@@ -53,12 +53,12 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
     if (loaded && timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
   }, [loaded]);
 
-  const handleLoad = () => {
+  const handleLoad = useCallback(() => {
     setLoaded(true);
     setErrored(false);
-  };
+  }, []);
 
-  const handleError = () => {
+  const handleError = useCallback(() => {
     setLoaded(false);
     attemptsRef.current += 1;
 
@@ -69,7 +69,21 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
       // All attempts failed
       setErrored(true);
     }
-  };
+  }, [src]);
+
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const handleImgRef = useCallback((node: HTMLImageElement | null) => {
+    imgRef.current = node;
+  }, []);
+
+  // Cached-image guard: a URL already in the browser cache can finish loading
+  // (and fire onload) before React attaches onLoad, leaving opacity-0 forever.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      handleLoad();
+    }
+  }, [currentSrc, handleLoad]);
 
   return (
     <div className={`relative overflow-hidden bg-surface-elevated ${className || ""}`}>
@@ -84,6 +98,7 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
         </div>
       ) : (
         <img
+          ref={handleImgRef}
           src={currentSrc}
           alt={alt || "Podcast artwork"}
           loading="lazy"

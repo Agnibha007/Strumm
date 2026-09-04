@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates } from "web/lib/media";
@@ -73,21 +73,38 @@ export default function SongArtwork({
   }, [candidates, priority]);
 
   const src = candidates[index];
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
-  const handleLoad = () => {
+  const handleLoad = useCallback(() => {
     setLoaded(true);
     setErrored(false);
-  };
+  }, []);
 
-  const handleError = () => {
+  const handleError = useCallback(() => {
     setLoaded(false);
-    const nextIndex = index + 1;
-    if (nextIndex < candidates.length) {
-      setIndex(nextIndex);
-    } else {
+    if (index >= candidates.length - 1) {
       setErrored(true);
+    } else {
+      setIndex(index + 1);
     }
-  };
+  }, [index, candidates.length]);
+
+  // Cached-image guard: when a candidate URL is already in the browser cache
+  // the load can complete (and onload fire) before React attaches onLoad, so
+  // `loaded` never flips and the art stays invisible at opacity-0. Detecting
+  // img.complete && naturalWidth handles that case (and duplicate concurrent
+  // mounts of the same cached URL) immediately.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    if (img.complete && img.naturalWidth > 0) {
+      handleLoad();
+    }
+  }, [src, handleLoad]);
+
+  const handleImgRef = useCallback((node: HTMLImageElement | null) => {
+    imgRef.current = node;
+  }, []);
 
   return (
     <div className={`relative overflow-hidden bg-surface-elevated ${className}`}>
@@ -101,6 +118,7 @@ export default function SongArtwork({
         </div>
       ) : (
         <img
+          ref={handleImgRef}
           src={src}
           alt={alt || song?.title || "Artwork"}
           loading={priority ? "eager" : "lazy"}
