@@ -11,7 +11,28 @@ export function getSongVideoId(song?: Pick<Song, "videoId" | "thumbnail"> | null
   return song?.videoId || getYouTubeIdFromThumbnail(song?.thumbnail) || "";
 }
 
-const YT_IMAGE_HOSTS = ["i.ytimg.com", "img.youtube.com", "ytimg.com", "lh3.googleusercontent.com"];
+const YT_IMAGE_HOSTS = [
+  "i.ytimg.com",
+  "img.youtube.com",
+  "ytimg.com",
+  "lh3.googleusercontent.com",
+  "yt3.googleusercontent.com",
+  "yt3.ggpht.com",
+];
+
+// Channel-avatar hosts. A stored thumbnail on these is the uploader's profile
+// picture, not the track's artwork — never surface it as song art. Prefer the
+// videoId-generated ytimg thumbnails instead.
+const CHANNEL_AVATAR_HOSTS = ["yt3.googleusercontent.com", "yt3.ggpht.com"];
+
+function isChannelAvatarHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return CHANNEL_AVATAR_HOSTS.some((h) => host === h || host.endsWith("." + h));
+  } catch {
+    return false;
+  }
+}
 
 function isYouTubeImageHost(url: string): boolean {
   try {
@@ -63,7 +84,10 @@ export function getArtworkCandidates(
   // hosted thumbnails load directly from the browser — the server proxy is
   // YouTube-CDN-blocked — non-YouTube sources go through the optimizing
   // proxy), then speculative YouTube URLs serve as fallbacks.
-  if (songThumbnail) {
+  // Exception: a stored thumbnail on a channel-avatar host (yt3.googleusercontent
+  // /yt3.ggpht.com) is the uploader's profile picture, not the track's artwork —
+  // skip it so the videoId-generated ytimg thumbnails lead.
+  if (songThumbnail && !isChannelAvatarHost(songThumbnail)) {
     const first = getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160);
     candidates.push(first);
     // For non-YouTube hosts the proxy is the optimized form; for YouTube hosts
