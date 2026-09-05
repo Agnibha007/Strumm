@@ -49,48 +49,19 @@ YOUTUBE_API_KEY = (os.getenv("YOUTUBE_API_KEY") or "").strip()
 YT_API_SEARCH = "https://www.googleapis.com/youtube/v3/search"
 YT_DATA_TIMEOUT = (3.0, 8.0)
 
-# Public Piped instance API roots, tried in order. Piped is keyless — no API
-# key, no per-app quota — and the instance performs the YouTube request, so
-# these stay reachable from cloud IPs that Google's CDN blocks directly.
-#
-# The list is CONFIGURABLE at runtime via the ``PIPED_INSTANCES`` env var
-# (comma-separated URLs). When unset it defaults to the maintained list below,
-# which mirrors the web app's former Piped search provider seed (2026-09):
-# `api.piped.private.coffee` is verified live. HTTP failures rotate to the next
-# instance automatically, so an instance that is added later (or removed) can
-# be flipped via env without a code deploy.
-PIPED_DEFAULT_INSTANCES = [
-    "https://api.piped.private.coffee",
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi.r4fo.com",
-]
-
-
-def _load_piped_instances() -> list[str]:
-    """Read the configured Piped instance roots, validating each entry.
-
-    Values may be comma-separated in the ``PIPED_INSTANCES`` env var. Entries
-    are stripped of trailing slashes; blank entries are dropped. On any parsing
-    problem the default list is used so a broken env value can never leave the
-    provider with zero instances.
-    """
-    raw = (os.getenv("PIPED_INSTANCES") or "").strip()
-    if not raw:
-        return list(PIPED_DEFAULT_INSTANCES)
-    entries = [
-        p.strip().rstrip("/") for p in raw.split(",") if p.strip() and p.strip().rstrip("/")
-    ]
-    if not entries or not all(e.startswith("http") for e in entries):
-        logger.warning(
-            "PIPED_INSTANCES env var is empty or invalid; using default instances."
-        )
-        return list(PIPED_DEFAULT_INSTANCES)
-    return entries
-
-
-PIPED_INSTANCES = _load_piped_instances()
-
-PIPED_TIMEOUT = (3.0, 8.0)
+# Public Piped instance API roots with rotation / cooldown / success
+# preference, plus the shared fetch helpers, live in ``app.services.piped``.
+# Instance selection is CONFIGURABLE via ``PIPED_INSTANCES`` (comma-separated
+# URLs) and health (403/429/5xx/526/timeout) is tracked process-wide so a
+# known-bad instance is not hammered repeatedly. Re-exported here for
+# backward compatibility.
+from app.services.piped import (  # noqa: E402  (import after module docstring)
+    PIPED_INSTANCES,
+    PIPED_TIMEOUT,
+    _load_piped_instances,
+    piped_fetch_json_sync,
+    reset_health as piped_reset_health,
+)
 
 # UTC offset guard: Data API /search returns no duration. Flip to True to also
 # pass a duration if you add a /videos lookup. (Defaults off — cheap.)
@@ -296,56 +267,44 @@ def piped_search(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
     """
     Search YouTube via public Piped instances (keyless, no quota).
 
-    Instances are tried in order and the first one to return results wins.
-    Returns raw importer-shaped items; empty when every instance is
-    unreachable or returns nothing, so callers fall through gracefully.
+    Instances are selected by the shared provider (healthy-first, cooldown for
+    known-bad ones) and the first to return usable results wins. Returns raw
+    importer-shaped items; empty when every instance is unreachable or returns
+    nothing, so callers fall through gracefully.
     """
-    for base in PIPED_INSTANCES:
-        try:
-            resp = requests.get(
-                f"{base}/search",
-                params={"q": query, "filter": "videos"},
-                timeout=PIPED_TIMEOUT,
-            )
-            if resp.status_code != 200:
-                logger.warning(
-                    f"Piped {base} HTTP {resp.status_code} for q={query!r}"
-                )
-                continue
-            payload = resp.json()
-        except Exception as exc:
-            logger.warning(
-                f"Piped {base} request failed for q={query!r}: "
-                f"{type(exc).__name__}: {exc!s:.120}"
-            )
+    found = piped_fetch_json_sync(
+        "/search",
+        params={"q": query, "filter": "videos"},
+        timeout=PIPED_TIMEOUT,
+        require_keys=("items",),
+    )
+    if not found:
+        return []
+    _base, payload = found
+
+    items = payload.get("items") or []
+    results: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
             continue
+        vid = _extract_piped_video_id(item.get("url") or "")
+        if not vid:
+            continue
+        title = item.get("title") or ""
+        artist = item.get("uploaderName") or ""
+        duration_seconds = int(item.get("duration") or 0)
+        thumb_url = item.get("thumbnail") or ""
+        results.append({
+            "videoId": vid,
+            "title": title,
+            "artists": [{"name": artist}] if artist else [],
+            "artist": artist,
+            "duration": _seconds_to_mmss(duration_seconds),
+            "duration_seconds": duration_seconds,
+            "thumbnails": [{"url": thumb_url}] if thumb_url else [],
+        })
 
-        items = payload.get("items") or []
-        results: list[dict[str, Any]] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            vid = _extract_piped_video_id(item.get("url") or "")
-            if not vid:
-                continue
-            title = item.get("title") or ""
-            artist = item.get("uploaderName") or ""
-            duration_seconds = int(item.get("duration") or 0)
-            thumb_url = item.get("thumbnail") or ""
-            results.append({
-                "videoId": vid,
-                "title": title,
-                "artists": [{"name": artist}] if artist else [],
-                "artist": artist,
-                "duration": _seconds_to_mmss(duration_seconds),
-                "duration_seconds": duration_seconds,
-                "thumbnails": [{"url": thumb_url}] if thumb_url else [],
-            })
-
-        if results:
-            return results[:limit]
-
-    return []
+    return results[:limit] if results else []
 
 
 # ---------------------------------------------------------------------------

@@ -630,9 +630,16 @@ class YTMusicManager:
         """
         Probe whether music.youtube.com is reachable from this host.
 
-        On failure, caches the result for REACHABILITY_CACHE_TTL (2 minutes)
-        to avoid hammering YT with repeated probes from blocked IPs.
-        On success, clears the cache so subsequent checks proceed fresh.
+        The result (either way) is cached for REACHABILITY_CACHE_TTL (2
+        minutes) so repeated calls — e.g. every ``/play-event``-adjacent or
+        watch-playlist lookup while YT is blocked — do NOT each initiate
+        another multi-second probe. On success the cached True is returned
+        until the TTL expires, then a fresh probe runs; on failure the same.
+
+        The hot-path probe is a SINGLE request to music.youtube.com (no
+        multi-target diagnostics, no retry loop): from a blocked cloud IP the
+        request fails fast and the 120s cache absorbs the rest. ``_run_diagnostics``
+        remains available for manual debugging.
         """
         now = time.monotonic()
         with self._lock:
@@ -643,21 +650,14 @@ class YTMusicManager:
             ):
                 return self._reachability_cached
 
-        # Perform diagnostics outside the lock
-        diag_results = self._run_diagnostics()
+        # Single lightweight probe of the actual target (outside the lock).
+        timeout = (PROBE_CONNECT_TIMEOUT, PROBE_READ_TIMEOUT)
+        yt_result = self._probe_url("music.youtube.com", YT_BASE_URL, timeout)
 
-        # Determine reachability from music.youtube.com result
-        yt_result = None
-        for d in diag_results:
-            if d["label"] == "music.youtube.com":
-                yt_result = d
-                break
-
-        # Determine reachability
         reachable = False
-        failure_reason = yt_result["error"] if yt_result else "No diagnostic result"
+        failure_reason = yt_result["error"] or "No diagnostic result"
 
-        if yt_result and yt_result["connect_ok"] and yt_result["status_code"] and yt_result["status_code"] < 500:
+        if yt_result["connect_ok"] and yt_result["status_code"] and yt_result["status_code"] < 500:
             # HTTP 200 but YouTube's CDN may serve a bot-detection page
             title = (yt_result.get("html_title") or "").lower()
             ct = (yt_result.get("content_type") or "").lower()
@@ -683,7 +683,7 @@ class YTMusicManager:
 
         if not reachable:
             egress = "via residential proxy" if _proxy_is_enabled() else "directly"
-            logger.error(
+            logger.warning(
                 f"music.youtube.com REACHABILITY: FAIL {egress} — cached for "
                 f"{REACHABILITY_CACHE_TTL:.0f}s. Reason: {failure_reason}"
             )
@@ -858,10 +858,13 @@ class YTMusicManager:
         start = time.monotonic()
         deadline = start + MAX_RETRY_TOTAL_SECONDS
 
-        # Fast-fail if YT is known unreachable
+        # Fast-fail if YT is known unreachable. While the unreachable result is
+        # cached this runs for EVERY call — keep it at DEBUG so a blocked host
+        # doesn't produce one ERROR line per request (the reachability FAIL is
+        # logged once per cache refresh, at WARNING).
         if not self._check_reachability():
             self._metrics.record_failure()
-            logger.error(f"YTMusic unreachable — skipping {method}")
+            logger.debug(f"YTMusic unreachable — skipping {method}")
             raise YTMusicUnreachableError(
                 f"music.youtube.com is unreachable from this host. "
                 f"Cloud provider IP ranges are often blocked by YouTube CDN. "
@@ -977,7 +980,10 @@ class YTMusicManager:
         err_type = type(last_error).__name__ if last_error else "N/A"
         err_msg = str(last_error)[:200] if last_error else "N/A"
 
-        logger.error(
+        # WARNING not ERROR: this is a provider failure inside a fallback chain,
+        # not an application error. The route-level summary owns ERROR-level
+        # logging when the complete chain fails.
+        logger.warning(
             f"YTMusic {method} failed after {MAX_ATTEMPTS} attempt(s) "
             f"in {total_elapsed:.2f}s "
             f"[type={err_type}, host={YT_HOST}] "

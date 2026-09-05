@@ -16,6 +16,27 @@ import pytest
 from app.services.ytfallback import _load_piped_instances
 
 
+@pytest.fixture(autouse=True)
+def _reset_provider_state():
+    """Clean Piped circuit-breaker state and the stream-resolution cache so
+    one test's cooldowns / cached payloads never leak into the next."""
+    from app.services.piped import reset_health
+    from app.services.cache import _stream_cache
+    reset_health()
+    _stream_cache.clear()
+    yield
+    reset_health()
+    _stream_cache.clear()
+
+
+def _patch_piped_client(monkeypatch, side_effect):
+    """Make every Piped attempt go through a fake httpx client."""
+    fake_client = MagicMock()
+    fake_client.get = AsyncMock(side_effect=side_effect)
+    monkeypatch.setattr("app.services.piped._async_client", lambda: fake_client)
+    return fake_client
+
+
 def test_load_piped_instances_defaults(monkeypatch):
     monkeypatch.delenv("PIPED_INSTANCES", raising=False)
     inst = _load_piped_instances()
@@ -136,9 +157,7 @@ async def test_proxy_playlist_returns_empty_on_failure(monkeypatch):
         "app.services.ytmusic.call_ytmusic_safe",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("unreachable")),
     )
-    fake_client = MagicMock()
-    fake_client.get = AsyncMock(side_effect=RuntimeError("no network"))
-    monkeypatch.setattr(youtube, "get_http_client", lambda: fake_client)
+    _patch_piped_client(monkeypatch, side_effect=RuntimeError("no network"))
 
     result = await youtube.proxy_playlist("PL123")
     assert result["success"] is True
@@ -153,6 +172,10 @@ async def test_proxy_playlist_returns_empty_on_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_proxy_streams_includes_direct_audio_and_related(monkeypatch):
     from app.routes import youtube
+
+    # No real egress: the Piped fallback is raced concurrently with the mocked
+    # direct-audio / ytmusic providers, so it must fail fast and silently.
+    _patch_piped_client(monkeypatch, side_effect=RuntimeError("no network"))
 
     monkeypatch.setattr("app.routes.stream.get_direct_audio", AsyncMock(return_value={
         "videoId": "dQw4w9WgXcQ",
@@ -176,10 +199,12 @@ async def test_proxy_streams_includes_direct_audio_and_related(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_proxy_streams_degrades_to_empty_when_all_providers_blocked(monkeypatch):
-    """When direct-audio AND watch-playlist both fail (e.g. host IP blocked by
-    YouTube), the route still returns a well-formed payload with empty arrays
-    rather than erroring — the frontend treats that as "no data" and moves on.
+async def test_proxy_streams_degrades_to_unavailable_when_all_providers_blocked(monkeypatch):
+    """When direct-audio AND watch-playlist AND every Piped instance fail (e.g.
+    host IP blocked by YouTube), the route must NOT return a fake success with
+    unusable empty arrays. It returns ``success: false`` with
+    ``streamStatus: "unavailable"`` so the frontend falls back instead of
+    attempting invalid data.
     """
     from app.routes import youtube
 
@@ -188,13 +213,13 @@ async def test_proxy_streams_degrades_to_empty_when_all_providers_blocked(monkey
         "app.services.ytmusic.call_ytmusic_safe",
         lambda method, **k: None,
     )
-    fake_client = MagicMock()
-    fake_client.get = AsyncMock(side_effect=RuntimeError("piped unreachable"))
-    monkeypatch.setattr(youtube, "get_http_client", lambda: fake_client)
+    _patch_piped_client(monkeypatch, side_effect=RuntimeError("piped unreachable"))
 
     result = await youtube.proxy_streams("dQw4w9WgXcQ")
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["error"]
     data = result["data"]
+    assert data["streamStatus"] == "unavailable"
     assert data["audioStreams"] == []
     assert data["videoStreams"] == []
     assert data["relatedStreams"] == []
@@ -227,9 +252,7 @@ async def test_proxy_related_excludes_and_returns_empty_on_failure(monkeypatch):
         "app.services.ytmusic.call_ytmusic_safe",
         lambda method, **k: fake_watch(**k) if method == "get_watch_playlist" else None,
     )
-    fake_client = MagicMock()
-    fake_client.get = AsyncMock(side_effect=RuntimeError("no network"))
-    monkeypatch.setattr(youtube, "get_http_client", lambda: fake_client)
+    _patch_piped_client(monkeypatch, side_effect=RuntimeError("no network"))
 
     result = await youtube.proxy_related("dQw4w9WgXcQ", exclude="bbb22222222")
     assert result["data"]["songs"] == []

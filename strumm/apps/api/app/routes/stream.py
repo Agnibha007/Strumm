@@ -12,6 +12,9 @@ a forwardable stream URL.
 """
 
 import logging
+import os
+import threading
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -24,6 +27,90 @@ from app.services.security import sanitize_youtube_id
 
 logger = logging.getLogger("strumm-stream")
 router = APIRouter(tags=["stream"])
+
+# ---------------------------------------------------------------------------
+# yt-dlp blocked fast-fail
+# ---------------------------------------------------------------------------
+# From cloud egress IPs (HF Spaces / Render) YouTube commonly bot-blocks
+# yt-dlp: every extraction burns the full socket timeout before failing with
+# "EOF occurred in violation of protocol" / "Unable to download API page".
+# Once that is observed, skip yt-dlp entirely for a while and go straight to
+# the Piped fallback, so one blocked song doesn't serialize 15-30s of dead
+# probing before every subsequent request. A successful extraction clears the
+# block immediately; the TTL bounds how long a stale block can linger.
+YTDLP_BLOCKED_TTL = float(os.getenv("YTDLP_BLOCKED_TTL", "300"))
+
+_ytdlp_blocked_until: float = 0.0
+_ytdlp_block_lock = threading.Lock()
+
+
+def _classify_ytdlp_block(exc: BaseException) -> bool:
+    """True when the yt-dlp failure looks like a host-wide block rather than a
+    per-video problem (unavailable/private/region-locked videos must NOT trip
+    the global breaker)."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    per_video = (
+        "video unavailable" in text
+        or "not available" in text
+        or "private video" in text
+        or "removed" in text
+        or "unavailable" in text
+        or "age-restricted" in text
+        or "region" in text
+        or "playlist unavailable" in text
+    )
+    if per_video:
+        return False
+    return any(
+        kw in text
+        for kw in (
+            "eof occurred",
+            "ssleof",
+            "timed out",
+            "timeout",
+            "connection refused",
+            "connection reset",
+            "connection aborted",
+            "connectionerror",
+            "unable to download api page",
+            "http error 403",
+            "http error 429",
+            "forbidden",
+            "sign in to confirm",
+            "bot",
+            "tls",
+            "ssl",
+            "handshake",
+        )
+    )
+
+
+def _ytdlp_blocked() -> bool:
+    with _ytdlp_block_lock:
+        return time.monotonic() < _ytdlp_blocked_until
+
+
+def _mark_ytdlp_blocked() -> None:
+    global _ytdlp_blocked_until
+    with _ytdlp_block_lock:
+        if time.monotonic() < _ytdlp_blocked_until:
+            return
+        _ytdlp_blocked_until = time.monotonic() + YTDLP_BLOCKED_TTL
+    logger.warning(
+        f"yt-dlp appears bot-blocked from this host; skipping it for "
+        f"{YTDLP_BLOCKED_TTL:.0f}s and using the Piped fallback"
+    )
+
+
+def _clear_ytdlp_blocked() -> None:
+    global _ytdlp_blocked_until
+    with _ytdlp_block_lock:
+        _ytdlp_blocked_until = 0.0
+
+
+def _reset_ytdlp_block() -> None:
+    """Clear any yt-dlp block state (tests / diagnostics)."""
+    _clear_ytdlp_blocked()
 
 
 async def get_song_metadata(video_id: str) -> Optional[dict]:
@@ -185,8 +272,11 @@ def _run_ytdlp_extract(video_id: str) -> dict:
             break  # info present but no audio URL — don't re-run with same payload
         except Exception as exc:  # noqa: BLE001 — surface as last_error
             last_error = exc
-            logger.warning(
-                f"yt-dlp audio extraction failed for {video_id} "
+            # DEBUG: the caller (get_direct_audio / /yt/streams) logs ONE
+            # consolidated line per video, so a blocked host does not produce
+            # per-attempt warning spam for every track.
+            logger.debug(
+                f"yt-dlp audio extraction attempt failed for {video_id} "
                 f"({'default' if not override else 'tv' }): {exc!s:.160}"
             )
     raise RuntimeError(f"No audio URL could be extracted for {video_id}: {last_error}")
@@ -221,93 +311,85 @@ def _audio_mime(ext: str) -> str:
 
 
 def _run_piped_extract(video_id: str) -> Optional[dict]:
-    """Return a Piped audio descriptor for ``video_id``, or ``None`` on failure."""
-    from app.services.ytfallback import PIPED_INSTANCES
-    import requests as _req
+    """Return a Piped audio descriptor for ``video_id``, or ``None`` on failure.
 
-    for base in PIPED_INSTANCES:
-        try:
-            resp = _req.get(
-                f"{base}/streams/{video_id}",
-                params={"itag": "140"},
-                timeout=(3.0, 10.0),
-            )
-            if resp.status_code != 200:
-                logger.warning(
-                    f"Piped {base}/streams/{video_id} HTTP {resp.status_code}"
-                )
-                continue
-            payload = resp.json()
-        except Exception as exc:
-            logger.warning(
-                f"Piped {base}/streams/{video_id} failed: "
-                f"{type(exc).__name__}: {exc!s:.120}"
-            )
+    Instance selection is delegated to the shared provider (``piped.py``):
+    healthy instances first, cooldown for 403/429/5xx/526/timeouts, and the
+    most-recently-successful instance preferred, so repeated playback does not
+    hammer a known-bad instance.
+    """
+    from app.services.piped import piped_fetch_json_sync, PIPED_TIMEOUT
+
+    found = piped_fetch_json_sync(
+        f"/streams/{video_id}",
+        params={"itag": "140"},
+        timeout=PIPED_TIMEOUT,
+        require_keys=("audioStreams", "videoStreams"),
+    )
+    if not found:
+        return None
+    _base, payload = found
+
+    def _ext_from_mime(mime: str) -> str:
+        ext = (mime or "").split("/")[-1].split(";")[0].lower()
+        if ext == "m4a":
+            return "m4a"
+        if ext in ("mp4", "webm", "ogg", "opus", "aac", "mpeg"):
+            return ext
+        return "mp4"  # unknown sub-type — treat as MP4 container
+
+    # 1. Prefer a dedicated audio-only stream.
+    best_audio = None
+    for s in payload.get("audioStreams") or []:
+        if not isinstance(s, dict):
             continue
-
-        if not isinstance(payload, dict):
+        u = (s.get("url") or "").strip()
+        if not u:
             continue
+        ext = _ext_from_mime(s.get("mimeType") or "")
+        score = float(s.get("bitrate") or 0) + 100000.0
+        if best_audio is None or score > best_audio[0]:
+            best_audio = (score, u, ext)
 
-        def _ext_from_mime(mime: str) -> str:
-            ext = (mime or "").split("/")[-1].split(";")[0].lower()
-            if ext == "m4a":
-                return "m4a"
-            if ext in ("mp4", "webm", "ogg", "opus", "aac", "mpeg"):
-                return ext
-            return "mp4"  # unknown sub-type — treat as MP4 container
+    # 2. Otherwise use a combined stream (e.g. itag 18) — an ``<audio>``
+    #    element plays just the audio track of an MP4, so this still works.
+    #    The Odysee-mirrored ``player.odycdn.com`` LBRY streams 401 for
+    #    browser/<audio> clients, so only the instance-proxied playback
+    #    URLs (e.g. ``proxy.<instance>/videoplayback``) are usable.
+    best_combined = None
+    for s in payload.get("videoStreams") or []:
+        if not isinstance(s, dict):
+            continue
+        if s.get("videoOnly"):
+            continue  # no audio track — useless for playback
+        u = (s.get("url") or "").strip()
+        if not u:
+            continue
+        if "player.odycdn.com" in u:
+            continue  # Odysee LBRY mirror returns 401 — not playable
+        mime = (s.get("mimeType") or "").lower()
+        # Prefer MP4 (widely playable); HLS needs the instance's aux stream
+        # and libav params, so skip pure HLS manifests (handled elsewhere).
+        if mime not in ("video/mp4", "audio/mp4", ""):
+            continue
+        ext = _ext_from_mime(s.get("mimeType") or "")
+        # heuristically favor low-quality combined streams (audio-first use)
+        score = 0.0
+        if "/videoplayback" in u:
+            score += 1000.0
+        score += float(s.get("bitrate") or 0)
+        if best_combined is None or score > best_combined[0]:
+            best_combined = (score, u, ext)
 
-        # 1. Prefer a dedicated audio-only stream.
-        best_audio = None
-        for s in payload.get("audioStreams") or []:
-            if not isinstance(s, dict):
-                continue
-            u = (s.get("url") or "").strip()
-            if not u:
-                continue
-            ext = _ext_from_mime(s.get("mimeType") or "")
-            score = float(s.get("bitrate") or 0) + 100000.0
-            if best_audio is None or score > best_audio[0]:
-                best_audio = (score, u, ext)
-
-        # 2. Otherwise use a combined stream (e.g. itag 18) — an ``<audio>``
-        #    element plays just the audio track of an MP4, so this still works.
-        #    The Odysee-mirrored ``player.odycdn.com`` LBRY streams 401 for
-        #    browser/<audio> clients, so only the instance-proxied playback
-        #    URLs (e.g. ``proxy.<instance>/videoplayback``) are usable.
-        best_combined = None
-        for s in payload.get("videoStreams") or []:
-            if not isinstance(s, dict):
-                continue
-            if s.get("videoOnly"):
-                continue  # no audio track — useless for playback
-            u = (s.get("url") or "").strip()
-            if not u:
-                continue
-            if "player.odycdn.com" in u:
-                continue  # Odysee LBRY mirror returns 401 — not playable
-            mime = (s.get("mimeType") or "").lower()
-            # Prefer MP4 (widely playable); HLS needs the instance's aux stream
-            # and libav params, so skip pure HLS manifests (handled elsewhere).
-            if mime not in ("video/mp4", "audio/mp4", ""):
-                continue
-            ext = _ext_from_mime(s.get("mimeType") or "")
-            # heuristically favor low-quality combined streams (audio-first use)
-            score = 0.0
-            if "/videoplayback" in u:
-                score += 1000.0
-            score += float(s.get("bitrate") or 0)
-            if best_combined is None or score > best_combined[0]:
-                best_combined = (score, u, ext)
-
-        chosen = best_audio or best_combined
-        if chosen:
-            return {
-                "videoId": video_id,
-                "audioUrl": chosen[1],
-                "mimeType": _audio_mime(chosen[2]),
-                "title": payload.get("title") or "",
-                "duration": payload.get("duration"),
-            }
+    chosen = best_audio or best_combined
+    if chosen:
+        return {
+            "videoId": video_id,
+            "audioUrl": chosen[1],
+            "mimeType": _audio_mime(chosen[2]),
+            "title": payload.get("title") or "",
+            "duration": payload.get("duration"),
+        }
     return None
 
 
@@ -320,14 +402,26 @@ async def get_direct_audio(video_id: str) -> Optional[dict]:
     if isinstance(cached, dict) and cached.get("audioUrl"):
         return cached
 
-    try:
-        info = await asyncio.to_thread(_run_ytdlp_extract, video_id)
-    except Exception as exc:
-        logger.warning(f"get_direct_audio failed for {video_id}: {exc!s:.160}")
-        info = None
+    info = None
+    ytdlp_attempted = False
+    if not _ytdlp_blocked():
+        ytdlp_attempted = True
+        try:
+            info = await asyncio.to_thread(_run_ytdlp_extract, video_id)
+        except Exception as exc:
+            # Per-video problems (unavailable/private) stay per-video; host-wide
+            # blocks (EOF / timeout / 403 API page) trip the global fast-fail.
+            if _classify_ytdlp_block(exc):
+                _mark_ytdlp_blocked()
+            else:
+                logger.warning(f"yt-dlp could not resolve {video_id}: {exc!s:.160}")
+            info = None
+    else:
+        logger.debug(f"yt-dlp blocked — skipping for {video_id}")
 
     audio_url = _pick_best_audio(info) if isinstance(info, dict) else None
     if audio_url:
+        _clear_ytdlp_blocked()
         result = {
             "videoId": video_id,
             "audioUrl": audio_url,
@@ -338,8 +432,9 @@ async def get_direct_audio(video_id: str) -> Optional[dict]:
         cache_stream(key, result)
         return result
 
-    # yt-dlp is bot-blocked from this host (common on cloud egress IPs).
-    # Fall back to a Piped instance so background / lock-screen audio still works.
+    # yt-dlp is bot-blocked from this host (common on cloud egress IPs) or
+    # yielded no audio. Fall back to a Piped instance so background / lock-
+    # screen audio still works.
     fallback = await asyncio.to_thread(_run_piped_extract, video_id)
     if fallback:
         cache_stream(key, fallback)

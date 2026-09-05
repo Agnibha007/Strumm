@@ -11,6 +11,16 @@ from app.routes.stream import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_piped_health():
+    """Each test starts with a clean Piped circuit-breaker state (tests that
+    fail an instance into cooldown must not leak into later tests)."""
+    from app.services.piped import reset_health
+    reset_health()
+    yield
+    reset_health()
+
+
 def _info_with_formats(*formats):
     return {"title": "Test", "formats": list(formats)}
 

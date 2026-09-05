@@ -28,7 +28,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Query
 
-from app.services.ytfallback import PIPED_INSTANCES, PIPED_TIMEOUT
+from app.services.piped import piped_fetch_json_async
 from app.services.http_client import get_http_client
 from app.services.security import sanitize_youtube_id
 
@@ -252,13 +252,14 @@ async def proxy_playlist(playlist_id: str):
     except Exception as exc:  # noqa: BLE001 — fall back to Piped
         logger.warning(f"ytmusic get_playlist failed for {pid}: {exc!s:.120}")
 
-    # 2. Server-side Piped fallback (walk pages like the old browser client).
+    # 2. Server-side Piped fallback (healthy-instance rotation via piped.py).
     try:
-        client = get_http_client()
-        base = _pick_piped_base()
-        resp = await client.get(f"{base}/playlists/{pid}", timeout=PIPED_TIMEOUT)
-        if resp.status_code == 200:
-            payload = resp.json()
+        found = await piped_fetch_json_async(
+            f"/playlists/{pid}",
+            require_keys=("relatedStreams",),
+        )
+        if found:
+            _base, payload = found
             related = []
             for v in payload.get("relatedStreams") or []:
                 if not isinstance(v, dict):
@@ -283,7 +284,7 @@ async def proxy_playlist(playlist_id: str):
                     "nextpage": "",
                 },
             }
-        logger.warning(f"Piped playlist {pid} HTTP {resp.status_code}")
+        logger.debug(f"Piped playlist fallback failed for {pid}")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Piped playlist {pid} failed: {exc!s:.120}")
 
@@ -299,11 +300,6 @@ def _extract_video_id(url: str) -> Optional[str]:
     if "?v=" in url:
         return url.split("?v=", 1)[1].split("&", 1)[0]
     return None
-
-
-def _pick_piped_base() -> str:
-    """Return the first configured Piped instance (server-side fallback)."""
-    return PIPED_INSTANCES[0] if PIPED_INSTANCES else "https://api.piped.private.coffee"
 
 
 # Overall budget for /yt/streams. The browser's ``proxyGet`` aborts at 12s, so
@@ -343,21 +339,27 @@ async def _resolve_watch_related(vid: str) -> list[dict]:
     return related
 
 
-async def _resolve_piped_streams(vid: str) -> tuple[list[dict], list[dict], dict]:
-    """One-shot Piped ``/streams/{vid}`` fallback: audio, video, metadata."""
+async def _resolve_piped_streams(vid: str) -> tuple[list[dict], list[dict], dict, str]:
+    """Piped ``/streams/{vid}`` fallback: audio, video, metadata, winning base.
+
+    Instance selection is delegated to the shared provider (``piped.py``): the
+    healthy instance set is raced (up to two concurrently), a known-bad
+    instance (403/429/5xx/526/timeout) is skipped into cooldown, and the
+    most-recently-successful instance is preferred. Returns empty lists and
+    ``""`` base when every attempt fails.
+    """
     audio: list[dict] = []
     video: list[dict] = []
     meta: dict[str, Any] = {}
+    base_used = ""
     try:
-        client = get_http_client()
-        base = _pick_piped_base()
-        resp = await client.get(f"{base}/streams/{vid}", timeout=PIPED_TIMEOUT)
-        if resp.status_code != 200:
-            logger.warning(f"Piped streams {vid} HTTP {resp.status_code}")
-            return audio, video, meta
-        p = resp.json()
-        if not isinstance(p, dict):
-            return audio, video, meta
+        found = await piped_fetch_json_async(
+            f"/streams/{vid}",
+            require_keys=("audioStreams", "videoStreams"),
+        )
+        if not found:
+            return audio, video, meta, base_used
+        base_used, p = found
         meta = p
         for s in p.get("audioStreams") or []:
             if s and isinstance(s, dict) and s.get("url"):
@@ -375,8 +377,8 @@ async def _resolve_piped_streams(vid: str) -> tuple[list[dict], list[dict], dict
                     "videoOnly": bool(s.get("videoOnly")),
                 })
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Piped streams {vid} failed: {exc!s:.120}")
-    return audio, video, meta
+        logger.debug(f"Piped streams {vid} failed: {exc!s:.120}")
+    return audio, video, meta, base_used
 
 
 def _piped_related_items(payload: dict) -> list[dict]:
@@ -399,6 +401,21 @@ def _piped_related_items(payload: dict) -> list[dict]:
     return out
 
 
+def _stream_status(payload: dict) -> str:
+    """Classify how usable a resolved ``/yt/streams`` payload is.
+
+    * ``playable`` — at least one audio/video stream URL the player can use
+    * ``metadata_only`` — title/related present but no direct stream URL (the
+      UI can still render the song; playback falls back to the iframe)
+    * ``unavailable`` — nothing resolved at all
+    """
+    if payload.get("audioStreams") or payload.get("videoStreams"):
+        return "playable"
+    if payload.get("title") or payload.get("relatedStreams"):
+        return "metadata_only"
+    return "unavailable"
+
+
 @router.get("/streams/{video_id}")
 async def proxy_streams(video_id: str):
     """Return song metadata + related tracks in Piped's ``/streams/{id}`` shape.
@@ -407,11 +424,29 @@ async def proxy_streams(video_id: str):
     proxy media bytes — this is metadata plus a resolved direct-audio URL.
 
     Latency: the watch-playlist (related) and direct-audio lookups run
-    CONCURRENTLY, and the whole route is bounded by ``STREAMS_BUDGET`` (10s)
-    so it stays well under the browser's 12s client timeout. If a slow provider
-    exceeds the budget we return whatever already resolved rather than hang.
+    CONCURRENTLY with the Piped fallback, and the whole route is bounded by
+    ``STREAMS_BUDGET`` (8s) so it stays well under the browser's 12s client
+    timeout. Provider attempts are rotated/cooldowned by ``piped.py``.
+
+    Response contract:
+      * ``success: true`` + ``streamStatus: "playable"`` — has a stream URL
+      * ``success: true`` + ``streamStatus: "metadata_only"`` — no stream URL,
+        but usable metadata (iframe playback / related tracks)
+      * ``success: false`` + ``streamStatus: "unavailable"`` — every provider
+        failed or the budget ran out with nothing usable. The frontend treats
+        this as a failure and falls back instead of attempting invalid data.
+
+    Successful (playable/metadata) payloads are cached for a conservative TTL;
+    signed stream URLs expire in ~6h, so 30 minutes is safely inside that.
     """
     vid = sanitize_youtube_id(video_id)
+
+    from app.services.cache import get_cached_stream, cache_stream
+    cache_key_str = f"ytstreams:{vid}"
+    cached = get_cached_stream(cache_key_str)
+    if cached and isinstance(cached, dict):
+        cached["streamStatus"] = _stream_status(cached)
+        return {"success": True, "data": cached}
 
     payload: dict[str, Any] = {
         "title": "",
@@ -423,27 +458,40 @@ async def proxy_streams(video_id: str):
         "relatedStreams": [],
     }
 
+    # Compact per-provider outcome for the single end-of-request log line.
+    outcomes: dict[str, str] = {"ytmusic": "skipped", "direct": "skipped", "piped": "skipped"}
+
     from app.routes.stream import get_direct_audio
 
     async def _task_direct() -> Optional[dict]:
         try:
             return await get_direct_audio(vid)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"direct audio failed for {vid}: {exc!s:.120}")
+            logger.debug(f"direct audio failed for {vid}: {exc!s:.120}")
             return None
 
     related: list[dict] = []
     direct: Optional[dict] = None
     piped_payload: dict = {}
+    piped_base = ""
 
     async def _task_piped() -> dict:
+        nonlocal piped_base
         try:
-            audio, video, meta = await _resolve_piped_streams(vid)
+            audio, video, meta, base = await _resolve_piped_streams(vid)
             if meta:
+                piped_base = base
                 return {"audio": audio, "video": video, "meta": meta}
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Piped streams fallback failed for {vid}: {exc!s:.120}")
+            logger.debug(f"Piped streams fallback failed for {vid}: {exc!s:.120}")
         return {}
+
+    async def _task_related() -> list[dict]:
+        try:
+            return await _resolve_watch_related(vid)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"ytmusic watch playlist failed for {vid}: {exc!s:.120}")
+            return []
 
     # Concurrent + deadline-bounded resolve. From the HF host YouTube blocks
     # ytmusicapi and yt-dlp outright (they burn the whole budget timing out),
@@ -454,21 +502,45 @@ async def proxy_streams(video_id: str):
     async def _run():
         nonlocal related, direct, piped_payload
         related, direct, piped = await asyncio.gather(
-            _resolve_watch_related(vid),
+            _task_related(),
             _task_direct(),
             _task_piped(),
         )
-        if not direct and not related:
-            piped_payload = piped.get("meta") or {}
-            if piped.get("audio") and not _direct_url_set(payload):
-                payload["audioStreams"] = piped["audio"]
-            if piped.get("video") and not _direct_url_set(payload):
-                payload["videoStreams"] = piped["video"]
+        piped_payload = piped.get("meta") or {}
+        if not direct and not related and piped.get("audio"):
+            payload["audioStreams"] = piped["audio"]
+        if not direct and not related and piped.get("video"):
+            payload["videoStreams"] = piped["video"]
 
+    budget_exceeded = False
     try:
         await asyncio.wait_for(_run(), timeout=STREAMS_BUDGET)
     except asyncio.TimeoutError:
-        logger.warning(f"/yt/streams budget exceeded for {vid}; returning partial")
+        budget_exceeded = True
+
+    from app.services.piped import health
+    from app.routes.stream import _ytdlp_blocked
+    import app.services.ytmusic as ytm
+
+    if not related:
+        outcomes["ytmusic"] = "unreachable" if ytm._manager._reachability_cached is False else "failed"
+    else:
+        outcomes["ytmusic"] = "ok"
+
+    if direct and direct.get("audioUrl"):
+        outcomes["direct"] = "ok"
+    else:
+        outcomes["direct"] = "blocked" if _ytdlp_blocked() else "network_error"
+
+    if piped_payload:
+        host = piped_base.split("//", 1)[-1].split("/", 1)[0] if piped_base else ""
+        outcomes["piped"] = f"ok({host})" if (piped_payload.get("audioStreams") or piped_payload.get("videoStreams")) else "metadata-only"
+    else:
+        failed_count = sum(1 for s in health.snapshot().values() if s.get("failures", 0) > 0)
+        outcomes["piped"] = f"{failed_count} instances failed" if failed_count else "failed"
+
+    if budget_exceeded:
+        outcomes["budget"] = "exceeded"
 
     if direct and direct.get("audioUrl"):
         payload["videoStreams"].append({
@@ -499,11 +571,34 @@ async def proxy_streams(video_id: str):
         if piped_payload.get("thumbnailUrl"):
             payload["thumbnailUrl"] = str(piped_payload["thumbnailUrl"])
 
-    return {"success": True, "data": payload}
+    status = _stream_status(payload)
+    payload["streamStatus"] = status
 
+    if status != "unavailable":
+        # Cache usable resolutions (conservative TTL — stream URLs expire ~6h).
+        cache_stream(cache_key_str, payload)
+        logger.info(
+            f"/yt/streams {vid}: status={status} "
+            f"(ytmusic={outcomes['ytmusic']}, direct={outcomes['direct']}, "
+            f"piped={outcomes['piped']})"
+        )
+        return {"success": True, "data": payload}
 
-def _direct_url_set(payload: dict) -> bool:
-    return bool(payload.get("audioStreams"))
+    # Nothing usable resolved (all providers failed or budget exhausted with
+    # no stream/metadata). Log at ERROR only here (complete provider chain failed).
+    summary = (
+        f"stream resolution failed for {vid}: "
+        f"ytmusic={outcomes['ytmusic']}, direct={outcomes['direct']}, "
+        f"piped={outcomes['piped']}"
+    )
+    if "budget" in outcomes:
+        summary += f", budget={outcomes['budget']}"
+    logger.error(summary)
+    return {
+        "success": False,
+        "error": "Stream providers could not resolve this track right now.",
+        "data": payload,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -552,13 +647,15 @@ async def proxy_related(
         logger.warning(f"ytmusic related failed for {vid}: {exc!s:.120}")
 
     if not songs:
-        # Fallback: Piped relatedStreams.
+        # Fallback: Piped relatedStreams (healthy-instance rotation).
         try:
-            client = get_http_client()
-            base = _pick_piped_base()
-            resp = await client.get(f"{base}/streams/{vid}", timeout=PIPED_TIMEOUT)
-            if resp.status_code == 200:
-                for r in (resp.json().get("relatedStreams") or []):
+            found = await piped_fetch_json_async(
+                f"/streams/{vid}",
+                require_keys=("relatedStreams", "audioStreams", "videoStreams"),
+            )
+            if found:
+                _base, payload = found
+                for r in (payload.get("relatedStreams") or []):
                     if not isinstance(r, dict):
                         continue
                     rvid = str(_extract_video_id(r.get("url") or "") or "").strip()

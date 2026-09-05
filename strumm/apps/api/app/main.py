@@ -33,6 +33,12 @@ def _sentry_filter_health_check(tx):
     transaction_name = tx.get("transaction", "")
     return transaction_name not in ("/health", "/health/db", "/health/disk", "/")
 
+def _sentry_redact_breadcrumb(crumb, hint):
+    """Redact sensitive query parameters (id_token, tokens, ...) from Sentry
+    breadcrumbs so outbound request URLs never leak credentials."""
+    from app.services.log_redaction import redact_sentry_breadcrumb
+    return redact_sentry_breadcrumb(crumb, hint)
+
 sentry_sdk.init(
     dsn=os.environ.get("SENTRY_DSN"),
     environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
@@ -40,6 +46,7 @@ sentry_sdk.init(
     traces_sample_rate=0.1,  # sample performance traces; error events are never sampled away
     enable_logs=False,       # don't forward INFO logs to Sentry (noise/volume)
     send_default_pii=True,
+    before_breadcrumb=_sentry_redact_breadcrumb,
     before_send_transaction=_sentry_filter_health_check,
 )
 
@@ -62,10 +69,18 @@ logging.basicConfig(
 for handler in logging.getLogger().handlers:
     handler.addFilter(RequestIDFilter())
 
+# SEC: never let sensitive query parameters (id_token, tokens, codes, ...)
+# reach any log output — httpx/httpcore log request URLs with their query
+# strings, and the root-level filter guarantees no logger can emit them.
+from app.services.log_redaction import install_log_redaction
+install_log_redaction()
+
 logger = logging.getLogger("strumm-api")
 
-# Disk storage threshold
-MAX_DISK_MB = 512
+# Disk storage threshold (Render's free tier caps at 512MB; override via
+# MAX_DISK_MB on other platforms). The warning text itself is
+# deployment-agnostic and only mentions Render when actually on Render.
+MAX_DISK_MB = int(os.getenv("MAX_DISK_MB", "512"))
 DISK_WARNING_THRESHOLD = 0.80  # Warn at 80% usage
 
 
@@ -552,8 +567,22 @@ async def health_check_db():
             content={"success": False, "error": "Service unhealthy: database connection failed"}
         )
 
+def _on_render() -> bool:
+    """True when running on Render (Render sets the RENDER env var)."""
+    return bool(os.getenv("RENDER"))
+
+
+def _on_hf_spaces() -> bool:
+    """True when running on Hugging Face Spaces (HF sets SPACE_ID)."""
+    return bool(os.getenv("SPACE_ID"))
+
+
 def _check_disk_usage() -> None:
-    """Log a warning if disk usage exceeds 80% of 512MB max."""
+    """Log a warning if disk usage exceeds DISK_WARNING_THRESHOLD of the
+    configured MAX_DISK_MB. Deployment-agnostic: the Render free-tier note is
+    only added when the process is actually running on Render, so Hugging Face
+    Spaces deployments never see a misleading "Render free tier limit" alert.
+    """
     try:
         total, used, free = shutil.disk_usage("/")
         used_mb = used // (1024 * 1024)
@@ -561,10 +590,16 @@ def _check_disk_usage() -> None:
         used_pct = used / total * 100
         logger.info(f"Disk usage: {used_mb}MB / {total_mb}MB ({used_pct:.1f}%)")
         if used_pct > DISK_WARNING_THRESHOLD * 100:
-            logger.warning(
-                f"DISK USAGE WARNING: {used_pct:.1f}% used ({used_mb}MB / {total_mb}MB). "
-                f"Render free tier limit is {MAX_DISK_MB}MB. Consider cleaning up or upgrading."
+            msg = (
+                f"DISK USAGE WARNING: {used_pct:.1f}% used "
+                f"({used_mb}MB / {total_mb}MB; configured max {MAX_DISK_MB}MB). "
+                f"Consider cleaning up."
             )
+            if _on_render():
+                msg += f" Render free tier limit is {MAX_DISK_MB}MB."
+            elif _on_hf_spaces():
+                msg += " Hugging Face Spaces storage limits apply; check the Space settings."
+            logger.warning(msg)
     except Exception as e:
         logger.warning(f"Could not check disk usage: {e}")
 
@@ -584,7 +619,9 @@ async def disk_health():
                 "used_mb": used_mb,
                 "free_mb": free_mb,
                 "used_pct": used_pct,
-                "max_render_mb": MAX_DISK_MB,
+                "max_disk_mb": MAX_DISK_MB,
+                "max_render_mb": MAX_DISK_MB,  # kept for backward compatibility
+                "platform": "render" if _on_render() else ("huggingface" if _on_hf_spaces() else "unknown"),
                 "status": "ok" if used_pct < DISK_WARNING_THRESHOLD * 100 else "warning",
             }
         }
