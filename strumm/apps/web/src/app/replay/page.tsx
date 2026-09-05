@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
@@ -61,9 +61,14 @@ export default function ReplayPage() {
   const [error, setError] = useState<string | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const [globalLeaders, setGlobalLeaders] = useState<Array<{ displayName: string; avatar: string | null; totalMinutes: number }>>([]);
+  const currentVideoId = usePlayerStore((s) => s.currentSong?.videoId ?? null);
+  // The very first observe run happens on mount — the mount fetch already
+  // covered that song, so skip it to avoid a pointless duplicate request.
+  const skipFirstLiveRefreshRef = useRef(true);
+  const liveRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchReplay = useCallback(async () => {
-    setError(null);
+  const fetchReplay = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setError(null);
     try {
       const response = await fetch(apiUrl("/replay"), {
         headers: {
@@ -73,11 +78,11 @@ export default function ReplayPage() {
       const json = await response.json();
       if (json.success && json.data) {
         setData(json.data);
-      } else {
+      } else if (!opts?.silent) {
         setError(json.error || "Failed to load Replay statistics.");
       }
     } catch (e) {
-      setError("Network error. Unable to fetch your Replay.");
+      if (!opts?.silent) setError("Network error. Unable to fetch your Replay.");
     } finally {
       setLoading(false);
     }
@@ -92,6 +97,28 @@ export default function ReplayPage() {
       .then(json => { if (json.success && json.data) setGlobalLeaders(json.data); })
       .catch(() => {});
   }, [token, fetchReplay]);
+
+  // Live statistics: keep the Replay in sync while the user is listening on
+  // this page. Play-events are streamed to the backend every 30s of playback
+  // and flushed the moment the track changes, so a song transition here means
+  // the finished track just landed in the histories that /replay is computed
+  // from. Debounced a few seconds so that flush reaches the server first, and
+  // refetched silently — a transient request failure must not blow away the
+  // stats already on screen.
+  useEffect(() => {
+    if (!user || loading) return;
+    if (skipFirstLiveRefreshRef.current) {
+      skipFirstLiveRefreshRef.current = false;
+      return;
+    }
+    if (liveRefreshTimerRef.current) clearTimeout(liveRefreshTimerRef.current);
+    liveRefreshTimerRef.current = setTimeout(() => {
+      fetchReplay({ silent: true });
+    }, 2500);
+    return () => {
+      if (liveRefreshTimerRef.current) clearTimeout(liveRefreshTimerRef.current);
+    };
+  }, [currentVideoId, fetchReplay, user, loading]);
 
   const handleRecalculateLive = async () => {
     if (!user) return;
