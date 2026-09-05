@@ -104,6 +104,18 @@ export default function AudioEngine() {
   // while swapping videos, which would otherwise stick playback in a paused
   // state right after auto-advance.
   const transitioningRef = useRef<boolean>(false);
+  // True once the current backgrounded stream's end has been detected and the
+  // queue advanced. Auto-advance while the page is hidden must NOT depend on
+  // the timer-driven crossfade: browsers throttle background timers so hard the
+  // fade-out completion (where next() fires) can get suspended entirely, leaving
+  // the queue stuck on a finished track. The near-end `timeupdate` fires
+  // regardless, so that's the timer-free advance path. This flag makes the
+  // advance idempotent per track (near-end timeupdate + fired `ended`).
+  const handledTrackEndRef = useRef<boolean>(false);
+  // The direct-audio URL the host <audio> element is currently on (background
+  // mode). Lets the background heartbeat re-hand the current track to <audio>
+  // if it ever falls behind after an auto-advance while the page is hidden.
+  const currentBackgroundUrlRef = useRef<string | null>(null);
 
   // End-of-track handler that also clears/saves podcast resume position. Used
   // by the HTML audio `ended` handler (and the YouTube ENDED branch) so a
@@ -238,6 +250,7 @@ export default function AudioEngine() {
       // Read volume fresh from the store so the callback stays stable.
       audio.volume = usePlayerStore.getState().volume;
       audio.src = url;
+      currentBackgroundUrlRef.current = url;
     } catch (e) {
       return false;
     }
@@ -391,6 +404,7 @@ export default function AudioEngine() {
       crossfadeAdvancedRef.current = false;
       hasTriggeredCrossfadeRef.current = false;
       transitioningRef.current = false;
+      handledTrackEndRef.current = false;
       setPlaying(true);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
@@ -416,26 +430,40 @@ export default function AudioEngine() {
       // Skip crossfade evaluation while swapping tracks so the leaked
       // "fade triggered" flag from the previous track can't cancel the fade-in.
       if (!transitioningRef.current) {
-        const crossfadeAction = evaluateCrossfadeTick(
-          curr,
-          dur,
-          hasTriggeredCrossfadeRef.current,
-          usePlayerStore.getState().repeatMode
-        );
-        if (crossfadeAction === "start-fade") {
-          hasTriggeredCrossfadeRef.current = true;
-          fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
-            crossfadeAdvancedRef.current = true;
-            usePlayerStore.getState().next();
-          });
-        } else if (crossfadeAction === "cancel-fade") {
-          hasTriggeredCrossfadeRef.current = false;
-          if (fadeIntervalRef.current) {
-            clearInterval(fadeIntervalRef.current);
-            fadeIntervalRef.current = null;
+        if (backgroundModeRef.current) {
+          // Backgrounded playback can't rely on the timer-driven crossfade:
+          // hidden tabs throttle setInterval/setTimeout so aggressively that the
+          // fade-out completion — where next() is called — may never run, leaving
+          // the queue stuck on a finished track (playbar at full, no sound, and
+          // the next song never starts). Advance straight off the near-end
+          // timeupdate, which fires for a playing element regardless of timer
+          // throttling. Idempotent per track via handledTrackEndRef.
+          if (dur > 1 && curr >= dur - 1 && !handledTrackEndRef.current) {
+            handledTrackEndRef.current = true;
+            handlePodcastEnded();
           }
-          isFadingRef.current = false;
-          setPlayerVolume(1.0);
+        } else {
+          const crossfadeAction = evaluateCrossfadeTick(
+            curr,
+            dur,
+            hasTriggeredCrossfadeRef.current,
+            usePlayerStore.getState().repeatMode
+          );
+          if (crossfadeAction === "start-fade") {
+            hasTriggeredCrossfadeRef.current = true;
+            fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
+              crossfadeAdvancedRef.current = true;
+              usePlayerStore.getState().next();
+            });
+          } else if (crossfadeAction === "cancel-fade") {
+            hasTriggeredCrossfadeRef.current = false;
+            if (fadeIntervalRef.current) {
+              clearInterval(fadeIntervalRef.current);
+              fadeIntervalRef.current = null;
+            }
+            isFadingRef.current = false;
+            setPlayerVolume(1.0);
+          }
         }
       }
     };
@@ -446,10 +474,22 @@ export default function AudioEngine() {
     };
     const onEnded = () => {
       if (audio.src && isSilentAudio(audio)) return;
+      // The near-end advance already ran (and the queue moved on) — the natural
+      // `ended` that follows is just the tail of the old stream. Don't advance
+      // a second time (that would skip the freshly started song).
+      if (handledTrackEndRef.current) return;
       // Guard against double-advance: if the crossfade mechanism already called
       // next() before this track naturally ended, skip handleTrackEnded.
       if (crossfadeAdvancedRef.current) {
         crossfadeAdvancedRef.current = false;
+        return;
+      }
+      if (backgroundModeRef.current) {
+        // Timer-free fallback for hidden-tab playback: if the near-end timeupdate
+        // advance never ran (element throttled mid-stream), advance now so the
+        // queue never sits on a finished, silent track.
+        handledTrackEndRef.current = true;
+        usePlayerStore.getState().handleTrackEnded();
         return;
       }
       handlePodcastEnded();
@@ -847,10 +887,11 @@ export default function AudioEngine() {
           try {
             audio.pause();
           } catch (e) {}
-          try {
-            audio.removeAttribute("src");
-            audio.load();
-          } catch (e) {}
+try {
+        audio.removeAttribute("src");
+        audio.load();
+      } catch (e) {}
+      currentBackgroundUrlRef.current = null;
           // Restore the silent loop track so the host page stays the OS media
           // session owner now that the audible source is the YouTube iframe.
           try {
@@ -880,6 +921,26 @@ export default function AudioEngine() {
           teardownDirectAudio();
         }
         return;
+      }
+
+      // The iframe may be stale: if the queue auto-advanced (or the user
+      // skipped a track) while this page was hidden, the current song was
+      // streamed only on the host <audio> element — the iframe still holds the
+      // PREVIOUS video (currentVideoIdRef tracks it, and the song-change effect
+      // bailed early on background mode). Bring the iframe up to date BEFORE
+      // hand-back, otherwise we'd resume the old song over the new one and the
+      // playbar would stay stuck on the previous track.
+      if (song.videoId && currentVideoIdRef.current !== song.videoId) {
+        const yt = playerInstanceRef.current;
+        if (yt && typeof yt.loadVideoById === "function") {
+          try {
+            currentVideoIdRef.current = song.videoId;
+            yt.loadVideoById({
+              videoId: song.videoId,
+              startSeconds: usePlayerStore.getState().currentTime || 0,
+            });
+          } catch (e) {}
+        }
       }
 
       // Resume the iframe first: the browser suspended it while hidden, so it
@@ -958,8 +1019,24 @@ export default function AudioEngine() {
       if (!backgroundModeRef.current) return;
       const state = usePlayerStore.getState();
       if (!state.isPlaying) return;
+      const song = state.currentSong;
+      if (!song || song.metadata?.audioUrl) return;
       const audio = htmlAudioRef.current;
-      if (!audio || !audio.src || isSilentAudio(audio) || audio.error) return;
+      if (!audio) return;
+
+      // The queue may have auto-advanced (or the user skipped via media keys)
+      // while the page was hidden. If a direct URL is now available for the
+      // current track but the host element is still on a stale src (previous
+      // track's stream), re-hand the current track over so the next song
+      // actually starts playing instead of sitting silent.
+      const resolvedUrl =
+        getCachedDirectAudioUrl(song.videoId) || directAudioUrlsRef.current[song.videoId];
+      if (resolvedUrl && currentBackgroundUrlRef.current !== resolvedUrl) {
+        activateBackgroundAudio(song.videoId);
+        return;
+      }
+
+      if (!audio.src || isSilentAudio(audio) || audio.error) return;
       if (audio.paused && audio.readyState >= 2) {
         try {
           audio.play().catch(() => {});
@@ -967,7 +1044,7 @@ export default function AudioEngine() {
       }
     }, 3000);
     return () => clearInterval(timer);
-  }, []);
+  }, [activateBackgroundAudio]);
 
   // Synchronize Media Session position state with actual playback position
   useEffect(() => {
