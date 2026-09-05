@@ -30,6 +30,18 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
   const prevSongId = useRef<string | null>(null);
   const presenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Timestamp of the most recent remote (cross-device) player-state apply.
+  // Anything we send within this window is just an echo of a remote change —
+  // forwarding it back would bounce state around the user's other devices.
+  const lastRemoteApplyAtRef = useRef(0);
+  // Tracks the player position so a manual seek (its currentTime jumps) can be
+  // forwarded even though the song itself never changed.
+  const lastSyncedTimeRef = useRef(0);
+  const lastSyncedSongIdRef = useRef<string | null>(null);
+  // Skips the very first sync broadcast on mount — a freshly-mounted device
+  // (with a restored-but-paused player) must not pause the user's other
+  // listening devices by announcing its idle state.
+  const initializedRef = useRef(false);
 
   // ---- Connect / disconnect on auth state change ----
   useEffect(() => {
@@ -97,9 +109,8 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
   useEffect(() => {
     const unsub = dispatch.on("player:state", (data) => {
       const store = usePlayerStore.getState();
-      if (data.currentSong && data.currentSong.videoId !== store.currentSong?.videoId) {
-        store.restorePlayerState(data);
-      }
+      store.applyRemoteState(data);
+      lastRemoteApplyAtRef.current = Date.now();
     });
 
     return unsub;
@@ -108,6 +119,9 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
   // ---- Send player sync to other devices (debounced / batched) ----
   // Uses a 400ms debounce so rapid play/pause/seek events are consolidated
   // into a single message.
+  const isRecentlyRemoteApplied = () =>
+    Date.now() - lastRemoteApplyAtRef.current < 600;
+
   const sendPlayerSync = useCallback(() => {
     if (syncTimer.current) clearTimeout(syncTimer.current);
 
@@ -129,6 +143,11 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
   }, [user, token, wsClient]);
 
   useEffect(() => {
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      return;
+    }
+    if (isRecentlyRemoteApplied()) return;
     sendPlayerSync();
     return () => {
       if (syncTimer.current) clearTimeout(syncTimer.current);
@@ -142,6 +161,27 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
     usePlayerStore((s) => s.isShuffle),
     sendPlayerSync,
   ]);
+
+  // Forward manual seeks: playback position normally advances smoothly, but a
+  // user scrub makes currentTime jump. Detect the jump and push the new
+  // position so cross-device listeners snap to the same place.
+  useEffect(() => {
+    const state = usePlayerStore.getState();
+    const t = state.currentTime;
+    const songId = state.currentSong?.videoId ?? null;
+
+    if (songId !== lastSyncedSongIdRef.current) {
+      lastSyncedSongIdRef.current = songId;
+      lastSyncedTimeRef.current = t;
+      return;
+    }
+
+    const jumped = Math.abs(t - lastSyncedTimeRef.current) > 3;
+    lastSyncedTimeRef.current = t;
+    if (jumped && !isRecentlyRemoteApplied()) {
+      sendPlayerSync();
+    }
+  }, [usePlayerStore((s) => s.currentTime), sendPlayerSync]);
 
   return <>{children}</>;
 }

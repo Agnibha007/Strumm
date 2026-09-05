@@ -126,7 +126,12 @@ export default function AudioEngine() {
   }, []);
 
   const setPlayerVolume = (volRatio: number) => {
-    const targetVal = volRatio * volume;
+    // Read volume fresh from the store so an in-flight fade (e.g. a track-change
+    // autoplay ramp) tracks the LIVE slider value instead of the value captured
+    // when the fade's closure was created. Otherwise a volume change made mid-fade
+    // is silently stomped by the next fade tick and playback continues "autoplaying"
+    // at the pre-change volume, ignoring the user's setting.
+    const targetVal = volRatio * usePlayerStore.getState().volume;
 
     // Apply to the host audio element whenever it holds real audio (a podcast
     // episode, or a direct-audio stream in background mode).
@@ -1151,7 +1156,7 @@ export default function AudioEngine() {
           console.warn("AudioEngine: Failed to load audio source:", e);
         }
       }
-      htmlAudioRef.current.volume = volume;
+      htmlAudioRef.current.volume = usePlayerStore.getState().volume;
 
       // Sync currentTime when switching mode or starting
       const targetTime = usePlayerStore.getState().currentTime;
@@ -1218,7 +1223,9 @@ export default function AudioEngine() {
                 videoId: activeVideoId,
                 startSeconds: usePlayerStore.getState().currentTime || 0,
               });
-              setPlaying(true);
+              // Respect the store's play state instead of force-playing: a
+              // song pushed in by cross-device sync may arrive paused.
+              setPlaying(isPlaying);
             } catch (e) {
               // Silently ignore video loading errors
             }
@@ -1454,7 +1461,7 @@ export default function AudioEngine() {
                 } as const;
                 ytPlayer.setPlaybackQuality(qualityMap[audioQuality]);
               }
-              ytPlayer.setVolume(Math.round(volume * 100));
+              ytPlayer.setVolume(Math.round(usePlayerStore.getState().volume * 100));
               if (currentSong?.videoId) {
                 currentVideoIdRef.current = currentSong.videoId;
                 const targetStart = usePlayerStore.getState().currentTime || 0;

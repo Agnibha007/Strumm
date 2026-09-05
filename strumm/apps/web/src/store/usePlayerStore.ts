@@ -93,6 +93,7 @@ interface PlayerState {
 
   handleTrackEnded: () => void;
   restorePlayerState: (state: Partial<PlayerState>) => void;
+  applyRemoteState: (state: Partial<PlayerState>) => void;
   setPlayerLoading: (loading: boolean) => void;
   setPlayerError: (error: string | null) => void;
   
@@ -348,6 +349,77 @@ export const usePlayerStore = create<PlayerState>()(
         });
         if (currentSong) {
           get().updateMediaSession(currentSong);
+        }
+      },
+
+      // Cross-device (crossplay) state application. Unlike restorePlayerState
+      // (login resume, deliberately no autoplay), this honors the remote
+      // device's live play/pause/seek state so playback stays in sync across
+      // devices/tabs. A message without a song is ignored — an idle device that
+      // just opened the app must never clobber a player that is actively
+      // producing sound somewhere else.
+      applyRemoteState: (state) => {
+        const current = get();
+        const remoteSong = state.currentSong ? cleanSong(state.currentSong) : null;
+        if (!remoteSong) return;
+
+        const songChanged =
+          remoteSong.videoId !== (current.currentSong?.videoId ?? null);
+
+        // Track changed (or this is the first real song) — swap the whole
+        // player state including the remote's playback position and intent.
+        if (songChanged) {
+          const isShuffle = state.isShuffle ?? current.isShuffle;
+          set({
+            currentSong: remoteSong,
+            queue: (state.queue ?? []).map(cleanSong),
+            currentIndex: state.currentIndex ?? -1,
+            currentTime: state.currentTime ?? 0,
+            isPlaying: !!state.isPlaying,
+            isShuffle,
+            repeatMode:
+              isShuffle && state.repeatMode === "one"
+                ? "none"
+                : (state.repeatMode ?? current.repeatMode),
+            playbackRate: state.playbackRate ?? current.playbackRate,
+          });
+          get().updateMediaSession(remoteSong);
+          return;
+        }
+
+        // Same on-screen track — apply the live play/pause/seek delta without
+        // restarting playback.
+        const patch: Partial<PlayerState> = {};
+        if (typeof state.isPlaying === "boolean" && state.isPlaying !== current.isPlaying) {
+          patch.isPlaying = state.isPlaying;
+        }
+        if (typeof state.currentTime === "number" && isFinite(state.currentTime)) {
+          const target = Math.max(0, state.currentTime);
+          if (Math.abs(target - current.currentTime) > 1.5) {
+            patch.currentTime = target;
+          }
+        }
+        if (Array.isArray(state.queue)) {
+          patch.queue = (state.queue as Song[]).map(cleanSong);
+          patch.currentIndex = state.currentIndex ?? current.currentIndex;
+        }
+        if (typeof state.isShuffle === "boolean" && state.isShuffle !== current.isShuffle) {
+          patch.isShuffle = state.isShuffle;
+        }
+        if (state.repeatMode) {
+          const isShuffle = state.isShuffle ?? current.isShuffle;
+          patch.repeatMode =
+            isShuffle && state.repeatMode === "one" ? "none" : state.repeatMode;
+        }
+
+        if (Object.keys(patch).length === 0) return;
+        set(patch);
+
+        // Follow a remote seek in the same track immediately.
+        if (patch.currentTime !== undefined && typeof current.playerRef?.seekTo === "function") {
+          try {
+            current.playerRef.seekTo(patch.currentTime);
+          } catch {}
         }
       },
 
