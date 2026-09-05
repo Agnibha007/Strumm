@@ -377,23 +377,22 @@ async def proxy_audio(
     Forwards ``Range`` headers so the host ``<audio>`` element can seek. Used
     when playing the googlevideo URL directly fails from the client's network.
     """
-    from app.services.security import assert_public_http_url
-    from app.services.http_client import get_http_client
+    from app.services.security import create_pinned_client
 
     try:
-        safe_url = assert_public_http_url(url)
-    except Exception as exc:
+        client = create_pinned_client(url)
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid audio URL.") from exc
 
-    client = get_http_client()
     upstream_headers = {"Referer": "https://www.youtube.com/"}
     if request.headers.get("range"):
         upstream_headers["Range"] = request.headers["range"]
 
     try:
-        req = client.build_request("GET", safe_url, headers=upstream_headers)
+        req = client.build_request("GET", url, headers=upstream_headers)
         response = await client.send(req, stream=True)
     except Exception as exc:
+        await client.aclose()
         logger.warning(f"Audio proxy upstream error: {exc!s:.160}")
         raise HTTPException(status_code=502, detail="Unable to reach audio source.")
 
@@ -404,6 +403,7 @@ async def proxy_audio(
                     yield chunk
         finally:
             await response.aclose()
+            await client.aclose()
 
     headers = {
         k: v
@@ -454,11 +454,9 @@ async def proxy_image(
     converts to WebP for modern browsers, and returns with aggressive caching.
     """
     try:
-        from app.services.security import assert_public_http_url
         from app.services.http_client import safe_http_get
 
-        safe_url = assert_public_http_url(url)
-        response = await safe_http_get(safe_url, timeout=8.0)
+        response = await safe_http_get(url, timeout=8.0)
         response.raise_for_status()
 
         raw_bytes = response.content

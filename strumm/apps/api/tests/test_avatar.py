@@ -283,6 +283,49 @@ async def test_patch_profile_accepts_avatar_media_id(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_patch_profile_b2_failure_keeps_old_record_recoverable(monkeypatch):
+    """If B2 deletion of the displaced avatar fails, the old Mongo record must
+    NOT be soft-deleted.
+
+    Soft-deleting here would hide the record from the media-lifecycle cleanup
+    candidate query (which only matches ``deletedAt: None``), permanently
+    orphaning the B2 object. Leaving the record intact (ready, undeleted) means
+    the periodic cleanup — which is already proven to delete stale,
+    unreferenced records — will retry the B2 delete once lastAccessedAt goes
+    stale, since the user now references the new avatar.
+    """
+    stub_db(
+        users=[make_user_doc(avatarMediaId=OTHER_MEDIA_ID)],
+        # new + old media records both belong to the current user and are ready
+        media=[
+            make_media_record(_id=MEDIA_ID, objectKey=f"users/{OWNER_ID}/avatar/{'c' * 32}-new.png"),
+            make_media_record(_id=OTHER_MEDIA_ID, objectKey=f"users/{OWNER_ID}/avatar/{'b' * 32}-old.png"),
+        ],
+    )
+    fake_storage = setup_storage(monkeypatch)
+    from app.services.storage import StorageError
+    fake_storage.delete_object.side_effect = StorageError("b2 unavailable")
+    current_user = dict(CURRENT_USER)
+    current_user["avatarMediaId"] = OTHER_MEDIA_ID
+    client = make_client(current_user)
+
+    res = await client.patch("/profile", json={"avatarMediaId": MEDIA_ID})
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    # The swap itself succeeds (the new avatar is referenced), and the B2
+    # deletion was attempted and failed.
+    assert fake_storage.delete_object.called
+    # The old record is left recoverable: NOT soft-deleted, still ready (the
+    # media-lifecycle cleanup candidate query only matches deletedAt: None).
+    import app.routes.user as user_mod
+    record = await user_mod.db.get_db()[user_mod.db.MEDIA].find_one({"_id": ObjectId(OTHER_MEDIA_ID)})
+    assert record is not None
+    assert record["deletedAt"] is None
+    assert record["status"] == "ready"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_patch_profile_rejects_unknown_avatar_media(monkeypatch):
     stub_db(users=[make_user_doc()], media=[])
     setup_storage(monkeypatch)

@@ -5,8 +5,16 @@ from app.database import mongodb as db
 from app.services.auth_utils import decode_access_token
 from app.services.security import parse_object_id
 from app.services import get_cached_user, cache_user
+from app.services.user_serializer import NEVER_FIELDS
 from bson import ObjectId
 from pymongo.errors import PyMongoError
+
+
+def _strip_credentials(user: dict) -> dict:
+    """Drop any credential field present on a user document."""
+    for field in NEVER_FIELDS:
+        user.pop(field, None)
+    return user
 
 async def update_last_active(user_id: str):
     database = db.get_db()
@@ -78,6 +86,11 @@ async def get_current_user(
             detail="User account not found"
         )
         
+    # Never retain credential material in the authenticated-user object that is
+    # cached and handed to every handler (SEC-01: password must not leave the
+    # server, and must not be cacheable for accidental leak).
+    _strip_credentials(user)
+
     # Serialize ObjectId and dates
     user["id"] = str(user["_id"])
     del user["_id"]
@@ -136,6 +149,8 @@ async def get_optional_user(
 
     if not user:
         return None
+
+    _strip_credentials(user)
 
     user["id"] = str(user["_id"])
     del user["_id"]

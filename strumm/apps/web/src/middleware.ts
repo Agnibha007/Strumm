@@ -6,7 +6,7 @@ const apiOrigin = (
   "http://localhost:8000"
 ).replace(/\/+$/, "");
 
-function buildCspHeader(nonce: string): string {
+export function buildCspHeader(nonce: string): string {
   return [
     `default-src 'self'`,
     // No 'unsafe-inline' / 'unsafe-eval' here. Inline scripts are allowed only
@@ -21,7 +21,13 @@ function buildCspHeader(nonce: string): string {
     `font-src 'self' https://fonts.gstatic.com`,
     `connect-src 'self' ${apiOrigin} ${apiOrigin
       .replace(/^https:/, "wss:")
-      .replace(/^http:/, "ws:")} https://www.youtube.com https://s.ytimg.com https://i.ytimg.com https://img.youtube.com https://lh3.googleusercontent.com https://*.sentry.io https:`,
+      .replace(/^http:/, "ws:")} https://www.youtube.com https://www.youtube-nocookie.com https://music.youtube.com https://www.googleapis.com https://i.ytimg.com https://img.youtube.com https://s.ytimg.com https://lh3.googleusercontent.com https://*.sentry.io`,
+    // CSP-01: connect-src is an explicit allowlist — no `https:` catch-all so
+    // connection-based exfiltration is actually constrained. Origin groups:
+    //  - YouTube media/web/metadata: youtube.com + nocookie + music + s.ytimg
+    //    + i.ytimg + img.youtube + lh3 (album art/resolver).
+    //  - YouTube Data API (YouTubeProvider search): www.googleapis.com.
+    //  - Error telemetry: *.sentry.io extends to your DSN host directly.
     `worker-src 'self' blob:`,
     `object-src 'none'`,
     `base-uri 'self'`,

@@ -8,6 +8,7 @@ import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import dynamic from "next/dynamic";
 import { apiUrl, cleanText } from "web/lib/api";
+import { ListeningEvent, ListeningTracker, QUEUE_STORAGE_KEY } from "web/lib/listening-time";
 import { formatTime } from "web/lib/format";
 import { useLikeSong } from "web/hooks/useLikeSong";
 import SongArtwork from "web/components/SongArtwork";
@@ -119,66 +120,107 @@ export default function EditorialPlayer() {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  // Sync listening stats to backend every 30 seconds of active playback.
-  // A ref accumulator (not React state) drives the counter: side effects in
-  // state updaters are re-run by React StrictMode/concurrent rendering, which
-  // double-counts play events. The token is read fresh from the store at send
-  // time so an access-token rotation mid-session can't 401 every sync, and
-  // partial seconds are flushed on pause/track-change/unmount so short listening
-  // bursts still count toward the user's minutes.
-  const listenAccumulatorRef = useRef(0);
-
-  const syncListeningStats = async (song: any, durationSec: number) => {
-    const { token, fetchProfile } = useAuthStore.getState();
-    try {
-      const response = await fetch(apiUrl("/play-event"), {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token || ""}`
-        },
-        body: JSON.stringify({
-          song: {
-            videoId: song.videoId,
-            title: cleanText(song.title || "", 160),
-            artist: cleanText(song.artist || "", 160),
-            thumbnail: cleanText(song.thumbnail || "", 500),
-            duration: Math.round(song.duration) || 180
-          },
-          listenDuration: durationSec
-        })
-      });
-      const json = await response.json().catch(() => null);
-      if (json?.success) {
-        fetchProfile();
-      }
-    } catch (e) {
-      console.warn("Playback statistics failed to sync offline.");
-    }
-  };
-
+  // Listening-time tracking: media-position deltas (not wall-clock ticks).
+  // The old setInterval counter undercounted badly when browsers throttle or
+  // suspend timers for background tabs / locked screens (a 4-minute song could
+  // report ~1 minute). The playing element's timeupdate events still fire the
+  // store's currentTime while audio plays, so we accumulate how far playback
+  // actually advanced, ignore seeks/stalls, flush in 30s batches, and retry
+  // failed flushes via a persisted queue keyed by idempotent eventIds.
   useEffect(() => {
-    if (!isPlaying || !currentSong) return;
-    const song = currentSong;
-    const timer = setInterval(() => {
-      listenAccumulatorRef.current += 1;
-      if (listenAccumulatorRef.current >= 30) {
-        const secs = 30;
-        listenAccumulatorRef.current -= 30;
-        syncListeningStats(song, secs);
-      }
-    }, 1000);
+    let tracker: ListeningTracker | null = null;
 
-    return () => {
-      clearInterval(timer);
-      const partial = listenAccumulatorRef.current;
-      if (partial > 0) {
-        listenAccumulatorRef.current = 0;
-        syncListeningStats(song, partial);
+    const flushOnHidden = () => {
+      if (document.visibilityState === "hidden") {
+        tracker?.flushPartial();
       }
     };
-  }, [isPlaying, currentSong?.videoId]);
+
+    const sendEvent = async (event: ListeningEvent): Promise<boolean> => {
+      const { token, fetchProfile } = useAuthStore.getState();
+      try {
+        const response = await fetch(apiUrl("/play-event"), {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            eventId: event.eventId,
+            song: {
+              videoId: event.song.videoId,
+              title: cleanText(event.song.title || "", 160),
+              artist: cleanText(event.song.artist || "", 160),
+              thumbnail: cleanText(event.song.thumbnail || "", 500),
+              duration: Math.round(event.song.duration) || 180
+            },
+            listenDuration: event.seconds
+          })
+        });
+        const json = await response.json().catch(() => null);
+        if (json?.success) {
+          fetchProfile();
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
+    tracker = new ListeningTracker({
+      subscribe: (listener) => usePlayerStore.subscribe(listener),
+      getSnapshot: () => {
+        const state = usePlayerStore.getState();
+        return {
+          isPlaying: state.isPlaying,
+          currentSong: state.currentSong
+            ? {
+                videoId: state.currentSong.videoId,
+                title: state.currentSong.title,
+                artist: state.currentSong.artist,
+                thumbnail: state.currentSong.thumbnail,
+                duration: state.currentSong.duration,
+              }
+            : null,
+          currentTime: state.currentTime,
+          seekCount: state.seekCount,
+        };
+      },
+      send: sendEvent,
+      storageGet: () => {
+        if (typeof window === "undefined") return null;
+        try {
+          const raw = window.localStorage.getItem(QUEUE_STORAGE_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? (parsed as ListeningEvent[]) : null;
+        } catch {
+          return null;
+        }
+      },
+      storageSet: (events) => {
+        if (typeof window === "undefined") return;
+        try {
+          window.localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(events));
+        } catch {
+          // storage full / unavailable — the in-memory queue still retries
+        }
+      },
+    });
+
+    tracker.start();
+    document.addEventListener("visibilitychange", flushOnHidden);
+    window.addEventListener("pagehide", flushOnHidden);
+
+    return () => {
+      document.removeEventListener("visibilitychange", flushOnHidden);
+      window.removeEventListener("pagehide", flushOnHidden);
+      tracker?.stop();
+    };
+  }, []);
 
   if (!currentSong) return null;
 

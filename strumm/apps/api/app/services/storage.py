@@ -302,11 +302,30 @@ def create_download_url(
 
 
 def delete_object(object_key: str) -> None:
-    """Delete an object from the bucket (respects versioning settings)."""
+    """Delete an object from the bucket (respects versioning settings).
+
+    Idempotent: removing an already-missing object is treated as success, so
+    retried deletions (e.g. the unused-media cleanup after a partial failure)
+    never raise.
+
+    Versioning caveat: with B2's "Keep all versions" the DELETE creates a
+    delete marker (the object is hidden, future reads 404) but any *previous*
+    versions of the object remain in the bucket and still consume storage.
+    Reclaiming those versions is out of scope here — see the lifecycle
+    documentation in ``app.services.media_lifecycle`` for how the app treats
+    this honestly and what bucket-level rule purges old versions.
+    """
     client = _get_client()
     try:
         client.remove_object(B2_BUCKET, object_key)
     except Exception as exc:
+        # MinIO surfaces missing objects as S3Error(code="NoSuchKey"); B2 may
+        # surface a 404. Either way the goal state ("object absent") holds.
+        try:
+            if getattr(exc, "code", "") == "NoSuchKey":
+                return
+        except Exception:  # pragma: no cover - defensive
+            pass
         logger.error(f"Failed to delete object key={object_key!r}: {type(exc).__name__}: {exc!s:.160}")
         raise StorageError("Could not delete the object.") from exc
 

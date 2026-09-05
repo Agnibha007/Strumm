@@ -21,7 +21,7 @@ from app.services.security import (
     sanitize_text, sanitize_multiline_text, sanitize_username,
     sanitize_youtube_id, sanitize_enum, sanitize_positive_int,
     escaped_regex, parse_object_id, assert_public_http_url,
-    require_admin,
+    require_admin, normalize_email,
 )
 from app.services.auth_utils import (
     create_access_token, decode_access_token,
@@ -49,7 +49,7 @@ __all__ = [
     "sanitize_text", "sanitize_multiline_text", "sanitize_username",
     "sanitize_youtube_id", "sanitize_enum", "sanitize_positive_int",
     "escaped_regex", "parse_object_id", "assert_public_http_url",
-    "require_admin",
+    "require_admin", "normalize_email",
     # Auth
     "create_access_token", "decode_access_token",
     "hash_password", "verify_password", "hash_otp",

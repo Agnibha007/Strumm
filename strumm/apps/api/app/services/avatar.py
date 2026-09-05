@@ -26,6 +26,7 @@ from typing import Optional
 
 from app.database import mongodb as db
 from app.services import storage
+from app.services.media_lifecycle import mark_media_accessed
 
 logger = logging.getLogger("strumm-avatar")
 
@@ -47,14 +48,20 @@ async def resolve_avatar_url(avatar_media_id: Optional[str], legacy_avatar: Opti
     * B2-backed (``avatar_media_id`` present + ready media record) -> signed URL
     * otherwise -> the legacy ``avatar`` value unchanged (base64 / external URL)
     * neither -> None
+
+    Signing a B2 avatar marks it as accessed (the signed URL is how the image
+    is read), shielding it from unused-media expiry.
     """
     if avatar_media_id:
         from bson import ObjectId
         if ObjectId.is_valid(str(avatar_media_id)):
-            record = await _fetch_media_record(db.get_db(), ObjectId(str(avatar_media_id)))
+            database = db.get_db()
+            record = await _fetch_media_record(database, ObjectId(str(avatar_media_id)))
             if record and record.get("category") == "avatar" and record.get("status") == "ready":
                 try:
-                    return storage.create_download_url(record["objectKey"])["downloadUrl"]
+                    signed_url = storage.create_download_url(record["objectKey"])["downloadUrl"]
+                    await mark_media_accessed(database, record)
+                    return signed_url
                 except storage.StorageError:
                     logger.warning(
                         f"failed to sign avatar for media={avatar_media_id!r}; "

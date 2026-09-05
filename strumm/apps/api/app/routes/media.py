@@ -29,6 +29,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services import storage
+from app.services.media_lifecycle import mark_media_accessed
 from app.services.security import parse_object_id, sanitize_text
 
 logger = logging.getLogger("strumm-media")
@@ -84,6 +85,10 @@ async def create_upload_url(
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow(),
         "deletedAt": None,
+        # A brand-new upload is, by definition, "just accessed": it starts the
+        # unused-media clock at zero so it cannot expire before the retention
+        # window has had a chance to run.
+        "lastAccessedAt": datetime.utcnow(),
     }
     database = db.get_db()
     try:
@@ -165,6 +170,10 @@ async def create_avatar_url(
         logger.error(f"Avatar URL failure key={record['objectKey']!r}: {exc!s}")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Storage is temporarily unavailable.")
 
+    # This is the authorization boundary: the avatar's bytes are about to be
+    # downloaded, so the object is "accessed" and shielded from expiry.
+    await mark_media_accessed(database, record)
+
     return {
         "success": True,
         "data": {
@@ -199,6 +208,10 @@ async def create_download_url(
     except storage.StorageError as exc:
         logger.error(f"Download URL failure key={object_key!r}: {exc!s}")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Storage is temporarily unavailable.")
+
+    # Same authorization boundary as above: issuing the download URL proves the
+    # object is being used, so it must not be considered "unused".
+    await mark_media_accessed(database, record)
 
     return {
         "success": True,

@@ -15,6 +15,7 @@ from app.services.podcast_index import (
     trending_podcasts,
 )
 from app.services.security import assert_public_http_url, parse_object_id, sanitize_text
+from httpx import Timeout as HttpxTimeout
 from pydantic import BaseModel, Field, HttpUrl
 import logging
 
@@ -48,10 +49,13 @@ async def import_podcast_rss(
             del existing["_id"]
             return {"success": True, "data": existing, "message": "Podcast show already imported."}
             
-        # Parse RSS Feed asynchronously using shared httpx client
-        from app.services.http_client import get_http_client
-        client = get_http_client()
-        resp = await client.get(url, timeout=12.0)
+        # Parse RSS Feed asynchronously via a DNS-pinned client (SSRF-safe)
+        from app.services.security import create_pinned_client
+        client = create_pinned_client(url, timeout=HttpxTimeout(connect=5.0, read=12.0, write=5.0, pool=5.0))
+        try:
+            resp = await client.get(url)
+        finally:
+            await client.aclose()
         if resp.status_code != 200:
             return {"success": False, "error": f"Failed to download RSS feed. Status code: {resp.status_code}"}
         xml_text = resp.text

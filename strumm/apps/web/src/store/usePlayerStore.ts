@@ -107,6 +107,11 @@ interface PlayerState {
     setPlaybackQuality?: (quality: string) => void;
   } | null;
   setPlayerRef: (ref: any) => void;
+  // Monotonic seek counter bumped whenever a seek is issued through the player
+  // ref, so the listening-time tracker can treat the jump as a seek instead of
+  // counting skipped seconds.
+  seekCount: number;
+  notifySeek: (seconds: number) => void;
   updateMediaSession: (song: Song) => void;
 
   // Shuffle history — tracks videoIds played during the current shuffle round
@@ -137,6 +142,7 @@ export const usePlayerStore = create<PlayerState>()(
 
       audioQuality: "balanced",
       playerRef: null,
+      seekCount: 0,
       isPlayerLoading: false,
       playerError: null,
       ...initialRadioState,
@@ -424,7 +430,20 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       setPlayerRef: (playerRef) => {
-        set({ playerRef });
+        // Wrap seekTo so every seek (user scrub, next()/prev() jumps, remote
+        // state sync) announces itself to listeners — the listening-time
+        // tracker uses this to never count skipped seconds as listening.
+        const wrapped =
+          playerRef && typeof playerRef.seekTo === "function"
+            ? {
+                ...playerRef,
+                seekTo: (seconds: number) => {
+                  playerRef.seekTo(seconds);
+                  get().notifySeek(seconds);
+                },
+              }
+            : playerRef;
+        set({ playerRef: wrapped });
         // Set volume and rate immediately upon initialization
         if (playerRef) {
           if (typeof playerRef.setVolume === "function") {
@@ -443,6 +462,9 @@ export const usePlayerStore = create<PlayerState>()(
           }
         }
       },
+
+      notifySeek: (seconds) =>
+        set((state) => ({ seekCount: state.seekCount + 1 })),
 
       // Helper function to update system lockscreen metadata (Media Session API)
       updateMediaSession: (song: Song) => {

@@ -12,7 +12,8 @@ from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password, ACCESS_TOKEN_EXPIRE
 from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_email, send_password_changed_email, send_welcome_email, send_email_changed_email
-from app.services.security import sanitize_text, sanitize_username, parse_object_id, validate_password_strength
+from app.services.security import sanitize_text, sanitize_username, parse_object_id, validate_password_strength, normalize_email
+from app.services.user_serializer import serialize_user
 import httpx
 import logging
 
@@ -57,14 +58,19 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     # Use 'lax' for development (HTTP) and 'none' for production (HTTPS)
     is_secure = os.getenv("ENVIRONMENT", "development").lower() != "development" or os.getenv("FORCE_SECURE_COOKIES") == "true"
     same_site = "none" if is_secure else "lax"
-    
+
+    # Cookie lifetime must mirror the token lifetime so the browser's expiry and
+    # the server's JWT never disagree (SEC-05). The real session boundary is the
+    # sliding 7-day refresh session in Mongo; the access cookie just mirrors the
+    # 1-hour access JWT (ACCESS_TOKEN_EXPIRE), and the refresh cookie mirrors the
+    # session document's sliding 7-day expiry.
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
         secure=is_secure,
         samesite=same_site,
-        max_age=15 * 60,  # 15 minutes
+        max_age=int(ACCESS_TOKEN_EXPIRE.total_seconds()),
         path="/"
     )
     response.set_cookie(
@@ -232,7 +238,7 @@ async def change_email(
         if not verify_password(payload.password, hashed):
             return {"success": False, "error": "Password is incorrect."}
         
-        new_email = payload.newEmail.lower().strip()
+        new_email = normalize_email(payload.newEmail)
         if not new_email or "@" not in new_email:
             return {"success": False, "error": "Invalid email address."}
         
@@ -280,6 +286,14 @@ class EmailPasswordLoginRequest(BaseModel):
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
+class PasswordResetRequest(BaseModel):
+    # SEC-07: new_password travels in the JSON body, never the URL query string
+    # (credentials in URLs leak into proxy/access logs and browser history).
+    # email/token may still arrive via the email link's query string.
+    email: EmailStr
+    token: str
+    new_password: str
+
 class EmailSignupRequest(BaseModel):
     email: EmailStr
     username: str
@@ -324,6 +338,8 @@ async def verify_google_id_token(id_token: str) -> dict:
     claims = response.json()
     if claims.get("aud") != client_id or claims.get("email_verified") not in {"true", True}:
         raise HTTPException(status_code=401, detail="Google identity token could not be verified.")
+    if claims.get("iss") not in {"https://accounts.google.com", "accounts.google.com"}:
+        raise HTTPException(status_code=401, detail="Google identity token could not be verified.")
     if not claims.get("email"):
         raise HTTPException(status_code=401, detail="Google identity token is missing email.")
     return claims
@@ -331,7 +347,7 @@ async def verify_google_id_token(id_token: str) -> dict:
 @router.post("/email")
 async def send_otp(request: EmailLoginRequest):
     try:
-        email = request.email.lower()
+        email = normalize_email(request.email)
         database = db.get_db()
         
         # Check if user exists; don't reveal existence for security
@@ -389,7 +405,7 @@ async def send_otp(request: EmailLoginRequest):
 @router.post("/signup")
 async def send_signup_otp(request: EmailSignupRequest):
     try:
-        email = request.email.lower()
+        email = normalize_email(request.email)
         username = sanitize_username(request.username)
         display_name = sanitize_text(request.displayName, max_length=120)
         if not display_name:
@@ -469,7 +485,7 @@ async def verify_otp(
     response: Response
 ):
     try:
-        email = payload.email.lower()
+        email = normalize_email(payload.email)
         otp = payload.otp.strip()
         
         database = db.get_db()
@@ -490,7 +506,7 @@ async def verify_otp(
             
         # Validate OTP
         hashed_input = hash_otp(otp)
-        if hashed_input != otp_doc.get("hashed_otp"):
+        if not secrets.compare_digest(hashed_input, otp_doc.get("hashed_otp") or ""):
             # Increment attempts
             await database["otps"].update_one(
                 {"email": email},
@@ -561,7 +577,7 @@ async def verify_otp(
         return {
             "success": True,
             "data": {
-                "user": user,
+                "user": serialize_user(user, has_object_id=True),
                 "token": access_token,
                 "refreshToken": refresh_token
             }
@@ -581,7 +597,7 @@ async def google_login(
 ):
     try:
         claims = await verify_google_id_token(payload.idToken)
-        email = claims["email"].lower()
+        email = normalize_email(claims["email"])
         display_name = sanitize_text(claims.get("name") or email.split("@")[0], max_length=120)
         avatar = sanitize_text(claims.get("picture"), max_length=500) if claims.get("picture") else None
         database = db.get_db()
@@ -644,7 +660,7 @@ async def google_login(
         return {
             "success": True,
             "data": {
-                "user": user,
+                "user": serialize_user(user, has_object_id=True),
                 "token": access_token,
                 "refreshToken": refresh_token
             }
@@ -663,7 +679,7 @@ async def email_password_login(
     response: Response
 ):
     try:
-        email = payload.email.lower()
+        email = normalize_email(payload.email)
         password = payload.password
         
         database = db.get_db()
@@ -724,7 +740,7 @@ async def email_password_login(
         return {
             "success": True,
             "data": {
-                "user": user,
+                "user": serialize_user(user, has_object_id=True),
                 "token": access_token,
                 "refreshToken": refresh_token
             }
@@ -757,11 +773,26 @@ async def refresh_session(
 
         token_hash = hash_refresh_token(token)
         database = db.get_db()
+
+        # Reuse detection: a session only ever has ONE current refresh token.
+        # A rotated token that is presented again (old hash no longer matches
+        # refreshTokenHash) means the session family is compromised, so the
+        # entire session is revoked to stop a stolen token granting access.
+        reused = await database[db.SESSIONS].find_one({"previousTokenHash": token_hash})
+        if reused:
+            logger.warning(
+                "Refresh-token reuse detected — revoking session family (user=%s, session=%s)",
+                reused.get("userId"), reused.get("_id"),
+            )
+            await database[db.SESSIONS].delete_one({"_id": reused["_id"]})
+            raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
+
         session = await database[db.SESSIONS].find_one({"refreshTokenHash": token_hash})
-        
-        if not session or session.get("expiresAt") < datetime.utcnow():
-            if session:
-                await database[db.SESSIONS].delete_one({"_id": session["_id"]})
+
+        if not session:
+            raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
+        if session.get("expiresAt") < datetime.utcnow():
+            await database[db.SESSIONS].delete_one({"_id": session["_id"]})
             raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
 
         user_id = session["userId"]
@@ -779,19 +810,38 @@ async def refresh_session(
         
         new_refresh_token = secrets.token_hex(32)
         new_refresh_token_hash = hash_refresh_token(new_refresh_token)
-        
-        # Sliding session: extend expiry to 7 days from now
-        await database[db.SESSIONS].update_one(
-            {"_id": session["_id"]},
+
+        # Sliding session: extend expiry to 7 days from now. The rotation is a
+        # compare-and-swap on the presented hash so that two concurrent requests
+        # reusing the same token can never both win; the loser's token is then
+        # a "previous" token and is handled by the reuse path above.
+        rotated = await database[db.SESSIONS].update_one(
+            {"_id": session["_id"], "refreshTokenHash": token_hash},
             {
                 "$set": {
                     "refreshTokenHash": new_refresh_token_hash,
+                    "previousTokenHash": token_hash,
                     "lastActiveAt": datetime.utcnow(),
                     "expiresAt": datetime.utcnow() + timedelta(days=7),
                     "device": request.headers.get("user-agent", "Unknown Device")
                 }
             }
         )
+
+        if rotated.modified_count == 0:
+            # The token was rotated between our lookup and our update, so the
+            # presented hash is now a previous (reused) token. Same treatment
+            # as the primary reuse path: revoke the family.
+            reused = await database[db.SESSIONS].find_one(
+                {"_id": session["_id"], "previousTokenHash": token_hash}
+            )
+            if reused:
+                logger.warning(
+                    "Refresh-token reuse detected (rotation race) — revoking session family (user=%s)",
+                    reused.get("userId"),
+                )
+                await database[db.SESSIONS].delete_one({"_id": reused["_id"]})
+            raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
         
         set_auth_cookies(response, new_access_token, new_refresh_token)
         
@@ -804,7 +854,7 @@ async def refresh_session(
         return {
             "success": True,
             "data": {
-                "user": user,
+                "user": serialize_user(user, has_object_id=True),
                 "token": new_access_token,
                 "refreshToken": new_refresh_token
             }
@@ -833,7 +883,11 @@ async def logout_session(
         if token:
             token_hash = hash_refresh_token(token)
             database = db.get_db()
-            await database[db.SESSIONS].delete_one({"refreshTokenHash": token_hash})
+            # A logout may legitimately present the previous (rotated) token of
+            # its own session, so match either the current or the previous hash.
+            await database[db.SESSIONS].delete_one(
+                {"$or": [{"refreshTokenHash": token_hash}, {"previousTokenHash": token_hash}]}
+            )
             
         response.delete_cookie(key="access_token", path="/")
         response.delete_cookie(key="refresh_token", path="/")
@@ -846,7 +900,7 @@ async def logout_session(
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest):
     try:
-        email = request.email.lower()
+        email = normalize_email(request.email)
         database = db.get_db()
         
         # Check if user exists with this email
@@ -902,13 +956,11 @@ async def forgot_password(request: ForgotPasswordRequest):
         }
 
 @router.post("/reset-password")
-async def reset_password(
-    email: str,
-    token: str,
-    new_password: str
-):
+async def reset_password(payload: PasswordResetRequest):
     try:
-        email = email.lower()
+        email = normalize_email(payload.email)
+        token = payload.token
+        new_password = payload.new_password
         database = db.get_db()
         
         # Find reset token

@@ -9,8 +9,14 @@ from contextlib import asynccontextmanager
 
 import sentry_sdk
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import (
+    http_exception_handler as _fastapi_http_exception_handler,
+    request_validation_exception_handler as _fastapi_validation_exception_handler,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import mongodb as db
 from app.routes import auth, stream, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media
@@ -89,9 +95,20 @@ async def lifespan(app: FastAPI):
     # 2. Launch heavy initialization as background task so server starts accepting immediately
     asyncio.create_task(_background_startup_work())
 
+    # 3. Periodic unused-media cleanup. Claim-based locking makes it safe to
+    #    run from any number of replicas; cancelled on shutdown below.
+    from app.services import media_lifecycle
+    media_cleanup_task = asyncio.create_task(media_lifecycle.run_media_cleanup_loop())
+
     yield  # App serves requests here
 
-    # Shutdown: close HTTP client pool and MongoDB
+    # Shutdown: stop the media cleanup loop, close HTTP client pool and MongoDB
+    media_cleanup_task.cancel()
+    try:
+        await media_cleanup_task
+    except asyncio.CancelledError:
+        pass
+    await close_http_client()
     await close_http_client()
     db.close_db()
     logger.info("Application shutdown complete.")
@@ -131,6 +148,7 @@ async def _create_indexes(database):
         ("users.username", lambda: database[db.USERS].create_index("username", unique=True)),
         ("playbackhistories.compound", lambda: database[db.PLAYBACK_HISTORIES].create_index([("userId", 1), ("playedAt", -1)])),
         ("playbackhistories.videoId", lambda: database[db.PLAYBACK_HISTORIES].create_index([("song.videoId", 1)])),
+        ("playbackhistories.eventId", lambda: database[db.PLAYBACK_HISTORIES].create_index("eventId", unique=True, sparse=True)),
         ("playlists.userId", lambda: database[db.PLAYLISTS].create_index("userId")),
         ("playlists.name_visibility", lambda: database[db.PLAYLISTS].create_index([("name", 1), ("visibility", 1)])),
         ("playlists.songs.videoId", lambda: database[db.PLAYLISTS].create_index("songs.videoId")),
@@ -172,6 +190,7 @@ async def _create_indexes(database):
         # Object-storage (B2) media records
         ("media.ownerId_category", lambda: database[db.MEDIA].create_index([("ownerId", 1), ("category", 1)])),
         ("media.objectKey", lambda: database[db.MEDIA].create_index([("objectKey", 1), ("deletedAt", 1)], unique=True, sparse=True)),
+        ("media.lastAccessedAt", lambda: database[db.MEDIA].create_index("lastAccessedAt")),
     ]
 
     created = 0
@@ -284,6 +303,24 @@ async def _sanitize_song_text(response: Response) -> Response:
         return response
 
 
+def _security_headers() -> dict:
+    """Security headers applied consistently to every HTTP response.
+
+    OPS-02: previously only normal responses got these via the middleware;
+    error responses (429, 500, 4xx, 422) were sent bare.  Keeping one helper
+    means every code path — middleware, rate-limit, and the exception handlers
+    below — emits exactly the same set and can't drift apart.
+    """
+    return {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-XSS-Protection": "1; mode=block",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    }
+
+
 class UnifiedBackendMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 1. Request ID Initialization
@@ -308,6 +345,7 @@ class UnifiedBackendMiddleware(BaseHTTPMiddleware):
                     "X-RateLimit-Limit": str(max_req),
                     "X-RateLimit-Remaining": "0",
                     "X-RateLimit-Reset": str(int(time.time() + retry_after)),
+                    **_security_headers(),
                 }
             )
 
@@ -330,12 +368,8 @@ class UnifiedBackendMiddleware(BaseHTTPMiddleware):
             response.headers["X-RateLimit-Limit"] = str(max_req)
             response.headers["X-RateLimit-Remaining"] = str(max(remaining, 0))
 
-            response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-Frame-Options"] = "DENY"
-            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-            response.headers["X-XSS-Protection"] = "1; mode=block"
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-            response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+            for header, value in _security_headers().items():
+                response.headers[header] = value
 
             return response
         finally:
@@ -352,8 +386,26 @@ async def global_exception_handler(request: Request, exc: Exception):
     sentry_sdk.capture_exception(exc)
     return JSONResponse(
         status_code=500,
-        content={"success": False, "error": "An internal server error occurred."}
+        content={"success": False, "error": "An internal server error occurred."},
+        headers=_security_headers(),
     )
+
+
+# --- Consistent security headers on 4xx/422 error paths (OPS-02) ---
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    response = await _fastapi_http_exception_handler(request, exc)
+    for header, value in _security_headers().items():
+        response.headers[header] = value
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    response = await _fastapi_validation_exception_handler(request, exc)
+    for header, value in _security_headers().items():
+        response.headers[header] = value
+    return response
 
 # Per-endpoint rate limiting configuration
 RATE_LIMITS = [
@@ -629,9 +681,13 @@ async def sitemap_data():
         ).limit(MAX_PODCASTS):
             podcasts.append({"id": str(doc["_id"]), "title": doc.get("title", "")})
 
-        # 4. Public user profiles (bounded)
+        # 4. Public user profiles (bounded). Only index users who have NOT opted
+        #    out of the public passport (settings.publicPassport == False), which
+        #    matches the gate on the /public/{username} endpoint so sitemaps never
+        #    advertise a profile the app itself treats as private (PRIV-01).
         async for doc in database[db.USERS].find(
-            {}, {"username": 1, "displayName": 1}
+            {"settings.publicPassport": {"$ne": False}},
+            {"username": 1, "displayName": 1}
         ).limit(MAX_USERS):
             username = doc.get("username")
             if username:

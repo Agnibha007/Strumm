@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 import time
 from datetime import datetime
@@ -7,6 +8,9 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.services.security import sanitize_multiline_text, sanitize_positive_int, sanitize_text
+
+
+logger = logging.getLogger(__name__)
 
 
 PODCAST_INDEX_BASE_URL = "https://api.podcastindex.org/api/1.0"

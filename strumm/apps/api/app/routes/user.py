@@ -9,7 +9,9 @@ from app.services.security import escaped_regex, parse_object_id, sanitize_posit
 from app.services.normalizer import canonical_artist, normalize_artist, classify_genre
 from app.services.email_service import send_account_deleted_email
 from app.services.avatar import decorate_user_avatar
+from app.services.user_serializer import serialize_user
 from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 import asyncio
 import logging
 import math
@@ -36,7 +38,19 @@ async def _get_owned_avatar_media(database, media_id_str, owner_id):
 
 
 async def _soft_delete_avatar_media(database, media_id_str):
-    """Soft-delete a (now-displaced) B2 avatar record + remove its B2 object."""
+    """Soft-delete a (now-displaced) B2 avatar record + remove its B2 object.
+
+    B2 is deleted *first*; the Mongo record is only soft-deleted once the
+    object is confirmed gone. If the B2 deletion fails the record is left
+    intact (``deletedAt`` stays None, status stays ``ready``) so the object
+    can never become a permanent orphan: the record is already unreferenced
+    (the user now points at the new avatar) and once its ``lastAccessedAt``
+    goes stale the periodic media-lifecycle cleanup re-attempts the B2 delete
+    and finalizes the record. Soft-deleting here on a B2 failure would hide
+    the record from the cleanup candidate query (``deletedAt: None``) forever.
+    B2 DELETE is idempotent (a missing object is a no-op success), so a retry
+    is always safe.
+    """
     if not ObjectId.is_valid(str(media_id_str)):
         return
     record = await database[db.MEDIA].find_one({"_id": ObjectId(str(media_id_str))})
@@ -46,7 +60,11 @@ async def _soft_delete_avatar_media(database, media_id_str):
     try:
         _storage.delete_object(record["objectKey"])
     except _storage.StorageError:
-        logger.warning(f"failed to delete displaced avatar object key={record['objectKey']!r}")
+        logger.warning(
+            f"failed to delete displaced avatar object key={record['objectKey']!r}; "
+            f"record left intact for lifecycle cleanup to retry"
+        )
+        return
     await database[db.MEDIA].update_one(
         {"_id": record["_id"]},
         {"$set": {"status": "deleted", "deletedAt": datetime.utcnow(), "updatedAt": datetime.utcnow()}},
@@ -399,7 +417,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
         ).sort("playedAt", -1).to_list(length=5000)
         stats = compute_user_stats(histories, current_user.get("statistics"))
-        user_data = dict(current_user)
+        user_data = serialize_user(current_user)
         user_data["soundDNA"] = stats["soundDNA"]
         user_data["statistics"] = {
             "totalListeningTime": stats["totalListeningTime"],
@@ -419,7 +437,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         }
         return {
             "success": True,
-            "data": current_user
+            "data": serialize_user(current_user)
         }
 
 @router.patch("/profile")
@@ -490,8 +508,6 @@ async def update_profile(
         user = await database[db.USERS].find_one({"_id": parse_object_id(current_user["id"])})
         user["id"] = str(user["_id"])
         del user["_id"]
-        if "createdAt" in user:
-            user["createdAt"] = user["createdAt"].isoformat()
         await decorate_user_avatar(user)
 
         # If we swapped in a new B2 avatar, the old B2 avatar can now be
@@ -501,7 +517,7 @@ async def update_profile(
 
         return {
             "success": True,
-            "data": user
+            "data": serialize_user(user)
         }
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
@@ -818,6 +834,11 @@ async def _check_podcast_badges(user_id: str, video_id: str) -> None:
 class PlayEventRequest(BaseModel):
     song: SongSchema
     listenDuration: int # seconds listened in this interval (e.g., 30s sync)
+    # Client-generated idempotency key. When present, the same eventId is never
+    # counted twice (a unique sparse index on playbackhistories.eventId backs an
+    # insert-first claim). Retries after a lost response therefore cannot double
+    # the user's total listening time.
+    eventId: Optional[str] = None
 
 class PlayerStateRequest(BaseModel):
     deviceId: str = "primary"
@@ -841,15 +862,35 @@ async def register_play_event(
         userId = ObjectId(current_user["id"])
         song_dict = payload.song.model_dump()
         duration_delta = sanitize_positive_int(payload.listenDuration, minimum=1, maximum=300)
-        
-        # 1. Log playback event in history
+
+        event_id = sanitize_text(payload.eventId or "", max_length=64) or None
+
+        # 1. Log playback event in history. When an eventId is supplied this
+        # insert doubles as an *atomic claim*: the unique sparse index on
+        # playbackhistories.eventId guarantees the same event is inserted at
+        # most once, so retried flushes (a lost response, then an offline
+        # retry) can never increment totalListeningTime twice.
         history_entry = {
             "userId": userId,
             "song": song_dict,
             "listenDuration": duration_delta,
             "playedAt": datetime.utcnow()
         }
-        await database[db.PLAYBACK_HISTORIES].insert_one(history_entry)
+        if event_id:
+            history_entry["eventId"] = event_id
+
+        try:
+            await database[db.PLAYBACK_HISTORIES].insert_one(history_entry)
+        except DuplicateKeyError:
+            # The event was already claimed by this request earlier. Return the
+            # same success the client would have seen — no history row, no $inc.
+            return {
+                "success": True,
+                "data": {
+                    "message": f"Listening stats already recorded for event; +0 seconds added.",
+                    "totalListeningTime": (current_user.get("statistics", {}).get("totalListeningTime", 0) or 0)
+                }
+            }
         
         # 2. Update user activity (single atomic upsert, no extra query)
         show_act = current_user.get("settings", {}).get("showListeningActivity", True)
@@ -1016,6 +1057,46 @@ class MemoryCreateRequest(BaseModel):
     note: str
     visibility: str = "private" # public, private
 
+async def reconcile_listening_time_and_save(user_oid, stats, stored_statistics) -> None:
+    """Persist recalculated stats without racing the atomic play-event increments.
+
+    Every /play-event atomically ``$inc``s ``statistics.totalListeningTime`` as
+    the immediate source of truth. A background recalculation that recomputes the
+    total from a *snapshot* of playback histories and blindly ``$set``s it can
+    clobber a newer ``$inc`` that landed after the snapshot was taken, which makes
+    a user's listening time stall (or even drop) instead of increasing.
+
+    So the cumulative counter is reconciled monotonically and race-free:
+      * never written backwards -- we only ever add the shortfall;
+      * protected by a compare-and-swap filter on the value we read, so if a
+        concurrent ``$inc`` bumped the counter between our read and write, the
+        update is a no-op instead of double-counting (a rescheduled recalc will
+        pick up the remainder).
+    The derived stats (sound DNA, monthly, top artists/songs) are set directly
+    because they have a single writer and cannot regress the counter.
+    """
+    database = db.get_db()
+    current_stored = (stored_statistics or {}).get("totalListeningTime", 0) or 0
+    history_total = stats["totalListeningTime"] or 0
+
+    # Top up the atomic counter only when history proves it should be higher.
+    if history_total > current_stored:
+        await database[db.USERS].update_one(
+            {"_id": user_oid, "statistics.totalListeningTime": current_stored},
+            {"$inc": {"statistics.totalListeningTime": history_total - current_stored}}
+        )
+
+    await database[db.USERS].update_one(
+        {"_id": user_oid},
+        {"$set": {
+            "soundDNA": stats["soundDNA"],
+            "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
+            "statistics.topArtists": stats["topArtists"],
+            "statistics.topSongs": stats["topSongs"]
+        }}
+    )
+
+
 async def recalculate_user_stats_and_save(user_id: str) -> None:
     """Recalculate a single user's stats from raw playback histories and save to their document."""
     try:
@@ -1034,16 +1115,8 @@ async def recalculate_user_stats_and_save(user_id: str) -> None:
             return
         
         stats = compute_user_stats(histories, user_doc.get("statistics"))
-        
-        await database[db.USERS].update_one(
-            {"_id": parse_object_id(user_id)},
-            {"$set": {
-                "soundDNA": stats["soundDNA"],
-                "statistics.totalListeningTime": stats["totalListeningTime"],
-                "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
-                "statistics.topArtists": stats["topArtists"],
-                "statistics.topSongs": stats["topSongs"]
-            }}
+        await reconcile_listening_time_and_save(
+            parse_object_id(user_id), stats, user_doc.get("statistics")
         )
     except Exception as ex:
         logger.error(f"Failed to recalculate stats for user {user_id}: {ex}")
@@ -1061,22 +1134,20 @@ async def recalculate_user_stats(current_user: dict = Depends(get_current_user))
             {"userId": {"$in": possible_ids}},
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
         ).sort("playedAt", -1).to_list(length=5000)
-        stats = compute_user_stats(histories, current_user.get("statistics"))
-        
-        # Save to database
-        await database[db.USERS].update_one(
-            {"_id": parse_object_id(user_id_str)},
-            {"$set": {
-                "soundDNA": stats["soundDNA"],
-                "statistics.totalListeningTime": stats["totalListeningTime"],
-                "statistics.monthlyListeningTime": stats["monthlyListeningTime"],
-                "statistics.topArtists": stats["topArtists"],
-                "statistics.topSongs": stats["topSongs"]
-            }}
+        # Read the live stored counter (the auth dependency returns a cached user
+        # for up to 15s; the counter must reconcile against the true DB value so a
+        # concurrent play-event increment is never clobbered).
+        fresh_user = await database[db.USERS].find_one({"_id": parse_object_id(user_id_str)})
+        stored_statistics = (fresh_user or {}).get("statistics") or (current_user or {}).get("statistics")
+        stats = compute_user_stats(histories, stored_statistics)
+
+        # Save to database (race-free monotonic counter reconciliation)
+        await reconcile_listening_time_and_save(
+            parse_object_id(user_id_str), stats, stored_statistics
         )
         
         # Also return updated profile representation
-        user_data = dict(current_user)
+        user_data = serialize_user(current_user)
         user_data["soundDNA"] = stats["soundDNA"]
         user_data["statistics"] = {
             "totalListeningTime": stats["totalListeningTime"],
@@ -1114,12 +1185,8 @@ async def export_user_data(current_user: dict = Depends(get_current_user)):
         user_id = current_user["id"]
         possible_ids = [user_id, parse_object_id(user_id)]
         
-        # Profile
-        user_data = serialize_mongo_doc(dict(current_user))
-        if "_id" in user_data:
-            del user_data["_id"]
-        if "password" in user_data:
-            del user_data["password"]
+        # Profile (allowlist serializer — credential material never exported)
+        user_data = serialize_user(current_user)
         
         # Playlists
         playlists = []

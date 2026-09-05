@@ -60,33 +60,35 @@ def get_http_client() -> httpx.AsyncClient:
 
 
 async def safe_http_get(url: str, *, max_redirects: int = 5, **kwargs) -> httpx.Response:
-    """GET ``url`` following redirects manually and re-validating each hop.
+    """GET ``url`` following redirects manually with DNS-pinned connections.
 
-    The shared client follows redirects automatically, which means a
-    user-supplied URL that starts public could bounce to an internal address
-    (``169.254.169.254``, ``127.0.0.1``, ...) and be fetched without ever being
-    re-checked.  This helper disables automatic redirects and re-runs
-    ``assert_public_http_url`` against every ``Location`` header so SSRF
-    checks apply to the whole chain, not just the first URL.
+    A user-supplied URL that starts public could otherwise bounce to an
+    internal address (``169.254.169.254``, ``127.0.0.1``, ...).  This helper
+    disables automatic redirects, re-validates every ``Location`` against the
+    SSRF rules, and fetches each hop through a DNS-pinned client so the host is
+    resolved exactly once and the TCP connection can only go to a validated
+    public IP.
 
     Any extra ``**kwargs`` (timeout, headers, ...) are forwarded to each hop.
     """
-    from app.services.security import assert_public_http_url
+    from app.services.security import create_pinned_client
 
-    client = get_http_client()
-    current_url = assert_public_http_url(url)
-
+    current_url = url
     for _ in range(max_redirects + 1):
-        response = await client.get(current_url, follow_redirects=False, **kwargs)
-        if response.is_redirect:
-            next_url = response.headers.get("location")
-            if not next_url:
-                return response
-            # Resolve relative redirects against the current URL, then re-check.
-            current_url = assert_public_http_url(str(response.url.join(next_url)))
-            await response.aclose()
-            continue
-        return response
+        client = create_pinned_client(current_url)
+        try:
+            response = await client.get(current_url, follow_redirects=False, **kwargs)
+            if response.is_redirect:
+                next_url = response.headers.get("location")
+                if not next_url:
+                    return response
+                # Resolve relative redirects against the current URL, then re-pin.
+                current_url = str(response.url.join(next_url))
+                await response.aclose()
+                continue
+            return response
+        finally:
+            await client.aclose()
 
     raise httpx.TooManyRedirects("Maximum redirects exceeded for requested URL.")
 
