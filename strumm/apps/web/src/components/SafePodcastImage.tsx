@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, type ImgHTMLAttributes } from "react";
 import { apiUrl } from "web/lib/api";
-import { preloadImage } from "web/lib/image-loader";
+import { loadImage, preloadImage } from "web/lib/image-loader";
 
 /**
  * Maximum time (ms) to show the skeleton before forcing the fallback icon.
@@ -24,52 +24,87 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
   const [currentSrc, setCurrentSrc] = useState<string | null>(() => toSecureUrl(src));
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
-  const attemptsRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Safety net: dismiss the skeleton if the pipeline can't resolve any URL,
+  // so artwork is never stuck shimmering forever.
   useEffect(() => {
-    setCurrentSrc(toSecureUrl(src));
-    setLoaded(false);
-    setErrored(false);
-    attemptsRef.current = 0;
-
-    // Prime the host URL and its proxy fallback through the shared throttled
-    // loader, so a page of podcast art downloads at bounded concurrency with
-    // dedup instead of a burst of parallel requests.
-    const secured = toSecureUrl(src);
-    if (secured) {
-      preloadImage(secured, 2);
-      preloadImage(apiUrl(`/image-proxy?url=${encodeURIComponent(secured)}`), 3);
+    if (loaded || errored) {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      return;
     }
-
-    // Safety net: dismiss skeleton if nothing loads within the timeout.
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setErrored(true), LOAD_TIMEOUT_MS);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [src]);
+    return () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; } };
+  }, [loaded, errored, src]);
 
-  // Clear the timeout as soon as the image is confirmed loaded.
+  // Resolve the artwork through the shared throttle/dedup pipeline. The fetch
+  // is an eager synthetic <img> — the browser's native lazy loader cancels or
+  // pauses image requests when the tab is hidden, but the pipeline does not,
+  // so podcast art keeps "passively" downloading in background tabs. Once a
+  // URL resolves it is in the HTTP cache, and the rendered <img> below paints
+  // from cache without issuing a fresh, cancelable lazy request.
   useEffect(() => {
-    if (loaded && timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
-  }, [loaded]);
+    const secured = toSecureUrl(src);
+    const proxy = src
+      ? apiUrl(`/image-proxy?url=${encodeURIComponent(src)}`)
+      : null;
+
+    let cancelled = false;
+    setCurrentSrc(secured);
+    setLoaded(false);
+    setErrored(false);
+
+    if (!secured) {
+      setErrored(true);
+      return;
+    }
+
+    // Prime the host URL and its proxy fallback up-front (shared, bounded
+    // concurrency, deduped across the page).
+    preloadImage(secured, 2);
+    if (proxy) preloadImage(proxy, 3);
+
+    const resolveFrom = (start: number): void => {
+      if (cancelled) return;
+      const candidates = [secured, proxy];
+      for (let i = start; i < candidates.length; i++) {
+        const url = candidates[i];
+        if (!url) continue;
+        loadImage(url, i === 0 ? 2 : 3).then((ok) => {
+          if (cancelled) return;
+          if (ok) {
+            setCurrentSrc(url);
+            setLoaded(true);
+          } else if (i >= candidates.length - 1) {
+            setErrored(true);
+          } else {
+            resolveFrom(i + 1);
+          }
+        });
+        return;
+      }
+      setErrored(true);
+    };
+
+    resolveFrom(0);
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
 
   const handleLoad = useCallback(() => {
     setLoaded(true);
     setErrored(false);
   }, []);
 
+  // The pipeline already decided the URL is good; if the DOM element still
+  // can't render it (cache eviction / partition mismatch), bail to the icon
+  // rather than flipping between candidates.
   const handleError = useCallback(() => {
     setLoaded(false);
-    attemptsRef.current += 1;
-
-    if (attemptsRef.current === 1 && src) {
-      // First fallback: try via image-proxy
-      setCurrentSrc(apiUrl(`/image-proxy?url=${encodeURIComponent(src)}`));
-    } else {
-      // All attempts failed
-      setErrored(true);
-    }
-  }, [src]);
+    setErrored(true);
+  }, []);
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   const handleImgRef = useCallback((node: HTMLImageElement | null) => {
@@ -90,28 +125,27 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
       {/* Polished shimmer skeleton while loading */}
       {!loaded && !errored && <div className="image-skeleton" />}
 
+      {/* Fallback icon when every candidate fails */}
       {errored || !currentSrc ? (
         <div className="absolute inset-0 flex items-center justify-center text-muted z-20">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8" />
           </svg>
         </div>
-      ) : (
+      ) : loaded && currentSrc ? (
         <img
           ref={handleImgRef}
           src={currentSrc}
           alt={alt || "Podcast artwork"}
-          loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
           onLoad={handleLoad}
           onError={handleError}
-          className={`absolute inset-0 w-full h-full object-cover ${
-            loaded ? "image-reveal" : "opacity-0"
-          }`}
+          className={`absolute inset-0 w-full h-full object-cover image-reveal`}
           {...props}
+          loading="eager"
         />
-      )}
+      ) : null}
     </div>
   );
 }

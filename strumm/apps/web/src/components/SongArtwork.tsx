@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates } from "web/lib/media";
-import { preloadImage, type ImagePriority } from "web/lib/image-loader";
+import { loadImage, preloadImage, type ImagePriority } from "web/lib/image-loader";
 
 /**
  * Maximum time (ms) to show the skeleton before forcing the fallback icon.
@@ -19,7 +19,7 @@ interface SongArtworkProps {
   className?: string;
   iconClassName?: string;
   priority?: boolean;
-  /** 
+  /**
    * Responsive sizes hint for the browser.
    * Example: "(max-width: 768px) 256px, 320px"
    */
@@ -37,20 +37,20 @@ export default function SongArtwork({
   // NOTE: useMemo intentionally omitted. This is a trivial array/string computation;
   // removing the hook was a defensive measure against a production
   // "Rendered more hooks than during the previous render" error (Sentry ed36292a)
-  // where the stack trace pointed at useMemo inside this component.
+  // where the stack trace pointed at useMemo inside this component. The candidate
+  // list is memoized at module scope in getArtworkCandidates, so the returned
+  // array reference stays stable for a given (videoId, thumbnail, hero) key.
   const candidates = getArtworkCandidates(song, priority);
-  const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
+  // The candidate the pipeline has actually confirmed loadable. Unset until the
+  // shared loader resolves a URL, so the DOM <img> below never initiates its own
+  // (cancelable-on-tab-switch) lazy fetch — the eager synthetic fetch in the
+  // pipeline is the only network request, and it keeps running in background tabs.
+  const [src, setSrc] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
-    setIndex(0);
-    setLoaded(false);
-    setErrored(false);
-  }, [song?.videoId, song?.thumbnail]);
-
-  // Safety net: if every candidate hangs, dismiss the skeleton so the
-  // user never sees a permanently stuck shimmer.
+  // Safety net: if the pipeline can't resolve anything (every candidate hangs),
+  // dismiss the skeleton so the user never sees a permanently stuck shimmer.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (loaded || errored) {
@@ -61,43 +61,80 @@ export default function SongArtwork({
     return () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; } };
   }, [loaded, errored, song?.videoId]);
 
-  // Feed every candidate through the shared loader so a grid of artworks
-  // (search/discovery/rooms) downloads through a single throttled, deduped,
-  // priority-ordered pipeline instead of dozens of parallel requests. The
-  // element's own onLoad/onError still drive the candidate fallback chain.
+  // Resolve the artwork through the shared throttle/dedup pipeline. Every fetch
+  // is an eager synthetic <img> (the browser's native lazy loader pauses or
+  // cancels image requests when you switch to another tab; the pipeline does
+  // not, so "passive" background loading keeps working). Once a URL resolves it
+  // is sitting in the HTTP cache, so the rendered <img> below paints instantly
+  // without issuing a fresh network request.
   useEffect(() => {
     const basePriority: ImagePriority = priority ? 0 : 2;
-    candidates.forEach((src, i) => {
-      preloadImage(src, i === 0 ? basePriority : 3);
-    });
-  }, [candidates, priority]);
 
-  const src = candidates[index];
-  const imgRef = useRef<HTMLImageElement | null>(null);
+    let cancelled = false;
+    setLoaded(false);
+    setErrored(false);
+    setSrc(undefined);
+
+    // Prime every candidate up-front (same URL deduped across the grid, bounded
+    // concurrency) so a fallback is already cached if the first candidate fails.
+    candidates.forEach((url, i) => {
+      preloadImage(url, i === 0 ? basePriority : 3);
+    });
+
+    const resolveFrom = (start: number): void => {
+      if (cancelled) return;
+      if (candidates.length === 0) {
+        setErrored(true);
+        return;
+      }
+      for (let i = start; i < candidates.length; i++) {
+        const url = candidates[i];
+        if (!url) continue;
+        const priorityFor = i === 0 ? basePriority : 3;
+        loadImage(url, priorityFor).then((ok) => {
+          if (cancelled) return;
+          if (ok) {
+            setSrc(url);
+            setLoaded(true);
+          } else if (i >= candidates.length - 1) {
+            setErrored(true);
+          } else {
+            resolveFrom(i + 1);
+          }
+        });
+        return;
+      }
+      setErrored(true);
+    };
+
+    resolveFrom(0);
+    return () => {
+      cancelled = true;
+    };
+  }, [candidates, priority]);
 
   const handleLoad = useCallback(() => {
     setLoaded(true);
     setErrored(false);
   }, []);
 
+  // The pipeline already decided the URL is good; if the DOM element still
+  // can't render it (cache eviction / partition mismatch), bail to the icon
+  // rather than fighting the loader over which candidate is next.
   const handleError = useCallback(() => {
     setLoaded(false);
-    if (index >= candidates.length - 1) {
-      setErrored(true);
-    } else {
-      setIndex(index + 1);
-    }
-  }, [index, candidates.length]);
+    setErrored(true);
+  }, []);
+
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
   // Cached-image guard: when a candidate URL is already in the browser cache
   // the load can complete (and onload fire) before React attaches onLoad, so
   // `loaded` never flips and the art stays invisible at opacity-0. Detecting
-  // img.complete && naturalWidth handles that case (and duplicate concurrent
-  // mounts of the same cached URL) immediately.
+  // img.complete && naturalWidth handles that case immediately.
   useEffect(() => {
     const img = imgRef.current;
-    if (!img) return;
-    if (img.complete && img.naturalWidth > 0) {
+    if (img && img.complete && img.naturalWidth > 0) {
       handleLoad();
     }
   }, [src, handleLoad]);
@@ -111,30 +148,28 @@ export default function SongArtwork({
       {/* Polished shimmer skeleton while loading */}
       {!loaded && !errored && <div className="image-skeleton" />}
 
-      {/* Fallback icon when all candidates fail */}
-      {errored || !src ? (
+      {/* Fallback icon when every candidate fails */}
+      {errored ? (
         <div className="absolute inset-0 flex items-center justify-center text-muted z-20">
           <Music className={iconClassName} />
         </div>
-      ) : (
+      ) : loaded && src ? (
         <img
           ref={handleImgRef}
           src={src}
           alt={alt || song?.title || "Artwork"}
-          loading={priority ? "eager" : "lazy"}
+          loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
           sizes={sizes}
           onLoad={handleLoad}
           onError={handleError}
-            className={`absolute inset-0 w-full h-full object-cover ${
-              loaded ? "image-reveal" : "opacity-0"
-            }`}
+          className={`absolute inset-0 w-full h-full object-cover image-reveal`}
           style={{
-            imageRendering:'auto',
+            imageRendering: "auto",
           }}
         />
-      )}
+      ) : null}
     </div>
   );
 }
