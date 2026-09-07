@@ -112,13 +112,11 @@ export default function HomePage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="space-y-4">
           {user.settings?.showDiscoveryMix !== false && (
-            <>
-              <Suspense fallback={<DiscoverySkeleton />}>
-                <DiscoverySection token={token} />
-              </Suspense>
-              <RecentlyPlayedPlaylist />
-            </>
+            <Suspense fallback={<DiscoverySkeleton />}>
+              <DiscoverySection token={token} />
+            </Suspense>
           )}
+          <RecentlyPlayedPlaylist />
         </div>
         <div className="space-y-4">
           <Suspense fallback={<LikedSongsSkeleton />}>
