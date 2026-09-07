@@ -157,6 +157,23 @@
   --glow: rgba(56, 189, 248, 0.15);
 }
 
+[data-theme="Custom"] {
+  --background: rgba(10, 12, 18, 0.82);
+  --surface: rgba(20, 24, 34, 0.55);
+  --surface-elevated: rgba(32, 38, 52, 0.6);
+  --primary: var(--custom-primary, #6C8CFF);
+  --primary-hover: var(--custom-primary-hover, #8FA9FF);
+  --accent: var(--custom-accent, #FF6C8C);
+  --text: var(--custom-text, #F5F7FF);
+  --muted: rgba(157, 168, 195, 0.85);
+  --border: rgba(120, 135, 170, 0.18);
+  --glow: color-mix(in srgb, var(--custom-primary, #6C8CFF) 18%, transparent);
+}
+
+html[data-theme="Custom"] {
+  background-color: #05070B;
+}
+
 @theme {
   --color-background: var(--background);
   --color-surface: var(--surface);

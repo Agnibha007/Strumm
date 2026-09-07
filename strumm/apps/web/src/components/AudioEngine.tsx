@@ -116,6 +116,11 @@ export default function AudioEngine() {
   // mode). Lets the background heartbeat re-hand the current track to <audio>
   // if it ever falls behind after an auto-advance while the page is hidden.
   const currentBackgroundUrlRef = useRef<string | null>(null);
+  // Wall-clock auto-advance watchdog for hidden/locked tabs. Background timers
+  // are throttled so a near-end crossfade or YouTube ended event can be
+  // suspended entirely; this samples media progress on a (throttle-tolerant)
+  // interval and advances when wall-clock says the track should already be over.
+  const backgroundAdvanceRef = useRef<{ trackKey: string; lastTickMs: number } | null>(null);
 
   // End-of-track handler that also clears/saves podcast resume position. Used
   // by the HTML audio `ended` handler (and the YouTube ENDED branch) so a
@@ -1045,6 +1050,74 @@ try {
     }, 3000);
     return () => clearInterval(timer);
   }, [activateBackgroundAudio]);
+
+  // Wall-clock auto-advance watchdog for hidden/locked tabs. When the page is
+  // hidden the YouTube iframe can be suspended (its `ended` event never fires)
+  // and timers are throttled, so neither the near-end crossfade nor the
+  // iframe's state-0 handler reliably advances the queue. This samples media
+  // progress on a (throttle-tolerant) interval and advances when the wall clock
+  // says the track should already have finished — even if the engine froze.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!document.hidden) return;
+      const state = usePlayerStore.getState();
+      if (!state.isPlaying) return;
+      const song = state.currentSong;
+      if (!song || song.metadata?.audioUrl) return; // podcasts stay on host audio
+      const videoId = song.videoId || "";
+
+      const dur = state.duration || song.duration || 0;
+      if (!(dur > 1)) return;
+
+      // Prefer a live engine sample (host <audio> or iframe).
+      let curr = state.currentTime;
+      const audio = htmlAudioRef.current;
+      if (audio && !isSilentAudio(audio) && audio.src) {
+        curr = audio.currentTime || curr;
+      } else if (
+        playerInstanceRef.current &&
+        typeof playerInstanceRef.current.getCurrentTime === "function"
+      ) {
+        try {
+          const ytCurr = playerInstanceRef.current.getCurrentTime();
+          if (isFinite(ytCurr)) curr = ytCurr;
+        } catch (e) {}
+      }
+
+      const watch = backgroundAdvanceRef.current;
+      const now = Date.now();
+      if (!watch || watch.trackKey !== videoId) {
+        backgroundAdvanceRef.current = { trackKey: videoId, lastTickMs: now };
+        return;
+      }
+
+      // Media already at/past the end -> auto-advance (idempotent per track).
+      if (curr >= dur - 1 && !handledTrackEndRef.current) {
+        handledTrackEndRef.current = true;
+        state.handleTrackEnded();
+        return;
+      }
+
+      // If the engine is stalled (iframe suspended by the OS lock), once
+      // enough real time has passed to have finished the remaining duration,
+      // force the advance. Wall-clock elapsed is sampled from the previous
+      // tick regardless of how aggressively the background timer is throttled.
+      const sampleMsDiff = now - watch.lastTickMs;
+      const elapsedForTrack = Math.max(0, dur - curr);
+      if (sampleMsDiff >= elapsedForTrack * 1000 + 1500 && !handledTrackEndRef.current) {
+        handledTrackEndRef.current = true;
+        state.handleTrackEnded();
+        return;
+      }
+
+      // Track is healthy; update the watchdog sample.
+      backgroundAdvanceRef.current = { trackKey: videoId, lastTickMs: now };
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+      backgroundAdvanceRef.current = null;
+    };
+  }, []);
 
   // Synchronize Media Session position state with actual playback position
   useEffect(() => {

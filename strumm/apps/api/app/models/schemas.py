@@ -82,6 +82,7 @@ class UserSettingsSchema(BaseModel):
     publicPassport: bool = True
     showTopSongs: bool = True
     allowRequests: bool = True
+    showDiscoveryMix: bool = True
 
     @field_validator("audioQuality")
     @classmethod

@@ -8,6 +8,7 @@ import { Playlist, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import { useLastPlayedPlaylistStore } from "web/store/useLastPlayedPlaylistStore";
 
 interface PlaylistDetailPageProps {
   params: Promise<{ id: string }>;
@@ -18,6 +19,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
   const { token, user } = useAuthStore();
   const { playSong, addToQueue, queue, isRadio, triggerRadio } = usePlayerStore();
   const router = useRouter();
+  const recordPlayed = useLastPlayedPlaylistStore((s) => s.recordPlayed);
 
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,6 +71,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
   const handlePlayAll = () => {
     const targetSongs = searchQuery ? filteredSongs : (playlist?.songs || []);
     if (targetSongs.length === 0) return;
+    recordPlayed({ id, name: playlist?.name || "", songCount: targetSongs.length, coverUrl: playlist?.songs?.[0]?.thumbnail || undefined });
     playSong(targetSongs[0], targetSongs);
   };
 
@@ -76,6 +79,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
     const targetSongs = searchQuery ? filteredSongs : (playlist?.songs || []);
     if (targetSongs.length === 0) return;
     const shuffled = [...targetSongs].sort(() => Math.random() - 0.5);
+    recordPlayed({ id, name: playlist?.name || "", songCount: targetSongs.length, coverUrl: playlist?.songs?.[0]?.thumbnail || undefined });
     playSong(shuffled[0], shuffled);
   };
 

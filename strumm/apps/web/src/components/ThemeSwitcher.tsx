@@ -2,12 +2,13 @@
 
 import { useThemeStore } from "web/store/useThemeStore";
 import { ThemeType } from "@strumm/types";
-import { Sparkles, Image, Check } from "lucide-react";
+import { Sparkles, Image, Check, Palette } from "lucide-react";
 
 export default function ThemeSwitcher() {
-  const { currentTheme, setTheme, isAnimated, setAnimated, customImage, setCustomImage } = useThemeStore();
+  const { currentTheme, setTheme, isAnimated, setAnimated, customImage, setCustomImage, customPrimary, customText, setCustomColors } = useThemeStore();
+  const isCustom = currentTheme === "Custom";
 
-  const themes: Array<{ name: ThemeType; desc: string; preview: string }> = [
+  const themes: Array<{ name: ThemeType; desc: string; preview: string; custom?: boolean }> = [
     { name: "Obsidian", desc: "True dark obsidian slate.", preview: "bg-[#080808] border-[#222222]" },
     { name: "Black Cherry", desc: "Deep cherry burgundy wash.", preview: "bg-[#0B0505] border-[#3A1F21]" },
     { name: "Vinyl Classic", desc: "Warm retro cardboard sleeves.", preview: "bg-[#0A0A0A] border-[#38302B]" },
@@ -20,6 +21,7 @@ export default function ThemeSwitcher() {
     { name: "Sage Forest", desc: "Calm earthy greens and herbal accents.", preview: "bg-[#090C0A] border-[#2E3A31]" },
     { name: "Midnight Amethyst", desc: "Deep royal violet with gold accent.", preview: "bg-[#06040A] border-[#31254A]" },
     { name: "Glacial Blue", desc: "Frosty arctic blue with coral rose.", preview: "bg-[#05080C] border-[#223044]" },
+    { name: "Custom", desc: "Your palette — translucent glass + any color.", preview: "bg-[#0A0C12] border-[#6C8CFF]", custom: true },
   ];
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,6 +99,48 @@ export default function ThemeSwitcher() {
           </button>
         ))}
       </div>
+
+      {isCustom && (
+        <div className="border border-border/50 bg-background/40 rounded-xl p-5 space-y-5 soft-enter">
+          <div className="flex items-center gap-2 border-b border-border/20 pb-2">
+            <Palette className="w-4 h-4 text-primary" />
+            <h3 className="font-editorial text-lg text-text">Custom Palette</h3>
+          </div>
+          <p className="text-xs text-muted leading-relaxed -mt-2">
+            Pick any accent and text color from the full 16.7 million-color RGB range. The background stays a translucent glass so your colors pop over the workspace.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surface/40 border border-border/60 cursor-pointer">
+              <div>
+                <div className="text-sm font-semibold text-text">Accent Color</div>
+                <div className="text-[10px] text-muted font-mono uppercase mt-0.5">{customPrimary}</div>
+              </div>
+              <input
+                type="color"
+                value={customPrimary}
+                onChange={(e) => setCustomColors({ primary: e.target.value })}
+                className="w-12 h-9 rounded-md border border-border/60 bg-transparent cursor-pointer"
+                title="Choose your accent color (256^3 = 16.7M colors)"
+                aria-label="Custom accent color"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surface/40 border border-border/60 cursor-pointer">
+              <div>
+                <div className="text-sm font-semibold text-text">Text Color</div>
+                <div className="text-[10px] text-muted font-mono uppercase mt-0.5">{customText}</div>
+              </div>
+              <input
+                type="color"
+                value={customText}
+                onChange={(e) => setCustomColors({ text: e.target.value })}
+                className="w-12 h-9 rounded-md border border-border/60 bg-transparent cursor-pointer"
+                title="Choose your text color"
+                aria-label="Custom text color"
+              />
+            </label>
+          </div>
+        </div>
+      )}
 
       <div className="border-t border-border/40 pt-6 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -402,6 +402,60 @@ async def test_can_control_missing_room_denied(mock_db):
 
 
 # ---------------------------------------------------------------------------
+# ROOM WS EVENT CONTRACT — keeps backend broadcasts aligned with the
+# event names the web client subscribes to (regression: the client previously
+# listened for "room:leave" while the server sends "room:left", so members
+# never disappeared from the roster).
+# ---------------------------------------------------------------------------
+
+
+async def test_room_ws_event_names_are_contract_stable(mock_db, mock_realtime):
+    from app.services.realtime.events import (
+        ROOM_JOINED,
+        ROOM_LEFT,
+        ROOM_HOST_TRANSFERRED,
+        ROOM_CONTROLLERS_UPDATED,
+    )
+
+    # The canonical event names the web client MUST subscribe to. If these
+    # change, the client's WS handlers (apps/web/src/app/rooms/[id]/page.tsx)
+    # must be updated in the same change.
+    assert ROOM_JOINED == "room:joined"
+    assert ROOM_LEFT == "room:left"
+    assert ROOM_HOST_TRANSFERRED == "room:host_transferred"
+    assert ROOM_CONTROLLERS_UPDATED == "room:controllers_updated"
+
+
+async def test_disconnect_broadcasts_canonical_room_left_constant(mock_db, mock_realtime):
+    """The leave broadcast must use the ROOM_LEFT ('room:left') constant, NOT
+    the legacy 'room:leave' string — the whole point of the room-fix."""
+    from app.routes.social import _handle_room_disconnect
+    from app.services.realtime.events import ROOM_LEFT
+
+    room_id = "6630a1c2e4b0a1c2e4b0a91f"
+    room = {
+        "_id": ObjectId(room_id),
+        "name": "Room",
+        "hostId": "host",
+        "members": ["host", "listener"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.ROOMS].update_one = AsyncMock()
+    mock_db[mock_db.ROOMS].delete_one = AsyncMock()
+    mock_db[mock_db.USERS].find_one = AsyncMock(return_value=None)
+    mock_realtime.room_connected_user_ids.return_value = ["host"]
+
+    await _handle_room_disconnect(room_id, "listener")
+
+    leave_calls = [
+        c for c in mock_realtime.broadcast_to_room.call_args_list
+        if c.kwargs["message"]["event"] == ROOM_LEFT
+    ]
+    assert leave_calls, "expected a room:left broadcast on disconnect"
+
+
+# ---------------------------------------------------------------------------
 # _handle_room_disconnect — room:left + host auto-transfer + empty-room delete
 # ---------------------------------------------------------------------------
 

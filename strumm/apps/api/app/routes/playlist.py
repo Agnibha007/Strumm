@@ -238,6 +238,8 @@ async def update_playlist(
 
         # Owner can change everything; collaborators can only change songs
         if is_owner:
+            if playlist.get("special") and (payload.name is not None or payload.description is not None or payload.visibility is not None):
+                return {"success": False, "error": "This automatic playlist cannot be edited."}
             if payload.name is not None:
                 update_data["name"] = payload.name
             if payload.description is not None:
@@ -279,6 +281,9 @@ async def delete_playlist(
 
         if str(playlist["userId"]) != current_user["id"]:
             return {"success": False, "error": "Unauthorized to delete this playlist"}
+
+        if playlist.get("special"):
+            return {"success": False, "error": "Automatic playlists cannot be deleted."}
 
         await database[db.PLAYLISTS].delete_one({"_id": parse_object_id(id)})
 

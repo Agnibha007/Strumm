@@ -1,4 +1,4 @@
-export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk' | 'Sage Forest' | 'Midnight Amethyst' | 'Glacial Blue';
+export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk' | 'Sage Forest' | 'Midnight Amethyst' | 'Glacial Blue' | 'Custom';
 
 // ---------------------------------------------------------------------------
 // Object-storage (Backblaze B2) media types
@@ -82,6 +82,7 @@ export interface UserSettings {
   publicPassport?: boolean;
   showTopSongs?: boolean;
   allowRequests?: boolean;
+  showDiscoveryMix?: boolean;
 }
 
 export interface UserStatistics {
@@ -150,6 +151,7 @@ export interface Playlist {
   visibility: 'public' | 'private';
   followers: number;
   createdAt: string;
+  special?: 'liked' | string;
 }
 
 export interface LikedSong {

@@ -41,6 +41,11 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Discovery Mix visibility toggle state
+  const [showDiscoveryMix, setShowDiscoveryMix] = useState(user?.settings?.showDiscoveryMix !== false);
+  const [discoveryToggleLoading, setDiscoveryToggleLoading] = useState(false);
+  const [discoveryToggleError, setDiscoveryToggleError] = useState<string | null>(null);
+
   // Email change state
   const [newEmail, setNewEmail] = useState(user?.email || "");
   const [emailPassword, setEmailPassword] = useState("");
@@ -205,6 +210,30 @@ export default function SettingsPage() {
       setError("Unable to connect to backend server.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleDiscoveryMix = async () => {
+    const next = !showDiscoveryMix;
+    setDiscoveryToggleLoading(true);
+    setDiscoveryToggleError(null);
+    try {
+      const response = await fetch(apiUrl("/profile"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ settings: { showDiscoveryMix: next } }),
+      });
+      const json = await response.json();
+      if (json.success && json.data) {
+        setShowDiscoveryMix(next);
+        setUser(json.data);
+      } else {
+        setDiscoveryToggleError(json.error || "Failed to update setting.");
+      }
+    } catch {
+      setDiscoveryToggleError("Unable to connect to backend server.");
+    } finally {
+      setDiscoveryToggleLoading(false);
     }
   };
 
@@ -789,6 +818,26 @@ export default function SettingsPage() {
               </div>
               <div className="mt-5">
                 <ThemeSwitcher />
+              </div>
+              <div className="mt-6 pt-5 border-t border-border/20">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-text">Discovery Mix</div>
+                    <div className="text-xs text-muted mt-0.5 max-w-sm">
+                      Show the AI-powered Discovery Mix section on your home page.
+                    </div>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={showDiscoveryMix}
+                    onClick={handleToggleDiscoveryMix}
+                    disabled={discoveryToggleLoading}
+                    className={`relative w-11 h-6 rounded-full transition-colors cursor-pointer flex-shrink-0 disabled:opacity-50 ${showDiscoveryMix ? "bg-primary" : "bg-border/60"}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${showDiscoveryMix ? "translate-x-5" : "translate-x-0"}`} />
+                  </button>
+                </div>
+                {discoveryToggleError && <div className="mt-2 text-xs text-red-400">{discoveryToggleError}</div>}
               </div>
             </div>
           )}

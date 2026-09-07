@@ -178,7 +178,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         }
       } 
       
-      else if (wsEvent === "room:leave") {
+      else if (wsEvent === "room:left") {
         setMessages(prev => [...prev, { sender: "System", text: `A listener left the room.` }]);
         fetchRoomInfo();
         // Track member leaving

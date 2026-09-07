@@ -568,6 +568,42 @@ async def get_library(current_user: dict = Depends(get_current_user)):
         return {"success": False, "error": "An internal error occurred."}
 
 # Liked Songs CRUD
+async def _sync_liked_songs_playlist(database, user_id_str: str, user_id_oid):
+    """Keep the user's automatic 'Liked Songs' playlist in sync with the
+    LIKED_SONGS collection. Rebuilds the playlist's songs array to exactly
+    match the user's liked songs (newest first)."""
+    liked = []
+    cursor = database[db.LIKED_SONGS].find(
+        {"userId": {"$in": [user_id_str, user_id_oid]}}
+    ).sort("likedAt", -1)
+    async for doc in cursor:
+        song = doc.get("song")
+        if song and isinstance(song, dict):
+            liked.append(song)
+
+    playlist = await database[db.PLAYLISTS].find_one({
+        "userId": user_id_oid,
+        "special": "liked"
+    })
+    if playlist is None:
+        await database[db.PLAYLISTS].insert_one({
+            "userId": user_id_oid,
+            "name": "Liked Songs",
+            "description": "All the songs you've hearted, kept up to date automatically.",
+            "songs": liked,
+            "visibility": "private",
+            "followers": 0,
+            "collaborators": [],
+            "special": "liked",
+            "createdAt": datetime.utcnow()
+        })
+    else:
+        await database[db.PLAYLISTS].update_one(
+            {"_id": playlist["_id"]},
+            {"$set": {"songs": liked}}
+        )
+
+
 @router.get("/liked")
 async def get_liked_songs(
     limit: int = 50,
@@ -578,6 +614,13 @@ async def get_liked_songs(
         database = db.get_db()
         user_id_str = current_user["id"]
         user_id_oid = ObjectId(user_id_str)
+        # Lazily materialize the auto 'Liked Songs' playlist for existing likes.
+        playlist_exists = await database[db.PLAYLISTS].find_one({
+            "userId": user_id_oid,
+            "special": "liked"
+        })
+        if playlist_exists is None:
+            await _sync_liked_songs_playlist(database, user_id_str, user_id_oid)
         cursor = database[db.LIKED_SONGS].find({"userId": {"$in": [user_id_str, user_id_oid]}}).sort("likedAt", -1).skip(skip).limit(limit)
         liked_songs = []
         async for doc in cursor:
@@ -634,6 +677,7 @@ async def toggle_like_song(
         if existing:
             # Unlike the song
             await database[db.LIKED_SONGS].delete_one({"_id": existing["_id"]})
+            await _sync_liked_songs_playlist(database, user_id_str, user_id_oid)
             return {
                 "success": True,
                 "data": {"liked": False, "message": "Song removed from Liked Songs."}
@@ -646,6 +690,7 @@ async def toggle_like_song(
                 "likedAt": datetime.utcnow()
             }
             await database[db.LIKED_SONGS].insert_one(new_like)
+            await _sync_liked_songs_playlist(database, user_id_str, user_id_oid)
             return {
                 "success": True,
                 "data": {"liked": True, "message": "Song added to Liked Songs."}

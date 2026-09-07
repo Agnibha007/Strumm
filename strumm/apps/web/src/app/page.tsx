@@ -14,6 +14,7 @@ import { Song } from "@strumm/types";
 import LoginPage from "./login/page";
 import DiscoverySection, { DiscoverySkeleton } from "web/components/DiscoverySection";
 import LikedSongsSection, { LikedSongsSkeleton } from "web/components/LikedSongsSection";
+import RecentlyPlayedPlaylist from "web/components/RecentlyPlayedPlaylist";
 
 export default function HomePage() {
   const { user, token } = useAuthStore();
@@ -110,9 +111,14 @@ export default function HomePage() {
       {/* Content sections stream independently via Suspense boundaries */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="space-y-4">
-          <Suspense fallback={<DiscoverySkeleton />}>
-            <DiscoverySection token={token} />
-          </Suspense>
+          {user.settings?.showDiscoveryMix !== false && (
+            <>
+              <Suspense fallback={<DiscoverySkeleton />}>
+                <DiscoverySection token={token} />
+              </Suspense>
+              <RecentlyPlayedPlaylist />
+            </>
+          )}
         </div>
         <div className="space-y-4">
           <Suspense fallback={<LikedSongsSkeleton />}>
