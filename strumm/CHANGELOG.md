@@ -15,6 +15,8 @@ All notable changes to Strumm will be documented in this file.
 - Room leave event: frontend now listens for the canonical `room:left` constant (was `room:leave`), so member counts update in real time after someone disconnects.
 - Auto "Liked Songs" playlist now syncs reliably on every like/unlike and is flagged `special: "liked"` so it cannot be renamed or deleted.
 - "Jump Back In" playlist is now rendered independently of the Discovery Mix toggle; disabling Discovery Mix no longer also hides the recently-played shortcut.
+- Global Listening Champions leaderboard now shows the same listening minutes as a user's own Replay card — it aggregates `listenDuration` from real playback histories instead of the stale stored `statistics.totalListeningTime` counter.
+- Lyrics no longer cause horizontal scroll: long lines wrap instead of overflowing, in both the lyrics theatre and the fullscreen player's lyrics panel.
 
 ### Changed
 - Strumm Rooms access control: invited Circle friends can now enter a circle-only room via the room's persistent `invited` grant, even if they are not yet room members.
