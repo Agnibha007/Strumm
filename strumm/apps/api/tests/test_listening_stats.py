@@ -5,6 +5,8 @@ Contract tests for the listening-time pipeline:
                                  USERS.statistics.totalListeningTime
   GET  /stats/listening-time  -> aggregates the SAME PLAYBACK_HISTORIES docs back
                                  into total_minutes / daily_breakdown
+  GET  /stats/global-leaderboard -> aggregates listenDuration from real histories
+                                 (NOT the stored counter), matching the Replay card.
 
 These tests pin the write/read contract so a future refactor can't silently
 desync the two (e.g. writing userId as a string vs reading it as an ObjectId,
@@ -144,3 +146,67 @@ async def test_listening_time_stats_aggregates_same_shape_as_play_event(client, 
     # And it sums the field the writer emits.
     group = pipeline[1]["$group"]
     assert group["totalSeconds"]["$sum"] == "$listenDuration"
+
+
+# ---------------------------------------------------------------------------
+# GET /stats/global-leaderboard — real-history minutes (matches Replay card)
+# ---------------------------------------------------------------------------
+
+
+async def test_leaderboard_uses_real_histories_not_stored_counter(client, mock_db):
+    """Leaderboard aggregates listenDuration from playbackhistories, not the
+    stale statistics.totalListeningTime field stored on the user document."""
+    user_a_id = ObjectId("6630a1c2e4b0a1c2e4b0a201")
+    user_b_id = ObjectId("6630a1c2e4b0a1c2e4b0a202")
+
+    # Simulated aggregate output: user_a listened 3000s (50 min), user_b 600s (10 min)
+    aggregate_groups = [
+        {"_id": str(user_a_id), "totalSeconds": 3000},
+        {"_id": str(user_b_id), "totalSeconds": 600},
+    ]
+
+    aggregate_mock = MagicMock(return_value=MagicMock(
+        to_list=AsyncMock(return_value=aggregate_groups)
+    ))
+    mock_db[mock_db.PLAYBACK_HISTORIES].aggregate = aggregate_mock
+
+    # User docs returned for the lookup step
+    user_a = {"_id": user_a_id, "displayName": "Alpha", "avatar": None}
+    user_b = {"_id": user_b_id, "displayName": "Beta",  "avatar": None}
+
+    async def _find_user(query):
+        uid = query.get("_id")
+        if uid == user_a_id or str(uid) == str(user_a_id):
+            return user_a
+        if uid == user_b_id or str(uid) == str(user_b_id):
+            return user_b
+        return None
+
+    mock_db[mock_db.USERS].find_one = AsyncMock(side_effect=_find_user)
+
+    # Also set up PLAYBACK_HISTORIES.find for /replay (not called here but
+    # some routes lazily reference it; keep the mock happy).
+    mock_db[mock_db.PLAYBACK_HISTORIES].find = MagicMock(return_value=MagicMock(
+        to_list=AsyncMock(return_value=[]), sort=MagicMock(return_value=MagicMock())
+    ))
+
+    resp = await client.get("/stats/global-leaderboard")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    leaders = body["data"]
+    assert len(leaders) == 2
+
+    # Both values derive from listenDuration, not statistics.totalListeningTime
+    assert leaders[0]["displayName"] == "Alpha"
+    assert leaders[0]["totalMinutes"] == 50   # 3000 / 60
+    assert leaders[1]["displayName"] == "Beta"
+    assert leaders[1]["totalMinutes"] == 10   # 600 / 60
+
+    # The pipeline must NEVER reference the stored statistics field
+    pipeline = aggregate_mock.call_args.args[0]
+    for stage in pipeline:
+        raw = str(stage)
+        assert "statistics" not in raw, (
+            f"Leaderboard pipeline must aggregate from history, not stored stats: {raw}"
+        )

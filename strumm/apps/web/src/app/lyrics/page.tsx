@@ -168,7 +168,7 @@ export default function LyricsPage() {
       {/* Lyrics container */}
       <div 
         ref={scrollContainerRef}
-        className="relative z-10 flex-1 overflow-y-auto py-12 scrollbar-none my-6 text-center max-w-4xl w-full space-y-6 md:space-y-8 px-4 flex flex-col justify-center"
+        className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden py-12 scrollbar-none my-6 text-center max-w-4xl w-full space-y-6 md:space-y-8 px-4 flex flex-col justify-center"
       >
         {!currentSong ? (
           <div className="flex flex-col items-center justify-center text-muted gap-4 max-w-sm mx-auto p-8 bg-surface/40 border border-border/50 rounded-2xl shadow-xl backdrop-blur-md">
@@ -193,7 +193,7 @@ export default function LyricsPage() {
                 <div
                   key={idx}
                   ref={isActive ? activeLineRef : null}
-                  className={`transition-all duration-500 py-3 leading-relaxed select-none cursor-pointer font-editorial ${
+                  className={`transition-all duration-500 py-3 leading-relaxed select-none cursor-pointer font-editorial whitespace-normal wrap-anywhere break-words w-full max-w-full ${
                     isActive 
                       ? "text-3xl md:text-5xl text-primary font-bold text-glow scale-105" 
                       : "text-xl md:text-3xl text-muted/30 hover:text-muted/60"
@@ -205,7 +205,7 @@ export default function LyricsPage() {
             })}
           </div>
         ) : (
-          <div className="whitespace-pre-line py-8 text-muted/80 leading-relaxed font-editorial text-center italic text-xl md:text-3xl select-none max-w-2xl mx-auto">
+          <div className="whitespace-pre-line break-words wrap-anywhere py-8 text-muted/80 leading-relaxed font-editorial text-center italic text-xl md:text-3xl select-none max-w-2xl mx-auto">
             {plainLyrics}
           </div>
         )}

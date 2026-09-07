@@ -402,29 +402,40 @@ async def get_discovery_rate(
 
 @router.get("/global-leaderboard")
 async def get_global_leaderboard():
-    """Get the top 3 global listeners by total listening minutes (all time)."""
+    """Get the top 3 global listeners by total listening minutes (all time).
+
+    Computed from REAL playback histories (``listenDuration``), matching the
+    number shown on a user's own Replay "Listening Time" card — so a user's
+    leaderboard placement and their card always agree. userId is canonicalized
+    to a string for grouping so mixed string/ObjectId history rows collapse.
+    """
     try:
         database = db.get_db()
         pipeline = [
-            {"$match": {"statistics.totalListeningTime": {"$gt": 0}}},
-            {"$project": {
-                "_id": 0,
-                "displayName": {"$ifNull": ["$displayName", "Anonymous"]},
-                "avatar": {"$ifNull": ["$avatar", None]},
-                "avatarMediaId": 1,
-                "totalMinutes": {"$divide": ["$statistics.totalListeningTime", 60]}
+            {"$group": {
+                "_id": {"$toString": "$userId"},
+                "totalSeconds": {"$sum": "$listenDuration"}
             }},
-            {"$sort": {"totalMinutes": -1}},
+            {"$sort": {"totalSeconds": -1}},
             {"$limit": 3}
         ]
-        cursor = database[db.USERS].aggregate(pipeline)
+        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
         leaders = []
-        async for doc in cursor:
-            await decorate_user_avatar(doc)
+        for doc in await cursor.to_list(length=3):
+            user_id = doc["_id"]
+            if not user_id:
+                continue
+            user = await database[db.USERS].find_one({"_id": ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id})
+            if not user:
+                continue
+            await decorate_user_avatar(user)
+            total_minutes = int(round((doc.get("totalSeconds") or 0) / 60))
+            if total_minutes <= 0:
+                continue
             leaders.append({
-                "displayName": doc["displayName"],
-                "avatar": doc.get("avatar"),
-                "totalMinutes": int(doc["totalMinutes"])
+                "displayName": user.get("displayName") or "Anonymous",
+                "avatar": user.get("avatar"),
+                "totalMinutes": total_minutes
             })
         return {"success": True, "data": leaders}
     except Exception as e:

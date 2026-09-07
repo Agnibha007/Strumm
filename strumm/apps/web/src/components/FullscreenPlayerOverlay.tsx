@@ -695,7 +695,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               {/* Scrolling Container */}
               <div 
                 ref={scrollContainerRef}
-                className="flex-1 overflow-y-auto pr-1 md:pr-2 space-y-3 md:space-y-4 lg:space-y-5 text-center min-h-0"
+                className="flex-1 overflow-y-auto overflow-x-hidden pr-1 md:pr-2 space-y-3 md:space-y-4 lg:space-y-5 text-center min-h-0"
               >
                 {lyricsLoading ? (
                   <div className="flex flex-col items-center justify-center h-full gap-2 text-muted py-12">
@@ -713,7 +713,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                           playerRef?.seekTo(line.time);
                           setCurrentTime(line.time);
                         }}
-                        className={`transition-all duration-300 py-1.5 cursor-pointer leading-relaxed text-lg md:text-xl lg:text-2xl font-editorial font-bold ${
+                        className={`transition-all duration-300 py-1.5 cursor-pointer leading-relaxed text-lg md:text-xl lg:text-2xl font-editorial font-bold whitespace-normal wrap-anywhere break-words w-full max-w-full ${
                           isActive 
                             ? "text-primary text-glow scale-105 py-2.5" 
                             : "text-muted/30 hover:text-muted/70 hover:scale-[1.01]"
@@ -724,7 +724,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                     );
                   })
                 ) : (
-                  <div className="whitespace-pre-line py-8 text-muted/80 leading-relaxed font-editorial text-center italic text-base md:text-lg">
+                  <div className="whitespace-pre-line break-words wrap-anywhere py-8 text-muted/80 leading-relaxed font-editorial text-center italic text-base md:text-lg">
                     {plainLyrics}
                   </div>
                 )}
