@@ -5,7 +5,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl, API_ORIGIN } from "web/lib/api";
 import { searchYouTube } from "web/lib/search";
-import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2 } from "lucide-react";
+import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2, UserPlus, X, Check } from "lucide-react";
 import SongArtwork from "web/components/SongArtwork";
 import { useRouter } from "next/navigation";
 
@@ -57,6 +57,13 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const canControl = isHost || !!room?.controllers?.includes(user?.id ?? "");
   const [suggestQuery, setSuggestQuery] = useState("");
   const [suggestResults, setSuggestResults] = useState<any[]>([]);
+
+  // Invite flow (host only): pick a Circle friend to invite into the room.
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [circleFriends, setCircleFriends] = useState<Array<{ id: string; displayName: string; username: string; avatar?: string }>>([]);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [invitingId, setInvitingId] = useState<string | null>(null);
+  const [invitedMsg, setInvitedMsg] = useState<string | null>(null);
 
   const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const voiceActiveRef = useRef(voiceActive);
@@ -354,6 +361,62 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     }
   };
 
+  // Fetch the host's Circle friends so they can be invited directly into the room.
+  const openInviteModal = async () => {
+    if (!user) return;
+    setInviteOpen(true);
+    setInviteLoading(true);
+    setInvitedMsg(null);
+    try {
+      const response = await fetch(apiUrl("/social/circle"), {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success) {
+        setCircleFriends((json.data || []).map((f: any) => ({
+          id: f.id,
+          displayName: f.displayName,
+          username: f.username,
+          avatar: f.avatar,
+        })));
+      } else {
+        setCircleFriends([]);
+      }
+    } catch (e) {
+      console.error(e);
+      setCircleFriends([]);
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const handleInviteFriend = async (friendId: string, friendName: string) => {
+    if (!user) return;
+    setInvitingId(friendId);
+    setInvitedMsg(null);
+    try {
+      const response = await fetch(apiUrl(`/social/rooms/${id}/invite`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ userId: friendId })
+      });
+      const json = await response.json();
+      if (json.success) {
+        setInvitedMsg(`${friendName} was invited to ${room?.name ?? "your room"}.`);
+      } else {
+        setInvitedMsg(json.error || json.detail || "Invite failed.");
+      }
+    } catch (e) {
+      console.error(e);
+      setInvitedMsg("Unable to send the invite.");
+    } finally {
+      setInvitingId(null);
+    }
+  };
+
   // Leave = close the socket. The backend's disconnect handling removes the
   // member from the room (and auto-transfers hosting if the host leaves), so no
   // dedicated leave endpoint is needed.
@@ -564,6 +627,16 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           >
             Leave Room
           </button>
+
+          {isHost && (
+            <button
+              onClick={openInviteModal}
+              className="py-2 px-4 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Invite
+            </button>
+          )}
 
           <button
             onClick={toggleVoiceChat}
@@ -797,6 +870,78 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         </div>
 
       </div>
+
+      {/* Invite Circle friends modal */}
+      {inviteOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-background/85 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-surface border border-border/80 rounded-2xl p-5 shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border/20 pb-3">
+              <div className="min-w-0">
+                <span className="text-[8px] uppercase tracking-widest text-primary font-bold block">Invite to Room</span>
+                <h3 className="font-editorial text-base text-text font-bold truncate leading-tight">
+                  Invite Circle friends to {room.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setInviteOpen(false)}
+                className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {invitedMsg && (
+              <div className="text-[10px] text-primary bg-primary/5 border border-primary/20 p-2.5 rounded-lg">
+                {invitedMsg}
+              </div>
+            )}
+
+            {inviteLoading ? (
+              <div className="flex items-center justify-center py-8 gap-2 text-xs text-muted">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span>Loading your Circle...</span>
+              </div>
+            ) : circleFriends.length === 0 ? (
+              <p className="text-xs text-muted italic p-4 text-center">
+                No Circle friends to invite yet. Add friends from the Circle tab first.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {circleFriends.map((friend) => (
+                  <div key={friend.id} className="flex items-center justify-between gap-2 p-2.5 bg-surface-elevated/20 border border-border/40 rounded-xl min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {friend.avatar ? (
+                        <img src={friend.avatar} alt={friend.displayName} loading="lazy" decoding="async" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border" />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-surface border border-border flex items-center justify-center flex-shrink-0">
+                          <Users className="w-3.5 h-3.5 text-accent" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs font-bold text-text truncate block leading-snug">{friend.displayName}</span>
+                        <span className="text-[9px] text-muted truncate block">@{friend.username}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleInviteFriend(friend.id, friend.displayName)}
+                      disabled={invitingId === friend.id}
+                      className="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white text-[10px] font-semibold rounded-lg flex items-center gap-1 transition cursor-pointer select-none disabled:opacity-50 flex-shrink-0"
+                    >
+                      {invitingId === friend.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Check className="w-3 h-3" />
+                      )}
+                      {invitingId === friend.id ? "Inviting..." : "Invite"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

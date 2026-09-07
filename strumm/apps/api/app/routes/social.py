@@ -17,6 +17,7 @@ from app.services.realtime.events import (
     ROOM_LEFT,
     ROOM_HOST_TRANSFERRED,
     ROOM_CONTROLLERS_UPDATED,
+    ROOM_INVITED,
     AUTHENTICATE,
     CIRCLE_ACTIVITY_UPDATED,
     NOTIFICATION_CREATED,
@@ -247,6 +248,9 @@ class RoomTrackUpdateRequest(BaseModel):
 class RoomPlaybackStateRequest(BaseModel):
     playing: bool
     timestamp: float
+
+class RoomInviteRequest(BaseModel):
+    userId: str
 
 # Delegate room WebSocket management to the centralized realtime manager
 ws_manager = realtime_manager
@@ -571,10 +575,15 @@ async def _is_circle_member(database, user_id: str, other_id: str) -> bool:
 
 
 async def _can_access_room(database, room: dict, user_id: str) -> bool:
-    """Access check for a single room. Circle rooms are limited to the circle."""
+    """Access check for a single room. Circle rooms are limited to the circle.
+
+    Invited users (``room.invited``) may enter even non-public rooms.
+    """
     if room.get("visibility") != "circle":
         return True
     if room.get("hostId") == user_id or user_id in (room.get("members") or []):
+        return True
+    if user_id in (room.get("invited") or []):
         return True
     return await _is_circle_member(database, user_id, room.get("hostId"))
 
@@ -759,6 +768,63 @@ async def create_room(payload: RoomCreateRequest, current_user: dict = Depends(g
     new_room["hostName"] = current_user.get("displayName", "Someone")
     await _notify_room_created(database, new_room, host_name=new_room["hostName"])
     return {"success": True, "data": new_room}
+
+# Invite a Circle friend into a room
+@router.post("/rooms/{roomId}/invite")
+async def invite_to_room(roomId: str, payload: RoomInviteRequest, current_user: dict = Depends(get_current_user)):
+    database = db.get_db()
+    my_id = current_user["id"]
+    target_id = sanitize_text(payload.userId, max_length=64)
+
+    if not ObjectId.is_valid(roomId):
+        raise HTTPException(status_code=404, detail="Room not found.")
+    if not ObjectId.is_valid(target_id):
+        raise HTTPException(status_code=404, detail="Invited user not found.")
+
+    room = await database[db.ROOMS].find_one({"_id": ObjectId(roomId)})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found.")
+    if room.get("hostId") != my_id:
+        raise HTTPException(status_code=403, detail="Only the room host can invite listeners.")
+    if target_id == my_id:
+        raise HTTPException(status_code=400, detail="You cannot invite yourself.")
+
+    # Only current Circle friends can be invited directly into a room.
+    if not await _is_circle_member(database, my_id, target_id):
+        raise HTTPException(status_code=403, detail="You can only invite Circle friends.")
+
+    await database[db.ROOMS].update_one(
+        {"_id": ObjectId(roomId)},
+        {"$addToSet": {"invited": target_id}}
+    )
+
+    notification = {
+        "userId": target_id,
+        "type": "room_invite",
+        "senderId": my_id,
+        "senderName": current_user.get("displayName", "Someone"),
+        "senderAvatar": current_user.get("avatar"),
+        "roomId": roomId,
+        "roomName": room.get("name", "A Strumm Room"),
+        "read": False,
+        "createdAt": datetime.utcnow()
+    }
+    await database[db.NOTIFICATIONS].insert_one(notification)
+
+    await ws_manager.send_to_user(target_id, {
+        "event": ROOM_INVITED,
+        "data": {
+            "roomId": roomId,
+            "roomName": room.get("name", "A Strumm Room"),
+            "hostId": my_id,
+            "hostName": current_user.get("displayName", "Someone"),
+        }
+    })
+
+    return {
+        "success": True,
+        "message": f"{current_user.get('displayName', 'You')} invited a listener to the room.",
+    }
 
 # Search Rooms
 @router.get("/rooms/search")

@@ -565,3 +565,91 @@ async def test_disconnect_empties_and_deletes_room(mock_db, mock_realtime):
     ]
     assert deleted_calls
     assert mock_realtime.broadcast_to_circle.await_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# POST /social/rooms/{roomId}/invite — host invites a Circle friend
+# ---------------------------------------------------------------------------
+
+
+async def test_invite_friend_adds_to_room_and_notifies(client, mock_db, mock_realtime):
+    room_id = "6630a1c2e4b0a1c2e4b0a444"
+    friend_id = "6630a1c2e4b0a1c2e4b0a555"
+    room = {
+        "_id": ObjectId(room_id),
+        "name": "My Room",
+        "hostId": "user_host",
+        "members": ["user_host"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.ROOMS].update_one = AsyncMock()
+    mock_db[mock_db.NOTIFICATIONS].insert_one = AsyncMock()
+    # Friend is in the host's accepted circle
+    mock_db[mock_db.CONNECTIONS].find_one = AsyncMock(return_value={
+        "requesterId": "user_host",
+        "receiverId": friend_id,
+        "status": "accepted",
+    })
+
+    res = await client.post(f"/social/rooms/{room_id}/invite", json={"userId": friend_id})
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+
+    # The invitee is granted access to the room doc.
+    update_call = mock_db[mock_db.ROOMS].update_one.call_args
+    assert update_call.args[0] == {"_id": ObjectId(room_id)}
+    assert update_call.args[1] == {"$addToSet": {"invited": friend_id}}
+
+    # A room_invite notification is persisted for the invitee.
+    notif = mock_db[mock_db.NOTIFICATIONS].insert_one.call_args.args[0]
+    assert notif["userId"] == friend_id
+    assert notif["type"] == "room_invite"
+    assert notif["roomId"] == room_id
+    assert notif["roomName"] == "My Room"
+
+    # Realtime room:invited event pushed straight to the invitee.
+    mock_realtime.send_to_user.assert_awaited_once()
+    sent = mock_realtime.send_to_user.call_args
+    assert sent.args[0] == friend_id
+    assert sent.args[1]["event"] == "room:invited"
+    assert sent.args[1]["data"]["roomId"] == room_id
+
+
+async def test_invite_forbids_non_host(client, mock_db):
+    room_id = "6630a1c2e4b0a1c2e4b0a666"
+    room = {
+        "_id": ObjectId(room_id),
+        "name": "Their Room",
+        "hostId": "someone_else",
+        "members": ["someone_else"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+
+    res = await client.post(
+        f"/social/rooms/{room_id}/invite",
+        json={"userId": "6630a1c2e4b0a1c2e4b0a777"},
+    )
+    assert res.status_code == 403
+
+
+async def test_invite_rejects_non_friend(client, mock_db):
+    room_id = "6630a1c2e4b0a1c2e4b0a888"
+    stranger_id = "6630a1c2e4b0a1c2e4b0a999"
+    room = {
+        "_id": ObjectId(room_id),
+        "name": "My Room",
+        "hostId": "user_host",
+        "members": ["user_host"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.CONNECTIONS].find_one = AsyncMock(return_value=None)  # not a circle member
+
+    res = await client.post(
+        f"/social/rooms/{room_id}/invite",
+        json={"userId": stranger_id},
+    )
+    assert res.status_code == 403
+    mock_db[mock_db.NOTIFICATIONS].insert_one.assert_not_awaited()

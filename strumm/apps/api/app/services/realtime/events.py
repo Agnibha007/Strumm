@@ -50,6 +50,7 @@ ROOM_LEFT = "room:left"
 ROOM_MEMBER_COUNT = "room:member_count"
 ROOM_HOST_TRANSFERRED = "room:host_transferred"
 ROOM_CONTROLLERS_UPDATED = "room:controllers_updated"
+ROOM_INVITED = "room:invited"
 
 # ---------------------------------------------------------------------------
 # Notification events

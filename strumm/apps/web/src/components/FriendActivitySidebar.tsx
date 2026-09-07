@@ -7,7 +7,7 @@ import SongArtwork from "web/components/SongArtwork";
 import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED, ROOM_CREATED, ROOM_UPDATED, ROOM_DELETED } from "web/services/realtime";
+import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED, ROOM_CREATED, ROOM_UPDATED, ROOM_DELETED, ROOM_INVITED } from "web/services/realtime";
 
 interface FriendActivity {
   id: string;
@@ -32,6 +32,13 @@ interface ActiveRoom {
   hostId: string;
 }
 
+interface RoomInvite {
+  roomId: string;
+  roomName: string;
+  hostId: string;
+  hostName: string;
+}
+
 interface FriendActivitySidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -47,6 +54,7 @@ export default function FriendActivitySidebar({
   const { playSong, currentSong } = usePlayerStore();
   const [friends, setFriends] = useState<FriendActivity[]>([]);
   const [activeRooms, setActiveRooms] = useState<ActiveRoom[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<RoomInvite[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Message & Song Share States
@@ -158,6 +166,20 @@ export default function FriendActivitySidebar({
     const unsubRoomUpdated = dispatch.on(ROOM_UPDATED, (data) => applyRoomEvent(data, true));
     const unsubRoomDeleted = dispatch.on(ROOM_DELETED, (data) => applyRoomEvent(data, false));
 
+    // A friend invited you into their room — surface a Join banner.
+    const unsubRoomInvited = dispatch.on(ROOM_INVITED, (data) => {
+      if (!data?.roomId) return;
+      setPendingInvites((prev) => {
+        if (prev.some((inv) => inv.roomId === data.roomId)) return prev;
+        return [...prev, {
+          roomId: data.roomId,
+          roomName: data.roomName || "A Strumm Room",
+          hostId: data.hostId,
+          hostName: data.hostName || "A friend",
+        }];
+      });
+    });
+
     return () => {
       unsubOnline();
       unsubOffline();
@@ -167,6 +189,7 @@ export default function FriendActivitySidebar({
       unsubRoomCreated();
       unsubRoomUpdated();
       unsubRoomDeleted();
+      unsubRoomInvited();
     };
   }, [user, token, fetchActivity]);
 
@@ -414,6 +437,33 @@ export default function FriendActivitySidebar({
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
+
+        {pendingInvites.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {pendingInvites.map((inv) => (
+              <div key={inv.roomId} className="relative p-3 bg-primary/10 border border-primary/30 rounded-xl space-y-2">
+                <button
+                  onClick={() => setPendingInvites((prev) => prev.filter((i) => i.roomId !== inv.roomId))}
+                  className="absolute top-2 right-2 p-0.5 text-muted hover:text-text rounded transition cursor-pointer"
+                  title="Dismiss invite"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+                <p className="text-[10px] text-text leading-snug pr-4">
+                  <span className="font-bold">{inv.hostName}</span>{" "}
+                  <span className="text-muted">invited you to</span>{" "}
+                  <span className="font-bold text-primary">{inv.roomName}</span>
+                </p>
+                <Link href={`/rooms/${inv.roomId}`}>
+                  <span className="w-full py-1.5 bg-primary hover:bg-primary-hover text-white text-[9px] uppercase tracking-wider font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer">
+                    <Radio className="w-3 h-3" />
+                    Join Strumm Room
+                  </span>
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-8 gap-2 text-xs text-muted">

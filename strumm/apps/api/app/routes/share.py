@@ -30,7 +30,9 @@ async def create_share_link(
         if content_type == "playlist":
             playlist_oid = parse_object_id(content_id)
             playlist = await database[db.PLAYLISTS].find_one({"_id": playlist_oid})
-            if not playlist or playlist.get("userId") != current_user["id"]:
+            # playlist.userId is stored as a bson ObjectId while the JWT subject
+            # is a string — normalize to strings before comparing.
+            if not playlist or str(playlist.get("userId")) != str(current_user["id"]):
                 return {"success": False, "error": "Playlist not found or not owned by current user."}
         else:
             content_id = sanitize_youtube_id(content_id)
@@ -96,10 +98,14 @@ async def get_shared_content(
         if content_type == "playlist":
             playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(content_id)})
             if playlist:
-                if playlist.get("visibility") != "public" and playlist.get("userId") != share.get("userId"):
+                # Same ObjectId-vs-string normalization as create_share_link.
+                if playlist.get("visibility") != "public" and str(playlist.get("userId")) != str(share.get("userId")):
                     return {"success": False, "error": "Shared playlist is no longer public."}
                 playlist["id"] = str(playlist["_id"])
                 del playlist["_id"]
+                # Playlist docs store userId as a bson ObjectId; convert to a
+                # string so the public JSON response encodes without a 500.
+                playlist["userId"] = str(playlist.get("userId", ""))
                 content_data = playlist
         elif content_type == "song":
             # Lookup song in active playlist songs or histories
