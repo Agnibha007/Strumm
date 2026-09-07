@@ -2,6 +2,23 @@
 
 All notable changes to Strumm will be documented in this file.
 
+## [2.4.0] — 2026-09-07
+
+### Added
+- "Jump Back In" shortcut on the home page linking to the most recently played playlist.
+- Custom theme: pick any primary, hover, accent, and text color via RGB sliders (Custom theme option in Settings → Appearance).
+- Background playback watchdog: when the browser tab is hidden or the device is locked, a wall-clock watchdog now advances the track automatically so autoplay timers don't stall.
+- In-room invite: room hosts can now invite Circle friends directly from within the room via an Invite button; invitees see a real-time Join banner in the Friend Activity sidebar.
+
+### Fixed
+- Playlist sharing silently failed for all users: `create_playlist` stored `userId` as a BSON ObjectId while the share route compared it as a string — every share was rejected with "Playlist not found or not owned." The comparison is now normalized with `str()`, and the returned playlist doc encodes cleanly to JSON.
+- Room leave event: frontend now listens for the canonical `room:left` constant (was `room:leave`), so member counts update in real time after someone disconnects.
+- Auto "Liked Songs" playlist now syncs reliably on every like/unlike and is flagged `special: "liked"` so it cannot be renamed or deleted.
+- "Jump Back In" playlist is now rendered independently of the Discovery Mix toggle; disabling Discovery Mix no longer also hides the recently-played shortcut.
+
+### Changed
+- Strumm Rooms access control: invited Circle friends can now enter a circle-only room via the room's persistent `invited` grant, even if they are not yet room members.
+
 ## [2.3.0] — 2026-08-15
 
 ### Added
