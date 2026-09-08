@@ -426,3 +426,68 @@ class TestRadioLogsPersistence:
 
         assert data["success"] is True
         assert len(data["data"]["songs"]) == 2
+
+
+class TestRadioNormalizationBoundary:
+    """Fresh provider tracks are normalized at the response boundary; DB-sampled
+    songs are returned exactly as stored."""
+
+    @pytest.mark.asyncio
+    async def test_watch_playlist_tracks_are_normalized(
+        self, client, mock_ytmusic
+    ):
+        """A raw prefixed watch-playlist title is split and cleaned before the
+        response is emitted."""
+        mock_ytmusic.return_value = {"tracks": [
+            {
+                "videoId": "prefixed1",
+                "title": "KK - Aankhon Mein Teri",
+                "artists": [{"name": "KK"}],
+                "length": 210,
+                "thumbnail": [{"url": "https://img.youtube.com/vi/prefixed1/hqdefault.jpg"}],
+            },
+            {
+                "videoId": "omv1",
+                "title": "Bones (Official Music Video)",
+                "artists": [{"name": "ImagineDragonsVEVO"}],
+                "length": 195,
+                "thumbnail": [{"url": "https://img.youtube.com/vi/omv1/hqdefault.jpg"}],
+            },
+        ]}
+
+        async with client:
+            resp = await client.get("/radio/testSeed?limit=10")
+            data = resp.json()
+
+        assert data["success"] is True
+        songs = {s["videoId"]: s for s in data["data"]["songs"]}
+        assert songs["prefixed1"]["title"] == "Aankhon Mein Teri"
+        assert songs["prefixed1"]["artist"] == "KK"
+        assert songs["omv1"]["title"] == "Bones"
+        assert songs["omv1"]["artist"] == "Imagine Dragons"
+
+    @pytest.mark.asyncio
+    async def test_db_sampled_fallback_is_returned_verbatim(
+        self, client, mock_ytmusic, mock_find_song, mock_db
+    ):
+        """Legacy DB rows sampled as a last resort are NOT re-normalized on
+        read — they are returned exactly as stored."""
+        mock_ytmusic.return_value = None
+        mock_find_song.return_value = None
+
+        db_songs = [
+            {"videoId": "dbraw1", "title": "Legacy - Raw Title",
+             "artist": "Old Artist", "thumbnail": "", "duration": 180},
+        ]
+        playlist_cursor = AsyncMock()
+        playlist_cursor.__aiter__.return_value = iter(db_songs)
+        mock_db[mock_db.PLAYLISTS].aggregate = MagicMock(return_value=playlist_cursor)
+
+        async with client:
+            resp = await client.get("/radio/testSeed?limit=10")
+            data = resp.json()
+
+        assert data["success"] is True
+        assert data["data"]["songs"][0]["videoId"] == "dbraw1"
+        assert data["data"]["songs"][0]["title"] == "Legacy - Raw Title"
+        assert data["data"]["songs"][0]["artist"] == "Old Artist"

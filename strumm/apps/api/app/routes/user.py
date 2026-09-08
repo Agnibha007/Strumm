@@ -251,23 +251,24 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
     # Always use real histories only - never inject simulated entries
     real_histories = histories
 
-    # 1. Total & Monthly seconds — always computed from REAL history.
-    #    Stored stats are only used as a fallback when no history exists
-    #    (e.g. legacy/seeded accounts before playback histories were logged).
+    # 1. Total & Monthly seconds:
+    #    The authoritative single source of truth for total listening time is
+    #    the atomic counter stored in users.statistics.totalListeningTime (incremented
+    #    live by /play-event and monotonically reconciled via CAS).
+    #    History sum is used only if it proves a higher total (e.g. data import or
+    #    repair) or as fallback if stored statistics are missing. It must NEVER
+    #    overwrite the canonical atomic counter with a lower partial history sum.
     total_seconds_hist = sum(h.get("listenDuration", 0) for h in real_histories)
     total_seconds_stored = (current_user_statistics or {}).get("totalListeningTime", 0) or 0
 
-    if total_seconds_hist > 0:
-        total_seconds = total_seconds_hist
-    else:
-        total_seconds = total_seconds_stored
+    total_seconds = max(total_seconds_stored, total_seconds_hist)
     total_minutes = int(round(total_seconds / 60))
 
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     monthly_seconds_hist = sum(
         h.get("listenDuration", 0)
         for h in real_histories
-        if h.get("playedAt", datetime.utcnow()) >= thirty_days_ago
+        if isinstance(h.get("playedAt"), datetime) and h["playedAt"] >= thirty_days_ago
     )
     monthly_seconds_stored = (current_user_statistics or {}).get("monthlyListeningTime", 0) or 0
 
@@ -275,6 +276,7 @@ def compute_user_stats(histories: List[Dict[str, Any]], current_user_statistics:
         monthly_seconds = monthly_seconds_hist
     else:
         monthly_seconds = monthly_seconds_stored
+    monthly_seconds = min(monthly_seconds, total_seconds)
     monthly_minutes = int(round(monthly_seconds / 60))
     
     # 2. Top Songs from REAL data
@@ -416,8 +418,11 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             {"userId": {"$in": possible_ids}},
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
         ).sort("playedAt", -1).to_list(length=5000)
-        stats = compute_user_stats(histories, current_user.get("statistics"))
-        user_data = serialize_user(current_user)
+        fresh_user = await database[db.USERS].find_one({"_id": parse_object_id(user_id_str)})
+        stored_statistics = (fresh_user or {}).get("statistics") or current_user.get("statistics")
+
+        stats = compute_user_stats(histories, stored_statistics)
+        user_data = serialize_user(fresh_user or current_user)
         user_data["soundDNA"] = stats["soundDNA"]
         user_data["statistics"] = {
             "totalListeningTime": stats["totalListeningTime"],
@@ -697,84 +702,6 @@ async def toggle_like_song(
             }
     except Exception as e:
         logger.error(f"Error toggling liked song status: {str(e)}")
-        return {"success": False, "error": "An internal error occurred."}
-
-# History and Statistics (Live Listening Counter backend sync)
-@router.get("/history")
-async def get_playback_history(
-    limit: int = 50,
-    current_user: dict = Depends(get_current_user)
-):
-    try:
-        database = db.get_db()
-        user_id_str = current_user["id"]
-        user_id_oid = ObjectId(user_id_str)
-        pipeline = [
-            {"$match": {"userId": {"$in": [user_id_str, user_id_oid]}}},
-            {"$sort": {"playedAt": -1}},
-            {
-                "$group": {
-                    "_id": {
-                        "$cond": [
-                            {"$and": [{"$ne": ["$song.videoId", None]}, {"$ne": ["$song.videoId", ""]}]},
-                            "$song.videoId",
-                            {"$concat": ["$song.title", " - ", "$song.artist"]}
-                        ]
-                    },
-                    "latest_doc": {"$first": "$$ROOT"}
-                }
-            },
-            {"$replaceRoot": {"newRoot": "$latest_doc"}},
-            {"$sort": {"playedAt": -1}},
-            {"$limit": limit}
-        ]
-        cursor = database[db.PLAYBACK_HISTORIES].aggregate(pipeline)
-        history = []
-        async for doc in cursor:
-            doc["id"] = str(doc["_id"])
-            doc["userId"] = str(doc["userId"])
-            del doc["_id"]
-            if "playedAt" in doc:
-                doc["playedAt"] = doc["playedAt"].isoformat()
-            history.append(doc)
-            
-        return {
-            "success": True,
-            "data": history
-        }
-    except Exception as e:
-        logger.error(f"Error loading listening history: {str(e)}")
-        return {"success": False, "error": "An internal error occurred."}
-
-@router.delete("/history")
-async def clear_playback_history(current_user: dict = Depends(get_current_user)):
-    try:
-        database = db.get_db()
-        user_id_str = current_user["id"]
-        user_id_oid = ObjectId(user_id_str)
-        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": {"$in": [user_id_str, user_id_oid]}})
-        await database[db.USERS].update_one(
-            {"_id": user_id_oid},
-            {"$set": {
-                "statistics.totalListeningTime": 0,
-                "statistics.monthlyListeningTime": 0,
-                "statistics.topArtists": [],
-                "statistics.topSongs": [],
-                "soundDNA": {
-                    "energy": 5,
-                    "discovery": 5,
-                    "nostalgia": 5,
-                    "variety": 5,
-                    "repeatRate": 5
-                }
-            }}
-        )
-        return {
-            "success": True,
-            "data": {"message": "Listening history permanently deleted."}
-        }
-    except Exception as e:
-        logger.error(f"Error deleting listening history: {str(e)}")
         return {"success": False, "error": "An internal error occurred."}
 
 # --- Background task debouncing for play events ---
@@ -1299,8 +1226,12 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
             {"song": 1, "listenDuration": 1, "playedAt": 1, "_id": 0}
         ).sort("playedAt", -1).to_list(length=5000)
         
-        # Calculate all stats from REAL data with stored stats as fallback
-        stats = compute_user_stats(histories, current_user.get("statistics"))
+        # Read live stored statistics directly from DB
+        fresh_user = await database[db.USERS].find_one({"_id": parse_object_id(user_id)})
+        stored_statistics = (fresh_user or {}).get("statistics") or current_user.get("statistics")
+
+        # Calculate all stats from REAL data with stored stats as canonical source of truth
+        stats = compute_user_stats(histories, stored_statistics)
         
         personality = get_music_personality(histories, stats["soundDNA"])
         discovery_score = stats["soundDNA"]["discovery"] * 10
@@ -1337,6 +1268,7 @@ async def get_replay(current_user: dict = Depends(get_current_user)):
             "success": True,
             "data": {
                 "totalMinutes": stats["totalMinutes"],
+                "totalListeningTime": stats["totalListeningTime"],
                 "topSongs": stats["topSongs"],
                 "topArtists": stats["topArtists"],
                 "topGenres": top_genres,

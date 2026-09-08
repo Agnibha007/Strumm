@@ -151,16 +151,35 @@ export default function EditorialPlayer() {
             eventId: event.eventId,
             song: {
               videoId: event.song.videoId,
-              title: cleanText(event.song.title || "", 160),
-              artist: cleanText(event.song.artist || "", 160),
+              title: cleanText(event.song.title || "", 160) || "Unknown Title",
+              artist: cleanText(event.song.artist || "", 160) || "Unknown Artist",
               thumbnail: cleanText(event.song.thumbnail || "", 500),
               duration: Math.round(event.song.duration) || 180
             },
             listenDuration: event.seconds
           })
         });
+        if (response.status === 422 || response.status === 400) {
+          // Permanent validation rejection: acknowledge so the unprocessable event
+          // leaves the queue instead of wedging future valid events in an infinite loop.
+          return true;
+        }
         const json = await response.json().catch(() => null);
         if (json?.success) {
+          if (typeof json.data?.totalListeningTime === "number") {
+            const currentUser = useAuthStore.getState().user;
+            if (currentUser) {
+              useAuthStore.setState({
+                user: {
+                  ...currentUser,
+                  statistics: {
+                    ...(currentUser.statistics || { monthlyListeningTime: 0, topSongs: [], topArtists: [] }),
+                    totalListeningTime: json.data.totalListeningTime,
+                  },
+                },
+              });
+            }
+          }
           fetchProfile();
           return true;
         }

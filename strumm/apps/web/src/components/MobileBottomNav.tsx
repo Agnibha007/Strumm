@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Home,
   Search,
-  Library,
   Radio,
   User,
   Settings,
@@ -28,7 +27,6 @@ import { useUserAvatar } from "web/lib/useUserAvatar";
 const bottomNavItems = [
   { label: "Home", href: "/", icon: Home },
   { label: "Search", href: "/search", icon: Search },
-  { label: "Library", href: "/library", icon: Library },
   { label: "Podcasts", href: "/podcasts", icon: Radio },
   { label: "More", href: "#more", icon: User },
 ];

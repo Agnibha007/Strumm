@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.routes.playlist import (
     ImportContext,
     _build_query_plan,
+    _build_song_item,
     _classify_track_metadata,
     _match_track,
     _provider_search,
@@ -413,3 +414,53 @@ async def test_import_csv_mixed_statuses(client, monkeypatch):
     # duplicate count (added for frontend/backend consistency).
     assert data.get("total_duplicates") == len(data["duplicates"])
     assert data.get("searches_used", 0) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Display normalization at the import choke point (_build_song_item)
+# ---------------------------------------------------------------------------
+
+
+def test_build_song_item_normalizes_raw_provider_candidate():
+    """A raw provider candidate with an artist-prefix title is emitted with a
+    clean title and normalized artist (the persisted ``Song`` shape)."""
+    candidate = raw_candidate(
+        "v1", "KK - Aankhon Mein Teri", "KK", duration=200
+    )
+    item = _build_song_item(candidate)
+    assert item["title"] == "Aankhon Mein Teri"
+    assert item["artist"] == "KK"
+    assert item["videoId"] == "v1"
+    assert item["duration"] == 200
+
+
+def test_build_song_item_is_idempotent_for_clean_candidate():
+    """A candidate that has already been normalized (browser resolve step) must
+    pass through byte-for-byte — no corruption, no canonical fields added."""
+    clean = {
+        "videoId": "v2",
+        "title": "Ae Dil Hai Mushkil",
+        "artists": [{"name": "Arijit Singh"}, {"name": "Pritam"}],
+        "duration": 200,
+    }
+    item = _build_song_item(clean)
+    assert item["title"] == "Ae Dil Hai Mushkil"
+    assert item["artist"] == "Arijit Singh, Pritam"
+    assert set(item.keys()) == {
+        "videoId", "title", "artist", "thumbnail", "duration", "album",
+    }
+
+
+def test_rank_candidates_emits_normalized_items():
+    """The ranked candidate list is built through _build_song_item, so the
+    stored song is the normalized shape (not the raw provider title)."""
+    imported = {"title": "Ae Dil Hai Mushkil", "artist": "Arijit Singh", "duration": 200}
+    candidates = [
+        raw_candidate("raw0001", "Arijit Singh - Ae Dil Hai Mushkil", "Arijit Singh"),
+        raw_candidate("raw0002", "Ae Dil Hai Mushkil", "Arijit Singh"),
+    ]
+    ranked = _rank_candidates(imported, candidates)
+    assert ranked, "expected at least one ranked candidate"
+    top_item, _ = ranked[0]
+    assert top_item["title"] == "Ae Dil Hai Mushkil"
+    assert top_item["artist"] == "Arijit Singh"

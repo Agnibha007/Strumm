@@ -21,8 +21,9 @@ MAX_LONG_TEXT_LENGTH = 5000
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,32}$")
 # Canonical YouTube video ID format (base64url, exactly 11 chars).
 YOUTUBE_VIDEO_ID_STRICT_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-# Podcast episodes use a synthetic "podcast-<ObjectId-hex>" videoId namespace.
-PODCAST_EPISODE_ID_RE = re.compile(r"^podcast-[0-9a-fA-F]{24}$")
+# Podcast episodes use a synthetic "podcast-<id>" videoId namespace.
+# Accepts numeric PodcastIndex IDs (e.g. podcast-16792345) and Mongo ObjectId hex (e.g. podcast-64a1b2c3d4e5f67890123456).
+PODCAST_EPISODE_ID_RE = re.compile(r"^podcast-[0-9a-zA-Z_-]{1,64}$")
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,30}$")
 
 

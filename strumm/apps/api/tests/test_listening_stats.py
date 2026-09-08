@@ -210,3 +210,43 @@ async def test_leaderboard_uses_real_histories_not_stored_counter(client, mock_d
         assert "statistics" not in raw, (
             f"Leaderboard pipeline must aggregate from history, not stored stats: {raw}"
         )
+
+
+async def test_profile_and_replay_use_canonical_listening_time(client, mock_db):
+    """Both /profile and /replay must expose the canonical total listening time."""
+    canonical_seconds = 141960  # 2,366 minutes
+    mock_db[mock_db.USERS].find_one.return_value = {
+        "_id": ObjectId(USER_ID),
+        "id": USER_ID,
+        "username": "listener",
+        "displayName": "Listener",
+        "email": "listener@example.com",
+        "statistics": {
+            "totalListeningTime": canonical_seconds,
+            "monthlyListeningTime": 3600,
+            "topArtists": [],
+            "topSongs": [],
+        },
+    }
+
+    # Fake history cursor with 5 entries of 30s = 150s (partial history)
+    mock_cursor = MagicMock()
+    mock_cursor.sort = MagicMock(return_value=mock_cursor)
+    mock_cursor.to_list = AsyncMock(return_value=[
+        {"song": {"videoId": "dQw4w9WgXcQ", "title": "Song", "artist": "Artist", "duration": 180}, "listenDuration": 30, "playedAt": None}
+        for _ in range(5)
+    ])
+    mock_db[mock_db.PLAYBACK_HISTORIES].find = MagicMock(return_value=mock_cursor)
+
+    # 1. GET /profile
+    profile_resp = await client.get("/profile")
+    assert profile_resp.status_code == 200, profile_resp.text
+    profile_data = profile_resp.json()["data"]
+    assert profile_data["statistics"]["totalListeningTime"] == canonical_seconds
+
+    # 2. GET /replay
+    replay_resp = await client.get("/replay")
+    assert replay_resp.status_code == 200, replay_resp.text
+    replay_data = replay_resp.json()["data"]
+    assert replay_data["totalMinutes"] == 2366  # round(141960 / 60)
+    assert replay_data["totalListeningTime"] == canonical_seconds

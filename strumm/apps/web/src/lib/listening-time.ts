@@ -203,7 +203,6 @@ export class ListeningTracker {
   private handleChange(): void {
     if (this.stopped) return;
     const snap = this.options.getSnapshot();
-    const songKey = snap.currentSong?.videoId ?? null;
 
     // Paused or no song: close out any accumulated partial seconds.
     if (!snap.isPlaying || !snap.currentSong) {

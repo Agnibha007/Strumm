@@ -6,11 +6,13 @@ import {
   musicItemToCandidate,
   collectSongCandidates,
   songResultToCandidate,
+  finalizeCandidate,
   resolveTrackOnBrowser,
   resolveMetadataOnBrowser,
   resolveRelatedOnBrowser,
   extractPlaylistOnBrowser,
 } from "web/services/search/BrowserYouTubeMusicResolver";
+import { normalizeSong } from "web/services/metadata";
 
 vi.mock("web/services/search/InvidiousProvider", () => ({
   invidiousProvider: {
@@ -49,6 +51,66 @@ describe("secondsToMmss", () => {
   });
 });
 
+describe("finalizeCandidate (choke point)", () => {
+  it("splits a [Artist] - [Song] title using the channel signal", () => {
+    expect(finalizeCandidate("KK - Aankhon Mein Teri (Official Audio)", "KK - Topic", "KK - Topic")).toEqual({
+      title: "Aankhon Mein Teri",
+      artist: "KK",
+      canonicalTitle: "aankhon mein teri",
+      canonicalArtist: "kk",
+    });
+  });
+
+  it("removes official-video clutter and unwraps a VEVO channel artist", () => {
+    const final = finalizeCandidate(
+      "Young, Wild and Free (Official Music Video)",
+      "SnoopDoggVEVO",
+      "SnoopDoggVEVO",
+    );
+    expect(final.title).toBe("Young, Wild and Free");
+    expect(final.artist).toBe("Snoop Dogg");
+    expect(final.canonicalTitle).toBe("young wild and free");
+    expect(final.canonicalArtist).toBe("snoop dogg");
+  });
+
+  it("prefers structured (known) artists over the title prefix", () => {
+    const final = finalizeCandidate(
+      "Arijit Singh, Pritam - Ae Dil Hai Mushkil",
+      "Arijit Singh, Pritam",
+      undefined,
+      { knownArtist: "Arijit Singh, Pritam" },
+    );
+    expect(final.title).toBe("Ae Dil Hai Mushkil");
+    expect(final.artist).toBe("Arijit Singh, Pritam");
+    expect(final.canonicalTitle).toBe("ae dil hai mushkil");
+    expect(final.canonicalArtist).toBe("arijit singh pritam");
+  });
+
+  it("keeps already-normalized input byte-for-byte (idempotence guard)", () => {
+    const final = finalizeCandidate(
+      "Artist - Song Title (Official Video)",
+      "Snoop Dogg",
+      "SnoopDoggVEVO",
+      { alreadyNormalized: true },
+    );
+    expect(final.title).toBe("Artist - Song Title (Official Video)");
+    expect(final.artist).toBe("Snoop Dogg");
+    expect(final.canonicalTitle).toBeTruthy();
+    expect(final.canonicalArtist).toBeTruthy();
+  });
+
+  it("preserves false-positive dash titles (precision-first)", () => {
+    for (const title of [
+      "Love Me - Love Me",
+      "One More Night - Remix",
+      "Highway - A Love Story",
+      "AC/DC - Thunderstruck",
+    ]) {
+      expect(finalizeCandidate(title, "Some Channel", "Some Channel").title).toBe(title);
+    }
+  });
+});
+
 describe("musicItemToCandidate", () => {
   it("maps a song node to importer-shaped candidate", () => {
     const item = {
@@ -67,6 +129,8 @@ describe("musicItemToCandidate", () => {
       duration: "3:33",
       duration_seconds: 213,
       thumbnails: [{ url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" }],
+      canonicalTitle: "never gonna give you up",
+      canonicalArtist: "rick astley",
     });
   });
 
@@ -130,6 +194,41 @@ describe("musicItemToCandidate", () => {
     expect(cand.duration_seconds).toBe(213);
     // Largest (last) thumbnail is preferred.
     expect(cand.thumbnails).toEqual([{ url: "https://i.ytimg.com/vi/x/hqdefault.jpg" }]);
+  });
+
+  it("normalizes raw YT Music metadata using structured artists", () => {
+    const item = {
+      id: "dQw4w9WgXcQ",
+      item_type: "song",
+      title: "Arijit Singh, Pritam - Ae Dil Hai Mushkil (Official Music Video)",
+      artists: [{ name: "Arijit Singh" }, { name: "Pritam" }],
+      duration: { seconds: 240, text: "4:00" },
+      thumbnail: { contents: [{ url: "https://img" }] },
+    };
+    const cand = musicItemToCandidate(item)!;
+    expect(cand.title).toBe("Ae Dil Hai Mushkil");
+    expect(cand.artist).toBe("Arijit Singh, Pritam");
+    // Original structured artist names are preserved.
+    expect(cand.artists).toEqual([{ name: "Arijit Singh" }, { name: "Pritam" }]);
+    expect(cand.canonicalTitle).toBe("ae dil hai mushkil");
+    expect(cand.canonicalArtist).toBe("arijit singh pritam");
+  });
+
+  it("yields canonicals consistent with the search-created normalizer", () => {
+    const item = song("abc12345678", "KK - Aankhon Mein Teri (Official Audio)", "KK", "3:00");
+    const cand = musicItemToCandidate(item)!;
+    // Search produces the same result for the identical raw title/channel.
+    const search = normalizeSong(
+      "abc12345678",
+      "KK - Aankhon Mein Teri (Official Audio)",
+      "KK - Topic",
+      "",
+      180,
+    );
+    expect(cand.title).toBe(search.title);
+    expect(cand.artist).toBe(search.artist);
+    expect(cand.canonicalTitle).toBe(search.canonicalTitle);
+    expect(cand.canonicalArtist).toBe(search.canonicalArtist);
   });
 });
 
@@ -231,6 +330,8 @@ describe("songResultToCandidate", () => {
       duration: "2:55",
       duration_seconds: 175,
       thumbnails: [{ url: "https://img/one.jpg" }],
+      canonicalTitle: "one dance",
+      canonicalArtist: "drake",
     });
   });
 
@@ -257,6 +358,21 @@ describe("songResultToCandidate", () => {
     expect(cand.thumbnails).toEqual([]);
     expect(cand.duration).toBe("");
   });
+
+  it("does NOT double-normalize already-normalized search results", () => {
+    // Search results have already passed through normalizeSong(); the raw
+    // "Artist - Title (Official Video)" shape must survive untouched even
+    // though the raw pipeline would happily split it.
+    const cand = songResultToCandidate({
+      videoId: "abc12345678",
+      title: "Artist - Song Title (Official Video)",
+      artist: "Snoop Dogg",
+      thumbnail: "",
+      duration: 175,
+    })!;
+    expect(cand.title).toBe("Artist - Song Title (Official Video)");
+    expect(cand.artist).toBe("Snoop Dogg");
+  });
 });
 
 describe("resolveTrackOnBrowser (Piped)", () => {
@@ -278,6 +394,23 @@ describe("resolveTrackOnBrowser (Piped)", () => {
     const out = await resolveTrackOnBrowser("drake", 2);
     expect(invidiousProvider.search).toHaveBeenCalledWith("drake", "video");
     expect(out.map((c) => c.videoId)).toEqual(["abc12345678", "abc23456789"]);
+  });
+
+  it("passes already-normalized titles through unchanged", async () => {
+    vi.mocked(invidiousProvider.search).mockResolvedValue({
+      songs: [
+        { videoId: "abc12345678", title: "One Dance", artist: "Drake", thumbnail: "t1", duration: 175 },
+      ],
+      albums: [],
+      artists: [],
+    });
+
+    const out = await resolveTrackOnBrowser("drake");
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe("One Dance");
+    expect(out[0].artist).toBe("Drake");
+    expect(out[0].canonicalTitle).toBe("one dance");
+    expect(out[0].canonicalArtist).toBe("drake");
   });
 
   it("skips non-11-char song ids returned by the provider", async () => {
@@ -327,6 +460,18 @@ describe("browser-side metadata & related (Piped /streams)", () => {
     });
   });
 
+  it("resolveMetadataOnBrowser normalizes raw Piped metadata", async () => {
+    vi.mocked(fetchPipedStreams).mockResolvedValue({
+      title: "Young, Wild and Free (Official Music Video)",
+      uploader: "SnoopDoggVEVO",
+      thumbnailUrl: "https://thumbs.example/1.jpg",
+      duration: 190,
+    });
+    const meta = await resolveMetadataOnBrowser("abc12345678");
+    expect(meta!.title).toBe("Young, Wild and Free");
+    expect(meta!.artist).toBe("Snoop Dogg");
+  });
+
   it("resolveMetadataOnBrowser returns null for invalid id / missing data", async () => {
     expect(await resolveMetadataOnBrowser("")).toBeNull();
     expect(await resolveMetadataOnBrowser(null as unknown as string)).toBeNull();
@@ -351,6 +496,24 @@ describe("browser-side metadata & related (Piped /streams)", () => {
     const songs = await resolveRelatedOnBrowser("abc12345678", ["ccc33333333"]);
     expect(songs.map((s) => s.videoId)).toEqual(["aaa11111111", "bbb22222222"]);
     expect(songs[0].artist).toBe("Art1");
+  });
+
+  it("resolveRelatedOnBrowser normalizes radio titles and unwraps VEVO channels", async () => {
+    vi.mocked(fetchPipedStreams).mockResolvedValue({
+      title: "Seed",
+      relatedStreams: [
+        { url: "/watch?v=abc11112222", type: "stream", title: "Young, Wild and Free (Official Music Video)", uploaderName: "SnoopDoggVEVO", duration: 190 },
+        { url: "/watch?v=abc33334444", type: "stream", title: "KK - Aankhon Mein Teri (Official Audio)", uploaderName: "KK - Topic", duration: 180 },
+      ],
+    });
+    const songs = await resolveRelatedOnBrowser("abc12345678");
+    expect(songs).toHaveLength(2);
+    expect(songs[0]).toMatchObject({ videoId: "abc11112222", title: "Young, Wild and Free", artist: "Snoop Dogg" });
+    expect(songs[1]).toMatchObject({ videoId: "abc33334444", title: "Aankhon Mein Teri", artist: "KK" });
+    // Consistent with what search (normalizeSong) would produce for the same raw fields.
+    const search = normalizeSong("abc11112222", "Young, Wild and Free (Official Music Video)", "SnoopDoggVEVO", "", 190);
+    expect(songs[0].title).toBe(search.title);
+    expect(songs[0].artist).toBe(search.artist);
   });
 
   it("resolveRelatedOnBrowser returns [] when Piped fails", async () => {

@@ -442,13 +442,17 @@ _TITLE_CLUTTER_PATTERNS: list[re.Pattern] = [
 # Parenthesised / bracketed noise
 _BRACKET_NOISE_PATTERNS: list[re.Pattern] = [
     re.compile(
-        r"\((?:\s*(?:Official|Music\s+Video|Audio|Lyrics?|Lyric\s+Video"
-        r"|HD|HQ|4K|Full\s+Song|Video\s+Song|Visualizer|Remastered)\s*)\)",
+        r"\((?:\s*(?:Official\s+(?:Music\s+)?Video|Official\s+Audio"
+        r"|Official\s+Lyric\s+Video|Official\s+Lyrics|Music\s+Video"
+        r"|Lyric\s+Video|Video\s+Song|Full\s+Song|[Oo]fficial|Audio"
+        r"|Lyrics?|Lyrical|HD|HQ|4K|Visualizer|Remastered)\s*)\)",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\[(?:\s*(?:Official|Music\s+Video|Audio|Lyrics?|Lyric\s+Video"
-        r"|HD|HQ|4K|Full\s+Song|Video\s+Song|Visualizer|Remastered)\s*)\]",
+        r"\[(?:\s*(?:Official\s+(?:Music\s+)?Video|Official\s+Audio"
+        r"|Official\s+Lyric\s+Video|Official\s+Lyrics|Music\s+Video"
+        r"|Lyric\s+Video|Video\s+Song|Full\s+Song|[Oo]fficial|Audio"
+        r"|Lyrics?|Lyrical|HD|HQ|4K|Visualizer|Remastered)\s*)\]",
         re.IGNORECASE,
     ),
     re.compile(r"\((?:\s*[Oo]fficial\s*)\)", re.IGNORECASE),
@@ -528,3 +532,377 @@ def clean_youtube_artist(artist: str) -> str:
     a = re.sub(r"([a-z])([A-Z])", r"\1 \2", a)
 
     return a.strip() or artist.strip()
+
+
+# ---------------------------------------------------------------------------
+# Display normalization (consumer / emission boundary)
+#
+# ``normalize_song_display()`` is the single helper applied wherever fresh
+# provider metadata is turned into a persisted ``Song`` or a response item
+# (playlist import, radio, suggestions). It mirrors the semantic rules of the
+# frontend ``MetadataNormalizer`` without duplicating its whole class:
+#
+#   * clean the display title (bracketed noise, clutter phrases, leading /
+#     trailing delimiters, emoji, pipe suffix) — but NOT feat-stripping;
+#   * high-precision artist-prefix extraction from "Artist - Title" titles,
+#     guarded by a confidence score so false positives (e.g. "Love Me - Love
+#     Me") are rejected;
+#   * artist resolution priority: title-prefix artist (when split), else
+#     structured artists list, else channel-derived artist, else the existing
+#     artist field, else "Unknown Artist".
+#
+# It is idempotent: persisted songs (which only keep ``title`` + ``artist``)
+# re-normalize to themselves, so a second pass is a no-op.
+# ---------------------------------------------------------------------------
+
+# Dash used as the artist :: title separator
+_DASH_TITLE_SEPARATOR = re.compile(r"\s+-\s+")
+
+# Words that appear on the left of " - " but are unlikely to name an artist
+ARTIST_SIDE_NOISE_WORDS: frozenset[str] = frozenset({
+    "topic", "subject", "official", "officialvideo", "officialmusicvideo",
+    "vevo", "lyrics", "lyric", "lyrical", "virtual", "podcast", "mood",
+    "chill", "focus", "lofi", "workout", "workout mix", "party", "sleep",
+    "study", "gaming", "genre", "subgenre", "cover", "mix", "remix",
+    "acoustic", "session", "performance", "live session", "studio session",
+    "hits", "best hits", "greatest hits", "top hits", "top 50", "top 100",
+    "no copyright sounds", "ncs", "wave", "mood mix",
+})
+
+# Words / phrases that indicate the right side of " - " is NOT a song title
+SONG_SIDE_VERSION_WORDS: frozenset[str] = frozenset({
+    "official", "official video", "official audio", "official music video",
+    "official lyric video", "official lyrics", "audio", "video", "lyrics",
+    "lyric video", "music video", "mv", "visualizer", "remastered",
+    "live", "live session", "studio session", "cover", "acoustic",
+    "unplugged", "demo", "bonus track", "deluxe", "extended mix",
+    "instrumental", "karaoke", "official hd video", "topic",
+})
+
+# Word tokens that can appear inside a plausible artist name
+_NAME_TOKEN_RE = re.compile(
+    r"^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'-]*$|^[A-ZÀ-ÖØ-Þ]{1,3}$"
+)
+
+# Joiner words that separate artist-list entries (e.g. "A B & C")
+ARTIST_LIST_JOINER_WORDS: frozenset[str] = frozenset({
+    "&", "and", "×", "x", "feat.", "ft.", "featuring", "feat", "ft",
+})
+
+# Small connector words allowed inside an artist name (no giant DB required)
+ARTIST_CONNECTOR_WORDS: frozenset[str] = frozenset({
+    "of", "the", "and", "a", "an", "de", "la", "le", "da", "do", "van",
+    "von", "del", "di", "der", "das", "den", "san", "santa", "bin", "ben",
+    "el", "al", "na", "ny", "mc", "mac",
+})
+
+_EDGE_PUNCT_RE = re.compile(
+    r"^[\s.,'\u2019&\-\u2013\u2014]+|[\s.,'\u2019&\-\u2013\u2014]+$"
+)
+
+_ARTIST_LIST_SPLIT_RE = re.compile(
+    r"\s*(?:,|\band\b|\b×\b|\bx\b|&|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b)\s*",
+    re.IGNORECASE,
+)
+
+# Channel-name patterns that imply a single artist (generic, no label DB)
+_TOPIC_CHANNEL_RE = re.compile(r"^(.+?)\s*-\s*Topic$", re.IGNORECASE)
+_VEVO_CHANNEL_RE = re.compile(r"^(.+?)VEVO$", re.IGNORECASE)
+_OFFICIAL_CHANNEL_RES = [
+    re.compile(r"^(.+?)\s+Official$", re.IGNORECASE),
+    re.compile(r"^(.+?)\s+[Oo]n\s+[Ss]potify$", re.IGNORECASE),
+    re.compile(r"^(.+?)\s+[Vv]evo$", re.IGNORECASE),
+]
+_LABEL_CHANNEL_RES = [
+    re.compile(
+        r"^(?:[\w\s.&'-]+)\s+(?:music|records?|recordings?|label|labels?|"
+        r"company|production|entertainment|official|network|digital|media|"
+        r"inc\.?|corp\.?|limited|ltd\.?)\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:the\s+)?(?:music|records?)\s+(?:factory|company|group|network|"
+        r"hub|studio|zone|bank|label)\s*$",
+        re.IGNORECASE,
+    ),
+]
+
+_EMOJI_RE = re.compile(
+    "[\U0001F600-\U0001F64F\\U0001F300-\\U0001F5FF\\U0001F680-\\U0001F6FF"
+    "\\U0001F1E0-\\U0001F1FF\\U00002600-\\U000026FF\\U00002700-\\U000027BF]"
+)
+
+
+def _tokens(text: str) -> list[str]:
+    return text.split()
+
+
+def _strip_edge_punct(token: str) -> str:
+    return _EDGE_PUNCT_RE.sub("", token)
+
+
+def _is_name_like_token(token: str) -> bool:
+    return bool(_NAME_TOKEN_RE.match(_strip_edge_punct(token)))
+
+
+def _is_connector_word(word: str) -> bool:
+    return word.lower() in ARTIST_CONNECTOR_WORDS
+
+
+def _is_joiner_word(word: str) -> bool:
+    return word.lower() in ARTIST_LIST_JOINER_WORDS
+
+
+def _split_artist_list(phrase: str) -> list[str]:
+    return [part.strip() for part in _ARTIST_LIST_SPLIT_RE.split(phrase) if part.strip()]
+
+
+def _artist_list_signal(left: str) -> tuple[bool, bool]:
+    """Confidence that the left side of " - " is an artist list."""
+    parts = _split_artist_list(left)
+    if len(parts) < 2:
+        return False, False
+    strong = any(len(_tokens(part)) >= 2 for part in parts)
+    return strong, not strong
+
+
+def _name_like_pts(phrase: str) -> int:
+    """Points for a left side that is name-like (capped at 2 / 1)."""
+    words = _tokens(phrase)
+    if not words:
+        return 0
+    for word in words:
+        if _is_joiner_word(word) or _is_connector_word(word):
+            continue
+        if not _is_name_like_token(word):
+            return 0
+    return 2 if len(words) <= 2 else 1
+
+
+def _right_looks_like_title(right: str, left: str) -> int:
+    """Points for a right side that reads like a real song title."""
+    r = right.strip()
+    if not r:
+        return 0
+    lower = r.lower()
+    if lower in SONG_SIDE_VERSION_WORDS:
+        return 0
+    if re.match(r"^(?:topic|subject|vevo|official)\b", lower):
+        return 0
+    words = _tokens(r)
+    if len(words) >= 2:
+        if re.match(r"^(?:the|a|an)\s+", lower):
+            return 0
+        return 1
+    if len(words) == 1:
+        strong, _weak = _artist_list_signal(left)
+        if len(_tokens(left)) >= 2 or strong:
+            return 1
+        return 0
+    return 0
+
+
+def _is_label_channel(channel: str) -> bool:
+    lower = channel.strip()
+    if not lower:
+        return False
+    return any(pattern.match(channel) for pattern in _LABEL_CHANNEL_RES)
+
+
+def _channel_confirms_artist(left: str, channel: str) -> int:
+    """Points (3) when a channel name pins the artist on the left side."""
+    if not channel:
+        return 0
+    base = None
+    m = _TOPIC_CHANNEL_RE.match(channel)
+    if m:
+        base = m.group(1).strip()
+    elif _VEVO_CHANNEL_RE.match(channel):
+        base = _VEVO_CHANNEL_RE.sub(r"\1", channel).strip()
+    else:
+        for pattern in _OFFICIAL_CHANNEL_RES:
+            mm = pattern.match(channel)
+            if mm:
+                base = mm.group(1).strip()
+                break
+    if base:
+        return 3 if canonical_artist(base) == canonical_artist(left) else 0
+    if _is_label_channel(channel):
+        return 1
+    return 3 if canonical_artist(channel) == canonical_artist(left) else 0
+
+
+def extract_artist_prefix(
+    title: str,
+    channel: str | None = None,
+    known_artist: str | None = None,
+) -> tuple[str, str] | None:
+    """
+    High-precision "Artist - Title" splitting.
+
+    Returns ``(artist, rest_title)`` only when the split is strongly
+    supported, or ``None`` otherwise. Mirrors the frontend
+    ``MetadataNormalizer.extractArtistPrefix()`` scoring so false positives
+    (mirrored halves, "X - Remix", "X - Official", label/VEVO mismatches)
+    are rejected.
+    """
+    if not title:
+        return None
+    parts = _DASH_TITLE_SEPARATOR.split(title.strip())
+    if len(parts) != 2:
+        return None
+    left = parts[0].strip()
+    right = parts[1].strip()
+    if not left or not right:
+        return None
+
+    # Length guards — a plausible artist / title is short-ish
+    if len(left) > 60 or len(right) > 80:
+        return None
+
+    if "/" in left:
+        return None
+    if canonical_string(left) == canonical_string(right):
+        return None
+    if left.lower() in ARTIST_SIDE_NOISE_WORDS:
+        return None
+    if right.lower() in SONG_SIDE_VERSION_WORDS:
+        return None
+
+    list_strong, list_weak = _artist_list_signal(left)
+    channel_pts = _channel_confirms_artist(left, channel or "")
+    known_pts = (
+        3
+        if known_artist and canonical_artist(known_artist) == canonical_artist(left)
+        else 0
+    )
+    name_like_pts = _name_like_pts(left)
+    right_pts = _right_looks_like_title(right, left)
+
+    strongly_supported = list_strong or channel_pts >= 3 or known_pts >= 3
+    if not strongly_supported and name_like_pts == 0:
+        return None
+
+    score = (
+        (3 if list_strong else (1 if list_weak else 0))
+        + channel_pts
+        + known_pts
+        + name_like_pts
+        + right_pts
+    )
+    if score < 3:
+        return None
+    if strongly_supported and right_pts == 0:
+        return None
+
+    return (left, right)
+
+
+def _infer_artist(channel: str) -> str:
+    """
+    Infer an artist from a generic channel name (Topic / Official or plain).
+    Mirror of the frontend ``ArtistNormalizer.inferArtist`` fallback.
+    """
+    if not channel:
+        return ""
+    m = _TOPIC_CHANNEL_RE.match(channel)
+    if m:
+        return m.group(1).strip()
+    m = _VEVO_CHANNEL_RE.match(channel)
+    if m:
+        base = m.group(1).strip()
+        return re.sub(r"([a-z])([A-Z])", r"\1 \2", base).strip()
+    for pattern in _OFFICIAL_CHANNEL_RES:
+        mm = pattern.match(channel)
+        if mm:
+            return mm.group(1).strip()
+    return channel.strip()
+
+
+def _structured_artist(item: dict) -> str:
+    """
+    Join the authoritative ``artists`` list when present. Empty when the
+    provider only exposes a bare ``artist`` string (not authoritative enough
+    to override a confident title-prefix split).
+    """
+    raw = item.get("artists")
+    if not isinstance(raw, list) or not raw:
+        return ""
+    parts: list[str] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            name = str(entry.get("name") or "").strip()
+        elif isinstance(entry, str):
+            name = entry.strip()
+        else:
+            continue
+        if name:
+            parts.append(name)
+    return ", ".join(parts)
+
+
+def clean_song_display_title(title: str) -> str:
+    """
+    Clean a song title for display / persistence.
+
+    Uses the same shared noise lists as ``clean_youtube_title`` but WITHOUT
+    feat-stripping (feat stays in the display title), plus emoji and pipe
+    suffix removal. Matches the frontend ``MetadataNormalizer.cleanTitle()``.
+    """
+    if not title:
+        return title
+
+    t = title
+
+    for pattern in _BRACKET_NOISE_PATTERNS:
+        t = pattern.sub("", t)
+    for pattern in _TITLE_CLUTTER_PATTERNS:
+        t = pattern.sub(" ", t)
+    t = _LEADING_DELIM_RE.sub("", t)
+    t = _TRAILING_DELIM_RE.sub("", t)
+    t = _EMOJI_RE.sub("", t)
+    t = re.sub(r"\s*\|\s*\S[\s\S]*$", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+
+    return t or title.strip()
+
+
+def normalize_song_display(item: dict) -> dict:
+    """
+    Normalize a single song's **display** title/artist at the consumer /
+    emission boundary (persistence + response building).
+
+    Idempotent: a persisted song carrying only ``title`` + ``artist``
+    re-normalizes to itself, so running this twice (or on already-normalized
+    results) is a no-op. Never adds canonical fields or mutates the input.
+    """
+    if not isinstance(item, dict):
+        return item
+    raw_title = str(item.get("title") or "").strip()
+    if not raw_title:
+        return item
+
+    known = _structured_artist(item)
+    channel = str(
+        item.get("channelTitle") or item.get("uploaderName") or item.get("channel") or ""
+    ).strip()
+    existing = str(item.get("artist") or "").strip()
+
+    cleaned = clean_song_display_title(raw_title) or raw_title
+    prefix = extract_artist_prefix(cleaned, channel or None, known or None)
+
+    if prefix:
+        display_title = prefix[1]
+        base_artist = known or prefix[0]
+    else:
+        display_title = cleaned
+        inferred = _infer_artist(channel)
+        fallback = normalize_artist(existing) if existing else ""
+        base_artist = known or inferred or fallback
+
+    display_artist = normalize_artist(base_artist or "Unknown Artist")
+
+    result = dict(item)
+    result["title"] = display_title
+    result["artist"] = display_artist
+    return result

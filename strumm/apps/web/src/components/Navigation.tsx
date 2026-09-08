@@ -7,7 +7,6 @@ import { signOut } from "next-auth/react";
 import { motion } from "framer-motion";
 import {
   Home,
-  Library,
   ListMusic,
   Settings,
   LogOut,
@@ -32,7 +31,6 @@ export default function Navigation() {
     { label: "Home", href: "/", icon: Home },
     { label: "Strumm Flow", href: "/flow", icon: Sparkles },
     { label: "Search", href: "/search", icon: Search },
-    { label: "Library", href: "/library", icon: Library },
     { label: "Playlists", href: "/playlists", icon: ListMusic },
     { label: "Podcasts", href: "/podcasts", icon: Radio },
     { label: "Circle", href: "/circle", icon: Users },

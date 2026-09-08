@@ -62,6 +62,12 @@ export default function ReplayPage() {
   const [recalculating, setRecalculating] = useState(false);
   const [globalLeaders, setGlobalLeaders] = useState<Array<{ displayName: string; avatar: string | null; totalMinutes: number }>>([]);
   const currentVideoId = usePlayerStore((s) => s.currentSong?.videoId ?? null);
+  const canonicalTotalMinutes = useMemo(() => {
+    if (typeof user?.statistics?.totalListeningTime === "number" && user.statistics.totalListeningTime > 0) {
+      return Math.round(user.statistics.totalListeningTime / 60);
+    }
+    return data?.totalMinutes || 0;
+  }, [user?.statistics?.totalListeningTime, data?.totalMinutes]);
   // The very first observe run happens on mount — the mount fetch already
   // covered that song, so skip it to avoid a pointless duplicate request.
   const skipFirstLiveRefreshRef = useRef(true);
@@ -339,7 +345,7 @@ export default function ReplayPage() {
               Listening Time
             </span>
             <div className="flex items-baseline gap-2 min-w-0">
-              <span className="font-editorial text-6xl font-bold text-text truncate">{data.totalMinutes}</span>
+              <span className="font-editorial text-6xl font-bold text-text truncate">{canonicalTotalMinutes}</span>
               <span className="text-xs text-muted font-semibold uppercase tracking-wider flex-shrink-0">Minutes</span>
             </div>
             <p className="text-xs text-muted leading-relaxed line-clamp-2 overflow-hidden">

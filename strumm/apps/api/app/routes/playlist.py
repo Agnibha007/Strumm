@@ -22,6 +22,7 @@ from app.services.normalizer import (
     normalize_title_for_match,
     normalize_artist_for_match,
     clean_youtube_title,
+    normalize_song_display,
     FEAT_RE,
 )
 from pydantic import BaseModel
@@ -659,9 +660,17 @@ def _mark_matched(ctx: ImportContext, song_item: dict):
 
 def _build_song_item(song: dict) -> dict:
     """Build a consistent song item dict from a DB or API result.
-    
+
     Handles both ``artist`` (singular string) and ``artists`` (list of dicts)
     formats. Joins multiple artists with ``, ``.
+
+    The final title/artist are routed through ``normalize_song_display()`` —
+    the single consumer-boundary helper — so every freshly imported song is
+    emitted with a clean display title and a normalized artist. The raw
+    ``song`` dict is normalized directly (not the joined ``artist`` string)
+    so an authoritative ``artists`` list can win over a title prefix. The
+    output keeps only the six ``Song`` keys; canonical keys are derived at
+    write/response time and are never persisted.
     """
     artist = song.get("artist", "")
     if not artist:
@@ -695,10 +704,12 @@ def _build_song_item(song: dict) -> dict:
             last = raw_thumbs[-1]
             thumbnail = last.get("url", "") if isinstance(last, dict) else ""
 
+    with_wrap = normalize_song_display(song)
+
     return {
         "videoId": str(song.get("videoId", "") or "").strip(),
-        "title": song.get("title", ""),
-        "artist": artist,
+        "title": with_wrap.get("title") or song.get("title", ""),
+        "artist": with_wrap.get("artist") or artist or "Unknown Artist",
         "thumbnail": thumbnail,
         "duration": duration or 0,
         "album": song.get("album", "") or "",

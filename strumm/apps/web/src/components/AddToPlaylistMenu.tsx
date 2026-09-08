@@ -138,7 +138,7 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
                   </div>
                 ) : (
                   <div className="text-center p-6 text-sm text-muted">
-                    No playlists found. Create one in your Library.
+                    No playlists found. Create one from Playlists.
                   </div>
                 )}
               </div>

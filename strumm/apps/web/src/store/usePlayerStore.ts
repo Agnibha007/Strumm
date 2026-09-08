@@ -463,7 +463,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
 
-      notifySeek: (seconds) =>
+      notifySeek: () =>
         set((state) => ({ seekCount: state.seekCount + 1 })),
 
       // Helper function to update system lockscreen metadata (Media Session API)

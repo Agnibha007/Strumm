@@ -62,7 +62,7 @@ const sections = [
       <>
         <p className="mb-4">We use the following storage mechanisms:</p>
         <ul className="list-disc pl-6 space-y-2 mb-4 text-sm text-muted leading-relaxed">
-          <li><strong className="text-text">MongoDB (Primary Database):</strong> All user accounts, playlists, listening history, sessions, and social data are stored in a MongoDB database. We retain your listening history indefinitely to provide Strumm Replay and Sound DNA. You can delete your entire history or your full account at any time via Profile → Account Control.</li>
+          <li><strong className="text-text">MongoDB (Primary Database):</strong> All user accounts, playlists, listening history, sessions, and social data are stored in a MongoDB database. We retain your listening history indefinitely to provide Strumm Replay and Sound DNA. You can delete your full account (including all associated data) at any time via Profile → Account Control.</li>
           <li><strong className="text-text">Local Storage (Browser):</strong> Your player queue, volume, theme preference, and auth token are cached in your browser&apos;s localStorage for offline resilience and faster load times.</li>
           <li><strong className="text-text">Cookies:</strong> We use httpOnly, secure, SameSite=None cookies for JWT access tokens and refresh tokens. These are essential for authentication and cannot be disabled while using the service. We do not use third-party tracking cookies.</li>
           <li><strong className="text-text">Service Worker Cache:</strong> Our PWA service worker caches the app shell (static assets) for offline access. Media streams and API responses are explicitly excluded from caching.</li>
@@ -95,7 +95,7 @@ const sections = [
         <ul className="list-disc pl-6 space-y-2 mb-4 text-sm text-muted leading-relaxed">
           <li><strong className="text-text">Access:</strong> View your profile, statistics, and listening history at any time via the app.</li>
           <li><strong className="text-text">Correction:</strong> Update your display name, username, and avatar in Settings.</li>
-          <li><strong className="text-text">Deletion:</strong> Delete your entire account (including all associated data) from Profile → Account Control. You can also clear your listening history separately.</li>
+          <li><strong className="text-text">Deletion:</strong> Delete your entire account (including all associated data) from Profile → Account Control.</li>
           <li><strong className="text-text">Portability:</strong> Currently, data export is available upon request. Contact us at the email below.</li>
           <li><strong className="text-text">Withdraw Consent:</strong> Disable social listening activity sharing in Profile → Privacy Controls at any time.</li>
         </ul>

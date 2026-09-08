@@ -21,6 +21,15 @@ import { invidiousProvider } from "web/services/search/InvidiousProvider";
 import { fetchPipedStreams } from "web/services/search/InvidiousProvider";
 import type { Song } from "@strumm/types";
 import type { SongResult } from "web/services/search/SearchProvider";
+import {
+  cleanTitle,
+  extractArtistPrefix,
+  inferArtist,
+  canonicalString,
+  normalizeArtist,
+  canonicalArtist,
+} from "web/services/metadata";
+import { decodeHtml } from "web/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,6 +43,110 @@ export interface BrowserMusicCandidate {
   duration: string; // "m:ss" / "h:mm:ss"
   duration_seconds: number;
   thumbnails: { url: string }[];
+  /** Canonical dedup key derived from the FINAL title (consistent with search). */
+  canonicalTitle?: string;
+  /** Canonical dedup key derived from the FINAL artist (consistent with search). */
+  canonicalArtist?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Finalization choke point
+// ---------------------------------------------------------------------------
+//
+// RAW PROVIDER DATA
+//         ↓
+//   finalizeCandidate()
+//         ↓
+// CANONICAL Candidate (title / artist / canonicalTitle / canonicalArtist)
+//         ↓
+//   player queue / persistence / display
+//
+// Every RAW entry point in this module funnels through here so search, radio,
+// related tracks, metadata resolution and music-item conversion share ONE
+// normalisation contract (cleanTitle → extractArtistPrefix → inferArtist →
+// canonical keys) instead of each path applying its own ad-hoc cleanup.
+
+export interface FinalizeOptions {
+  /**
+   * Raw uploader / channel name ("SnoopDoggVEVO", "KK - Topic", "Pritam
+   * Official", …). Feeds the channel-confidence signals of the normalizer.
+   */
+  channelTitle?: string;
+  /**
+   * Authoritative structured artist (e.g. YT Music `artists[]`). When present
+   * it is preferred over anything inferred from the title prefix.
+   */
+  knownArtist?: string;
+  /**
+   * True when the input has ALREADY passed through `normalizeSong()`
+   * (search / playlist SongResults). Re-running the splitter could perform a
+   * second, contradictory split, so this path only (re)derives canonical keys
+   * and leaves title / artist byte-for-byte untouched (idempotent).
+   */
+  alreadyNormalized?: boolean;
+}
+
+export interface FinalizedSongMetadata {
+  title: string;
+  artist: string;
+  canonicalTitle: string;
+  canonicalArtist: string;
+}
+
+/**
+ * Turn RAW provider metadata into the canonical Song metadata used everywhere
+ * else in the app.
+ *
+ * Idempotence strategy: call sites that consume already-normalized
+ * ``SongResult``s (``songResultToCandidate`` → search / playlist results)
+ * pass ``alreadyNormalized`` so the cleaning / artist-prefix stages are
+ * skipped entirely. Raw call sites (``musicItemToCandidate``,
+ * ``resolveMetadataOnBrowser``, ``resolveRelatedOnBrowser``) run the full
+ * pipeline exactly once. The pipeline itself is additionally a semantic
+ * fixpoint on its own output (a split title no longer contains " - ", so a
+ * repeat run is a no-op), which makes missing or double flags harmless.
+ */
+export function finalizeCandidate(
+  title: string,
+  artist: string,
+  channelTitle?: string,
+  options?: FinalizeOptions,
+): FinalizedSongMetadata {
+  if (options?.alreadyNormalized) {
+    // Already produced by normalizeSong(): never split or clean again.
+    const t = (title || "").trim();
+    const a = (artist || "").trim() || "Unknown Artist";
+    return {
+      title: t,
+      artist: a,
+      canonicalTitle: canonicalString(t),
+      canonicalArtist: canonicalArtist(a),
+    };
+  }
+
+  const raw = decodeHtml(title || "").trim();
+  const channel = decodeHtml(channelTitle ?? "").trim();
+  const known = (options?.knownArtist ?? "").trim();
+
+  // 1. Strip YouTube clutter (official/audio/lyric tags, pipes, emoji…).
+  const cleaned = cleanTitle(raw) || raw;
+
+  // 2. High-confidence "[Artist] - [Song]" split. Structured artist metadata
+  //    (YT Music `artists[]`) boosts confidence and wins over the prefix.
+  const prefix = extractArtistPrefix(cleaned, channel, known || undefined);
+
+  const displayTitle = prefix ? prefix.restTitle : cleaned;
+  const baseArtist = prefix
+    ? known || prefix.artist
+    : known || inferArtist(cleaned, channel);
+  const displayArtist = normalizeArtist(baseArtist || "Unknown Artist");
+
+  return {
+    title: displayTitle,
+    artist: displayArtist,
+    canonicalTitle: canonicalString(displayTitle),
+    canonicalArtist: canonicalArtist(displayArtist),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +227,14 @@ export function musicItemToCandidate(item: any): BrowserMusicCandidate | null {
     if (!title) return null;
 
     const artists = extractArtistNames(item);
-    const artist = artists.map((a) => a.name).join(", ") || "Unknown Artist";
+    const structuredArtist = artists.map((a) => a.name).join(", ");
+
+    const finalized = finalizeCandidate(
+      title,
+      structuredArtist || "Unknown Artist",
+      undefined,
+      { knownArtist: structuredArtist || undefined },
+    );
 
     const duration = item?.duration;
     let durationSeconds = 0;
@@ -128,12 +248,16 @@ export function musicItemToCandidate(item: any): BrowserMusicCandidate | null {
 
     return {
       videoId,
-      title,
+      title: finalized.title,
+      // Preserve the original structured artist names; `artist` carries the
+      // canonicalized (normalized) display form used for matching.
       artists,
-      artist,
+      artist: finalized.artist,
       duration: secondsToMmss(durationSeconds),
       duration_seconds: durationSeconds,
       thumbnails: thumbnail ? [{ url: thumbnail }] : [],
+      canonicalTitle: finalized.canonicalTitle,
+      canonicalArtist: finalized.canonicalArtist,
     };
   } catch {
     return null;
@@ -154,14 +278,22 @@ export function songResultToCandidate(song: SongResult): BrowserMusicCandidate |
   if (!title) return null;
   const artist = (song.artist || "").trim();
   const durationSeconds = Math.max(0, Math.floor(song.duration || 0));
+  // Search results already passed through normalizeSong() — pass the raw
+  // channel through as the channel with alreadyNormalized so the fields stay
+  // byte-for-byte intact (idempotence guard).
+  const finalized = finalizeCandidate(title, artist, song.rawChannel || undefined, {
+    alreadyNormalized: true,
+  });
   return {
     videoId: song.videoId,
-    title,
+    title: finalized.title,
     artists: artist ? [{ name: artist }] : [],
-    artist: artist || "Unknown Artist",
+    artist: finalized.artist,
     duration: secondsToMmss(durationSeconds),
     duration_seconds: durationSeconds,
     thumbnails: song.thumbnail ? [{ url: song.thumbnail }] : [],
+    canonicalTitle: finalized.canonicalTitle,
+    canonicalArtist: finalized.canonicalArtist,
   };
 }
 
@@ -305,10 +437,11 @@ export async function resolveMetadataOnBrowser(videoId: string): Promise<Song | 
     const title = (data.title || "").trim();
     const uploader = (data.uploader || "").trim();
     const thumb = data.thumbnailUrl || "";
+    const finalized = finalizeCandidate(title, uploader, uploader);
     return {
       videoId,
-      title: title || `YouTube Track (${videoId})`,
-      artist: uploader || "Unknown Artist",
+      title: finalized.title || `YouTube Track (${videoId})`,
+      artist: finalized.artist || "Unknown Artist",
       thumbnail: thumb,
       duration: Number(data.duration) || 0,
     };
@@ -340,10 +473,13 @@ export async function resolveRelatedOnBrowser(
       const id = m ? m[1] : null;
       if (!id || excluded.has(id) || seen.has(id) || !/^[a-zA-Z0-9_-]{11}$/.test(id)) continue;
       seen.add(id);
+      const title = (r.title || "").trim();
+      const uploader = (r.uploaderName || "").trim();
+      const finalized = finalizeCandidate(title, uploader, uploader);
       songs.push({
         videoId: id,
-        title: (r.title || "Untitled").trim(),
-        artist: (r.uploaderName || "Unknown Artist").trim(),
+        title: finalized.title || "Untitled",
+        artist: finalized.artist || "Unknown Artist",
         thumbnail: r.thumbnail || "",
         duration: Number(r.duration) || 0,
       });

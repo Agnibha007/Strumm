@@ -15,7 +15,8 @@ from app.services.coalescer import get_coalescer
 from app.services.normalizer import (
     canonical_string, canonical_song_key, canonical_artist,
     normalize_artist, are_same_artist, generate_canonical_for_song,
-    classify_genre,
+    classify_genre, normalize_song_display, extract_artist_prefix,
+    clean_song_display_title,
 )
 from app.services.security import (
     sanitize_text, sanitize_multiline_text, sanitize_username,
@@ -44,7 +45,8 @@ __all__ = [
     # Normalizer
     "canonical_string", "canonical_song_key", "canonical_artist",
     "normalize_artist", "are_same_artist", "generate_canonical_for_song",
-    "classify_genre",
+    "classify_genre", "normalize_song_display", "extract_artist_prefix",
+    "clean_song_display_title",
     # Security
     "sanitize_text", "sanitize_multiline_text", "sanitize_username",
     "sanitize_youtube_id", "sanitize_enum", "sanitize_positive_int",

@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.security import escaped_regex, sanitize_text, parse_object_id
+from app.services.normalizer import normalize_song_display
 from app.services.ai.groq_provider import get_ai_provider
 from app.services.recommendation_engine import get_recommendation_engine
 import asyncio
@@ -91,25 +92,25 @@ async def resolve_suggestions(suggestions: list[dict]) -> list[dict]:
         # 2. Search YouTube Music with title + artist
         search_results = await search_yt_music_songs(f"{title} {artist}")
         if search_results:
-            best_match = search_results[0]
+            best_match = normalize_song_display(search_results[0])
             return {
-                "videoId": best_match["videoId"],
-                "title": best_match["title"],
-                "artist": best_match["artist"],
-                "thumbnail": best_match["thumbnail"],
-                "duration": best_match["duration"]
+                "videoId": best_match.get("videoId") or search_results[0]["videoId"],
+                "title": best_match.get("title"),
+                "artist": best_match.get("artist"),
+                "thumbnail": best_match.get("thumbnail"),
+                "duration": best_match.get("duration")
             }
 
         # 3. Try broader search with just the title
         broader_results = await search_yt_music_songs(title)
         if broader_results:
-            best_match = broader_results[0]
+            best_match = normalize_song_display(broader_results[0])
             return {
-                "videoId": best_match["videoId"],
-                "title": best_match["title"],
-                "artist": best_match["artist"],
-                "thumbnail": best_match["thumbnail"],
-                "duration": best_match["duration"]
+                "videoId": best_match.get("videoId") or broader_results[0]["videoId"],
+                "title": best_match.get("title"),
+                "artist": best_match.get("artist"),
+                "thumbnail": best_match.get("thumbnail"),
+                "duration": best_match.get("duration")
             }
 
         # Could not find this song — skip it rather than returning a mock
@@ -258,11 +259,12 @@ async def get_radio(
                     continue
                 seen_vids.add(vid)
 
-                title = track.get("title", "Unknown")
-                artists_list = track.get("artists", [])
-                artist = ", ".join(
-                    [a.get("name", "") for a in artists_list if a.get("name")]
-                ) if artists_list else "Unknown Artist"
+                # Fresh provider metadata → normalize at the emission boundary.
+                # The authoritative ``artists`` list (if present) is preserved.
+                display = normalize_song_display(track)
+
+                title = display.get("title") or track.get("title", "Unknown")
+                artist = display.get("artist") or "Unknown Artist"
                 duration = track.get("length") or 200
                 thumbnails = track.get("thumbnail", [])
                 thumbnail = thumbnails[-1].get("url", "") if thumbnails else (
@@ -315,10 +317,11 @@ async def get_radio(
                     vid = result.get("videoId")
                     if vid and vid not in seen_vids:
                         seen_vids.add(vid)
+                        display = normalize_song_display(result)
                         radio_songs.append({
                             "videoId": vid,
-                            "title": result.get("title", "Unknown"),
-                            "artist": result.get("artist", "Unknown Artist"),
+                            "title": display.get("title") or result.get("title", "Unknown"),
+                            "artist": display.get("artist") or result.get("artist", "Unknown Artist"),
                             "thumbnail": result.get("thumbnail", f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"),
                             "duration": result.get("duration", 200),
                         })

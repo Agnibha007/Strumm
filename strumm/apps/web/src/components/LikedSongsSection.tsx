@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
-import Link from "next/link";
 import { Play, Heart, ListMusic } from "lucide-react";
 import { Song } from "@strumm/types";
 
@@ -48,7 +47,6 @@ export default function LikedSongsSection({ token }: { token: string | null }) {
             <Heart className="w-5 h-5 text-red-500 fill-current" />
             Your Liked Songs
           </h2>
-          <Link href="/library" className="text-[10px] text-muted uppercase tracking-wider font-semibold hover:text-text transition">View All</Link>
         </header>
 
         {likedSongs.length === 0 ? (

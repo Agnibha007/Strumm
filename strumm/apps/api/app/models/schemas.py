@@ -31,6 +31,8 @@ class SongSchema(BaseModel):
         if not value:
             return value
         cleaned = value.strip()
+        if not cleaned:
+            return cleaned
         # Songs persisted via SongSchema must carry either a canonical YouTube
         # video ID or a synthetic podcast-episode videoId. Anything else is
         # rejected (raise) so malformed external ids never reach storage.
