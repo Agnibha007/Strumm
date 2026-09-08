@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import SoundDNAChart from "web/components/SoundDNAChart";
@@ -76,7 +77,7 @@ export default function ReplayPage() {
   const fetchReplay = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setError(null);
     try {
-      const response = await fetch(apiUrl("/replay"), {
+      const response = await authFetch(apiUrl("/replay"), {
         headers: {
           "Authorization": `Bearer ${token}`
         }
@@ -98,7 +99,7 @@ export default function ReplayPage() {
     if (!user) return;
     fetchReplay();
     // Fetch global leaderboard (public, no auth required)
-    fetch(apiUrl("/stats/global-leaderboard"))
+    authFetch(apiUrl("/stats/global-leaderboard"))
       .then(r => r.json())
       .then(json => { if (json.success && json.data) setGlobalLeaders(json.data); })
       .catch(() => {});
@@ -130,7 +131,7 @@ export default function ReplayPage() {
     if (!user) return;
     setRecalculating(true);
     try {
-      const response = await fetch(apiUrl("/profile/recalculate"), {
+      const response = await authFetch(apiUrl("/profile/recalculate"), {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`

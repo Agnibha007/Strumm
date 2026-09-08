@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Send, Sparkles, Play, Music, CheckCircle2, ListMusic } from "lucide-react";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { Song } from "@strumm/types";
 import { usePlayerStore } from "web/store/usePlayerStore";
@@ -67,7 +68,7 @@ export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean
         content: m.text
       }));
 
-      const response = await fetch(apiUrl("/explore-chat"), {
+      const response = await authFetch(apiUrl("/explore-chat"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -129,7 +130,7 @@ export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean
 
     setLoading(true);
     try {
-      const response = await fetch(apiUrl("/explore-chat"), {
+      const response = await authFetch(apiUrl("/explore-chat"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

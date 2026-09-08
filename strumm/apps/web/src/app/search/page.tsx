@@ -6,6 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus, Shuffle, Check } from "lucide-react";
 import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { searchYouTube, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
@@ -91,7 +92,7 @@ export default function SearchPage() {
   const loadUserPlaylists = async () => {
     if (!user) return;
     try {
-      const response = await fetch(apiUrl("/playlists"), {
+      const response = await authFetch(apiUrl("/playlists"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -109,7 +110,7 @@ export default function SearchPage() {
 
   const handleAddSongToPlaylist = async (playlistId: string, song: Song) => {
     try {
-      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(playlistId)}/songs`), {
+      const response = await authFetch(apiUrl(`/playlists/${encodeURIComponent(playlistId)}/songs`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -176,7 +177,7 @@ export default function SearchPage() {
         if (activeFilter === "Profiles") {
           // User search still goes through backend (local MongoDB)
           try {
-            const response = await fetch(apiUrl(`/users/search?q=${encodeURIComponent(q)}`));
+            const response = await authFetch(apiUrl(`/users/search?q=${encodeURIComponent(q)}`));
             const json = await response.json();
             if (json.success) {
               const fetchedResults = {
@@ -195,7 +196,7 @@ export default function SearchPage() {
           let podcasts: PodcastShow[] = [];
           if (activeFilter === "All" || activeFilter === "Podcasts") {
             try {
-              const podRes = await fetch(apiUrl(`/podcasts/shows?query=${encodeURIComponent(q)}&limit=6`));
+              const podRes = await authFetch(apiUrl(`/podcasts/shows?query=${encodeURIComponent(q)}&limit=6`));
               const podJson = await podRes.json();
               if (podJson.success) {
                 podcasts = podJson.data || [];
@@ -207,7 +208,7 @@ export default function SearchPage() {
           let playlists: Playlist[] = [];
           if (activeFilter === "All" || activeFilter === "Playlists") {
             try {
-              const plRes = await fetch(apiUrl(`/playlists/search?q=${encodeURIComponent(q)}`));
+              const plRes = await authFetch(apiUrl(`/playlists/search?q=${encodeURIComponent(q)}`));
               const plJson = await plRes.json();
               if (plJson.success) {
                 playlists = plJson.data || [];
@@ -296,7 +297,7 @@ export default function SearchPage() {
 
   const handleLikeSong = async (song: Song) => {
     try {
-      const response = await fetch(apiUrl("/liked"), {
+      const response = await authFetch(apiUrl("/liked"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

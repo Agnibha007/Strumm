@@ -2,6 +2,7 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { Loader2, CheckCircle2, AlertCircle, Lock } from "lucide-react";
 import Link from "next/link";
@@ -49,7 +50,7 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      const response = await fetch(apiUrl("/auth/reset-password"), {
+      const response = await authFetch(apiUrl("/auth/reset-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, token, new_password: password }),

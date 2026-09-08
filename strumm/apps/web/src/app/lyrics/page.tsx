@@ -6,6 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { Mic2, Loader2, Music4, ArrowLeft, Play, Pause, SkipForward, SkipBack } from "lucide-react";
 
 import { useRouter } from "next/navigation";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { getActiveLyricIndex, parseLrc, type LyricLine, unescapeHtml } from "web/lib/lyrics";
 
@@ -70,7 +71,7 @@ export default function LyricsPage() {
       setLyrics(null);
       setPlainLyrics(null);
       try {
-        const response = await fetch(apiUrl(`/lyrics/${encodeURIComponent(currentSong.videoId)}?title=${encodeURIComponent(cleanText(currentSong.title, 160))}&artist=${encodeURIComponent(cleanText(currentSong.artist, 160))}`));
+        const response = await authFetch(apiUrl(`/lyrics/${encodeURIComponent(currentSong.videoId)}?title=${encodeURIComponent(cleanText(currentSong.title, 160))}&artist=${encodeURIComponent(cleanText(currentSong.artist, 160))}`));
         const json = await response.json();
         
         if (json.success && json.data) {

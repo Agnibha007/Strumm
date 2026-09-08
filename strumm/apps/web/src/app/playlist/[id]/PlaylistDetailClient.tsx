@@ -6,6 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { Play, Shuffle, Plus, Heart, Trash2, Edit3, Share2, Music, Clock, FolderHeart, ArrowLeft, Save, X, Search, Check, Users, UserPlus, UserMinus, Radio } from "lucide-react";
 import { Playlist, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { useLastPlayedPlaylistStore } from "web/store/useLastPlayedPlaylistStore";
@@ -43,7 +44,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
+      const response = await authFetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
         headers: token ? { "Authorization": `Bearer ${token}` } : {}
       });
       const json = await response.json();
@@ -86,7 +87,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
   const handleSaveChanges = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
+      const response = await authFetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -115,7 +116,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
     if (!confirmed) return;
 
     try {
-      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
+      const response = await authFetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -132,7 +133,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
 
   const handleSharePlaylist = async () => {
     try {
-      const response = await fetch(apiUrl("/share"), {
+      const response = await authFetch(apiUrl("/share"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -162,7 +163,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
     if (!confirmed) return;
 
     try {
-      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}/songs/${songIndex}`), {
+      const response = await authFetch(apiUrl(`/playlists/${encodeURIComponent(id)}/songs/${songIndex}`), {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${token}`
@@ -182,7 +183,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
   const handleManageCollab = async () => {
     if (!token || !collabUserId.trim()) return;
     try {
-      const response = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}/collaborators`), {
+      const response = await authFetch(apiUrl(`/playlists/${encodeURIComponent(id)}/collaborators`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -208,7 +209,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
 
   const handleLikeSong = async (song: Song) => {
     try {
-      const response = await fetch(apiUrl("/liked"), {
+      const response = await authFetch(apiUrl("/liked"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -720,7 +721,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
                     <span className="text-xs text-text font-medium truncate">{c.displayName} (@{c.username})</span>
                     <button
                       onClick={async () => {
-                        const res = await fetch(apiUrl(`/playlists/${encodeURIComponent(id)}/collaborators`), {
+                        const res = await authFetch(apiUrl(`/playlists/${encodeURIComponent(id)}/collaborators`), {
                           method: "POST",
                           headers: {"Content-Type": "application/json", "Authorization": `Bearer ${token}`},
                           body: JSON.stringify({ collaboratorId: c.id, action: "remove" })

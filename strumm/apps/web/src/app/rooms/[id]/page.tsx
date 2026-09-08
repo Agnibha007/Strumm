@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, API_ORIGIN } from "web/lib/api";
 import { searchYouTube } from "web/lib/search";
 import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2, UserPlus, X, Check } from "lucide-react";
@@ -95,7 +96,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const fetchRoomInfo = async () => {
     if (!user) return;
     try {
-      const response = await fetch(apiUrl(`/social/rooms/${id}`), {
+      const response = await authFetch(apiUrl(`/social/rooms/${id}`), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -345,7 +346,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const handleDeleteRoom = async () => {
     if (!confirm("Are you sure you want to delete this room? This will disconnect all listeners.")) return;
     try {
-      const response = await fetch(apiUrl(`/social/rooms/${id}`), {
+      const response = await authFetch(apiUrl(`/social/rooms/${id}`), {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -368,7 +369,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     setInviteLoading(true);
     setInvitedMsg(null);
     try {
-      const response = await fetch(apiUrl("/social/circle"), {
+      const response = await authFetch(apiUrl("/social/circle"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -395,7 +396,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     setInvitingId(friendId);
     setInvitedMsg(null);
     try {
-      const response = await fetch(apiUrl(`/social/rooms/${id}/invite`), {
+      const response = await authFetch(apiUrl(`/social/rooms/${id}/invite`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

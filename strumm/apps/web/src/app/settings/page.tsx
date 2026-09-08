@@ -10,6 +10,7 @@ import {
   Shield, Key, Download, Trash2, Monitor, Smartphone, Eye, EyeOff,
   AlertTriangle, RefreshCw, Mail, LogOut
 } from "lucide-react";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { uploadAvatar } from "web/lib/media-api";
 
@@ -86,7 +87,7 @@ export default function SettingsPage() {
     setEmailError(null);
     setEmailSuccess(null);
     try {
-      const response = await fetch(apiUrl("/auth/change-email"), {
+      const response = await authFetch(apiUrl("/auth/change-email"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ password: emailPassword, newEmail }),
@@ -122,7 +123,7 @@ export default function SettingsPage() {
     const fetchSessions = async () => {
       setSessionsLoading(true);
       try {
-        const res = await fetch(apiUrl("/auth/sessions"), {
+        const res = await authFetch(apiUrl("/auth/sessions"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         const json = await res.json();
@@ -193,7 +194,7 @@ export default function SettingsPage() {
         }
       }
 
-      const response = await fetch(apiUrl("/profile"), {
+      const response = await authFetch(apiUrl("/profile"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -218,7 +219,7 @@ export default function SettingsPage() {
     setDiscoveryToggleLoading(true);
     setDiscoveryToggleError(null);
     try {
-      const response = await fetch(apiUrl("/profile"), {
+      const response = await authFetch(apiUrl("/profile"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ settings: { showDiscoveryMix: next } }),
@@ -251,7 +252,7 @@ export default function SettingsPage() {
     setPwError(null);
     setPwSuccess(null);
     try {
-      const response = await fetch(apiUrl("/auth/change-password"), {
+      const response = await authFetch(apiUrl("/auth/change-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ currentPassword, newPassword }),
@@ -283,7 +284,7 @@ export default function SettingsPage() {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(apiUrl(`/auth/sessions/${sessionId}`), {
+      const response = await authFetch(apiUrl(`/auth/sessions/${sessionId}`), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -311,7 +312,7 @@ export default function SettingsPage() {
     setRevokeAllSuccess(null);
     setSessionsError(null);
     try {
-      const response = await fetch(apiUrl("/auth/sessions"), {
+      const response = await authFetch(apiUrl("/auth/sessions"), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -327,7 +328,7 @@ export default function SettingsPage() {
 
     // Always refresh the sessions list after the operation
     try {
-      const res = await fetch(apiUrl("/auth/sessions"), {
+      const res = await authFetch(apiUrl("/auth/sessions"), {
         headers: { Authorization: `Bearer ${token}` },
       });
       const sessionsJson = await res.json();
@@ -469,7 +470,7 @@ export default function SettingsPage() {
     setExportLoading(true);
     setExportError(null);
     try {
-      const response = await fetch(apiUrl("/profile/export"), {
+      const response = await authFetch(apiUrl("/profile/export"), {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await response.json();
@@ -501,7 +502,7 @@ export default function SettingsPage() {
     setDeleteLoading(true);
     setDeleteError(null);
     try {
-      const response = await fetch(apiUrl("/profile"), {
+      const response = await authFetch(apiUrl("/profile"), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

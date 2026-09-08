@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { Radio, Users, Plus, Loader2, ArrowRight, ShieldCheck, User, Search } from "lucide-react";
 import Link from "next/link";
@@ -39,7 +40,7 @@ export default function RoomsPage() {
   const fetchRooms = async () => {
     if (!user) return;
     try {
-      const response = await fetch(apiUrl("/social/rooms"), {
+      const response = await authFetch(apiUrl("/social/rooms"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -56,7 +57,7 @@ export default function RoomsPage() {
   const fetchSuggestions = async () => {
     if (!user) return;
     try {
-      const response = await fetch(apiUrl("/social/rooms/suggestions"), {
+      const response = await authFetch(apiUrl("/social/rooms/suggestions"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -78,7 +79,7 @@ export default function RoomsPage() {
     }
     setSearching(true);
     try {
-      const response = await fetch(apiUrl(`/social/rooms/search?q=${encodeURIComponent(q)}`), {
+      const response = await authFetch(apiUrl(`/social/rooms/search?q=${encodeURIComponent(q)}`), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -105,7 +106,7 @@ export default function RoomsPage() {
     
     setCreating(true);
     try {
-      const response = await fetch(apiUrl("/social/rooms"), {
+      const response = await authFetch(apiUrl("/social/rooms"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

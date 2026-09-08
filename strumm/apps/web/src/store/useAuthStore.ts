@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { User } from "@strumm/types";
 import { apiFetch, ApiError } from "web/lib/api-client";
 import { apiUrl } from "web/lib/api";
+import { consumeSessionExpiredNotice } from "web/lib/session-expiry";
 
 // ---------------------------------------------------------------------------
 // Typed global window extensions for auth timers and visibility handler
@@ -60,6 +61,7 @@ export const useAuthStore = create<AuthState>()(
       setToken: (token) => set({ token }),
       
       login: (token, user, refreshToken) => {
+        consumeSessionExpiredNotice();
         set({ token, user, refreshToken: refreshToken || null });
       },
       
@@ -207,6 +209,7 @@ function isAccessTokenExpiredOrAbsent(token: string | null): boolean {
   const expiresAt = Number(payload.exp) * 1000;
   return expiresAt - Date.now() <= 0;
 }
+export { isAccessTokenExpiredOrAbsent };
 
 // Access token lifetime in ms (1 hour — matches ACCESS_TOKEN_EXPIRE on the API)
 const ACCESS_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
@@ -266,6 +269,7 @@ function refreshSession(): Promise<RefreshResult> {
   });
   return _refreshPromise;
 }
+export { refreshSession };
 
 // Single refresh attempt. Rotates the refresh token server-side and, on success,
 // updates local state and schedules the next refresh. Returns the HTTP status so

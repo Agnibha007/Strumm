@@ -30,6 +30,7 @@ import {
   Music
 } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { formatTime } from "web/lib/format";
 import { useLikeSong } from "web/hooks/useLikeSong";
@@ -277,7 +278,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     if (!currentSong || !user) return;
     setMemorySaving(true);
     try {
-      const response = await fetch(apiUrl("/memories"), {
+      const response = await authFetch(apiUrl("/memories"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

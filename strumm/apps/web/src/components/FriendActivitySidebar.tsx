@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
@@ -67,7 +68,7 @@ export default function FriendActivitySidebar({
   const fetchActivity = useCallback(async () => {
     if (!user) return;
     try {
-      const fResp = await fetch(apiUrl("/social/circle"), {
+      const fResp = await authFetch(apiUrl("/social/circle"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const fJson = await fResp.json();
@@ -75,7 +76,7 @@ export default function FriendActivitySidebar({
         setFriends(fJson.data || []);
       }
 
-      const rResp = await fetch(apiUrl("/social/rooms"), {
+      const rResp = await authFetch(apiUrl("/social/rooms"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const rJson = await rResp.json();
@@ -212,7 +213,7 @@ export default function FriendActivitySidebar({
     setSendingShare(true);
     setShareError(null);
     try {
-      const response = await fetch(apiUrl("/social/message"), {
+      const response = await authFetch(apiUrl("/social/message"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

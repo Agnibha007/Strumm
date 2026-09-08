@@ -5,6 +5,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { Play, FolderHeart, Eye, Loader2, ArrowRight, ShieldAlert } from "lucide-react";
 import { Song, Playlist } from "@strumm/types";
 import { useRouter } from "next/navigation";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import BrandLogo from "web/components/BrandLogo";
 import SongArtwork from "web/components/SongArtwork";
@@ -31,7 +32,7 @@ export default function SharePage({ params }: SharePageProps) {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(apiUrl(`/share/${encodeURIComponent(token)}`));
+        const response = await authFetch(apiUrl(`/share/${encodeURIComponent(token)}`));
         const json = await response.json();
         if (json.success && json.data) {
           setShareData(json.data);

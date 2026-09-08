@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
@@ -82,14 +83,14 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
 
     const fetchProfile = async () => {
       try {
-        const response = await fetch(apiUrl(`/public/${cleanUsername}`));
+        const response = await authFetch(apiUrl(`/public/${cleanUsername}`));
         const json = await response.json();
         if (json.success && json.data) {
           setData(json.data);
           
           // If we have a logged in user and this is not our own profile, fetch taste match
           if (token && currentUser && currentUser.username !== cleanUsername) {
-            const matchResp = await fetch(apiUrl(`/users/${json.data.id}/taste-match`), {
+            const matchResp = await authFetch(apiUrl(`/users/${json.data.id}/taste-match`), {
               headers: { "Authorization": `Bearer ${token}` }
             });
             const matchJson = await matchResp.json();
@@ -115,7 +116,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
     
     const fetchStatus = async () => {
       try {
-        const response = await fetch(apiUrl(`/social/status/${data.id}`), {
+        const response = await authFetch(apiUrl(`/social/status/${data.id}`), {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const json = await response.json();
@@ -136,7 +137,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
     if (!token || !data?.id) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/request/${data.id}`), {
+      const res = await authFetch(apiUrl(`/social/request/${data.id}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -156,7 +157,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
     if (!token || !requestId) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/accept/${requestId}`), {
+      const res = await authFetch(apiUrl(`/social/accept/${requestId}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -175,7 +176,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
     if (!token || !data?.id) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/remove/${data.id}`), {
+      const res = await authFetch(apiUrl(`/social/remove/${data.id}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -194,7 +195,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
     if (!token || !data?.id) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/blend/${data.id}`), {
+      const res = await authFetch(apiUrl(`/social/blend/${data.id}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -215,7 +216,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
   const handleReact = async (memoryId: string, reactionType: string) => {
     if (!token || !currentUser) return;
     try {
-      const res = await fetch(apiUrl(`/social/memories/${memoryId}/react`), {
+      const res = await authFetch(apiUrl(`/social/memories/${memoryId}/react`), {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,

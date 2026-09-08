@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { Users, Sparkles, UserMinus, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 } from "lucide-react";
@@ -91,7 +92,7 @@ export default function CirclePage() {
     setShareError(null);
     try {
       const currentSong = usePlayerStore.getState().currentSong;
-      const response = await fetch(apiUrl("/social/message"), {
+      const response = await authFetch(apiUrl("/social/message"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -121,7 +122,7 @@ export default function CirclePage() {
     if (!user) return;
     try {
       // Use combined endpoint for better performance
-      const resp = await fetch(apiUrl("/social/circle/all"), {
+      const resp = await authFetch(apiUrl("/social/circle/all"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await resp.json();
@@ -223,7 +224,7 @@ export default function CirclePage() {
     if (!user) return;
     setActionLoading(requestId);
     try {
-      const res = await fetch(apiUrl(`/social/accept/${requestId}`), {
+      const res = await authFetch(apiUrl(`/social/accept/${requestId}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -243,7 +244,7 @@ export default function CirclePage() {
     if (!user) return;
     setActionLoading(friendId);
     try {
-      const res = await fetch(apiUrl(`/social/remove/${friendId}`), {
+      const res = await authFetch(apiUrl(`/social/remove/${friendId}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -262,7 +263,7 @@ export default function CirclePage() {
     if (!user) return;
     setActionLoading(friendId + "-blend");
     try {
-      const res = await fetch(apiUrl(`/social/blend/${friendId}`), {
+      const res = await authFetch(apiUrl(`/social/blend/${friendId}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -283,7 +284,7 @@ export default function CirclePage() {
   const handleClearNotifications = async () => {
     if (!user) return;
     try {
-      await fetch(apiUrl("/social/notifications/clear"), {
+      await authFetch(apiUrl("/social/notifications/clear"), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -297,7 +298,7 @@ export default function CirclePage() {
     if (!user) return;
     if (!confirm("Are you sure you want to permanently delete all notifications?")) return;
     try {
-      await fetch(apiUrl("/social/notifications"), {
+      await authFetch(apiUrl("/social/notifications"), {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });

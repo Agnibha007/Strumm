@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldAlert } from "lucide-react";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { Song, PodcastEpisode, PodcastShow } from "@strumm/types";
 
@@ -21,7 +22,7 @@ export default function PodcastEpisodeClient({ params }: PodcastEpisodeClientPro
   useEffect(() => {
     const loadPodcastEpisode = async () => {
       try {
-        const response = await fetch(apiUrl(`/podcasts/episode/${id}`));
+        const response = await authFetch(apiUrl(`/podcasts/episode/${id}`));
         const json = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(json?.error || "Podcast episode request failed.");

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { Play, Sparkles, Loader2, Radio } from "lucide-react";
@@ -88,7 +89,7 @@ export default function DiscoverySection({ token }: { token: string | null }) {
         setLoading(true);
       }
       try {
-        const resp = await fetch(apiUrl("/explore-mix"), {
+        const resp = await authFetch(apiUrl("/explore-mix"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         const json = await resp.json();

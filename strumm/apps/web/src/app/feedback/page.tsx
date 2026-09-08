@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import {
   MessageSquareText, Bug, Sparkles, Lightbulb, MessageCircle,
@@ -75,7 +76,7 @@ export default function FeedbackPage() {
       if (statusFilter !== "all") params.set("status", statusFilter);
 
       const { token } = useAuthStore.getState();
-      const response = await fetch(apiUrl(`/feedback?${params}`), {
+      const response = await authFetch(apiUrl(`/feedback?${params}`), {
         headers: token ? { "Authorization": `Bearer ${token}` } : undefined,
       });
       const json = await response.json();
@@ -107,7 +108,7 @@ export default function FeedbackPage() {
       const { token } = useAuthStore.getState();
       const fbHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (token) fbHeaders["Authorization"] = `Bearer ${token}`;
-      const response = await fetch(apiUrl("/feedback"), {
+      const response = await authFetch(apiUrl("/feedback"), {
         method: "POST",
         headers: fbHeaders,
         body: JSON.stringify({

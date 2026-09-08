@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { signIn } from "next-auth/react";
 import { Mail, ShieldAlert, ArrowRight, Chrome, Send, Lock, User, AtSign, Eye, EyeOff, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText, cleanUsername } from "web/lib/api";
+import { consumeSessionExpiredNotice } from "web/lib/session-expiry";
 import BrandLogo from "web/components/BrandLogo";
 
 type AuthMode = "login" | "signup" | "otp";
@@ -28,6 +30,13 @@ export default function AuthSystem() {
   
   const { login } = useAuthStore();
 
+  // Show a one-time notice when the user lands on login because their session
+  // expired while they were away (see web/lib/auth-client).
+  const [sessionExpired, setSessionExpired] = useState(false);
+  useEffect(() => {
+    setSessionExpired(consumeSessionExpiredNotice());
+  }, []);
+
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotEmail.trim()) {
@@ -40,7 +49,7 @@ export default function AuthSystem() {
     
     try {
       const cleanedEmail = cleanText(forgotEmail, 254).toLowerCase();
-      const response = await fetch(apiUrl("/auth/forgot-password"), {
+      const response = await authFetch(apiUrl("/auth/forgot-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanedEmail }),
@@ -77,7 +86,7 @@ export default function AuthSystem() {
     
     try {
       const cleanedEmail = cleanText(email, 254).toLowerCase();
-      const response = await fetch(apiUrl("/auth/login"), {
+      const response = await authFetch(apiUrl("/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanedEmail, password }),
@@ -116,7 +125,7 @@ export default function AuthSystem() {
       const cleanedEmail = cleanText(email, 254).toLowerCase();
       const cleanedUsername = cleanUsername(username);
       const cleanedDisplayName = cleanText(displayName, 120);
-      const response = await fetch(apiUrl("/auth/signup"), {
+      const response = await authFetch(apiUrl("/auth/signup"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -151,7 +160,7 @@ export default function AuthSystem() {
     setError(null);
     
     try {
-      const response = await fetch(apiUrl("/auth/verify"), {
+      const response = await authFetch(apiUrl("/auth/verify"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanText(email, 254).toLowerCase(), otp: cleanText(otp, 6) }),
@@ -193,6 +202,13 @@ export default function AuthSystem() {
   return (
     <div className="bg-surface/90 backdrop-blur-xl border border-border/40 rounded-2xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-primary to-accent box-glow" />
+
+      {sessionExpired && (
+        <div className="mb-5 flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">
+          <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+          <span>Your session expired while you were away. Please sign in again.</span>
+        </div>
+      )}
       
       <div className="flex flex-col items-center text-center mb-6">
         <BrandLogo size="md" priority />

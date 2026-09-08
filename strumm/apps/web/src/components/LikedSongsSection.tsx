@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { Play, Heart, ListMusic } from "lucide-react";
@@ -18,7 +19,7 @@ export default function LikedSongsSection({ token }: { token: string | null }) {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const resp = await fetch(apiUrl("/liked?limit=10"), {
+        const resp = await authFetch(apiUrl("/liked?limit=10"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         const json = await resp.json();

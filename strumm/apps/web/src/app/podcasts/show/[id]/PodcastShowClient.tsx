@@ -6,6 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { Radio, Plus, Check, Play, Clock, ArrowLeft, Loader2, History } from "lucide-react";
 import { PodcastShow, PodcastEpisode, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, stripHtml } from "web/lib/api";
 import { apiFetch } from "web/lib/api-client";
 import { formatTime } from "web/lib/format";
@@ -66,7 +67,7 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}`));
+      const response = await authFetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}`));
       const json = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(json?.error || "Failed to load show details.");
@@ -94,7 +95,7 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
   const handleFollowShow = async () => {
     setFollowError(null);
     try {
-      const response = await fetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}/follow`), {
+      const response = await authFetch(apiUrl(`/podcasts/shows/${encodeURIComponent(id)}/follow`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });

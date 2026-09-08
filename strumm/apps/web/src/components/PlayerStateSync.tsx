@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { EventDispatcher, WS_CONNECTED } from "web/services/realtime";
 
@@ -44,7 +45,7 @@ export default function PlayerStateSync() {
     const restore = async () => {
       try {
         const { token } = useAuthStore.getState();
-        const response = await fetch(apiUrl("/player-state"), {
+        const response = await authFetch(apiUrl("/player-state"), {
           headers: token ? { "Authorization": `Bearer ${token}` } : undefined,
         });
         const json = await response.json();
@@ -82,7 +83,7 @@ export default function PlayerStateSync() {
         "Content-Type": "application/json",
       };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      await fetch(apiUrl("/player-state"), {
+      await authFetch(apiUrl("/player-state"), {
         method: "PUT",
         headers,
         body: JSON.stringify({

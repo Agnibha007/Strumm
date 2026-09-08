@@ -5,6 +5,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import { Check, AlertTriangle, HelpCircle, ArrowRight, Play, Plus } from "lucide-react";
 import { Song } from "@strumm/types";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { resolveTracksOnBrowser, extractPlaylistOnBrowser, BrowserMusicCandidate } from "web/services/search/BrowserYouTubeMusicResolver";
@@ -72,7 +73,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
       "Content-Type": "application/json",
       "Authorization": token ? `Bearer ${token}` : "",
     };
-    const res = await fetch(apiUrl("/playlists"), {
+    const res = await authFetch(apiUrl("/playlists"), {
       method: "POST",
       headers,
       credentials: "include",
@@ -100,7 +101,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
     };
     try {
       const id = await ensurePlaylist();
-      const res = await fetch(apiUrl(`/playlists/${id}/songs`), {
+      const res = await authFetch(apiUrl(`/playlists/${id}/songs`), {
         method: "POST",
         headers,
         credentials: "include",
@@ -224,7 +225,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
           // before giving up — a different endpoint/egress (the API's ytmusic
           // session routes through a residential proxy), so it can still
           // succeed where Piped couldn't.
-          const fb = await fetch(apiUrl("/playlists/import/parse"), {
+          const fb = await authFetch(apiUrl("/playlists/import/parse"), {
             method: "POST",
             headers,
             credentials: "include",
@@ -263,7 +264,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
           }
         }
       } else {
-        const parseResponse = await fetch(apiUrl("/playlists/import/parse"), {
+        const parseResponse = await authFetch(apiUrl("/playlists/import/parse"), {
           method: "POST",
           headers,
           credentials: "include",
@@ -316,7 +317,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
 
       // Step 3: hand browser candidates (keyed by track index) to the API,
       // which ranks them with its normal matcher and persists the playlist.
-      const resolveResponse = await fetch(apiUrl("/playlists/import/resolve"), {
+      const resolveResponse = await authFetch(apiUrl("/playlists/import/resolve"), {
         method: "POST",
         headers,
         credentials: "include",

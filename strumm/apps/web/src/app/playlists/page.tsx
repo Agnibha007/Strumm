@@ -5,6 +5,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import dynamic from "next/dynamic";
 import { Plus, BookOpen, FilePlus2, Upload, X, Search } from "lucide-react";
 import { Playlist } from "@strumm/types";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { useRouter } from "next/navigation";
 import SongArtwork from "web/components/SongArtwork";
@@ -38,7 +39,7 @@ export default function PlaylistsPage() {
 
   const loadPlaylists = async () => {
     try {
-      const response = await fetch(apiUrl("/playlists"), {
+      const response = await authFetch(apiUrl("/playlists"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
       const json = await response.json();
@@ -62,7 +63,7 @@ export default function PlaylistsPage() {
 
     setCreating(true);
     try {
-      const response = await fetch(apiUrl("/playlists"), {
+      const response = await authFetch(apiUrl("/playlists"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

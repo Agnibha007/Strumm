@@ -7,6 +7,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Volume2, ListMusic, Maximize, Heart, Trash2, ChevronUp, ChevronDown, Loader2, Clock } from "lucide-react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import dynamic from "next/dynamic";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { ListeningEvent, ListeningTracker, QUEUE_STORAGE_KEY } from "web/lib/listening-time";
 import { formatTime } from "web/lib/format";
@@ -139,7 +140,7 @@ export default function EditorialPlayer() {
     const sendEvent = async (event: ListeningEvent): Promise<boolean> => {
       const { token, fetchProfile } = useAuthStore.getState();
       try {
-        const response = await fetch(apiUrl("/play-event"), {
+        const response = await authFetch(apiUrl("/play-event"), {
           method: "POST",
           credentials: "include",
           keepalive: true,

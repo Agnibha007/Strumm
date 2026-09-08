@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { PlusCircle, Loader2, X } from "lucide-react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { Playlist, Song } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
@@ -37,7 +38,7 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
     if (!user) return;
     setLoading(true);
     try {
-      const res = await fetch(apiUrl("/playlists"), {
+      const res = await authFetch(apiUrl("/playlists"), {
         headers: { Authorization: `Bearer ${token}` }
       });
       const json = await res.json();
@@ -60,7 +61,7 @@ export default function AddToPlaylistMenu({ song, className = "", iconClassName 
   const handleAddToPlaylist = async (playlistId: string) => {
     if (!song) return;
     try {
-      const res = await fetch(apiUrl(`/playlists/${playlistId}/songs`), {
+      const res = await authFetch(apiUrl(`/playlists/${playlistId}/songs`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

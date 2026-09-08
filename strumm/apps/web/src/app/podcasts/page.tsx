@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { Radio, Rss, ArrowRight, Loader2, Info, Search } from "lucide-react";
 import { PodcastShow } from "@strumm/types";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import SafePodcastImage from "web/components/SafePodcastImage";
 
@@ -31,7 +32,7 @@ export default function PodcastHomePage() {
       const showsPath = cleanedQuery
         ? `/podcasts/shows?query=${encodeURIComponent(cleanedQuery)}`
         : "/podcasts/shows";
-      const showsResp = await fetch(apiUrl(showsPath));
+      const showsResp = await authFetch(apiUrl(showsPath));
       if (!showsResp.ok) {
         throw new Error("Podcast catalog request failed.");
       }
@@ -44,7 +45,7 @@ export default function PodcastHomePage() {
 
       // 2. Fetch followed shows
       if (user) {
-        const libraryResp = await fetch(apiUrl("/library"), {
+        const libraryResp = await authFetch(apiUrl("/library"), {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const libJson = await libraryResp.json().catch(() => null);
@@ -80,7 +81,7 @@ export default function PodcastHomePage() {
     setImportSuccess(null);
 
     try {
-      const response = await fetch(apiUrl("/podcasts/import-rss"), {
+      const response = await authFetch(apiUrl("/podcasts/import-rss"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

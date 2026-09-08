@@ -6,6 +6,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { User as UserIcon, Calendar, Clock, Library, Heart, Star, Award, Sparkles, FolderHeart, LogOut, Trash2, AlertCircle, Loader2, Compass, History, Zap, Disc } from "lucide-react";
 import { Playlist } from "@strumm/types";
 import { useRouter, useSearchParams } from "next/navigation";
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
@@ -66,7 +67,7 @@ function ProfilePageContent() {
         await fetchProfile();
         
         // Load playlists and library data
-        const libResponse = await fetch(apiUrl("/library"), {
+        const libResponse = await authFetch(apiUrl("/library"), {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const libJson = await libResponse.json();
@@ -76,7 +77,7 @@ function ProfilePageContent() {
         }
 
         // Load user memories
-        const memResponse = await fetch(apiUrl("/memories"), {
+        const memResponse = await authFetch(apiUrl("/memories"), {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const memJson = await memResponse.json();
@@ -86,7 +87,7 @@ function ProfilePageContent() {
       } else {
         setIsOwnProfile(false);
         // Fetch public user
-        const res = await fetch(apiUrl(`/users/public/${usernameParam}`));
+        const res = await authFetch(apiUrl(`/users/public/${usernameParam}`));
         const json = await res.json();
         if (!json.success || !json.data) {
           setError(json.error || "Listener not found");
@@ -104,7 +105,7 @@ function ProfilePageContent() {
         // Fetch social status and taste match
         if (token && publicData.id) {
           try {
-            const statusResponse = await fetch(apiUrl(`/social/status/${publicData.id}`), {
+            const statusResponse = await authFetch(apiUrl(`/social/status/${publicData.id}`), {
               headers: { "Authorization": `Bearer ${token}` }
             });
             const statusJson = await statusResponse.json();
@@ -118,7 +119,7 @@ function ProfilePageContent() {
           }
 
           try {
-            const matchResp = await fetch(apiUrl(`/users/${publicData.id}/taste-match`), {
+            const matchResp = await authFetch(apiUrl(`/users/${publicData.id}/taste-match`), {
               headers: { "Authorization": `Bearer ${token}` }
             });
             const matchJson = await matchResp.json();
@@ -141,7 +142,7 @@ function ProfilePageContent() {
   const handleDeleteMemory = async (id: string) => {
     setDeletingMemoryId(id);
     try {
-      const response = await fetch(apiUrl(`/memories/${id}`), {
+      const response = await authFetch(apiUrl(`/memories/${id}`), {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -159,7 +160,7 @@ function ProfilePageContent() {
   const handleReact = async (memoryId: string, reactionType: string) => {
     if (!token || isOwnProfile) return;
     try {
-      const res = await fetch(apiUrl(`/social/memories/${memoryId}/react`), {
+      const res = await authFetch(apiUrl(`/social/memories/${memoryId}/react`), {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -244,7 +245,7 @@ function ProfilePageContent() {
     });
 
     try {
-      await fetch(apiUrl("/profile"), {
+      await authFetch(apiUrl("/profile"), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -264,7 +265,7 @@ function ProfilePageContent() {
     setDeleting(true);
     setAccountError(null);
     try {
-      const response = await fetch(apiUrl("/profile"), {
+      const response = await authFetch(apiUrl("/profile"), {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` },
       });
@@ -287,7 +288,7 @@ function ProfilePageContent() {
     if (!token || !displayedUser?.id) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/request/${displayedUser.id}`), {
+      const res = await authFetch(apiUrl(`/social/request/${displayedUser.id}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -307,7 +308,7 @@ function ProfilePageContent() {
     if (!token || !requestId) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/accept/${requestId}`), {
+      const res = await authFetch(apiUrl(`/social/accept/${requestId}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -326,7 +327,7 @@ function ProfilePageContent() {
     if (!token || !displayedUser?.id) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/remove/${displayedUser.id}`), {
+      const res = await authFetch(apiUrl(`/social/remove/${displayedUser.id}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -345,7 +346,7 @@ function ProfilePageContent() {
     if (!token || !displayedUser?.id) return;
     setSocialLoading(true);
     try {
-      const res = await fetch(apiUrl(`/social/blend/${displayedUser.id}`), {
+      const res = await authFetch(apiUrl(`/social/blend/${displayedUser.id}`), {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });

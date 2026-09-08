@@ -1,3 +1,4 @@
+import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { fetchPipedStreams } from "web/services/search/InvidiousProvider";
 import type { PipedStreamsData } from "web/services/search/InvidiousProvider";
@@ -172,7 +173,7 @@ async function fetchDirectAudio(videoId: string): Promise<string | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(apiUrl(`/play/${encodeURIComponent(videoId)}`), {
+    const res = await authFetch(apiUrl(`/play/${encodeURIComponent(videoId)}`), {
       signal: controller.signal,
     });
     if (!res.ok) return null;
