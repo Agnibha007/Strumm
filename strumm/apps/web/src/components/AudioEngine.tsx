@@ -28,6 +28,11 @@ const AUDIBLE_DRIFT_THRESHOLD_S = 2;
 // before tearing down the background direct-audio stream anyway.
 const BACKGROUND_RESUME_TIMEOUT_MS = 5000;
 
+// After this many consecutive playback errors (onError → next → onError …),
+// stop auto-advancing so the user sees a clear error instead of an endless
+// silent skip cycle through a blocked queue.
+const MAX_CONSECUTIVE_ERRORS = 3;
+
 function isSilentAudio(audio: HTMLAudioElement | null | undefined): boolean {
   if (!audio) return false;
   const src = audio.src || "";
@@ -126,6 +131,12 @@ export default function AudioEngine() {
   // while the page was backgrounded (browsers suspend timers AND the <audio>
   // element in hidden tabs, so none of the normal advance paths fire).
   const backgroundEnterRef = useRef<{ videoId: string; positionMs: number; enterMs: number } | null>(null);
+  // Consecutive playback-error counter. Prevents the onError → next() → onError
+  // loop that occurs when multiple songs in the queue fail to load (e.g. all
+  // blocked in the user's region). After MAX_CONSECUTIVE_ERRORS failures the
+  // queue stops advancing so the user sees a clear error instead of an endless
+  // silent skip cycle.
+  const consecutiveErrorsRef = useRef<number>(0);
 
   // End-of-track handler that also clears/saves podcast resume position. Used
   // by the HTML audio `ended` handler (and the YouTube ENDED branch) so a
@@ -419,6 +430,7 @@ export default function AudioEngine() {
       hasTriggeredCrossfadeRef.current = false;
       transitioningRef.current = false;
       handledTrackEndRef.current = false;
+      consecutiveErrorsRef.current = 0;
       setPlaying(true);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "playing";
@@ -1715,6 +1727,7 @@ try {
               crossfadeAdvancedRef.current = false;
               hasTriggeredCrossfadeRef.current = false;
               transitioningRef.current = false;
+              consecutiveErrorsRef.current = 0;
               setPlaying(true);
               usePlayerStore.getState().setPlayerLoading(false);
               setDuration(playerInstanceRef.current.getDuration() || currentSong?.duration || 0);
@@ -1747,8 +1760,16 @@ try {
           onError: (err: any) => {
             if (currentSong?.metadata?.audioUrl) return;
             usePlayerStore.getState().setPlayerLoading(false);
-            usePlayerStore.getState().setPlayerError("Playback failed or restricted. Skipping...");
             stopProgressTimer();
+            consecutiveErrorsRef.current += 1;
+            if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+              usePlayerStore.getState().setPlayerError(
+                "Multiple songs failed to play. Check your connection or try a different track.",
+              );
+              usePlayerStore.getState().setPlaying(false);
+              return;
+            }
+            usePlayerStore.getState().setPlayerError("Playback failed or restricted. Skipping...");
             setTimeout(() => {
               usePlayerStore.getState().next();
             }, 2000);
