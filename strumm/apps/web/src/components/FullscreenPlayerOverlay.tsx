@@ -78,6 +78,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
     sleepTimerEndTime,
     setSleepTimer,
     clearSleepTimer,
+    audioQuality,
   } = usePlayerStore();
   const { token, user } = useAuthStore();
   const { isLiked, toggleLike } = useLikeSong(currentSong?.videoId, token);
@@ -460,7 +461,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                     : "w-[70vw] h-[70vw] sm:w-72 sm:h-72 md:w-80 md:h-80 lg:w-96 lg:h-96 xl:w-[420px] xl:h-[420px]"
                 }`}
               >
-                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority quality={ARTWORK_QUALITY_FULL} sizes="(max-width: 640px) 70vw, (max-width: 768px) 288px, (max-width: 1024px) 320px, 384px" />
+                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority quality={ARTWORK_QUALITY_FULL} dataSaver={audioQuality === "data-saver"} sizes="(max-width: 640px) 70vw, (max-width: 768px) 288px, (max-width: 1024px) 320px, 384px" />
               </div>
             </div>
 

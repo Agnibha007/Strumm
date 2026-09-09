@@ -32,7 +32,7 @@ describe("getOptimizedArtworkUrl", () => {
   it("uses custom quality when provided", () => {
     const url = getOptimizedArtworkUrl("https://i.scdn.co/image/abc", 384, ARTWORK_QUALITY_FULL);
     expect(url).toBe(
-      "API:/image-proxy?url=https%3A%2F%2Fi.scdn.co%2Fimage%2Fabc&w=384&quality=85",
+      "API:/image-proxy?url=https%3A%2F%2Fi.scdn.co%2Fimage%2Fabc&w=384&quality=95",
     );
   });
 
@@ -66,6 +66,6 @@ describe("getArtworkCandidates", () => {
     // The first candidate (proxied) should differ in quality param
     expect(lowCandidates[0]).not.toBe(fullCandidates[0]);
     expect(lowCandidates[0]).toContain("quality=70");
-    expect(fullCandidates[0]).toContain("quality=85");
+    expect(fullCandidates[0]).toContain("quality=95");
   });
 });

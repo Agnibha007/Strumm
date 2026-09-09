@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
-import { getArtworkCandidates, ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
+import { getArtworkCandidates, ARTWORK_QUALITY_MEDIUM, ARTWORK_QUALITY_DATA_SAVER } from "web/lib/media";
 import { loadImage, preloadImage, type ImagePriority } from "web/lib/image-loader";
 
 /**
@@ -30,6 +30,11 @@ interface SongArtworkProps {
    * Import ARTWORK_QUALITY_* constants for consistent tiers.
    */
   quality?: number;
+  /**
+   * When true, aggressively reduces artwork quality and size to conserve
+   * bandwidth. Overrides the `quality` prop with ARTWORK_QUALITY_DATA_SAVER.
+   */
+  dataSaver?: boolean;
 }
 
 export default function SongArtwork({
@@ -40,6 +45,7 @@ export default function SongArtwork({
   priority = false,
   sizes,
   quality = ARTWORK_QUALITY_MEDIUM,
+  dataSaver = false,
 }: SongArtworkProps) {
   // NOTE: useMemo intentionally omitted. This is a trivial array/string computation;
   // removing the hook was a defensive measure against a production
@@ -47,7 +53,8 @@ export default function SongArtwork({
   // where the stack trace pointed at useMemo inside this component. The candidate
   // list is memoized at module scope in getArtworkCandidates, so the returned
   // array reference stays stable for a given (videoId, thumbnail, hero) key.
-  const candidates = getArtworkCandidates(song, priority, quality);
+  const effectiveQuality = dataSaver ? ARTWORK_QUALITY_DATA_SAVER : quality;
+  const candidates = getArtworkCandidates(song, priority, effectiveQuality);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   // The candidate the pipeline has actually confirmed loadable. Unset until the
@@ -118,7 +125,7 @@ export default function SongArtwork({
     return () => {
       cancelled = true;
     };
-  }, [candidates, priority, quality]);
+  }, [candidates, priority, effectiveQuality]);
 
   const handleLoad = useCallback(() => {
     setLoaded(true);

@@ -54,11 +54,12 @@ function isYouTubeImageHost(url: string): boolean {
  *   LOW       – miniplayer, queue, sidebar           (≈ 64–96 px)
  *   THUMBNAIL – tiny avatar-sized thumbs             (≤ 48 px)
  */
-export const ARTWORK_QUALITY_FULL = 85;
+export const ARTWORK_QUALITY_FULL = 95;
 export const ARTWORK_QUALITY_HIGH = 80;
 export const ARTWORK_QUALITY_MEDIUM = 75;
 export const ARTWORK_QUALITY_LOW = 70;
 export const ARTWORK_QUALITY_THUMBNAIL = 65;
+export const ARTWORK_QUALITY_DATA_SAVER = 60;
 
 /**
  * The API server's egress IP is blocked by YouTube's CDN, so /image-proxy
