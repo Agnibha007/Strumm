@@ -121,6 +121,11 @@ export default function AudioEngine() {
   // suspended entirely; this samples media progress on a (throttle-tolerant)
   // interval and advances when wall-clock says the track should already be over.
   const backgroundAdvanceRef = useRef<{ trackKey: string; lastTickMs: number } | null>(null);
+  // Snapshot of playback position + wall-clock time captured when the tab is
+  // hidden. Used on tab-return to detect whether the track should have ended
+  // while the page was backgrounded (browsers suspend timers AND the <audio>
+  // element in hidden tabs, so none of the normal advance paths fire).
+  const backgroundEnterRef = useRef<{ positionMs: number; enterMs: number } | null>(null);
 
   // End-of-track handler that also clears/saves podcast resume position. Used
   // by the HTML audio `ended` handler (and the YouTube ENDED branch) so a
@@ -850,6 +855,16 @@ export default function AudioEngine() {
       if (!state.isPlaying || !song || song.metadata?.audioUrl) return;
       const videoId = song.videoId;
       if (!videoId) return;
+      // Snapshot position + wall-clock so leaveBackground() can detect whether
+      // the track finished while the page was hidden (timers are throttled and
+      // the <audio> element may be suspended, so normal advance paths fail).
+      backgroundEnterRef.current = {
+        positionMs: (state.currentTime || 0) * 1000,
+        enterMs: Date.now(),
+      };
+      // Reset so the watchdog and leaveBackground catch-up can fire for this
+      // track if it ends while hidden.
+      handledTrackEndRef.current = false;
       ensureBackgroundAudio(videoId);
     };
 
@@ -860,6 +875,49 @@ export default function AudioEngine() {
       const state = usePlayerStore.getState();
       const audio = htmlAudioRef.current;
       const song = state.currentSong;
+
+      // Catch-up: if the track should have finished while the page was hidden
+      // (timers throttled, <audio> suspended), advance the queue now instead of
+      // resuming a finished track in the iframe. Uses wall-clock elapsed time
+      // against the position snapshot taken in enterBackground().
+      const backgroundEnter = backgroundEnterRef.current;
+      backgroundEnterRef.current = null;
+      if (backgroundEnter && song) {
+        const dur = state.duration || song.duration || 0;
+        if (dur > 1) {
+          const elapsedMs = Date.now() - backgroundEnter.enterMs;
+          const remainingMs = Math.max(0, dur * 1000 - backgroundEnter.positionMs);
+          if (elapsedMs >= remainingMs + 1500 && !handledTrackEndRef.current) {
+            handledTrackEndRef.current = true;
+            // Tear down the direct stream and restore iframe controls so the
+            // next track starts in the foreground player.
+            if (audio) {
+              try { audio.pause(); } catch (e) {}
+              try { audio.removeAttribute("src"); audio.load(); } catch (e) {}
+              currentBackgroundUrlRef.current = null;
+              try {
+                audio.src = SILENT_AUDIO_SRC;
+                audio.loop = true;
+                audio.volume = 1.0;
+                if (state.isPlaying) audio.play().catch(() => {});
+              } catch (e) {}
+            }
+            const yt = playerInstanceRef.current;
+            if (yt && typeof yt.playVideo === "function") {
+              setPlayerRef({
+                playVideo: () => { if (typeof yt.playVideo === "function") yt.playVideo(); },
+                pauseVideo: () => { if (typeof yt.pauseVideo === "function") yt.pauseVideo(); },
+                seekTo: (sec: number) => { if (typeof yt.seekTo === "function") yt.seekTo(sec, true); },
+                setVolume: (vol: number) => { if (typeof yt.setVolume === "function") yt.setVolume(vol); },
+                setPlaybackRate: (rate: number) => { if (typeof yt.setPlaybackRate === "function") yt.setPlaybackRate(rate); },
+                setPlaybackQuality: (quality: string) => { if (typeof yt.setPlaybackQuality === "function") yt.setPlaybackQuality(quality); },
+              });
+            }
+            state.handleTrackEnded();
+            return;
+          }
+        }
+      }
 
       const restoreIframePlayerRef = () => {
         const yt = playerInstanceRef.current;
@@ -1088,6 +1146,7 @@ try {
       const now = Date.now();
       if (!watch || watch.trackKey !== videoId) {
         backgroundAdvanceRef.current = { trackKey: videoId, lastTickMs: now };
+        handledTrackEndRef.current = false;
         return;
       }
 
