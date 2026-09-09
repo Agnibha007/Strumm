@@ -1727,6 +1727,13 @@ try {
               crossfadeAdvancedRef.current = false;
               hasTriggeredCrossfadeRef.current = false;
               transitioningRef.current = false;
+              // Clear the end-of-track latch set by a background mechanism
+              // (watchdog, near-end timeupdate, leaveBackground catch-up) for the
+              // *previous* track. The <audio> onPlay handler clears it for direct
+              // audio, but for YouTube songs the host <audio> is the silent loop,
+              // whose onPlay early-returns — so we must clear it here. Otherwise a
+              // leaked latch would swallow THIS track's ENDED and stall the queue.
+              handledTrackEndRef.current = false;
               consecutiveErrorsRef.current = 0;
               setPlaying(true);
               usePlayerStore.getState().setPlayerLoading(false);
