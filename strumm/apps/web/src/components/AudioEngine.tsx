@@ -120,12 +120,12 @@ export default function AudioEngine() {
   // are throttled so a near-end crossfade or YouTube ended event can be
   // suspended entirely; this samples media progress on a (throttle-tolerant)
   // interval and advances when wall-clock says the track should already be over.
-  const backgroundAdvanceRef = useRef<{ trackKey: string; lastTickMs: number } | null>(null);
+  const backgroundAdvanceRef = useRef<{ trackKey: string; trackStartMs: number } | null>(null);
   // Snapshot of playback position + wall-clock time captured when the tab is
   // hidden. Used on tab-return to detect whether the track should have ended
   // while the page was backgrounded (browsers suspend timers AND the <audio>
   // element in hidden tabs, so none of the normal advance paths fire).
-  const backgroundEnterRef = useRef<{ positionMs: number; enterMs: number } | null>(null);
+  const backgroundEnterRef = useRef<{ videoId: string; positionMs: number; enterMs: number } | null>(null);
 
   // End-of-track handler that also clears/saves podcast resume position. Used
   // by the HTML audio `ended` handler (and the YouTube ENDED branch) so a
@@ -255,6 +255,9 @@ export default function AudioEngine() {
 
     const audio = htmlAudioRef.current;
     if (!audio) return false;
+    // Mark as transitioning so the transient pause from the src swap isn't
+    // misinterpreted as a user pause (which would set isPlaying = false).
+    transitioningRef.current = true;
     try {
       audio.preload = "auto";
       // Read volume fresh from the store so the callback stays stable.
@@ -262,6 +265,7 @@ export default function AudioEngine() {
       audio.src = url;
       currentBackgroundUrlRef.current = url;
     } catch (e) {
+      transitioningRef.current = false;
       return false;
     }
 
@@ -425,6 +429,12 @@ export default function AudioEngine() {
       // Ignore pause events fired while the engine is swapping tracks — the
       // element for the old track is being torn down and the new one is loading.
       if (transitioningRef.current) return;
+      // Ignore browser-initiated pauses in hidden tabs. When the page is
+      // backgrounded, the browser may suspend the <audio> element and fire a
+      // pause event. Treating this as a user pause sets isPlaying = false,
+      // which disables the watchdog, the heartbeat, and every other advance
+      // mechanism — leaving the queue stuck on a finished track.
+      if (document.hidden) return;
       setPlaying(false);
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "paused";
@@ -859,6 +869,7 @@ export default function AudioEngine() {
       // the track finished while the page was hidden (timers are throttled and
       // the <audio> element may be suspended, so normal advance paths fail).
       backgroundEnterRef.current = {
+        videoId,
         positionMs: (state.currentTime || 0) * 1000,
         enterMs: Date.now(),
       };
@@ -883,40 +894,46 @@ export default function AudioEngine() {
       const backgroundEnter = backgroundEnterRef.current;
       backgroundEnterRef.current = null;
       if (backgroundEnter && song) {
-        const dur = state.duration || song.duration || 0;
-        if (dur > 1) {
-          const elapsedMs = Date.now() - backgroundEnter.enterMs;
-          const remainingMs = Math.max(0, dur * 1000 - backgroundEnter.positionMs);
-          if (elapsedMs >= remainingMs + 1500 && !handledTrackEndRef.current) {
-            handledTrackEndRef.current = true;
-            // Tear down the direct stream and restore iframe controls so the
-            // next track starts in the foreground player.
-            if (audio) {
-              try { audio.pause(); } catch (e) {}
-              try { audio.removeAttribute("src"); audio.load(); } catch (e) {}
-              currentBackgroundUrlRef.current = null;
-              try {
-                audio.src = SILENT_AUDIO_SRC;
-                audio.loop = true;
-                audio.volume = 1.0;
-                if (state.isPlaying) audio.play().catch(() => {});
-              } catch (e) {}
+        // If the song already advanced while hidden (via watchdog or audio ended),
+        // the queue is on a new track — don't double-advance.
+        if (song.videoId === backgroundEnter.videoId) {
+          const dur = state.duration || song.duration || 0;
+          if (dur > 1) {
+            const elapsedMs = Date.now() - backgroundEnter.enterMs;
+            const remainingMs = Math.max(0, dur * 1000 - backgroundEnter.positionMs);
+            if (elapsedMs >= remainingMs + 1500 && !handledTrackEndRef.current) {
+              handledTrackEndRef.current = true;
+              // Tear down the direct stream and restore iframe controls so the
+              // next track starts in the foreground player.
+              if (audio) {
+                try { audio.pause(); } catch (e) {}
+                try { audio.removeAttribute("src"); audio.load(); } catch (e) {}
+                currentBackgroundUrlRef.current = null;
+                try {
+                  audio.src = SILENT_AUDIO_SRC;
+                  audio.loop = true;
+                  audio.volume = 1.0;
+                  if (state.isPlaying) audio.play().catch(() => {});
+                } catch (e) {}
+              }
+              const yt = playerInstanceRef.current;
+              if (yt && typeof yt.playVideo === "function") {
+                setPlayerRef({
+                  playVideo: () => { if (typeof yt.playVideo === "function") yt.playVideo(); },
+                  pauseVideo: () => { if (typeof yt.pauseVideo === "function") yt.pauseVideo(); },
+                  seekTo: (sec: number) => { if (typeof yt.seekTo === "function") yt.seekTo(sec, true); },
+                  setVolume: (vol: number) => { if (typeof yt.setVolume === "function") yt.setVolume(vol); },
+                  setPlaybackRate: (rate: number) => { if (typeof yt.setPlaybackRate === "function") yt.setPlaybackRate(rate); },
+                  setPlaybackQuality: (quality: string) => { if (typeof yt.setPlaybackQuality === "function") yt.setPlaybackQuality(quality); },
+                });
+              }
+              state.handleTrackEnded();
+              return;
             }
-            const yt = playerInstanceRef.current;
-            if (yt && typeof yt.playVideo === "function") {
-              setPlayerRef({
-                playVideo: () => { if (typeof yt.playVideo === "function") yt.playVideo(); },
-                pauseVideo: () => { if (typeof yt.pauseVideo === "function") yt.pauseVideo(); },
-                seekTo: (sec: number) => { if (typeof yt.seekTo === "function") yt.seekTo(sec, true); },
-                setVolume: (vol: number) => { if (typeof yt.setVolume === "function") yt.setVolume(vol); },
-                setPlaybackRate: (rate: number) => { if (typeof yt.setPlaybackRate === "function") yt.setPlaybackRate(rate); },
-                setPlaybackQuality: (quality: string) => { if (typeof yt.setPlaybackQuality === "function") yt.setPlaybackQuality(quality); },
-              });
-            }
-            state.handleTrackEnded();
-            return;
           }
         }
+        // Song already advanced while hidden — the normal leaveBackground path
+        // will detect the stale iframe and load the new video.
       }
 
       const restoreIframePlayerRef = () => {
@@ -1145,7 +1162,7 @@ try {
       const watch = backgroundAdvanceRef.current;
       const now = Date.now();
       if (!watch || watch.trackKey !== videoId) {
-        backgroundAdvanceRef.current = { trackKey: videoId, lastTickMs: now };
+        backgroundAdvanceRef.current = { trackKey: videoId, trackStartMs: now };
         handledTrackEndRef.current = false;
         return;
       }
@@ -1159,18 +1176,16 @@ try {
 
       // If the engine is stalled (iframe suspended by the OS lock), once
       // enough real time has passed to have finished the remaining duration,
-      // force the advance. Wall-clock elapsed is sampled from the previous
-      // tick regardless of how aggressively the background timer is throttled.
-      const sampleMsDiff = now - watch.lastTickMs;
-      const elapsedForTrack = Math.max(0, dur - curr);
-      if (sampleMsDiff >= elapsedForTrack * 1000 + 1500 && !handledTrackEndRef.current) {
+      // force the advance. Uses total wall-clock elapsed since this track
+      // became current, so it works even when background timers are throttled
+      // to as little as 1 tick/minute.
+      const elapsedMs = now - watch.trackStartMs;
+      const remainingMs = Math.max(0, (dur - curr) * 1000);
+      if (elapsedMs >= remainingMs + 1500 && !handledTrackEndRef.current) {
         handledTrackEndRef.current = true;
         state.handleTrackEnded();
         return;
       }
-
-      // Track is healthy; update the watchdog sample.
-      backgroundAdvanceRef.current = { trackKey: videoId, lastTickMs: now };
     }, 1000);
     return () => {
       clearInterval(timer);
