@@ -9,6 +9,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import SongArtwork from "./SongArtwork";
+import { ARTWORK_QUALITY_LOW } from "web/lib/media";
 
 interface ChatMessage {
   sender: "user" | "ai";
@@ -222,7 +223,7 @@ export default function AICuratorChat({ fullPage = false }: { fullPage?: boolean
                       className="group flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-surface hover:ring-1 hover:ring-primary/40 text-left w-full cursor-pointer transition"
                     >
                       <div className="relative flex-shrink-0">
-                        <SongArtwork song={song} className="w-9 h-9 rounded" />
+                        <SongArtwork song={song} className="w-9 h-9 rounded" quality={ARTWORK_QUALITY_LOW} />
                         <div className="absolute inset-0 flex items-center justify-center rounded bg-black/50 opacity-0 group-hover:opacity-100 transition">
                           <Play className="w-3.5 h-3.5 text-white fill-white" />
                         </div>

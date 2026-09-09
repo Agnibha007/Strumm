@@ -5,6 +5,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import { apiFetch } from "web/lib/api-client";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import Link from "next/link";
 import { BarChart3, Clock, Music, Headphones, TrendingUp, Loader2 } from "lucide-react";
 
@@ -208,7 +209,7 @@ export default function StatsPage() {
                 {data.top_songs.map((song, idx) => (
                   <div key={song.songId} className="flex items-center gap-4 bg-surface-elevated/20 border border-border/30 rounded-xl p-3">
                     <div className="text-lg font-bold text-primary w-8 text-center font-mono">{idx + 1}</div>
-                    <SongArtwork song={{ videoId: song.songId ?? "", thumbnail: song.coverUrl ?? "", title: song.title }} className="w-12 h-12 rounded-lg flex-shrink-0" />
+                     <SongArtwork song={{ videoId: song.songId ?? "", thumbnail: song.coverUrl ?? "", title: song.title }} className="w-12 h-12 rounded-lg flex-shrink-0" quality={ARTWORK_QUALITY_MEDIUM} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold text-text truncate">{song.title}</div>
                       <div className="text-xs text-muted truncate">{song.artist}</div>

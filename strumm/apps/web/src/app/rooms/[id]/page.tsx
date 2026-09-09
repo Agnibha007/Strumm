@@ -8,6 +8,7 @@ import { apiUrl, API_ORIGIN } from "web/lib/api";
 import { searchYouTube } from "web/lib/search";
 import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2, UserPlus, X, Check } from "lucide-react";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { useRouter } from "next/navigation";
 
 interface RoomDetails {
@@ -669,7 +670,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           
           {/* Synchronized Song Display */}
           <div className="bg-surface/40 border border-border/60 p-6 rounded-2xl flex flex-col md:flex-row items-center gap-6 min-w-0">
-            <SongArtwork song={room.currentTrack} className="w-32 h-32 rounded shadow-2xl flex-shrink-0" />
+             <SongArtwork song={room.currentTrack} className="w-32 h-32 rounded shadow-2xl flex-shrink-0" quality={ARTWORK_QUALITY_HIGH} />
             <div className="min-w-0 flex-1 text-center md:text-left">
               {room.currentTrack ? (
                 <>
@@ -720,7 +721,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                 {room.queue.map((song, index) => (
                   <div key={`${song.videoId}-${index}`} className="flex justify-between items-center py-3 text-xs">
                     <div className="min-w-0 flex-1 flex items-center gap-3">
-                      <SongArtwork song={song} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                       <SongArtwork song={song} className="w-10 h-10 rounded object-cover flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
                       <div className="min-w-0">
                         <span className="font-semibold text-text truncate block">{song.title}</span>
                         <span className="text-[10px] text-muted truncate block">{song.artist}</span>

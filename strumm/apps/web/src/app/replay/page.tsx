@@ -7,6 +7,7 @@ import { useThemeStore } from "web/store/useThemeStore";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SoundDNAChart from "web/components/SoundDNAChart";
 import { Loader2, Music, Sparkles, Trophy, Compass, User, Play, Clock, Globe } from "lucide-react";
 import { motion } from "framer-motion";
@@ -451,7 +452,7 @@ export default function ReplayPage() {
               >
               <div className="flex items-center gap-4 min-w-0 flex-1">
                 <span className="text-sm font-mono text-muted w-5 flex-shrink-0">0{idx + 1}</span>
-                <SongArtwork song={song} className="w-12 h-12 rounded shadow flex-shrink-0" />
+                 <SongArtwork song={song} className="w-12 h-12 rounded shadow flex-shrink-0" quality={ARTWORK_QUALITY_MEDIUM} />
                 <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-bold text-text line-clamp-2 md:line-clamp-1 md:truncate overflow-hidden leading-snug max-w-full">
                     {song.title}

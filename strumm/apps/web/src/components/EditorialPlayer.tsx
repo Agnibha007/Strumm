@@ -13,6 +13,7 @@ import { ListeningEvent, ListeningTracker, QUEUE_STORAGE_KEY } from "web/lib/lis
 import { formatTime } from "web/lib/format";
 import { useLikeSong } from "web/hooks/useLikeSong";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
 
 const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"), {
@@ -324,7 +325,7 @@ export default function EditorialPlayer() {
               transition={isAnimated && isPlaying ? { repeat: Infinity, duration: 15, ease: "linear" } : {}}
               className="w-11 h-11 md:w-12 md:h-12 rounded-full overflow-hidden border border-border/80 flex-shrink-0 relative shadow-lg bg-surface-elevated"
             >
-              <SongArtwork song={currentSong} className="w-full h-full" />
+              <SongArtwork song={currentSong} className="w-full h-full" quality={ARTWORK_QUALITY_LOW} />
               <div className="absolute inset-4 rounded-full bg-background border border-border/40" /> {/* Vinyl hole effect */}
             </motion.div>
             
@@ -547,7 +548,7 @@ export default function EditorialPlayer() {
                         }}
                         className="flex items-center gap-3 text-left cursor-pointer flex-grow min-w-0 pointer-events-auto"
                       >
-                        <SongArtwork song={s} className="w-7 h-7 rounded flex-shrink-0" />
+                        <SongArtwork song={s} className="w-7 h-7 rounded flex-shrink-0" quality={ARTWORK_QUALITY_THUMBNAIL} />
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] text-text truncate leading-tight">{s.title}</div>
                           <div className="text-[9px] text-muted truncate">{s.artist}</div>

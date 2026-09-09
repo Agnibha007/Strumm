@@ -6,6 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { cleanText } from "web/lib/api";
 import { searchYouTube } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_LOW } from "web/lib/media";
 
 import { Search, Play, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -92,7 +93,7 @@ export default function HomePage() {
                         aria-label={`Play ${song.title} by ${song.artist}`}
                         className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-elevated text-left w-full cursor-pointer transition border border-transparent hover:border-border/60"
                       >
-                        <SongArtwork song={song} className="w-10 h-10 rounded shadow flex-shrink-0" />
+                        <SongArtwork song={song} className="w-10 h-10 rounded shadow flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
                         <div className="min-w-0 flex-grow">
                           <div className="text-sm font-semibold text-text truncate leading-snug">{song.title}</div>
                           <div className="text-xs text-muted truncate">{song.artist}</div>

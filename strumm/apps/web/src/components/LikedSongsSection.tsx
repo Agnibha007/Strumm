@@ -5,6 +5,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { Play, Heart, ListMusic } from "lucide-react";
 import { Song } from "@strumm/types";
 
@@ -63,7 +64,7 @@ export default function LikedSongsSection({ token }: { token: string | null }) {
                   className="p-2.5 bg-transparent hover:bg-surface/60 rounded-lg transition flex items-center gap-3 text-left w-full cursor-pointer group"
                 >
                   <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0 relative">
-                    <SongArtwork song={song} className="w-full h-full object-cover" />
+                    <SongArtwork song={song} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_LOW} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <Play className="w-4 h-4 text-white fill-current" />
                     </div>

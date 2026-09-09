@@ -36,6 +36,7 @@ import { formatTime } from "web/lib/format";
 import { useLikeSong } from "web/hooks/useLikeSong";
 import { getActiveLyricIndex, parseLrc, type LyricLine, unescapeHtml } from "web/lib/lyrics";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_FULL, ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import { useRouter } from "next/navigation";
 import AddToPlaylistMenu from "web/components/AddToPlaylistMenu";
 
@@ -459,7 +460,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                     : "w-[70vw] h-[70vw] sm:w-72 sm:h-72 md:w-80 md:h-80 lg:w-96 lg:h-96 xl:w-[420px] xl:h-[420px]"
                 }`}
               >
-                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority sizes="(max-width: 640px) 70vw, (max-width: 768px) 288px, (max-width: 1024px) 320px, 384px" />
+                <SongArtwork song={currentSong} className="w-full h-full rounded-2xl md:rounded-3xl" iconClassName="w-14 h-14" priority quality={ARTWORK_QUALITY_FULL} sizes="(max-width: 640px) 70vw, (max-width: 768px) 288px, (max-width: 1024px) 320px, 384px" />
               </div>
             </div>
 
@@ -823,7 +824,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                           }}
                           className="flex items-center gap-3 text-left cursor-pointer flex-grow min-w-0 pointer-events-auto"
                         >
-                          <SongArtwork song={s} className="w-8 h-8 rounded flex-shrink-0" />
+                          <SongArtwork song={s} className="w-8 h-8 rounded flex-shrink-0" quality={ARTWORK_QUALITY_THUMBNAIL} />
                           <div className="min-w-0 flex-1">
                             <div className="text-xs text-text truncate leading-tight">{s.title}</div>
                             <div className="text-[10px] text-muted truncate">{s.artist}</div>
@@ -910,7 +911,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 p-3 bg-surface-elevated/40 border border-border/50 rounded-xl">
-                    <SongArtwork song={currentSong} className="w-10 h-10 rounded shadow flex-shrink-0" />
+                    <SongArtwork song={currentSong} className="w-10 h-10 rounded shadow flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
                     <div className="min-w-0">
                       <h4 className="text-xs font-bold text-text truncate">{currentSong?.title}</h4>
                       <p className="text-[10px] text-muted truncate mt-0.5">{currentSong?.artist}</p>

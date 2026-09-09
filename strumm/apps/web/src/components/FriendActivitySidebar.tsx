@@ -5,6 +5,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_THUMBNAIL, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
@@ -308,7 +309,7 @@ export default function FriendActivitySidebar({
                     </div>
                     {hasSong ? (
                       <div className="flex items-center gap-1.5">
-                        <SongArtwork song={friend.currentActivity!.song} className="w-6 h-6 rounded" />
+                        <SongArtwork song={friend.currentActivity!.song} className="w-6 h-6 rounded" quality={ARTWORK_QUALITY_THUMBNAIL} />
                         <div className="min-w-0 flex-1">
                           <div className="text-[9px] font-bold text-text truncate leading-snug">{friend.currentActivity!.song.title}</div>
                           <div className="text-[8px] text-muted truncate">{friend.currentActivity!.song.artist}</div>
@@ -381,7 +382,7 @@ export default function FriendActivitySidebar({
                 </div>
                 {includeSong && (
                   <div className="p-2 bg-background/30 border border-border/20 rounded-lg flex items-center gap-2 min-w-0">
-                    <SongArtwork song={currentSong} className="w-8 h-8 rounded flex-shrink-0" />
+                    <SongArtwork song={currentSong} className="w-8 h-8 rounded flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
                     <div className="min-w-0 flex-1">
                       <span className="text-[10px] text-text font-semibold block truncate leading-snug">{currentSong.title}</span>
                       <span className="text-[9px] text-muted block truncate">{currentSong.artist}</span>
@@ -516,7 +517,7 @@ export default function FriendActivitySidebar({
                   {hasSongActivity ? (
                     <div className="space-y-2">
                       <div className="p-2 bg-primary/5 border border-primary/10 rounded-lg flex items-center gap-2 min-w-0">
-                        <SongArtwork song={friend.currentActivity!.song} className="w-8 h-8 rounded flex-shrink-0" />
+                        <SongArtwork song={friend.currentActivity!.song} className="w-8 h-8 rounded flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
                         <div className="min-w-0 flex-1">
                           <span className="text-[10px] text-text font-semibold block truncate leading-snug">
                             {friend.currentActivity!.song.title}

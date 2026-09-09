@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import { useLastPlayedPlaylistStore } from "web/store/useLastPlayedPlaylistStore";
 
 interface PlaylistDetailPageProps {
@@ -316,28 +317,28 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
         {/* Cover Art */}
         <div className="w-48 h-48 md:w-56 md:h-56 rounded-xl bg-surface-elevated flex items-center justify-center border border-border/80 relative shadow-2xl overflow-hidden flex-shrink-0">
           {playlist.songs.length === 1 ? (
-            <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 192px, 224px" />
+            <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority quality={ARTWORK_QUALITY_HIGH} sizes="(max-width: 768px) 192px, 224px" />
           ) : playlist.songs.length === 2 ? (
             <div className="grid grid-cols-2 w-full h-full">
-              <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
-              <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
+              <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority quality={ARTWORK_QUALITY_LOW} sizes="(max-width: 768px) 96px, 112px" />
+              <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority quality={ARTWORK_QUALITY_LOW} sizes="(max-width: 768px) 96px, 112px" />
             </div>
           ) : playlist.songs.length === 3 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               <div className="col-span-2 row-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 192px, 224px" />
+                <SongArtwork song={playlist.songs[0]} className="w-full h-full object-cover" priority quality={ARTWORK_QUALITY_HIGH} sizes="(max-width: 768px) 192px, 224px" />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
+                <SongArtwork song={playlist.songs[1]} className="w-full h-full object-cover" priority quality={ARTWORK_QUALITY_LOW} sizes="(max-width: 768px) 96px, 112px" />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={playlist.songs[2]} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
+                <SongArtwork song={playlist.songs[2]} className="w-full h-full object-cover" priority quality={ARTWORK_QUALITY_LOW} sizes="(max-width: 768px) 96px, 112px" />
               </div>
             </div>
           ) : playlist.songs.length >= 4 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               {playlist.songs.slice(0, 4).map((s, idx) => (
-                <SongArtwork key={idx} song={s} className="w-full h-full object-cover" priority sizes="(max-width: 768px) 96px, 112px" />
+                <SongArtwork key={idx} song={s} className="w-full h-full object-cover" priority quality={ARTWORK_QUALITY_LOW} sizes="(max-width: 768px) 96px, 112px" />
               ))}
             </div>
           ) : (
@@ -563,7 +564,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
                         </td>
                         <td className="py-3.5 px-4 font-semibold text-text">
                           <div className="flex items-center gap-3">
-                            <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" priority={index < 5} />
+                             <SongArtwork song={song} className="w-8 h-8 rounded shadow flex-shrink-0" priority={index < 5} quality={ARTWORK_QUALITY_THUMBNAIL} />
                             <span className="truncate max-w-[240px]">{song.title}</span>
                           </div>
                         </td>
@@ -643,7 +644,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
                       <div className="text-muted font-medium text-[11px] w-4 text-center">
                         {index + 1}
                       </div>
-                      <SongArtwork song={song} className="w-10 h-10 rounded-lg shadow-md flex-shrink-0" priority={index < 5} />
+                       <SongArtwork song={song} className="w-10 h-10 rounded-lg shadow-md flex-shrink-0" priority={index < 5} quality={ARTWORK_QUALITY_LOW} />
                       <div className="min-w-0 flex-grow">
                         <div className="text-xs font-semibold text-text truncate pr-2">{song.title}</div>
                         <div className="text-[11px] text-muted truncate mt-0.5">{song.artist}</div>

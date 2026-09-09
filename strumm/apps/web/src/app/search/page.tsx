@@ -10,6 +10,7 @@ import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { searchYouTube, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SafePodcastImage from "web/components/SafePodcastImage";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import Link from "next/link";
@@ -542,7 +543,7 @@ export default function SearchPage() {
                       className="flex items-center gap-4 p-3 bg-surface/40 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition group relative"
                     >
                       <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 shadow">
-                        <SongArtwork song={song} className="w-full h-full" />
+                         <SongArtwork song={song} className="w-full h-full" quality={ARTWORK_QUALITY_MEDIUM} />
                         <button
                           onClick={() => playSong(song, results.songs)}
                           className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer"

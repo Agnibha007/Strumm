@@ -11,6 +11,7 @@ import { apiUrl } from "web/lib/api";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_THUMBNAIL, ARTWORK_QUALITY_LOW } from "web/lib/media";
 
 const SoundDNAChart = dynamic(() => import("web/components/SoundDNAChart"), {
   ssr: false,
@@ -885,7 +886,7 @@ function ProfilePageContent() {
                   <div key={idx} className="flex justify-between items-center py-2.5 first:pt-0 last:pb-0 text-xs">
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="font-bold text-primary font-mono w-4 flex-shrink-0">{idx + 1}</span>
-                      <SongArtwork song={song} className="w-7 h-7 rounded flex-shrink-0" />
+                       <SongArtwork song={song} className="w-7 h-7 rounded flex-shrink-0" quality={ARTWORK_QUALITY_THUMBNAIL} />
                       <div className="text-left min-w-0">
                         <span className="font-semibold text-text block truncate leading-tight">{song.title}</span>
                         <span className="text-[10px] text-muted truncate">{song.artist}</span>
@@ -941,7 +942,7 @@ function ProfilePageContent() {
                   <div key={memory.id} className="p-4 bg-surface/40 border border-border/60 rounded-xl space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <SongArtwork song={memory.song} className="w-8 h-8 rounded flex-shrink-0" />
+                         <SongArtwork song={memory.song} className="w-8 h-8 rounded flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
                         <div className="min-w-0">
                           <div className="text-xs font-bold text-text truncate leading-tight">{memory.song.title}</div>
                           <div className="text-[10px] text-muted truncate">{memory.song.artist}</div>

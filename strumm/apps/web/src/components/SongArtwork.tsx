@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
-import { getArtworkCandidates } from "web/lib/media";
+import { getArtworkCandidates, ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import { loadImage, preloadImage, type ImagePriority } from "web/lib/image-loader";
 
 /**
@@ -24,6 +24,12 @@ interface SongArtworkProps {
    * Example: "(max-width: 768px) 256px, 320px"
    */
   sizes?: string;
+  /**
+   * Image quality for the proxy (1-100). Lower values save bandwidth for
+   * small thumbnails; higher values keep fullscreen artwork crisp.
+   * Import ARTWORK_QUALITY_* constants for consistent tiers.
+   */
+  quality?: number;
 }
 
 export default function SongArtwork({
@@ -33,6 +39,7 @@ export default function SongArtwork({
   iconClassName = "w-5 h-5",
   priority = false,
   sizes,
+  quality = ARTWORK_QUALITY_MEDIUM,
 }: SongArtworkProps) {
   // NOTE: useMemo intentionally omitted. This is a trivial array/string computation;
   // removing the hook was a defensive measure against a production
@@ -40,7 +47,7 @@ export default function SongArtwork({
   // where the stack trace pointed at useMemo inside this component. The candidate
   // list is memoized at module scope in getArtworkCandidates, so the returned
   // array reference stays stable for a given (videoId, thumbnail, hero) key.
-  const candidates = getArtworkCandidates(song, priority);
+  const candidates = getArtworkCandidates(song, priority, quality);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   // The candidate the pipeline has actually confirmed loadable. Unset until the
@@ -111,7 +118,7 @@ export default function SongArtwork({
     return () => {
       cancelled = true;
     };
-  }, [candidates, priority]);
+  }, [candidates, priority, quality]);
 
   const handleLoad = useCallback(() => {
     setLoaded(true);

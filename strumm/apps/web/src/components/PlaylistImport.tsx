@@ -8,6 +8,7 @@ import { Song } from "@strumm/types";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import { resolveTracksOnBrowser, extractPlaylistOnBrowser, BrowserMusicCandidate } from "web/services/search/BrowserYouTubeMusicResolver";
 
 interface PlaylistImportProps {
@@ -152,6 +153,7 @@ export default function PlaylistImport({ onImported }: PlaylistImportProps) {
                 song={{ videoId: cid, thumbnail: c.thumbnail || "", title: c.title || "" }}
                 className="w-8 h-8 rounded flex-shrink-0"
                 iconClassName="w-3 h-3"
+                quality={ARTWORK_QUALITY_THUMBNAIL}
               />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] text-text truncate">{c.title}</p>

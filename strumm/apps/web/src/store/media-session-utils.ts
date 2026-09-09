@@ -2,14 +2,14 @@
  * Media Session API utilities for lock-screen / system media controls.
  */
 import { Song } from "@strumm/types";
-import { getBestArtwork } from "web/lib/media";
+import { getBestArtwork, ARTWORK_QUALITY_FULL } from "web/lib/media";
 
 /**
  * Update system lockscreen metadata via the Media Session API.
  */
 export function updateMediaSession(song: Song, getState: () => any): void {
   if (typeof window !== "undefined" && "mediaSession" in navigator) {
-    const artworkSrc = getBestArtwork(song) || song.thumbnail;
+    const artworkSrc = getBestArtwork(song, false, ARTWORK_QUALITY_FULL) || song.thumbnail;
 
     // Force secure thumbnail to prevent mixed content issues
     let secureArtwork = artworkSrc;

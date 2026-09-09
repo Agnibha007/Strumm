@@ -9,6 +9,7 @@ import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import BrandLogo from "web/components/BrandLogo";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_HIGH } from "web/lib/media";
 
 interface SharePageProps {
   params: Promise<{ token: string }>;
@@ -123,30 +124,30 @@ export default function SharePage({ params }: SharePageProps) {
         {/* Thumbnail art */}
         <div className="w-40 h-40 rounded-xl overflow-hidden shadow-2xl border border-border/80 mx-auto relative group">
           {isSong ? (
-            <SongArtwork song={item} className="w-full h-full" />
+            <SongArtwork song={item} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
           ) : isPlaylist && item.songs && item.songs.length === 1 ? (
-            <SongArtwork song={item.songs[0]} className="w-full h-full" />
+            <SongArtwork song={item.songs[0]} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
           ) : isPlaylist && item.songs && item.songs.length === 2 ? (
             <div className="grid grid-cols-2 w-full h-full">
-              <SongArtwork song={item.songs[0]} className="w-full h-full" />
-              <SongArtwork song={item.songs[1]} className="w-full h-full" />
+              <SongArtwork song={item.songs[0]} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
+              <SongArtwork song={item.songs[1]} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
             </div>
           ) : isPlaylist && item.songs && item.songs.length === 3 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               <div className="col-span-2 row-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={item.songs[0]} className="w-full h-full" />
+                <SongArtwork song={item.songs[0]} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={item.songs[1]} className="w-full h-full" />
+                <SongArtwork song={item.songs[1]} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
               </div>
               <div className="col-span-1 w-full h-full overflow-hidden">
-                <SongArtwork song={item.songs[2]} className="w-full h-full" />
+                <SongArtwork song={item.songs[2]} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
               </div>
             </div>
           ) : isPlaylist && item.songs && item.songs.length >= 4 ? (
             <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
               {item.songs.slice(0, 4).map((s: Song, idx: number) => (
-                <SongArtwork key={idx} song={s} className="w-full h-full" />
+                <SongArtwork key={idx} song={s} className="w-full h-full" quality={ARTWORK_QUALITY_HIGH} />
               ))}
             </div>
           ) : (

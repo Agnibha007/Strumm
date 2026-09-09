@@ -9,6 +9,7 @@ import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { useRouter } from "next/navigation";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_HIGH } from "web/lib/media";
 
 const PlaylistImport = dynamic(() => import("web/components/PlaylistImport"), {
   loading: () => (
@@ -252,28 +253,28 @@ export default function PlaylistsPage() {
                     >
                       <div className="w-full aspect-square rounded-lg bg-surface-elevated overflow-hidden border border-border/40 shadow relative mb-4">
                         {p.songs.length === 1 ? (
-                          <SongArtwork song={p.songs[0]} className="w-full h-full object-cover" />
+                          <SongArtwork song={p.songs[0]} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_HIGH} />
                         ) : p.songs.length === 2 ? (
                           <div className="grid grid-cols-2 w-full h-full">
-                            <SongArtwork song={p.songs[0]} className="w-full h-full object-cover" />
-                            <SongArtwork song={p.songs[1]} className="w-full h-full object-cover" />
+                            <SongArtwork song={p.songs[0]} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_HIGH} />
+                            <SongArtwork song={p.songs[1]} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_HIGH} />
                           </div>
                         ) : p.songs.length === 3 ? (
                           <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
                             <div className="col-span-2 row-span-1 w-full h-full overflow-hidden">
-                              <SongArtwork song={p.songs[0]} className="w-full h-full object-cover" />
+                              <SongArtwork song={p.songs[0]} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_HIGH} />
                             </div>
                             <div className="col-span-1 w-full h-full overflow-hidden">
-                              <SongArtwork song={p.songs[1]} className="w-full h-full object-cover" />
+                              <SongArtwork song={p.songs[1]} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_HIGH} />
                             </div>
                             <div className="col-span-1 w-full h-full overflow-hidden">
-                              <SongArtwork song={p.songs[2]} className="w-full h-full object-cover" />
+                              <SongArtwork song={p.songs[2]} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_HIGH} />
                             </div>
                           </div>
                         ) : p.songs.length >= 4 ? (
                           <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
                             {p.songs.slice(0, 4).map((song, idx) => (
-                              <SongArtwork key={`${song.videoId}-${idx}`} song={song} className="w-full h-full object-cover" />
+                              <SongArtwork key={`${song.videoId}-${idx}`} song={song} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_HIGH} />
                             ))}
                           </div>
                         ) : (

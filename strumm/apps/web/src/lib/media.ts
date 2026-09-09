@@ -44,16 +44,33 @@ function isYouTubeImageHost(url: string): boolean {
 }
 
 /**
+ * Quality tiers for artwork rendering. Use the tier that matches the
+ * *displayed* size of the image so small thumbnails don't waste bandwidth
+ * and large artwork looks crisp.
+ *
+ *   FULL      – fullscreen player, share-page hero  (≥ 320 px)
+ *   HIGH      – playlist hero, discovery grids       (≈ 192–224 px)
+ *   MEDIUM    – stats, replay, search, medium items  (≈ 128–160 px)
+ *   LOW       – miniplayer, queue, sidebar           (≈ 64–96 px)
+ *   THUMBNAIL – tiny avatar-sized thumbs             (≤ 48 px)
+ */
+export const ARTWORK_QUALITY_FULL = 85;
+export const ARTWORK_QUALITY_HIGH = 80;
+export const ARTWORK_QUALITY_MEDIUM = 75;
+export const ARTWORK_QUALITY_LOW = 70;
+export const ARTWORK_QUALITY_THUMBNAIL = 65;
+
+/**
  * The API server's egress IP is blocked by YouTube's CDN, so /image-proxy
  * cannot fetch YouTube-hosted thumbnails (they'd 502 -> blank art). YouTube
  * images load fine straight from the BROWSER, so we skip the proxy for those
  * hosts and use the raw URL directly. The proxy is kept only for non-YouTube
  * image sources (Spotify/CDN-hosted art).
  */
-export function getOptimizedArtworkUrl(rawUrl: string, width: number): string {
+export function getOptimizedArtworkUrl(rawUrl: string, width: number, quality: number = ARTWORK_QUALITY_MEDIUM): string {
   if (!rawUrl) return "";
   if (isYouTubeImageHost(rawUrl)) return rawUrl;
-  return apiUrl(`/image-proxy?url=${encodeURIComponent(rawUrl)}&w=${width}&quality=80`);
+  return apiUrl(`/image-proxy?url=${encodeURIComponent(rawUrl)}&w=${width}&quality=${quality}`);
 }
 
 const ARTWORK_CACHE_LIMIT = 2000;
@@ -62,15 +79,16 @@ const artworkCandidatesCache = new Map<string, string[]>();
 export function getArtworkCandidates(
   song?: Pick<Song, "videoId" | "thumbnail"> | null,
   hero?: boolean,
+  quality: number = ARTWORK_QUALITY_MEDIUM,
 ) {
-  // Pure function of (videoId, thumbnail, hero) — memoize at module scope
-  // instead of per-component useMemo (hooks are the forbidden pattern here;
-  // see the SongArtwork note). Grids render dozens of tiles per frame, so this
-  // avoids recomputing ~13 URLs per artwork on every render while remaining
-  // bounded for a session.
+  // Pure function of (videoId, thumbnail, hero, quality) — memoize at module
+  // scope instead of per-component useMemo (hooks are the forbidden pattern
+  // here; see the SongArtwork note). Grids render dozens of tiles per frame,
+  // so this avoids recomputing ~13 URLs per artwork on every render while
+  // remaining bounded for a session.
   const videoId = getSongVideoId(song);
   const rawThumbnail = (song?.thumbnail || "").trim();
-  const cacheKey = `${hero ? "h" : "n"}|${videoId}|${rawThumbnail}`;
+  const cacheKey = `${hero ? "h" : "n"}|${videoId}|${rawThumbnail}|${quality}`;
   const cached = artworkCandidatesCache.get(cacheKey);
   if (cached) return cached;
 
@@ -88,7 +106,7 @@ export function getArtworkCandidates(
   // /yt3.ggpht.com) is the uploader's profile picture, not the track's artwork —
   // skip it so the videoId-generated ytimg thumbnails lead.
   if (songThumbnail && !isChannelAvatarHost(songThumbnail)) {
-    const first = getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160);
+    const first = getOptimizedArtworkUrl(songThumbnail, hero ? 320 : 160, quality);
     candidates.push(first);
     // For non-YouTube hosts the proxy is the optimized form; for YouTube hosts
     // getOptimizedArtworkUrl already returns the raw URL, so don't duplicate.
@@ -130,6 +148,10 @@ export function getArtworkCandidates(
   return result;
 }
 
-export function getBestArtwork(song?: Pick<Song, "videoId" | "thumbnail"> | null, hero?: boolean) {
-  return getArtworkCandidates(song, hero)[0] || "";
+export function getBestArtwork(
+  song?: Pick<Song, "videoId" | "thumbnail"> | null,
+  hero?: boolean,
+  quality: number = ARTWORK_QUALITY_MEDIUM,
+) {
+  return getArtworkCandidates(song, hero, quality)[0] || "";
 }

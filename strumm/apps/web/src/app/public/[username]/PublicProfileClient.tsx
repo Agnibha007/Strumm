@@ -6,6 +6,7 @@ import { apiUrl } from "web/lib/api";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import SongArtwork from "web/components/SongArtwork";
+import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SoundDNAChart from "web/components/SoundDNAChart";
 import { Loader2, Music, Sparkles, ShieldAlert, Play, ArrowRight, Award } from "lucide-react";
 import Link from "next/link";
@@ -500,7 +501,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
             {data.memories.map((memory) => (
               <div key={memory.id} className="p-5 bg-surface/20 border border-border/50 rounded-2xl space-y-4">
                 <div className="flex items-start gap-4">
-                  <SongArtwork song={memory.song} className="w-12 h-12 rounded shadow flex-shrink-0" />
+                   <SongArtwork song={memory.song} className="w-12 h-12 rounded shadow flex-shrink-0" quality={ARTWORK_QUALITY_MEDIUM} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-bold text-text truncate">{memory.song.title}</h4>
