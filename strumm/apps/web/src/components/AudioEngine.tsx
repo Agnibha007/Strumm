@@ -1746,12 +1746,20 @@ try {
               stopProgressTimer();
             } else if (state === 0) {
               stopProgressTimer();
-              // Guard against double-advance: if the crossfade mechanism already
-              // called next() before this track naturally ended, skip
-              // handleTrackEnded. The ref is set right before next() is called
-              // in the crossfade callback.
+              // Ignore ENDED events fired while the player is swapping videos —
+              // loadVideoById triggers a transitional state=0 for the outgoing
+              // video before the incoming one starts. Without this guard the
+              // transitional ENDED double-fires handleTrackEnded(), causing a
+              // cascading skip that lands on the wrong song.
+              if (transitioningRef.current) return;
+              // Guard against double-advance: if any other mechanism (crossfade,
+              // background audio, watchdog) already advanced the queue, skip.
               if (crossfadeAdvancedRef.current) {
                 crossfadeAdvancedRef.current = false;
+                return;
+              }
+              if (handledTrackEndRef.current) {
+                handledTrackEndRef.current = false;
                 return;
               }
               usePlayerStore.getState().handleTrackEnded();
