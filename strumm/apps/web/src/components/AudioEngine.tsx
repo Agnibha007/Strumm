@@ -1066,6 +1066,31 @@ export default function AudioEngine() {
       if (!state.isPlaying || !song || song.metadata?.audioUrl) return;
       const videoId = song.videoId;
       if (!videoId) return;
+      // A crossfade fade-out cannot complete reliably in a hidden tab: timers
+      // are throttled, so the fade either takes 3x as long while the track
+      // keeps playing (long silence, then an abrupt next song) or never
+      // completes (next() never runs and the queue stalls). Cancel any
+      // in-flight fade, restore full volume, and let the background near-end
+      // advance take over. Resetting the crossfade flag also lets a return to
+      // the foreground re-enter the fade window cleanly if time remains.
+      if (fadeIntervalRef.current) {
+        clearInterval(fadeIntervalRef.current);
+        fadeIntervalRef.current = null;
+        isFadingRef.current = false;
+        hasTriggeredCrossfadeRef.current = false;
+        const vol = usePlayerStore.getState().volume;
+        if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+          htmlAudioRef.current.volume = vol;
+        }
+        if (
+          playerInstanceRef.current &&
+          typeof playerInstanceRef.current.setVolume === "function"
+        ) {
+          try {
+            playerInstanceRef.current.setVolume(Math.round(vol * 100));
+          } catch (e) {}
+        }
+      }
       // Already streaming this song on the host <audio> element (foreground
       // host-audio mode) — nothing to hand over; just mark the page backgrounded
       // so the heartbeat/watchdog keep the stream alive while hidden.
@@ -2028,23 +2053,48 @@ try {
           // "fade triggered" flag from the previous track can't cancel the
           // new track's fade-in.
           if (!transitioningRef.current) {
-            const crossfadeAction = evaluateCrossfadeTick(
-              curr,
-              dur,
-              hasTriggeredCrossfadeRef.current,
-              usePlayerStore.getState().repeatMode
-            );
-            if (crossfadeAction === "start-fade") {
-              hasTriggeredCrossfadeRef.current = true;
-              fadeVolume(1, 0, CROSSFADE_DURATION_MS, finalizeCrossfadeAdvance);
-            } else if (crossfadeAction === "cancel-fade") {
-              hasTriggeredCrossfadeRef.current = false;
-              if (fadeIntervalRef.current) {
-                clearInterval(fadeIntervalRef.current);
-                fadeIntervalRef.current = null;
+            if (backgroundModeRef.current) {
+              // Background + iframe surface: apply the SAME policy as the
+              // host-audio background branch. Hidden tabs throttle timers, so
+              // a crossfade here either never completes (next() never runs and
+              // the queue stalls) or produces a throttled fade-out that leaves
+              // seconds of silence before an abrupt full-volume next track.
+              // Advance straight off the near-end sample instead. Idempotent
+              // per track via handledTrackEndRef, and only trusted when this
+              // iframe actually holds the CURRENT song (currentVideoIdRef is
+              // the iframe owner; a stale iframe keeps polling after the queue
+              // moves on).
+              const state = usePlayerStore.getState();
+              const song = state.currentSong;
+              if (
+                dur > 1 &&
+                curr >= dur - 1 &&
+                !handledTrackEndRef.current &&
+                song &&
+                currentVideoIdRef.current === song.videoId
+              ) {
+                handledTrackEndRef.current = true;
+                state.handleTrackEnded();
               }
-              isFadingRef.current = false;
-              setPlayerVolume(1.0);
+            } else {
+              const crossfadeAction = evaluateCrossfadeTick(
+                curr,
+                dur,
+                hasTriggeredCrossfadeRef.current,
+                usePlayerStore.getState().repeatMode
+              );
+              if (crossfadeAction === "start-fade") {
+                hasTriggeredCrossfadeRef.current = true;
+                fadeVolume(1, 0, CROSSFADE_DURATION_MS, finalizeCrossfadeAdvance);
+              } else if (crossfadeAction === "cancel-fade") {
+                hasTriggeredCrossfadeRef.current = false;
+                if (fadeIntervalRef.current) {
+                  clearInterval(fadeIntervalRef.current);
+                  fadeIntervalRef.current = null;
+                }
+                isFadingRef.current = false;
+                setPlayerVolume(1.0);
+              }
             }
           }
           
