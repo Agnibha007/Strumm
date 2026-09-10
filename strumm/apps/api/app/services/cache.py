@@ -240,7 +240,12 @@ def cache_user(key: str, value: Any) -> None:
 
 
 def get_cached_user(key: str) -> Optional[Any]:
-    return _user_cache.get(key)
+    value = _user_cache.get(key)
+    if isinstance(value, dict):
+        # Shallow copy keeps per-request handler mutations off the shared cache
+        # entry (top-level key assignment leakage, e.g. current_user["soundDNA"]).
+        return value.copy()
+    return value
 
 
 def delete_cached_user(key: str) -> None:

@@ -1,13 +1,18 @@
-from fastapi import Depends, Header, HTTPException, status, Cookie, BackgroundTasks
-from typing import Optional
+import logging
 from datetime import datetime
+from typing import Optional
+
+from bson import ObjectId
+from fastapi import BackgroundTasks, Cookie, Depends, Header, HTTPException, status
+from pymongo.errors import PyMongoError
+
 from app.database import mongodb as db
+from app.services import cache_user, get_cached_user
 from app.services.auth_utils import decode_access_token
 from app.services.security import parse_object_id
-from app.services import get_cached_user, cache_user
 from app.services.user_serializer import NEVER_FIELDS
-from bson import ObjectId
-from pymongo.errors import PyMongoError
+
+logger = logging.getLogger("strumm-dependencies")
 
 
 def _strip_credentials(user: dict) -> dict:
@@ -23,8 +28,16 @@ async def update_last_active(user_id: str):
             {"_id": parse_object_id(user_id)},
             {"$set": {"lastActive": datetime.utcnow()}}
         )
-    except Exception:
-        pass
+    except Exception as e:
+        # Non-fatal: this background bookkeeping must never break the request.
+        # Log the failure so DB outages / schema issues are visible instead of
+        # silently swallowed.
+        logger.warning(
+            "Failed to update lastActive for user %s: %s: %s",
+            user_id,
+            type(e).__name__,
+            e,
+        )
 
 async def get_current_user(
     background_tasks: BackgroundTasks,
@@ -100,9 +113,11 @@ async def get_current_user(
         else:
             user["createdAt"] = str(user["createdAt"])
             
-    # Cache user doc
+    # Cache user doc. Return a copy so handlers mutating the dict they receive
+    # (e.g. /profile decorating current_user["soundDNA"]) cannot poison the
+    # cache entry for other requests within the TTL window.
     cache_user(cache_key, user)
-    return user
+    return user.copy()
 
 
 async def get_optional_user(
@@ -162,4 +177,4 @@ async def get_optional_user(
             
     # Cache user doc
     cache_user(cache_key, user)
-    return user
+    return user.copy()

@@ -4,6 +4,7 @@ import json
 import uuid
 import shutil
 import asyncio
+from contextvars import ContextVar
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 
@@ -51,15 +52,17 @@ sentry_sdk.init(
 )
 
 # Setup Logging
+# Per-request ID lives in a coroutine-local ContextVar (NOT threading.local):
+# async requests sharing one worker thread must not overwrite each other's
+# request_id when their coroutines interleave.
+request_id_ctx: ContextVar[str] = ContextVar("request_id", default="system")
+
 class RequestIDFilter(logging.Filter):
     """Log filter that adds request_id from the current request context."""
     def filter(self, record):
         if not hasattr(record, 'request_id'):
-            record.request_id = getattr(thread_local, 'request_id', 'system')
+            record.request_id = request_id_ctx.get()
         return True
-
-import threading
-thread_local = threading.local()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -123,7 +126,6 @@ async def lifespan(app: FastAPI):
         await media_cleanup_task
     except asyncio.CancelledError:
         pass
-    await close_http_client()
     await close_http_client()
     db.close_db()
     logger.info("Application shutdown complete.")
@@ -340,7 +342,7 @@ class UnifiedBackendMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 1. Request ID Initialization
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-        thread_local.request_id = request_id
+        token = request_id_ctx.set(request_id)
 
         # 2. Rate Limiting Check
         client_ip = request.client.host if request.client else "127.0.0.1"
@@ -351,7 +353,7 @@ class UnifiedBackendMiddleware(BaseHTTPMiddleware):
             logger.warning(
                 f"Rate limit exceeded for {client_ip} on {path} ({current}/{max_req} in {window}s) [req_id={request_id}]"
             )
-            thread_local.request_id = ""
+            request_id_ctx.reset(token)
             return JSONResponse(
                 status_code=429,
                 content={"success": False, "error": "Rate limit exceeded. Please slow down."},
@@ -388,7 +390,7 @@ class UnifiedBackendMiddleware(BaseHTTPMiddleware):
 
             return response
         finally:
-            thread_local.request_id = ""
+            request_id_ctx.reset(token)
 
 app.add_middleware(UnifiedBackendMiddleware)
 
