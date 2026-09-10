@@ -273,6 +273,13 @@ export default function AudioEngine() {
       audio.preload = "auto";
       // Read volume fresh from the store so the callback stays stable.
       audio.volume = usePlayerStore.getState().volume;
+      // The host <audio> element normally runs the silent loop track to keep
+      // media keys alive. Before handing it the real direct stream, make sure
+      // loop is OFF — otherwise the track wraps to 0 at its end (instead of
+      // firing `ended`, which auto-advance and the watchdog rely on). In a
+      // hidden tab only ~1s buffers before stalling, so a leaked loop flag
+      // makes the opening second replay endlessly.
+      audio.loop = false;
       audio.src = url;
       currentBackgroundUrlRef.current = url;
     } catch (e) {
@@ -284,9 +291,15 @@ export default function AudioEngine() {
     let appliedSeek = false;
     const applySeek = () => {
       if (appliedSeek) return;
+      // Do NOT mark the seek as applied while the media has no metadata —
+      // currentTime can't be honored yet, so a premature "applied" would drop
+      // the resume position and restart the song from 0. Only commit once the
+      // stream is ready (HAVE_METADATA), where the assignment actually sticks.
       try {
-        audio.currentTime = seekTo;
-        appliedSeek = true;
+        if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          audio.currentTime = seekTo;
+          appliedSeek = true;
+        }
       } catch (e) {}
     };
 
@@ -294,10 +307,9 @@ export default function AudioEngine() {
     // rejected on Android (media not loaded yet), and a pause leaves the tab
     // inaudible — which makes Chrome pause its background timers, so the
     // heartbeat below never runs. Re-assert play() once the stream is ready.
-    let started = false;
+    // play() on an already-playing element is a no-op, so re-asserting on
+    // loadedmetadata/canplay is harmless.
     const startPlayback = () => {
-      if (started) return;
-      started = true;
       try {
         audio.play().catch(() => {});
       } catch (e) {}
@@ -1384,6 +1396,7 @@ try {
 
       const isSrcChanged = htmlAudioRef.current.src !== audioUrl;
       htmlAudioRef.current.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
+      htmlAudioRef.current.loop = false;
       if (isSrcChanged) {
         try {
           htmlAudioRef.current.src = audioUrl;
