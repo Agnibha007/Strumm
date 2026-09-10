@@ -121,6 +121,12 @@ export default function AudioEngine() {
   // mode). Lets the background heartbeat re-hand the current track to <audio>
   // if it ever falls behind after an auto-advance while the page is hidden.
   const currentBackgroundUrlRef = useRef<string | null>(null);
+  // Which videoId's stream currently owns the host <audio> element (background
+  // mode). During a handoff the element can still be holding the PREVIOUS
+  // track's finished stream while the next one's direct URL is being resolved;
+  // auto-advance logic must not sample that stale stream as if it were the
+  // current track (it would look "ended" instantly and skip the fresh song).
+  const currentBackgroundVideoIdRef = useRef<string | null>(null);
   // Wall-clock auto-advance watchdog for hidden/locked tabs. Background timers
   // are throttled so a near-end crossfade or YouTube ended event can be
   // suspended entirely; this samples media progress on a (throttle-tolerant)
@@ -282,6 +288,7 @@ export default function AudioEngine() {
       audio.loop = false;
       audio.src = url;
       currentBackgroundUrlRef.current = url;
+      currentBackgroundVideoIdRef.current = videoId;
     } catch (e) {
       transitioningRef.current = false;
       return false;
@@ -481,8 +488,19 @@ export default function AudioEngine() {
           // the queue stuck on a finished track (playbar at full, no sound, and
           // the next song never starts). Advance straight off the near-end
           // timeupdate, which fires for a playing element regardless of timer
-          // throttling. Idempotent per track via handledTrackEndRef.
-          if (dur > 1 && curr >= dur - 1 && !handledTrackEndRef.current) {
+          // throttling. Idempotent per track via handledTrackEndRef. Only trust
+          // the sample when this element is actually serving the CURRENT song —
+          // after an advance its stream can still be firing timeupdate for the
+          // previous (ended) track while the next URL resolves. A null owner
+          // means podcasts/host audio, which is always "current".
+          if (
+            dur > 1 &&
+            curr >= dur - 1 &&
+            !handledTrackEndRef.current &&
+            (!currentBackgroundVideoIdRef.current ||
+              currentBackgroundVideoIdRef.current ===
+                usePlayerStore.getState().currentSong?.videoId)
+          ) {
             handledTrackEndRef.current = true;
             handlePodcastEnded();
           }
@@ -526,6 +544,17 @@ export default function AudioEngine() {
       // next() before this track naturally ended, skip handleTrackEnded.
       if (crossfadeAdvancedRef.current) {
         crossfadeAdvancedRef.current = false;
+        return;
+      }
+      // A late `ended` from the PREVIOUS track's stream (after an auto-advance
+      // already moved the queue on but before this element was handed the new
+      // track's URL) must not advance a second time — that would skip the
+      // freshly started song. Null owner = podcasts/host audio, always current.
+      if (
+        currentBackgroundVideoIdRef.current &&
+        currentBackgroundVideoIdRef.current !==
+          usePlayerStore.getState().currentSong?.videoId
+      ) {
         return;
       }
       if (backgroundModeRef.current) {
@@ -933,6 +962,7 @@ export default function AudioEngine() {
                 try { audio.pause(); } catch (e) {}
                 try { audio.removeAttribute("src"); audio.load(); } catch (e) {}
                 currentBackgroundUrlRef.current = null;
+                currentBackgroundVideoIdRef.current = null;
                 try {
                   audio.src = SILENT_AUDIO_SRC;
                   audio.loop = true;
@@ -996,6 +1026,7 @@ try {
         audio.load();
       } catch (e) {}
       currentBackgroundUrlRef.current = null;
+      currentBackgroundVideoIdRef.current = null;
           // Restore the silent loop track so the host page stays the OS media
           // session owner now that the audible source is the YouTube iframe.
           try {
@@ -1168,14 +1199,24 @@ try {
       const dur = state.duration || song.duration || 0;
       if (!(dur > 1)) return;
 
-      // Prefer a live engine sample (host <audio> or iframe).
+      // Prefer a live engine sample (host <audio> or iframe) — but ONLY from
+      // the engine that is actually serving the CURRENT track. While the next
+      // song's direct URL is still being resolved, the <audio> element can be
+      // holding the previous (finished) stream; sampling its near-end position
+      // would make the fresh track look instantly-over and skip it.
       let curr = state.currentTime;
       const audio = htmlAudioRef.current;
-      if (audio && !isSilentAudio(audio) && audio.src) {
+      const audioIsOnCurrentTrack =
+        audio &&
+        !isSilentAudio(audio) &&
+        audio.src &&
+        currentBackgroundVideoIdRef.current === videoId;
+      if (audioIsOnCurrentTrack) {
         curr = audio.currentTime || curr;
       } else if (
         playerInstanceRef.current &&
-        typeof playerInstanceRef.current.getCurrentTime === "function"
+        typeof playerInstanceRef.current.getCurrentTime === "function" &&
+        currentVideoIdRef.current === videoId
       ) {
         try {
           const ytCurr = playerInstanceRef.current.getCurrentTime();

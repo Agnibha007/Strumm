@@ -34,6 +34,7 @@ function playTrackAtIndex(
     currentIndex: index,
     isPlaying: true,
     currentTime: 0,
+    duration: 0,
   });
   get().updateMediaSession(song);
 }
