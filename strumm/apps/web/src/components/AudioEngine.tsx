@@ -409,6 +409,93 @@ export default function AudioEngine() {
     return true;
   }, [setPlayerRef]);
 
+  // Serve a YouTube song from the YouTube iframe (the fallback surface). Used
+  // by the foreground handoff AND as the failure fallback for background /
+  // host-audio: when no direct stream can be resolved, handing the song to the
+  // iframe is strictly better than leaving the previous song airborne on the
+  // stale surface while the playbar shows the new one.
+  const switchToIframeSurface = useCallback((videoId: string) => {
+    const state = usePlayerStore.getState();
+    const shouldPlay = state.isPlaying;
+    engineLog("song", videoId, "surface=iframe (switchToIframeSurface)");
+
+    // Serving this song from the iframe means the host <audio> element must not
+    // be treated as holding a live direct stream anymore — clear any stale refs
+    // left by a previous host-audio song, or the near-end/ended gates would
+    // swallow this track's natural end.
+    currentBackgroundUrlRef.current = null;
+    currentBackgroundVideoIdRef.current = null;
+
+    // Play a silent audio track so the host page retains the OS MediaSession
+    // keys (prevents the YouTube iframe from hijacking media hardware buttons).
+    const audio = htmlAudioRef.current;
+    if (audio) {
+      if (!isSilentAudio(audio)) {
+        audio.src = SILENT_AUDIO_SRC;
+        audio.loop = true;
+        // Normal volume (the file is digitally silent) so the element counts
+        // as an active Media Session for hardware key routing.
+        audio.volume = 1.0;
+      }
+      if (shouldPlay) {
+        audio.play().catch(() => {});
+      } else {
+        audio.pause();
+      }
+    }
+
+    const yt = playerInstanceRef.current;
+    if (!yt || !videoId) return;
+    const startSeconds = state.currentTime || 0;
+    // Only treat the iframe as holding this song once loadVideoById actually ran
+    // without throwing (see the stale-ref "prev song plays again" fix).
+    if (currentVideoIdRef.current !== videoId) {
+      if (typeof yt.loadVideoById === "function") {
+        try {
+          yt.loadVideoById({ videoId, startSeconds });
+          currentVideoIdRef.current = videoId;
+        } catch (e) {
+          // Leave the ref stale so the next sync retries the load instead of
+          // trusting the iframe to be on the right video.
+        }
+      }
+    } else if (shouldPlay) {
+      if (typeof yt.playVideo === "function") {
+        try {
+          yt.playVideo();
+        } catch (e) {}
+      }
+    } else if (typeof yt.pauseVideo === "function") {
+      try {
+        yt.pauseVideo();
+      } catch (e) {}
+    }
+
+    // Re-register the YouTube controller.
+    if (typeof yt.playVideo === "function") {
+      setPlayerRef({
+        playVideo: () => {
+          if (typeof yt.playVideo === "function") yt.playVideo();
+        },
+        pauseVideo: () => {
+          if (typeof yt.pauseVideo === "function") yt.pauseVideo();
+        },
+        seekTo: (sec: number) => {
+          if (typeof yt.seekTo === "function") yt.seekTo(sec, true);
+        },
+        setVolume: (vol: number) => {
+          if (typeof yt.setVolume === "function") yt.setVolume(vol);
+        },
+        setPlaybackRate: (rate: number) => {
+          if (typeof yt.setPlaybackRate === "function") yt.setPlaybackRate(rate);
+        },
+        setPlaybackQuality: (quality: string) => {
+          if (typeof yt.setPlaybackQuality === "function") yt.setPlaybackQuality(quality);
+        },
+      });
+    }
+  }, [setPlayerRef]);
+
   // Enter background mode for the given video and make sure the host <audio>
   // element takes over the direct stream. Commits the background flag UP-FRONT,
   // before any URL is resolved, so a URL that completes while the page is
@@ -424,14 +511,28 @@ export default function AudioEngine() {
     }
 
     resolveDirectAudioUrl(videoId).then((url) => {
-      if (!url || !backgroundModeRef.current) return;
-      directAudioUrlsRef.current[videoId] = url;
+      if (!backgroundModeRef.current) return;
       const state = usePlayerStore.getState();
+      if (state.currentSong?.videoId !== videoId) return; // queue moved on
+      if (!url) {
+        // Direct audio can't be resolved on ANY source (e.g. Piped blocked and
+        // the server /play route down). Do NOT strand the queue on an empty
+        // surface while the stale iframe keeps the previous song airborne —
+        // hand the song to the YouTube iframe instead. yt-dlp via the server
+        // may come back later (auth fixed, instance up); the negative cache
+        // expires in 5 minutes so a later track re-probes.
+        engineLog("host-audio", videoId, "no direct URL — falling back to iframe");
+        if (state.isPlaying) {
+          switchToIframeSurface(videoId);
+        }
+        return;
+      }
+      directAudioUrlsRef.current[videoId] = url;
       if (state.isPlaying && state.currentSong?.videoId === videoId) {
         activateHostAudio(videoId);
       }
     });
-  }, [activateHostAudio]);
+  }, [activateHostAudio, switchToIframeSurface]);
 
   useEffect(() => {
     return () => {
@@ -1606,93 +1707,14 @@ try {
         activateHostAudio(currentSong.videoId);
         return;
       }
-      // Serving this song from the iframe means the host <audio> element must
-      // not be treated as holding a live direct stream anymore — clear any
-      // stale refs left by a previous host-audio song, or the near-end/ended
-      // gates would swallow this track's natural end.
-      currentBackgroundUrlRef.current = null;
-      currentBackgroundVideoIdRef.current = null;
-      // Play a silent audio track so the host page retains the OS MediaSession keys.
-      // This prevents the YouTube iframe from hijacking media hardware buttons.
-      const silentAudioSrc = SILENT_AUDIO_SRC;
-      if (!isSilentAudio(htmlAudioRef.current)) {
-        htmlAudioRef.current.src = silentAudioSrc;
-        htmlAudioRef.current.loop = true;
-        // Normal volume (the file is digitally silent) so the element counts
-        // as an active Media Session for hardware key routing.
-        htmlAudioRef.current.volume = 1.0;
-      }
-      if (isPlaying) {
-        htmlAudioRef.current.play().catch(() => {});
-      } else {
-        htmlAudioRef.current.pause();
-      }
-
-      if (playerInstanceRef.current && currentSong?.videoId) {
-        const activeVideoId = currentSong.videoId;
-        // Only treat the iframe as holding this song once loadVideoById actually
-        // ran without throwing. Setting the ref first poisoned the "already
-        // loaded → just playVideo()" branch below: after a host-audio song (or a
-        // failed/silent load) the ref claimed a song the iframe wasn't playing,
-        // so the OLD video resumed while the playbar showed the new one.
-        if (currentVideoIdRef.current !== activeVideoId) {
-          if (typeof playerInstanceRef.current.loadVideoById === "function") {
-            try {
-              engineLog("song", activeVideoId, "surface=iframe (loadVideoById)");
-              playerInstanceRef.current.loadVideoById({
-                videoId: activeVideoId,
-                startSeconds: usePlayerStore.getState().currentTime || 0,
-              });
-              currentVideoIdRef.current = activeVideoId;
-              // Respect the store's play state instead of force-playing: a
-              // song pushed in by cross-device sync may arrive paused.
-              setPlaying(isPlaying);
-            } catch (e) {
-              // Leave the ref stale so the next sync retries the load instead
-              // of trusting the iframe to be on the right video.
-            }
-          } else {
-            // loadVideoById not available yet, will retry on next sync
-          }
-        } else {
-          if (isPlaying) {
-            if (typeof playerInstanceRef.current.playVideo === "function") {
-              playerInstanceRef.current.playVideo();
-            }
-          } else {
-            if (typeof playerInstanceRef.current.pauseVideo === "function") {
-              playerInstanceRef.current.pauseVideo();
-            }
-          }
-        }
-      }
-
-      // Re-register YouTube controller
-      if (playerInstanceRef.current && typeof playerInstanceRef.current.playVideo === "function") {
-        const yt = playerInstanceRef.current;
-        setPlayerRef({
-          playVideo: () => {
-            if (typeof yt.playVideo === "function") yt.playVideo();
-          },
-          pauseVideo: () => {
-            if (typeof yt.pauseVideo === "function") yt.pauseVideo();
-          },
-          seekTo: (sec: number) => {
-            if (typeof yt.seekTo === "function") yt.seekTo(sec, true);
-          },
-          setVolume: (vol: number) => {
-            if (typeof yt.setVolume === "function") yt.setVolume(vol);
-          },
-          setPlaybackRate: (rate: number) => {
-            if (typeof yt.setPlaybackRate === "function") yt.setPlaybackRate(rate);
-          },
-          setPlaybackQuality: (quality: string) => {
-            if (typeof yt.setPlaybackQuality === "function") yt.setPlaybackQuality(quality);
-          },
-        });
+      // No resolved direct stream — serve this song from the YouTube iframe
+      // (and make sure the host <audio> element stops pretending it holds a
+      // live stream, so near-end/ended gates don't swallow this track's end).
+      if (currentSong?.videoId) {
+        switchToIframeSurface(currentSong.videoId);
       }
     }
-  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality]);
+  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality, switchToIframeSurface]);
 
   // Podcast resume: auto-seek to the saved position and persist progress
   // periodically (and when leaving the episode). Only meaningful for HTML
