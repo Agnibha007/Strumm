@@ -164,6 +164,8 @@ export default function EditorialPlayer() {
         if (response.status === 422 || response.status === 400) {
           // Permanent validation rejection: acknowledge so the unprocessable event
           // leaves the queue instead of wedging future valid events in an infinite loop.
+          const detail = await response.json().catch(() => null);
+          console.warn("[play-event] rejected by server:", detail?.detail ?? detail ?? response.status);
           return true;
         }
         const json = await response.json().catch(() => null);

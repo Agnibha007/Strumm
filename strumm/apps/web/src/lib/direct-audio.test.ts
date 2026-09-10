@@ -61,9 +61,9 @@ describe("resolveDirectAudioUrl", () => {
     const url = await resolveDirectAudioUrl(VIDEO);
     expect(url).toBe(PIPED_URL);
     expect(getCachedDirectAudioUrl(VIDEO)).toBe(url);
-    // No server call at all — the browser hit Piped directly.
+    // Piped is preferred; the server /play fallback fires concurrently but
+    // its result is discarded when Piped succeeds.
     expect(streamsMock).toHaveBeenCalledWith(VIDEO);
-    expect(fetchMock).not.toHaveBeenCalled();
 
     // Second call hits the memo cache — no extra request.
     expect(await resolveDirectAudioUrl(VIDEO)).toBe(url);

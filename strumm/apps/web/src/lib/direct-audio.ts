@@ -95,16 +95,21 @@ export async function resolveDirectAudioUrl(videoId: string): Promise<string | n
 }
 
 async function resolveAudio(videoId: string): Promise<string | null> {
-  // 1. Browser-side: Piped /streams (no server egress to YouTube).
-  const piped = await fetchPipedAudio(videoId);
-  if (piped) {
-    cacheDirectAudioUrl(videoId, piped);
-    return piped;
+  // Fire BOTH resolvers concurrently: Piped (browser-side, 12s timeout) and
+  // the server /play endpoint (15s timeout). Running them in parallel caps the
+  // worst-case at ~15s instead of ~27s (sequential), which matters because the
+  // crossfade often advances a song before the sequential chain can return.
+  const [pipedResult, directResult] = await Promise.allSettled([
+    fetchPipedAudio(videoId),
+    fetchDirectAudio(videoId),
+  ]);
+  const piped = pipedResult.status === "fulfilled" ? pipedResult.value : null;
+  const direct = directResult.status === "fulfilled" ? directResult.value : null;
+  const url = piped ?? direct;
+  if (url) {
+    cacheDirectAudioUrl(videoId, url);
+    return url;
   }
-
-  // 2. Fall back to the server /play endpoint.
-  const direct = await fetchDirectAudio(videoId);
-  if (direct) return direct;
 
   // No source could serve this track (e.g. YouTube bot-blocking every egress).
   // Remember it briefly so repeated pre-resolves don't hammer the sources.
