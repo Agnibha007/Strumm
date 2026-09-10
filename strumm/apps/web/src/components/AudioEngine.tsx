@@ -33,6 +33,12 @@ const BACKGROUND_RESUME_TIMEOUT_MS = 5000;
 // silent skip cycle through a blocked queue.
 const MAX_CONSECUTIVE_ERRORS = 3;
 
+// Temporary diagnostics for the "advances forward but you still hear the
+// previous song" bug report. Every handoff/advance logs to the console with
+// the [engine] prefix so a single reproduction run shows which surface each
+// new song was handed to and whether it reported playing.
+const engineLog = (...args: unknown[]) => console.info("[engine]", ...args);
+
 function isSilentAudio(audio: HTMLAudioElement | null | undefined): boolean {
   if (!audio) return false;
   const src = audio.src || "";
@@ -227,6 +233,7 @@ export default function AudioEngine() {
     usePlayerStore.getState().next();
     const after = usePlayerStore.getState().currentSong?.videoId ?? null;
     if (!before || after === before) {
+      engineLog("crossfade advance:", before, "->", after, "(NO-NEXT: did not switch surface)");
       const targetVal = usePlayerStore.getState().volume;
       if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.volume = targetVal;
@@ -246,6 +253,7 @@ export default function AudioEngine() {
     }
     crossfadeAdvancedRef.current = true;
     crossfadePendingFadeInRef.current = true;
+    engineLog("crossfade advance:", before, "->", after, "(switching surface)");
   };
 
   const triggerPlay = () => {
@@ -303,7 +311,11 @@ export default function AudioEngine() {
     if (!song || song.metadata?.audioUrl) return false; // podcasts already host audio
 
     const url = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
-    if (!url) return false;
+    if (!url) {
+      engineLog("host-audio", videoId, "ABORT: no resolved URL");
+      return false;
+    }
+    engineLog("host-audio", videoId, "src set, pausing iframe");
 
     if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
       try {
@@ -330,6 +342,11 @@ export default function AudioEngine() {
       audio.src = url;
       currentBackgroundUrlRef.current = url;
       currentBackgroundVideoIdRef.current = videoId;
+      // The iframe is now idle while this song streams on the host <audio>
+      // element. Forget its last video: a later iframe handoff must ALWAYS
+      // force-load instead of trusting `currentVideoIdRef` (which would resume
+      // this stale video over the new song).
+      currentVideoIdRef.current = null;
     } catch (e) {
       transitioningRef.current = false;
       return false;
@@ -484,6 +501,12 @@ export default function AudioEngine() {
 
     const onPlay = () => {
       if (audio.src && isSilentAudio(audio)) return;
+      engineLog(
+        "audio onPlay owner=",
+        currentBackgroundVideoIdRef.current,
+        "want=",
+        usePlayerStore.getState().currentSong?.videoId,
+      );
       // A crossfade advanced the queue while the outgoing song was muted — fade
       // the newly started track in now that this element is the audible stream.
       if (crossfadePendingFadeInRef.current) {
@@ -582,6 +605,16 @@ export default function AudioEngine() {
     };
     const onEnded = () => {
       if (audio.src && isSilentAudio(audio)) return;
+      engineLog(
+        "audio ended owner=",
+        currentBackgroundVideoIdRef.current,
+        "want=",
+        usePlayerStore.getState().currentSong?.videoId,
+        "handledEnd=",
+        handledTrackEndRef.current,
+        "xfadeAdv=",
+        crossfadeAdvancedRef.current,
+      );
       // The near-end advance already ran (and the queue moved on) — the natural
       // `ended` that follows is just the tail of the old stream. Don't advance
       // a second time (that would skip the freshly started song).
@@ -1140,11 +1173,11 @@ try {
         const yt = playerInstanceRef.current;
         if (yt && typeof yt.loadVideoById === "function") {
           try {
-            currentVideoIdRef.current = song.videoId;
             yt.loadVideoById({
               videoId: song.videoId,
               startSeconds: usePlayerStore.getState().currentTime || 0,
             });
+            currentVideoIdRef.current = song.videoId;
           } catch (e) {}
         }
       }
@@ -1555,6 +1588,7 @@ try {
       // URL isn't ready yet (fresh extraction) ensureBackgroundAudio commits
       // the takeover request and fires the moment the URL lands.
       if (backgroundModeRef.current && currentSong?.videoId) {
+        engineLog("song", currentSong.videoId, "surface=background (ensureBackgroundAudio)");
         ensureBackgroundAudio(currentSong.videoId);
         return;
       }
@@ -1568,6 +1602,7 @@ try {
         (getCachedDirectAudioUrl(currentSong.videoId) || directAudioUrlsRef.current[currentSong.videoId])
       ) {
         stopProgressTimer();
+        engineLog("song", currentSong.videoId, "surface=host-audio (foreground, URL ready)");
         activateHostAudio(currentSong.videoId);
         return;
       }
@@ -1595,19 +1630,26 @@ try {
 
       if (playerInstanceRef.current && currentSong?.videoId) {
         const activeVideoId = currentSong.videoId;
+        // Only treat the iframe as holding this song once loadVideoById actually
+        // ran without throwing. Setting the ref first poisoned the "already
+        // loaded → just playVideo()" branch below: after a host-audio song (or a
+        // failed/silent load) the ref claimed a song the iframe wasn't playing,
+        // so the OLD video resumed while the playbar showed the new one.
         if (currentVideoIdRef.current !== activeVideoId) {
-          currentVideoIdRef.current = activeVideoId;
           if (typeof playerInstanceRef.current.loadVideoById === "function") {
             try {
+              engineLog("song", activeVideoId, "surface=iframe (loadVideoById)");
               playerInstanceRef.current.loadVideoById({
                 videoId: activeVideoId,
                 startSeconds: usePlayerStore.getState().currentTime || 0,
               });
+              currentVideoIdRef.current = activeVideoId;
               // Respect the store's play state instead of force-playing: a
               // song pushed in by cross-device sync may arrive paused.
               setPlaying(isPlaying);
             } catch (e) {
-              // Silently ignore video loading errors
+              // Leave the ref stale so the next sync retries the load instead
+              // of trusting the iframe to be on the right video.
             }
           } else {
             // loadVideoById not available yet, will retry on next sync
@@ -1849,14 +1891,27 @@ try {
               }
               ytPlayer.setVolume(Math.round(usePlayerStore.getState().volume * 100));
               if (currentSong?.videoId) {
-                currentVideoIdRef.current = currentSong.videoId;
                 const targetStart = usePlayerStore.getState().currentTime || 0;
+                // The player that just became ready may not hold this song (a
+                // remount, or a song swap while the player (re)built). Never
+                // trust it blindly — play the already-loaded video only when
+                // the ref proves it, otherwise load the current song.
                 if (isPlaying) {
-                  ytPlayer.playVideo();
-                  if (targetStart > 0) {
-                    ytPlayer.seekTo(targetStart, true);
+                  if (currentVideoIdRef.current === currentSong.videoId) {
+                    currentVideoIdRef.current = currentSong.videoId;
+                    ytPlayer.playVideo();
+                    if (targetStart > 0) {
+                      ytPlayer.seekTo(targetStart, true);
+                    }
+                  } else {
+                    currentVideoIdRef.current = currentSong.videoId;
+                    ytPlayer.loadVideoById({
+                      videoId: currentSong.videoId,
+                      startSeconds: targetStart,
+                    });
                   }
                 } else {
+                  currentVideoIdRef.current = currentSong.videoId;
                   ytPlayer.cueVideoById({
                     videoId: currentSong.videoId,
                     startSeconds: targetStart,
@@ -1870,6 +1925,14 @@ try {
 
             const state = event.data;
             if (state === 1) {
+              engineLog(
+                "yt-state=1 want=",
+                usePlayerStore.getState().currentSong?.videoId,
+                "loaded=",
+                currentVideoIdRef.current,
+                "audio=",
+                isSilentAudio(htmlAudioRef.current) ? "silent" : "stream",
+              );
               // The current song is served by the host <audio> element (host-audio
               // mode) — a PLAYING event from the idle iframe is stale; don't
               // resurrect the progress timer or touch track flags for it.
@@ -1921,6 +1984,16 @@ try {
               setPlaying(false);
               stopProgressTimer();
             } else if (state === 0) {
+              engineLog(
+                "yt-state=0 loaded=",
+                currentVideoIdRef.current,
+                "want=",
+                usePlayerStore.getState().currentSong?.videoId,
+                "transitioning=",
+                transitioningRef.current,
+                "xfadeAdv= ",
+                crossfadeAdvancedRef.current,
+              );
               stopProgressTimer();
               // Ignore ENDED events fired while the player is swapping videos —
               // loadVideoById triggers a transitional state=0 for the outgoing
