@@ -33,12 +33,6 @@ const BACKGROUND_RESUME_TIMEOUT_MS = 5000;
 // silent skip cycle through a blocked queue.
 const MAX_CONSECUTIVE_ERRORS = 3;
 
-// Temporary diagnostics for the "advances forward but you still hear the
-// previous song" bug report. Every handoff/advance logs to the console with
-// the [engine] prefix so a single reproduction run shows which surface each
-// new song was handed to and whether it reported playing.
-const engineLog = (...args: unknown[]) => console.info("[engine]", ...args);
-
 function isSilentAudio(audio: HTMLAudioElement | null | undefined): boolean {
   if (!audio) return false;
   const src = audio.src || "";
@@ -233,7 +227,6 @@ export default function AudioEngine() {
     usePlayerStore.getState().next();
     const after = usePlayerStore.getState().currentSong?.videoId ?? null;
     if (!before || after === before) {
-      engineLog("crossfade advance:", before, "->", after, "(NO-NEXT: did not switch surface)");
       const targetVal = usePlayerStore.getState().volume;
       if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.volume = targetVal;
@@ -253,7 +246,6 @@ export default function AudioEngine() {
     }
     crossfadeAdvancedRef.current = true;
     crossfadePendingFadeInRef.current = true;
-    engineLog("crossfade advance:", before, "->", after, "(switching surface)");
   };
 
   const triggerPlay = () => {
@@ -311,12 +303,7 @@ export default function AudioEngine() {
     if (!song || song.metadata?.audioUrl) return false; // podcasts already host audio
 
     const url = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
-    if (!url) {
-      engineLog("host-audio", videoId, "ABORT: no resolved URL");
-      return false;
-    }
-    engineLog("host-audio", videoId, "src set, pausing iframe");
-
+    if (!url) return false;
     if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
       try {
         playerInstanceRef.current.pauseVideo();
@@ -417,8 +404,6 @@ export default function AudioEngine() {
   const switchToIframeSurface = useCallback((videoId: string) => {
     const state = usePlayerStore.getState();
     const shouldPlay = state.isPlaying;
-    engineLog("song", videoId, "surface=iframe (switchToIframeSurface)");
-
     // Serving this song from the iframe means the host <audio> element must not
     // be treated as holding a live direct stream anymore — clear any stale refs
     // left by a previous host-audio song, or the near-end/ended gates would
@@ -521,7 +506,6 @@ export default function AudioEngine() {
         // hand the song to the YouTube iframe instead. yt-dlp via the server
         // may come back later (auth fixed, instance up); the negative cache
         // expires in 5 minutes so a later track re-probes.
-        engineLog("host-audio", videoId, "no direct URL — falling back to iframe");
         if (state.isPlaying) {
           switchToIframeSurface(videoId);
         }
@@ -602,12 +586,6 @@ export default function AudioEngine() {
 
     const onPlay = () => {
       if (audio.src && isSilentAudio(audio)) return;
-      engineLog(
-        "audio onPlay owner=",
-        currentBackgroundVideoIdRef.current,
-        "want=",
-        usePlayerStore.getState().currentSong?.videoId,
-      );
       // A crossfade advanced the queue while the outgoing song was muted — fade
       // the newly started track in now that this element is the audible stream.
       if (crossfadePendingFadeInRef.current) {
@@ -706,16 +684,6 @@ export default function AudioEngine() {
     };
     const onEnded = () => {
       if (audio.src && isSilentAudio(audio)) return;
-      engineLog(
-        "audio ended owner=",
-        currentBackgroundVideoIdRef.current,
-        "want=",
-        usePlayerStore.getState().currentSong?.videoId,
-        "handledEnd=",
-        handledTrackEndRef.current,
-        "xfadeAdv=",
-        crossfadeAdvancedRef.current,
-      );
       // The near-end advance already ran (and the queue moved on) — the natural
       // `ended` that follows is just the tail of the old stream. Don't advance
       // a second time (that would skip the freshly started song).
@@ -1689,7 +1657,6 @@ try {
       // URL isn't ready yet (fresh extraction) ensureBackgroundAudio commits
       // the takeover request and fires the moment the URL lands.
       if (backgroundModeRef.current && currentSong?.videoId) {
-        engineLog("song", currentSong.videoId, "surface=background (ensureBackgroundAudio)");
         ensureBackgroundAudio(currentSong.videoId);
         return;
       }
@@ -1703,7 +1670,6 @@ try {
         (getCachedDirectAudioUrl(currentSong.videoId) || directAudioUrlsRef.current[currentSong.videoId])
       ) {
         stopProgressTimer();
-        engineLog("song", currentSong.videoId, "surface=host-audio (foreground, URL ready)");
         activateHostAudio(currentSong.videoId);
         return;
       }
@@ -1947,14 +1913,6 @@ try {
 
             const state = event.data;
             if (state === 1) {
-              engineLog(
-                "yt-state=1 want=",
-                usePlayerStore.getState().currentSong?.videoId,
-                "loaded=",
-                currentVideoIdRef.current,
-                "audio=",
-                isSilentAudio(htmlAudioRef.current) ? "silent" : "stream",
-              );
               // The current song is served by the host <audio> element (host-audio
               // mode) — a PLAYING event from the idle iframe is stale; don't
               // resurrect the progress timer or touch track flags for it.
@@ -2006,16 +1964,6 @@ try {
               setPlaying(false);
               stopProgressTimer();
             } else if (state === 0) {
-              engineLog(
-                "yt-state=0 loaded=",
-                currentVideoIdRef.current,
-                "want=",
-                usePlayerStore.getState().currentSong?.videoId,
-                "transitioning=",
-                transitioningRef.current,
-                "xfadeAdv= ",
-                crossfadeAdvancedRef.current,
-              );
               stopProgressTimer();
               // Ignore ENDED events fired while the player is swapping videos —
               // loadVideoById triggers a transitional state=0 for the outgoing
@@ -2036,7 +1984,7 @@ try {
               usePlayerStore.getState().handleTrackEnded();
             }
           },
-          onError: (err: any) => {
+          onError: () => {
             if (currentSong?.metadata?.audioUrl) return;
             crossfadePendingFadeInRef.current = false;
             usePlayerStore.getState().setPlayerLoading(false);
