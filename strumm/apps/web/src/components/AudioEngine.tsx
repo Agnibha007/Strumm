@@ -93,9 +93,10 @@ export default function AudioEngine() {
   const containerRef = useRef<HTMLDivElement>(null);
   // Direct audio URLs resolved for background (lock-screen) playback.
   const directAudioUrlsRef = useRef<Record<string, string>>({});
-  // True when a YouTube song has been handed to the host <audio> element
-  // because the page is backgrounded (screen locked). Foreground playback
-  // stays on the iframe.
+  // True when the page is backgrounded (screen locked). The host <audio> element
+  // may serve a YouTube song's direct stream in BOTH background and foreground
+  // host-audio mode, so this flag only tracks page visibility, not which surface
+  // is producing sound.
   const backgroundModeRef = useRef<boolean>(false);
 
   const fadeIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -104,6 +105,7 @@ export default function AudioEngine() {
   const prevIsPlayingRef = useRef<boolean>(false);
   const hasTriggeredCrossfadeRef = useRef<boolean>(false);
   const crossfadeAdvancedRef = useRef<boolean>(false);
+  const crossfadePendingFadeInRef = useRef<boolean>(false);
   // True between the moment a new track is selected and the moment it actually
   // starts playing. The YouTube player can emit transient PAUSED/ENDED events
   // while swapping videos, which would otherwise stick playback in a paused
@@ -212,13 +214,49 @@ export default function AudioEngine() {
     }, intervalTime);
   };
 
+  // Advance the queue from a completed crossfade fade-out. If the queue has no
+  // *different* next track (end of queue, or single-song queue, with repeat
+  // off), `next()` replays the same song under an identical videoId, so the
+  // song-change effects never re-run and the fresh stream never loads — the
+  // leaked advance guard would then swallow the natural ENDED and leave
+  // playback silent and frozen (fade out, no next song). Detect that case and
+  // bail out instead: restore the volume so the track plays out, and let the
+  // natural ended handler stop playback cleanly.
+  const finalizeCrossfadeAdvance = () => {
+    const before = usePlayerStore.getState().currentSong?.videoId ?? null;
+    usePlayerStore.getState().next();
+    const after = usePlayerStore.getState().currentSong?.videoId ?? null;
+    if (!before || after === before) {
+      const targetVal = usePlayerStore.getState().volume;
+      if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+        htmlAudioRef.current.volume = targetVal;
+      }
+      if (
+        playerInstanceRef.current &&
+        !usePlayerStore.getState().currentSong?.metadata?.audioUrl &&
+        typeof playerInstanceRef.current.setVolume === "function"
+      ) {
+        try {
+          playerInstanceRef.current.setVolume(Math.round(targetVal * 100));
+        } catch (e) {}
+      }
+      crossfadeAdvancedRef.current = false;
+      hasTriggeredCrossfadeRef.current = false;
+      return;
+    }
+    crossfadeAdvancedRef.current = true;
+    crossfadePendingFadeInRef.current = true;
+  };
+
   const triggerPlay = () => {
     if (currentSong?.metadata?.audioUrl) {
       if (htmlAudioRef.current) {
         htmlAudioRef.current.play().catch(() => {});
       }
-    } else if (backgroundModeRef.current && htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
-      // Background mode — the host <audio> is already on the direct stream.
+    } else if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+      // The host <audio> element is serving this YouTube song's direct stream
+      // (host-audio mode — foreground or background); the iframe is idle. Drive
+      // the element directly.
       htmlAudioRef.current.play().catch(() => {});
     } else {
       if (htmlAudioRef.current && isSilentAudio(htmlAudioRef.current)) {
@@ -237,7 +275,8 @@ export default function AudioEngine() {
       if (htmlAudioRef.current) {
         htmlAudioRef.current.pause();
       }
-    } else if (backgroundModeRef.current && htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+    } else if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+      // Host-audio mode (foreground or background) — pause the direct stream.
       htmlAudioRef.current.pause();
     } else {
       if (htmlAudioRef.current && isSilentAudio(htmlAudioRef.current)) {
@@ -251,12 +290,14 @@ export default function AudioEngine() {
     }
   };
 
-  // Switch a YouTube song onto the host <audio> element (background mode).
-  // Returns false when there is no resolved direct URL (callers fall back to
-  // the iframe, which is the status quo behavior). Memoized with stable deps so
-  // its identity never changes between renders — it is a dependency of the
+  // Hand a YouTube song to the host <audio> element, either because the page
+  // is backgrounded (lock-screen) or because a resolved direct stream lets the
+  // foreground skip the (slower, less reliable) YouTube iframe. Returns false
+  // when there is no resolved direct URL (callers fall back to the iframe,
+  // which is the status quo behavior). Memoized with stable deps so its
+  // identity never changes between renders — it is a dependency of the
   // pre-resolve effect keyed on the current song.
-  const activateBackgroundAudio = useCallback((videoId: string): boolean => {
+  const activateHostAudio = useCallback((videoId: string): boolean => {
     const state = usePlayerStore.getState();
     const song = state.currentSong;
     if (!song || song.metadata?.audioUrl) return false; // podcasts already host audio
@@ -361,7 +402,7 @@ export default function AudioEngine() {
     if (!backgroundModeRef.current) backgroundModeRef.current = true;
 
     if (getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId]) {
-      activateBackgroundAudio(videoId);
+      activateHostAudio(videoId);
       return;
     }
 
@@ -370,10 +411,10 @@ export default function AudioEngine() {
       directAudioUrlsRef.current[videoId] = url;
       const state = usePlayerStore.getState();
       if (state.isPlaying && state.currentSong?.videoId === videoId) {
-        activateBackgroundAudio(videoId);
+        activateHostAudio(videoId);
       }
     });
-  }, [activateBackgroundAudio]);
+  }, [activateHostAudio]);
 
   useEffect(() => {
     return () => {
@@ -409,6 +450,7 @@ export default function AudioEngine() {
     const audio = htmlAudioRef.current;
 
     const handleAudioError = () => {
+      crossfadePendingFadeInRef.current = false;
       const mediaError = audio.error;
       if (mediaError) {
         console.warn(
@@ -442,6 +484,13 @@ export default function AudioEngine() {
 
     const onPlay = () => {
       if (audio.src && isSilentAudio(audio)) return;
+      // A crossfade advanced the queue while the outgoing song was muted — fade
+      // the newly started track in now that this element is the audible stream.
+      if (crossfadePendingFadeInRef.current) {
+        crossfadePendingFadeInRef.current = false;
+        setPlayerVolume(0);
+        fadeVolume(0, 1, 800);
+      }
       // New track has taken over playback — clear the crossfade guard that was
       // set for the previous track. If it leaked, the next natural `ended`
       // would be swallowed and auto-advance would pause instead of continuing.
@@ -513,10 +562,7 @@ export default function AudioEngine() {
           );
           if (crossfadeAction === "start-fade") {
             hasTriggeredCrossfadeRef.current = true;
-            fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
-              crossfadeAdvancedRef.current = true;
-              usePlayerStore.getState().next();
-            });
+            fadeVolume(1, 0, CROSSFADE_DURATION_MS, finalizeCrossfadeAdvance);
           } else if (crossfadeAction === "cancel-fade") {
             hasTriggeredCrossfadeRef.current = false;
             if (fadeIntervalRef.current) {
@@ -865,13 +911,13 @@ export default function AudioEngine() {
       // The screen locked while extraction was in flight — take over now.
       const state = usePlayerStore.getState();
       if (backgroundModeRef.current && state.currentSong?.videoId === videoId && state.isPlaying) {
-        activateBackgroundAudio(videoId);
+        activateHostAudio(videoId);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, activateBackgroundAudio]);
+  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, activateHostAudio]);
 
   // Pre-warm direct audio URLs for the next few queue tracks so a lock-screen
   // handover is already resolved by the time a song starts (extraction via the
@@ -918,6 +964,17 @@ export default function AudioEngine() {
       if (!state.isPlaying || !song || song.metadata?.audioUrl) return;
       const videoId = song.videoId;
       if (!videoId) return;
+      // Already streaming this song on the host <audio> element (foreground
+      // host-audio mode) — nothing to hand over; just mark the page backgrounded
+      // so the heartbeat/watchdog keep the stream alive while hidden.
+      if (
+        htmlAudioRef.current &&
+        !isSilentAudio(htmlAudioRef.current) &&
+        currentBackgroundVideoIdRef.current === videoId
+      ) {
+        backgroundModeRef.current = true;
+        return;
+      }
       // Snapshot position + wall-clock so leaveBackground() can detect whether
       // the track finished while the page was hidden (timers are throttled and
       // the <audio> element may be suspended, so normal advance paths fail).
@@ -939,6 +996,20 @@ export default function AudioEngine() {
       const state = usePlayerStore.getState();
       const audio = htmlAudioRef.current;
       const song = state.currentSong;
+
+      // Foreground host-audio mode: keep the direct stream as the active surface
+      // when the page comes back — do NOT hand audio back to the iframe.
+      if (
+        audio &&
+        !isSilentAudio(audio) &&
+        song &&
+        currentBackgroundVideoIdRef.current === song.videoId
+      ) {
+        try {
+          audio.play().catch(() => {});
+        } catch (e) {}
+        return;
+      }
 
       // Catch-up: if the track should have finished while the page was hidden
       // (timers throttled, <audio> suspended), advance the queue now instead of
@@ -1167,7 +1238,7 @@ try {
       const resolvedUrl =
         getCachedDirectAudioUrl(song.videoId) || directAudioUrlsRef.current[song.videoId];
       if (resolvedUrl && currentBackgroundUrlRef.current !== resolvedUrl) {
-        activateBackgroundAudio(song.videoId);
+        activateHostAudio(song.videoId);
         return;
       }
 
@@ -1179,7 +1250,7 @@ try {
       }
     }, 3000);
     return () => clearInterval(timer);
-  }, [activateBackgroundAudio]);
+  }, [activateHostAudio]);
 
   // Wall-clock auto-advance watchdog for hidden/locked tabs. When the page is
   // hidden the YouTube iframe can be suspended (its `ended` event never fires)
@@ -1487,6 +1558,25 @@ try {
         ensureBackgroundAudio(currentSong.videoId);
         return;
       }
+      // Foreground host-audio: when the direct stream for this YouTube song is
+      // already resolved (the pre-warm effect resolves the next tracks ahead of
+      // time), play it on the host <audio> element instead of loading the song
+      // into the iframe — loadVideoById on the embedded player is slower and
+      // less reliable. Falls through to the iframe below when no URL exists.
+      if (
+        currentSong?.videoId &&
+        (getCachedDirectAudioUrl(currentSong.videoId) || directAudioUrlsRef.current[currentSong.videoId])
+      ) {
+        stopProgressTimer();
+        activateHostAudio(currentSong.videoId);
+        return;
+      }
+      // Serving this song from the iframe means the host <audio> element must
+      // not be treated as holding a live direct stream anymore — clear any
+      // stale refs left by a previous host-audio song, or the near-end/ended
+      // gates would swallow this track's natural end.
+      currentBackgroundUrlRef.current = null;
+      currentBackgroundVideoIdRef.current = null;
       // Play a silent audio track so the host page retains the OS MediaSession keys.
       // This prevents the YouTube iframe from hijacking media hardware buttons.
       const silentAudioSrc = SILENT_AUDIO_SRC;
@@ -1657,7 +1747,13 @@ try {
       setPlayerVolume(0);
       if (isPlaying) {
         triggerPlay();
-        fadeVolume(0, 1, 800); // Smooth track change fade-in
+        // When the swap was driven by a crossfade, the outgoing song is already
+        // faded to silence — ramping up now would blast the OLD stream back in
+        // while the next song buffers. Fade the new track in when it actually
+        // starts (YouTube state 1 / HTML5 onPlay).
+        if (!crossfadePendingFadeInRef.current) {
+          fadeVolume(0, 1, 800); // Smooth track change fade-in
+        }
       } else {
         triggerPause();
       }
@@ -1774,6 +1870,25 @@ try {
 
             const state = event.data;
             if (state === 1) {
+              // The current song is served by the host <audio> element (host-audio
+              // mode) — a PLAYING event from the idle iframe is stale; don't
+              // resurrect the progress timer or touch track flags for it.
+              const liveSong = usePlayerStore.getState().currentSong;
+              if (
+                htmlAudioRef.current &&
+                !isSilentAudio(htmlAudioRef.current) &&
+                currentBackgroundVideoIdRef.current === liveSong?.videoId
+              ) {
+                return;
+              }
+              // A crossfade advanced the queue with the old song faded to
+              // silence. Fade the NEW song in now that it is the audible stream
+              // (the fade-in suppressed during the track swap applies here).
+              if (crossfadePendingFadeInRef.current) {
+                crossfadePendingFadeInRef.current = false;
+                setPlayerVolume(0);
+                fadeVolume(0, 1, 800);
+              }
               // The new song has taken over — the crossfade guard for the
               // *previous* track is no longer needed. If we kept it, the leaked
               // flag would suppress handleTrackEnded() when THIS track finishes,
@@ -1828,6 +1943,7 @@ try {
           },
           onError: (err: any) => {
             if (currentSong?.metadata?.audioUrl) return;
+            crossfadePendingFadeInRef.current = false;
             usePlayerStore.getState().setPlayerLoading(false);
             stopProgressTimer();
             consecutiveErrorsRef.current += 1;
@@ -1877,10 +1993,7 @@ try {
             );
             if (crossfadeAction === "start-fade") {
               hasTriggeredCrossfadeRef.current = true;
-              fadeVolume(1, 0, CROSSFADE_DURATION_MS, () => {
-                crossfadeAdvancedRef.current = true;
-                usePlayerStore.getState().next();
-              });
+              fadeVolume(1, 0, CROSSFADE_DURATION_MS, finalizeCrossfadeAdvance);
             } else if (crossfadeAction === "cancel-fade") {
               hasTriggeredCrossfadeRef.current = false;
               if (fadeIntervalRef.current) {
