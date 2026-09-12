@@ -24,6 +24,13 @@ const SILENT_AUDIO_SRC = "/silence.wav";
 // jumps/stutter on tab return.
 const AUDIBLE_DRIFT_THRESHOLD_S = 2;
 
+// An embedded-player ENDED is only trusted when the reported position is this
+// close to the reported duration. YouTube's iframe can fire a spurious (or
+// early) `ended` while hidden/backgrounded; a mid-song "ended" must not skip
+// the track. Genuine end-of-track events report the position right at the
+// duration.
+const END_EDGE_TOLERANCE_S = 2;
+
 // How long to wait for the YouTube iframe to confirm it is actually playing
 // before tearing down the background direct-audio stream anyway.
 const BACKGROUND_RESUME_TIMEOUT_MS = 5000;
@@ -1990,6 +1997,23 @@ try {
               stopProgressTimer();
             } else if (state === 0) {
               stopProgressTimer();
+              // The current song is served by the host <audio> element (host-audio
+              // mode: foreground direct stream, or background lock-screen) — an
+              // ENDED from the idle YouTube iframe is stale. The iframe is still
+              // holding the PREVIOUS track's video, which can reach its end (or be
+              // reported ended by hidden-tab heuristics) while THIS song is still
+              // mid-track; advancing on it skips a song that is still audible. The
+              // host <audio> element reports this song's real end (near-end
+              // timeupdate / `ended` / watchdog). Mirrors the host-audio guard on
+              // the PLAYING state above.
+              const ytLiveSong = usePlayerStore.getState().currentSong;
+              if (
+                htmlAudioRef.current &&
+                !isSilentAudio(htmlAudioRef.current) &&
+                currentBackgroundVideoIdRef.current === ytLiveSong?.videoId
+              ) {
+                return;
+              }
               // Ignore ENDED events fired while the player is swapping videos —
               // loadVideoById triggers a transitional state=0 for the outgoing
               // video before the incoming one starts. Without this guard the
@@ -2006,11 +2030,48 @@ try {
                 handledTrackEndRef.current = false;
                 return;
               }
+              // Hidden-tab safety: the embedded YouTube player can report ENDED
+              // spuriously (or early) while its iframe is backgrounded. Only trust
+              // the event when the media position backs it up — the track is
+              // at/near its end (or the duration is unknown, so there is nothing
+              // to compare against). A mid-song "ended" must not advance the
+              // queue; the wall-clock watchdog covers the genuinely-stuck case.
+              const ytEnd = playerInstanceRef.current;
+              if (ytEnd && typeof ytEnd.getDuration === "function") {
+                try {
+                  const ytDur = ytEnd.getDuration();
+                  if (isFinite(ytDur) && ytDur > 1) {
+                    const ytCurr =
+                      typeof ytEnd.getCurrentTime === "function"
+                        ? ytEnd.getCurrentTime()
+                        : usePlayerStore.getState().currentTime;
+                    if (!(isFinite(ytCurr) && ytCurr >= ytDur - END_EDGE_TOLERANCE_S)) {
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  // A throwing getDuration/getCurrentTime means the iframe is
+                  // mid-refresh — don't trust this event either.
+                  return;
+                }
+              }
               usePlayerStore.getState().handleTrackEnded();
             }
           },
-          onError: () => {
-            if (currentSong?.metadata?.audioUrl) return;
+onError: () => {
+            if (currentSong?.metadata?.audioUrl) return; // skip if playing podcast
+            // The host <audio> element is audibly serving the current song
+            // (host-audio mode); an error from the idle YouTube iframe (it still
+            // holds the previous track's video behind a stale surface) must not
+            // skip this song — the audible stream is still playing.
+            const ytErrSong = usePlayerStore.getState().currentSong;
+            if (
+              htmlAudioRef.current &&
+              !isSilentAudio(htmlAudioRef.current) &&
+              currentBackgroundVideoIdRef.current === ytErrSong?.videoId
+            ) {
+              return;
+            }
             crossfadePendingFadeInRef.current = false;
             usePlayerStore.getState().setPlayerLoading(false);
             stopProgressTimer();
