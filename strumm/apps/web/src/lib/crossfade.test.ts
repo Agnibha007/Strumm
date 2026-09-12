@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   evaluateCrossfadeTick,
+  backgroundCrossfadeProgress,
   CROSSFADE_MIN_DURATION_SECONDS,
   CROSSFADE_START_SECONDS_BEFORE_END,
+  CROSSFADE_DURATION_MS,
 } from "./crossfade";
 
 describe("evaluateCrossfadeTick", () => {
@@ -71,5 +73,32 @@ describe("evaluateCrossfadeTick", () => {
   it("defaults to no repeat mode (crossfade allowed) when not provided", () => {
     expect(evaluateCrossfadeTick(190, 200, false, "all")).toBe("start-fade");
     expect(evaluateCrossfadeTick(190, 200, false)).toBe("start-fade");
+  });
+});
+
+describe("backgroundCrossfadeProgress", () => {
+  const FADE_SECONDS = CROSSFADE_DURATION_MS / 1000;
+
+  it("is at full volume (0) before the fade window starts", () => {
+    expect(backgroundCrossfadeProgress(180, 200)).toBe(0);
+    expect(backgroundCrossfadeProgress(200 - CROSSFADE_START_SECONDS_BEFORE_END - 1, 200)).toBe(0);
+  });
+
+  it("reaches silence (1) when the fade-out has elapsed", () => {
+    expect(backgroundCrossfadeProgress(200 - CROSSFADE_START_SECONDS_BEFORE_END + FADE_SECONDS, 200)).toBe(1);
+    expect(backgroundCrossfadeProgress(200, 200)).toBe(1);
+    expect(backgroundCrossfadeProgress(999, 200)).toBe(1);
+  });
+
+  it("is linear between full volume and silence across the fade", () => {
+    const start = 200 - CROSSFADE_START_SECONDS_BEFORE_END;
+    expect(backgroundCrossfadeProgress(start + FADE_SECONDS / 2, 200)).toBeCloseTo(0.5);
+    expect(backgroundCrossfadeProgress(start + FADE_SECONDS / 4, 200)).toBeCloseTo(0.25);
+  });
+
+  it("treats unknown/zero durations as no fade", () => {
+    expect(backgroundCrossfadeProgress(100, Number.NaN)).toBe(0);
+    expect(backgroundCrossfadeProgress(100, 0)).toBe(0);
+    expect(backgroundCrossfadeProgress(Number.NaN, 200)).toBe(0);
   });
 });

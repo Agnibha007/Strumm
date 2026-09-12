@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { evaluateCrossfadeTick, CROSSFADE_DURATION_MS } from "web/lib/crossfade";
+import { evaluateCrossfadeTick, backgroundCrossfadeProgress, CROSSFADE_DURATION_MS } from "web/lib/crossfade";
 import { getCachedDirectAudioUrl, resolveDirectAudioUrl } from "web/lib/direct-audio";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import {
@@ -126,6 +126,11 @@ export default function AudioEngine() {
   // regardless, so that's the timer-free advance path. This flag makes the
   // advance idempotent per track (near-end timeupdate + fired `ended`).
   const handledTrackEndRef = useRef<boolean>(false);
+  // True while a background (host-audio) crossfade fade-out is running. Hidden
+  // tabs throttle setInterval so badly that the timer-driven foreground fade
+  // can't complete, but the <audio> element's timeupdate keeps firing ~4x/sec,
+  // so the fade-out is stepped from those events instead.
+  const bgCrossfadeRef = useRef<boolean>(false);
   // The direct-audio URL the host <audio> element is currently on (background
   // mode). Lets the background heartbeat re-hand the current track to <audio>
   // if it ever falls behind after an auto-advance while the page is hidden.
@@ -417,6 +422,9 @@ export default function AudioEngine() {
     // swallow this track's natural end.
     currentBackgroundUrlRef.current = null;
     currentBackgroundVideoIdRef.current = null;
+    bgCrossfadeRef.current = false;
+    hasTriggeredCrossfadeRef.current = false;
+    crossfadeAdvancedRef.current = false;
 
     // Play a silent audio track so the host page retains the OS MediaSession
     // keys (prevents the YouTube iframe from hijacking media hardware buttons).
@@ -605,6 +613,7 @@ export default function AudioEngine() {
       // would be swallowed and auto-advance would pause instead of continuing.
       crossfadeAdvancedRef.current = false;
       hasTriggeredCrossfadeRef.current = false;
+      bgCrossfadeRef.current = false;
       transitioningRef.current = false;
       handledTrackEndRef.current = false;
       consecutiveErrorsRef.current = 0;
@@ -640,24 +649,74 @@ export default function AudioEngine() {
       // "fade triggered" flag from the previous track can't cancel the fade-in.
       if (!transitioningRef.current) {
         if (backgroundModeRef.current) {
-          // Backgrounded playback can't rely on the timer-driven crossfade:
+          // Backgrounded playback must not rely on the timer-driven crossfade:
           // hidden tabs throttle setInterval/setTimeout so aggressively that the
           // fade-out completion — where next() is called — may never run, leaving
           // the queue stuck on a finished track (playbar at full, no sound, and
-          // the next song never starts). Advance straight off the near-end
-          // timeupdate, which fires for a playing element regardless of timer
-          // throttling. Idempotent per track via handledTrackEndRef. Only trust
-          // the sample when this element is actually serving the CURRENT song —
-          // after an advance its stream can still be firing timeupdate for the
-          // previous (ended) track while the next URL resolves. A null owner
-          // means podcasts/host audio, which is always "current".
+          // the next song never starts). The host <audio> element's timeupdate
+          // keeps firing ~4x/sec while it is playing regardless of throttling,
+          // so the fade-out is stepped from those events here, and the queue
+          // advances once the fade reaches silence — songs no longer hard-cut at
+          // the end in background/lock-screen playback. Only sample this element
+          // when it is actually serving the CURRENT song — after an advance its
+          // stream can still be firing timeupdate for the previous (ended) track
+          // while the next URL resolves. A null owner means podcasts/host audio,
+          // which is always "current".
+          const bgOwnerIsCurrent =
+            !currentBackgroundVideoIdRef.current ||
+            currentBackgroundVideoIdRef.current ===
+              usePlayerStore.getState().currentSong?.videoId;
+
+          if (bgCrossfadeRef.current) {
+            if (!bgOwnerIsCurrent) {
+              // The queue already moved on — drop the stale fade so it can't
+              // advance (or mute) a fresh track.
+              bgCrossfadeRef.current = false;
+              hasTriggeredCrossfadeRef.current = false;
+              return;
+            }
+            const fadeT = backgroundCrossfadeProgress(curr, dur);
+            if (fadeT >= 1) {
+              // Fade reached silence — advance. The flags set here neutralize
+              // every other advance mechanism (near-end timeupdate, `ended`,
+              // watchdog, stale iframe ENDED) so the queue moves exactly once.
+              bgCrossfadeRef.current = false;
+              hasTriggeredCrossfadeRef.current = false;
+              handledTrackEndRef.current = true;
+              crossfadeAdvancedRef.current = true;
+              setPlayerVolume(0);
+              usePlayerStore.getState().handleTrackEnded();
+            } else {
+              setPlayerVolume(1 - fadeT);
+            }
+            return;
+          }
+
+          const bgCrossfadeAction = evaluateCrossfadeTick(
+            curr,
+            dur,
+            hasTriggeredCrossfadeRef.current,
+            usePlayerStore.getState().repeatMode,
+          );
+          if (bgCrossfadeAction === "start-fade" && bgOwnerIsCurrent) {
+            hasTriggeredCrossfadeRef.current = true;
+            bgCrossfadeRef.current = true;
+          } else if (bgCrossfadeAction === "cancel-fade") {
+            hasTriggeredCrossfadeRef.current = false;
+            bgCrossfadeRef.current = false;
+            setPlayerVolume(1.0);
+          }
+
+          // Last-resort advance for short tracks (no crossfade window) and for
+          // a live stream that reached its very end before the fade completed.
+          // Idempotent per track via handledTrackEndRef. Skipped while a fade is
+          // in flight so it never races the fade's own advance.
           if (
             dur > 1 &&
             curr >= dur - 1 &&
             !handledTrackEndRef.current &&
-            (!currentBackgroundVideoIdRef.current ||
-              currentBackgroundVideoIdRef.current ===
-                usePlayerStore.getState().currentSong?.videoId)
+            !hasTriggeredCrossfadeRef.current &&
+            bgOwnerIsCurrent
           ) {
             handledTrackEndRef.current = true;
             handlePodcastEnded();
@@ -716,6 +775,8 @@ export default function AudioEngine() {
         // Timer-free fallback for hidden-tab playback: if the near-end timeupdate
         // advance never ran (element throttled mid-stream), advance now so the
         // queue never sits on a finished, silent track.
+        bgCrossfadeRef.current = false;
+        hasTriggeredCrossfadeRef.current = false;
         handledTrackEndRef.current = true;
         usePlayerStore.getState().handleTrackEnded();
         return;
@@ -1078,13 +1139,16 @@ export default function AudioEngine() {
       // keeps playing (long silence, then an abrupt next song) or never
       // completes (next() never runs and the queue stalls). Cancel any
       // in-flight fade, restore full volume, and let the background near-end
-      // advance take over. Resetting the crossfade flag also lets a return to
-      // the foreground re-enter the fade window cleanly if time remains.
+      // advance take over — the background crossfade is stepped timer-free
+      // from timeupdate in onTimeUpdate. Resetting the crossfade flag also
+      // lets a return to the foreground re-enter the fade window cleanly if
+      // time remains.
       if (fadeIntervalRef.current) {
         clearInterval(fadeIntervalRef.current);
         fadeIntervalRef.current = null;
         isFadingRef.current = false;
         hasTriggeredCrossfadeRef.current = false;
+        bgCrossfadeRef.current = false;
         const vol = usePlayerStore.getState().volume;
         if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
           htmlAudioRef.current.volume = vol;
@@ -1161,6 +1225,8 @@ export default function AudioEngine() {
             const remainingMs = Math.max(0, dur * 1000 - backgroundEnter.positionMs);
             if (elapsedMs >= remainingMs + 1500 && !handledTrackEndRef.current) {
               handledTrackEndRef.current = true;
+              bgCrossfadeRef.current = false;
+              hasTriggeredCrossfadeRef.current = false;
               // Tear down the direct stream and restore iframe controls so the
               // next track starts in the foreground player.
               if (audio) {
@@ -1440,6 +1506,8 @@ try {
       // Media already at/past the end -> auto-advance (idempotent per track).
       if (curr >= dur - 1 && !handledTrackEndRef.current) {
         handledTrackEndRef.current = true;
+        bgCrossfadeRef.current = false;
+        hasTriggeredCrossfadeRef.current = false;
         state.handleTrackEnded();
         return;
       }
@@ -1453,6 +1521,8 @@ try {
       const remainingMs = Math.max(0, (dur - curr) * 1000);
       if (elapsedMs >= remainingMs + 1500 && !handledTrackEndRef.current) {
         handledTrackEndRef.current = true;
+        bgCrossfadeRef.current = false;
+        hasTriggeredCrossfadeRef.current = false;
         state.handleTrackEnded();
         return;
       }

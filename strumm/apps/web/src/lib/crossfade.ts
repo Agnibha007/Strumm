@@ -44,3 +44,24 @@ export function evaluateCrossfadeTick(
   }
   return "none";
 }
+
+/**
+ * Linear fade-out progress for the background (host-audio) crossfade.
+ *
+ * Returns a value in [0, 1] for a track currently at `currentTime` of
+ * `duration`: 0 = still at full volume, 1 = faded to silence (and the queue
+ * should advance). The fade starts CROSSFADE_START_SECONDS_BEFORE_END seconds
+ * before the end and reaches silence after CROSSFADE_DURATION_MS of media
+ * time. It is driven from the <audio> element's `timeupdate` events so it
+ * works in hidden tabs where `setInterval`/`setTimeout` are throttled.
+ *
+ * @param currentTime - current playback position in seconds.
+ * @param duration - total track duration in seconds (NaN/unknown durations
+ *   yield 0, i.e. no fade).
+ */
+export function backgroundCrossfadeProgress(currentTime: number, duration: number): number {
+  if (!isFinite(currentTime) || !isFinite(duration) || duration <= 0) return 0;
+  const fadeStart = duration - CROSSFADE_START_SECONDS_BEFORE_END;
+  const fadeSeconds = CROSSFADE_DURATION_MS / 1000;
+  return Math.min(1, Math.max(0, (currentTime - fadeStart) / fadeSeconds));
+}
