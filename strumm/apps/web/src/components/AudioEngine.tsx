@@ -11,6 +11,7 @@ import {
 } from "web/lib/crossfade";
 import { getCachedDirectAudioUrl, resolveDirectAudioUrl } from "web/lib/direct-audio";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { resolveNextTrackIndex } from "web/store/queue-utils";
 import {
   getPodcastEpisodeId,
   fetchPodcastProgress,
@@ -103,6 +104,13 @@ export default function AudioEngine() {
   const progressTimerRef = useRef<any>(null);
   const currentVideoIdRef = useRef<string | null>(null);
   const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Second hidden <audio> element that pre-buffers the predicted next track's
+  // stream ahead of the crossfade boundary. Never played while staged, so the
+  // next song can not leak audio early; at the advance it is promoted into
+  // htmlAudioRef so the transition starts instantly with no network fetch.
+  const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
+  const preloadedVideoIdRef = useRef<string | null>(null);
+  const preloadedUrlRef = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   // Direct audio URLs resolved for background (lock-screen) playback.
   const directAudioUrlsRef = useRef<Record<string, string>>({});
@@ -335,6 +343,48 @@ export default function AudioEngine() {
     }
   };
 
+  // Predict the videoId that will play when the current song ends. Mirrors the
+  // store's handleTrackEnded rules exactly (shuffle history included) so the
+  // staging element pre-buffers the actual next stream rather than a guess.
+  const predictedNextVideoId = useCallback((): string | null => {
+    const state = usePlayerStore.getState();
+    const song = state.currentSong;
+    const queue = state.queue;
+    const idx = state.currentIndex;
+    if (!song || !queue.length || idx < 0 || idx >= queue.length) return null;
+    if (song.metadata?.audioUrl) return null; // podcasts are not pre-fetched
+    if (!state.isPlaying) return null; // never pre-buffer while paused
+    if (state.repeatMode === "one") return song.videoId;
+    let playedIds = state.shufflePlayedIds;
+    if (state.isShuffle && song.videoId) {
+      playedIds = [...state.shufflePlayedIds, song.videoId];
+    }
+    const nextIdx = resolveNextTrackIndex(queue, idx, state.repeatMode, state.isShuffle, true, playedIds);
+    if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) return null;
+    const next = queue[nextIdx];
+    if (!next?.videoId || next.metadata?.audioUrl) return null;
+    // (repeatMode is known to be "none" | "all" here — the "one" case returned
+    // the current song above, which is always already resolved.)
+    return next.videoId;
+  }, []);
+
+  // Point the staging element at a direct stream and start buffering. The
+  // element is never played while staged, so this can not leak audio early.
+  const stagePreloadUrl = useCallback((videoId: string, url: string) => {
+    const el = preloadAudioRef.current;
+    if (!el) return;
+    if (preloadedVideoIdRef.current === videoId && preloadedUrlRef.current === url) return;
+    try {
+      el.preload = "auto";
+      el.loop = false;
+      el.volume = 0;
+      el.src = url;
+      el.load();
+      preloadedVideoIdRef.current = videoId;
+      preloadedUrlRef.current = url;
+    } catch (e) {}
+  }, []);
+
   // Hand a YouTube song to the host <audio> element, either because the page
   // is backgrounded (lock-screen) or because a resolved direct stream lets the
   // foreground skip the (slower, less reliable) YouTube iframe. Returns false
@@ -353,6 +403,116 @@ export default function AudioEngine() {
       try {
         playerInstanceRef.current.pauseVideo();
       } catch (e) {}
+    }
+
+    // Preloaded handoff: if the staging element already buffered this exact
+    // stream, swap it straight in and start playing immediately — the transition
+    // costs zero network latency. The staged element was never played, so the
+    // next song can not be heard before the crossfade boundary.
+    const stagedEl = preloadAudioRef.current;
+    const stagedReady =
+      !!stagedEl &&
+      stagedEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+      preloadedVideoIdRef.current === videoId &&
+      preloadedUrlRef.current === url;
+    if (stagedReady) {
+      // Flag the switch BEFORE touching the old stream so its transient pause
+      // event isn't misread as a user pause.
+      transitioningRef.current = true;
+      const prevEl = htmlAudioRef.current;
+      if (prevEl) {
+        try {
+          prevEl.pause();
+        } catch (e) {}
+        // Free the outgoing stream and demote this element to staging duty so it
+        // can buffer the NEXT track (stagePreloadUrl targets preloadAudioRef).
+        try {
+          prevEl.removeAttribute("src");
+          prevEl.load();
+        } catch (e) {}
+      }
+      preloadAudioRef.current = prevEl;
+      htmlAudioRef.current = stagedEl;
+      preloadedVideoIdRef.current = null;
+      preloadedUrlRef.current = null;
+      currentBackgroundUrlRef.current = url;
+      currentBackgroundVideoIdRef.current = videoId;
+      // The iframe is idle now; force a future iframe handoff to fresh-load.
+      currentVideoIdRef.current = null;
+      // The pending crossfade fade-in is position-driven (stepCrossfadeFadeIn)
+      // and picks the promoted element's media time up from the transition.
+      try {
+        stagedEl.preload = "auto";
+        stagedEl.loop = false;
+        stagedEl.volume = usePlayerStore.getState().volume;
+        const resumeAt = Math.max(0, state.currentTime);
+        if (stagedEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          stagedEl.currentTime = resumeAt;
+        }
+      } catch (e) {}
+      // If this handoff IS a crossfade advance, the pending fade-in must be
+      // re-armed here even when the heartbeat already unstuck (cleared) it
+      // during a slow URL resolve — otherwise the promoted stream would start
+      // at FULL volume, the exact "too aggressive" burst we removed.
+      if (crossfadeAdvancedRef.current) {
+        crossfadePendingFadeInRef.current = true;
+        crossfadeFadeInStartedAtRef.current = Date.now();
+        setPlayerVolume(0);
+      }
+      // Start playback. The first play() right after promotion can be rejected
+      // (hidden tab / stale autoplay), so re-assert once the stream is ready —
+      // mirroring the non-staged path's loadedmetadata/canplay safety net.
+      const startStaged = () => {
+        try {
+          // Only play while this element is the promoted/audible one — the
+          // once-listeners can survive a swap and would otherwise start the
+          // (demoted) staging element during a later preload.
+          if (stagedEl !== htmlAudioRef.current) return;
+          stagedEl.play().catch(() => {});
+        } catch (e) {}
+      };
+      stagedEl.addEventListener("loadedmetadata", startStaged, { once: true });
+      stagedEl.addEventListener("canplay", startStaged, { once: true });
+      startStaged();
+      // The host element is the audible surface now — re-register controls
+      // against the fresh element so seek/pause act on the promoted stream.
+      setPlayerRef({
+        playVideo: () => {
+          if (htmlAudioRef.current) htmlAudioRef.current.play();
+        },
+        pauseVideo: () => {
+          if (htmlAudioRef.current) htmlAudioRef.current.pause();
+        },
+        seekTo: (sec: number) => {
+          if (htmlAudioRef.current) htmlAudioRef.current.currentTime = sec;
+        },
+        setVolume: (vol: number) => {
+          if (htmlAudioRef.current) htmlAudioRef.current.volume = vol / 100;
+        },
+        setPlaybackRate: (rate: number) => {
+          if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
+        },
+      });
+      // The staged stream was consumed by this promotion. Restage the demoted
+      // element for the NEXT predicted track so the following handoff is
+      // pre-buffered too (the staging effect skips this commit — its guard
+      // sees the promoted stream still matching the current song).
+      if (audioQuality !== "data-saver" && prevEl) {
+        const nextId = predictedNextVideoId();
+        if (nextId) {
+          const cachedNext = getCachedDirectAudioUrl(nextId) || directAudioUrlsRef.current[nextId];
+          if (cachedNext) {
+            stagePreloadUrl(nextId, cachedNext);
+          } else {
+            resolveDirectAudioUrl(nextId)
+              .then((u) => {
+                if (u) stagePreloadUrl(nextId, u);
+              })
+              .catch(() => {});
+          }
+        }
+      }
+      return true;
     }
 
     const audio = htmlAudioRef.current;
@@ -382,6 +542,16 @@ export default function AudioEngine() {
     } catch (e) {
       transitioningRef.current = false;
       return false;
+    }
+
+    // Crossfade advances must stay muted until the position-driven fade-in
+    // (stepCrossfadeFadeIn) ramps them up — even if the heartbeat already
+    // unstuck the pending flag during a slow URL resolve, re-arm it here so the
+    // fresh stream can not start at full volume.
+    if (crossfadeAdvancedRef.current) {
+      crossfadePendingFadeInRef.current = true;
+      crossfadeFadeInStartedAtRef.current = Date.now();
+      setPlayerVolume(0);
     }
 
     const seekTo = Math.max(0, state.currentTime);
@@ -439,7 +609,7 @@ export default function AudioEngine() {
       },
     });
     return true;
-  }, [setPlayerRef]);
+  }, [setPlayerRef, audioQuality, predictedNextVideoId, stagePreloadUrl]);
 
   // Serve a YouTube song from the YouTube iframe (the fallback surface). Used
   // by the foreground handoff AND as the failure fallback for background /
@@ -597,9 +767,15 @@ export default function AudioEngine() {
   // 1. Setup HTML Audio elements and events
   useEffect(() => {
     htmlAudioRef.current = new Audio();
-    const audio = htmlAudioRef.current;
+    preloadAudioRef.current = new Audio();
 
-    const handleAudioError = () => {
+    const handleAudioError = (e: Event) => {
+      const audio = e.currentTarget as HTMLAudioElement;
+      if (!audio) return;
+      // Only the audible element owns the crossfade state — a staging/preload
+      // element's error must not clear the pending fade-in the active track
+      // still needs (or the next song would burst in at full volume).
+      if (audio !== htmlAudioRef.current) return;
       crossfadePendingFadeInRef.current = false;
       const mediaError = audio.error;
       if (mediaError) {
@@ -614,7 +790,10 @@ export default function AudioEngine() {
       }
     };
 
-    const updatePositionState = () => {
+    const updatePositionState = (audio: HTMLAudioElement) => {
+      // Only the audible element reports media-session position — the staging
+      // element must not reset the lock-screen scrubber to the next track.
+      if (audio !== htmlAudioRef.current) return;
       if ("mediaSession" in navigator && typeof navigator.mediaSession.setPositionState === "function") {
         try {
           // Only sync position state from HTML audio if it's not the silent track
@@ -632,20 +811,26 @@ export default function AudioEngine() {
       }
     };
 
-    const onPlay = () => {
+    const onPlay = (e: Event) => {
+      const audio = e.currentTarget as HTMLAudioElement;
+      if (!audio) return;
+      // Only the audible element owns playback state — the staging element must
+      // not toggle isPlaying / media-session playing, or clear crossfade flags.
+      if (audio !== htmlAudioRef.current) return;
       if (audio.src && isSilentAudio(audio)) return;
-      // A crossfade advanced the queue while the outgoing song was muted — fade
-      // the newly started track in now that this element is the audible stream.
-      // The ramp is the plain setInterval fade even while the tab is hidden:
-      // timers still run (just elongated by throttling), which GUARANTEES the
-      // new track reaches audible volume. A position/latency-gated ramp instead
-      // can sit the new track at 0 forever off-tab, leaving the queue silent
-      // until the user returns — the regression this restores.
-      if (crossfadePendingFadeInRef.current) {
-        crossfadeFadeInStartedAtRef.current = null;
-        crossfadePendingFadeInRef.current = false;
+      // A crossfade advanced the queue while the outgoing song was muted — the
+      // new track must fade in right AT the transition. The fade-in is
+      // position-driven (stepCrossfadeFadeIn ramps 0→1 over the track's first
+      // CROSSFADE_FADE_IN_MS of media time), so a hidden tab that throttles
+      // timers still ramps smoothly once this element's time updates. Kick it
+      // with a silence re-assert so a fresh network fetch can't burst the new
+      // track in; the heartbeat softly unsticks a missed ramp.
+      if (crossfadePendingFadeInRef.current || crossfadeAdvancedRef.current) {
+        // Re-arm the pending fade even when the heartbeat unstuck it during a
+        // slow start — this stream just became audible and must ramp, not burst.
+        crossfadePendingFadeInRef.current = true;
+        crossfadeFadeInStartedAtRef.current = Date.now();
         setPlayerVolume(0);
-        fadeVolume(0, 1, 800); // Smooth crossfade fade-in (visible or hidden tab)
       }
       // New track has taken over playback — clear the crossfade guard that was
       // set for the previous track. If it leaked, the next natural `ended`
@@ -661,7 +846,10 @@ export default function AudioEngine() {
         navigator.mediaSession.playbackState = "playing";
       }
     };
-    const onPause = () => {
+    const onPause = (e: Event) => {
+      const audio = e.currentTarget as HTMLAudioElement;
+      if (!audio) return;
+      if (audio !== htmlAudioRef.current) return;
       if (audio.src && isSilentAudio(audio)) return;
       // Ignore pause events fired while the engine is swapping tracks — the
       // element for the old track is being torn down and the new one is loading.
@@ -677,12 +865,17 @@ export default function AudioEngine() {
         navigator.mediaSession.playbackState = "paused";
       }
     };
-    const onTimeUpdate = () => {
+    const onTimeUpdate = (e: Event) => {
+      const audio = e.currentTarget as HTMLAudioElement;
+      if (!audio) return;
+      // The staging element pre-buffers the next track and must not drive the
+      // progress bar, media-session position, crossfade ramp, or fade-out.
+      if (audio !== htmlAudioRef.current) return;
       if (audio.src && isSilentAudio(audio)) return;
       const curr = audio.currentTime;
       const dur = audio.duration;
       setCurrentTime(curr);
-      updatePositionState();
+      updatePositionState(audio);
 
       // The crossfade fade-IN must run even while a swap is in progress
       // (transitioningRef stays true until the fresh play event lands): a
@@ -800,12 +993,18 @@ export default function AudioEngine() {
         }
       }
     };
-    const onDurationChange = () => {
+    const onDurationChange = (e: Event) => {
+      const audio = e.currentTarget as HTMLAudioElement;
+      if (!audio) return;
+      if (audio !== htmlAudioRef.current) return;
       if (audio.src && isSilentAudio(audio)) return;
       setDuration(audio.duration || 0);
-      updatePositionState();
+      updatePositionState(audio);
     };
-    const onEnded = () => {
+    const onEnded = (e: Event) => {
+      const audio = e.currentTarget as HTMLAudioElement;
+      if (!audio) return;
+      if (audio !== htmlAudioRef.current) return;
       if (audio.src && isSilentAudio(audio)) return;
       // The near-end advance already ran (and the queue moved on) — the natural
       // `ended` that follows is just the tail of the old stream. Don't advance
@@ -841,21 +1040,36 @@ export default function AudioEngine() {
       handlePodcastEnded();
     };
 
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("durationchange", onDurationChange);
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("error", handleAudioError);
+    // Both elements get the same handlers; each reads the emitting element via
+    // e.currentTarget so the staging (preload) element can never drive shared
+    // playback state, and the audible element owns the crossfade flags.
+    const attach = (el: HTMLAudioElement | null) => {
+      if (!el) return;
+      el.addEventListener("play", onPlay);
+      el.addEventListener("pause", onPause);
+      el.addEventListener("timeupdate", onTimeUpdate);
+      el.addEventListener("durationchange", onDurationChange);
+      el.addEventListener("ended", onEnded);
+      el.addEventListener("error", handleAudioError);
+    };
+    attach(htmlAudioRef.current);
+    attach(preloadAudioRef.current);
 
     return () => {
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("durationchange", onDurationChange);
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("error", handleAudioError);
-      audio.pause();
+      const detach = (el: HTMLAudioElement | null) => {
+        if (!el) return;
+        el.removeEventListener("play", onPlay);
+        el.removeEventListener("pause", onPause);
+        el.removeEventListener("timeupdate", onTimeUpdate);
+        el.removeEventListener("durationchange", onDurationChange);
+        el.removeEventListener("ended", onEnded);
+        el.removeEventListener("error", handleAudioError);
+        el.pause();
+      };
+      detach(htmlAudioRef.current);
+      detach(preloadAudioRef.current);
+      htmlAudioRef.current = null;
+      preloadAudioRef.current = null;
     };
   }, [handlePodcastEnded, handleTrackEnded, setCurrentTime, setDuration, setPlaying]);
 
@@ -1177,6 +1391,48 @@ export default function AudioEngine() {
       cancelled = true;
     };
   }, [currentIndex, queue, currentSong?.videoId]);
+
+  // Pre-buffer the predicted next track's stream ahead of the crossfade
+  // boundary so the explicit handoff in activateHostAudio starts instantly with
+  // no network fetch. Because a fresh network fetch from a hidden tab can take
+  // seconds, this is what removes the delay between "next song appears" and
+  // "next song is audible" during background crossfades.
+  useEffect(() => {
+    if (audioQuality === "data-saver") return; // respect data-saver: no pre-buffer
+    // On the commit that advances the queue, the staged element holds the
+    // stream about to be PROMOTED by the surface effect (which runs AFTER this
+    // effect). Don't retarget it away from the current song, or the swap would
+    // miss and the transition would hit the network again. The swap itself
+    // restages the NEXT predicted track on the demoted element.
+    if (preloadedVideoIdRef.current === currentSong?.videoId) return;
+    const videoId = predictedNextVideoId();
+    if (!videoId) return;
+    const cached = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
+    if (cached) {
+      stagePreloadUrl(videoId, cached);
+      return;
+    }
+    // Not resolved yet — the pre-warm effect may already be extracting it
+    // (resolveDirectAudioUrl dedupes in-flight work per videoId), so just wait
+    // on that promise and stage the URL when it lands.
+    let cancelled = false;
+    resolveDirectAudioUrl(videoId)
+      .then((url) => {
+        if (cancelled || !url) return;
+        stagePreloadUrl(videoId, url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentIndex,
+    currentSong?.videoId,
+    queue,
+    audioQuality,
+    predictedNextVideoId,
+    stagePreloadUrl,
+  ]);
 
   // Hybrid background mode: mobile browsers suspend YouTube iframes (and the
   // whole tab's audio) when the screen locks, but keep a host <audio> element
@@ -1507,7 +1763,10 @@ try {
         if (staleByWallClock || fadeInCurr > (CROSSFADE_FADE_IN_MS / 1000) + 1) {
           crossfadeFadeInStartedAtRef.current = null;
           crossfadePendingFadeInRef.current = false;
-          setPlayerVolume(1.0);
+          // Soft unstick — a short ramp, not a volume snap: the fade-in is
+          // position-driven on the audible element, so a late media tick here
+          // must not burst the track in at full volume.
+          fadeVolume(0, 1, 400);
         }
       }
 
@@ -2107,16 +2366,21 @@ try {
               ) {
                 return;
               }
-              // Fade the NEW song in now that it is the audible stream (the fade-in
-              // suppressed during the track swap applies here). The ramp is the
-              // plain setInterval fade even in a hidden tab — throttled but
-              // guaranteed to converge, instead of a position-gated ramp that
-              // can strand the new track mute until the user returns.
-              if (crossfadePendingFadeInRef.current) {
-                crossfadeFadeInStartedAtRef.current = null;
-                crossfadePendingFadeInRef.current = false;
+              // Fade the NEW song in now that it is the audible stream (the
+              // fade-in suppressed during the track swap applies here). The
+              // ramp is position-driven — stepCrossfadeFadeIn steps it from
+              // the playing position (via onTimeUpdate on host audio and the
+              // progress timer on the iframe), so a throttling hidden tab still
+              // ramps smoothly instead of sitting mute or bursting in. Kick it
+              // with a silence re-assert; the heartbeat softly unsticks a
+              // missed ramp. The pending flag is left set on purpose until the
+              // ramp reaches full volume.
+              if (crossfadePendingFadeInRef.current || crossfadeAdvancedRef.current) {
+                // Re-arm even if the heartbeat unstuck the pending fade during
+                // a slow load — the freshly started stream must ramp, not burst.
+                crossfadePendingFadeInRef.current = true;
+                crossfadeFadeInStartedAtRef.current = Date.now();
                 setPlayerVolume(0);
-                fadeVolume(0, 1, 800);
               }
               // The new song has taken over — the crossfade guard for the
               // *previous* track is no longer needed. If we kept it, the leaked
