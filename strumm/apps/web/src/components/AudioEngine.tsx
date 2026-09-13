@@ -163,7 +163,13 @@ export default function AudioEngine() {
   // are throttled so a near-end crossfade or YouTube ended event can be
   // suspended entirely; this samples media progress on a (throttle-tolerant)
   // interval and advances when wall-clock says the track should already be over.
-  const backgroundAdvanceRef = useRef<{ trackKey: string; trackStartMs: number } | null>(null);
+  const backgroundAdvanceRef = useRef<{ trackKey: string } | null>(null);
+  // Last wall-clock time (and position) at which the watchdog saw the media
+  // position actually change. The stall branch only advances when the stream
+  // has been FROZEN for longer than its remaining duration — a healthy song
+  // must never be cut just because the tab has been hidden for a while.
+  const lastProgressAtRef = useRef<number | null>(null);
+  const lastProgressCurrRef = useRef<number>(0);
   // Snapshot of playback position + wall-clock time captured when the tab is
   // hidden. Used on tab-return to detect whether the track should have ended
   // while the page was backgrounded (browsers suspend timers AND the <audio>
@@ -1838,8 +1844,10 @@ try {
       const watch = backgroundAdvanceRef.current;
       const now = Date.now();
       if (!watch || watch.trackKey !== videoId) {
-        backgroundAdvanceRef.current = { trackKey: videoId, trackStartMs: now };
+        backgroundAdvanceRef.current = { trackKey: videoId };
         handledTrackEndRef.current = false;
+        lastProgressAtRef.current = now;
+        lastProgressCurrRef.current = curr;
         return;
       }
 
@@ -1852,19 +1860,31 @@ try {
         return;
       }
 
-      // If the engine is stalled (iframe suspended by the OS lock), once
-      // enough real time has passed to have finished the remaining duration,
-      // force the advance. Uses total wall-clock elapsed since this track
-      // became current, so it works even when background timers are throttled
-      // to as little as 1 tick/minute.
-      const elapsedMs = now - watch.trackStartMs;
-      const remainingMs = Math.max(0, (dur - curr) * 1000);
-      if (elapsedMs >= remainingMs + 1500 && !handledTrackEndRef.current) {
-        handledTrackEndRef.current = true;
-        bgCrossfadeRef.current = false;
-        hasTriggeredCrossfadeRef.current = false;
-        state.handleTrackEnded();
-        return;
+      // A healthy stream advances position every tick (or jumps ahead between
+      // throttled ticks), so fold that into the "last progress" wall-clock.
+      // Any change counts — this is what distinguishes "still playing" from
+      // "frozen", regardless of how long the tab has been hidden.
+      if (curr !== lastProgressCurrRef.current) {
+        lastProgressAtRef.current = now;
+        lastProgressCurrRef.current = curr;
+      }
+
+      // If the engine is stalled (iframe suspended by the OS lock) at a
+      // position with `dur - curr` seconds left, force the advance only once
+      // the stream has been frozen for longer than that remaining duration.
+      // Measured from the LAST PROGRESS, NOT from when this track first became
+      // current — using total wall-clock elapsed would cut a normally-playing
+      // song off the moment a hidden tab outlived half of its remaining time.
+      // Works even when background timers are throttled to 1 tick/minute.
+      if (lastProgressAtRef.current !== null) {
+        const stuckForMs = now - lastProgressAtRef.current;
+        if (stuckForMs >= (dur - curr) * 1000 + 1500 && !handledTrackEndRef.current) {
+          handledTrackEndRef.current = true;
+          bgCrossfadeRef.current = false;
+          hasTriggeredCrossfadeRef.current = false;
+          state.handleTrackEnded();
+          return;
+        }
       }
     }, 1000);
     return () => {
