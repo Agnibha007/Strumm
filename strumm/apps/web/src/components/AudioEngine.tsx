@@ -119,6 +119,10 @@ export default function AudioEngine() {
   const hasTriggeredCrossfadeRef = useRef<boolean>(false);
   const crossfadeAdvancedRef = useRef<boolean>(false);
   const crossfadePendingFadeInRef = useRef<boolean>(false);
+  // Wall-clock time the pending fade-in was armed. Used by the background
+  // bailout so it can unstick a muted ramp even when playback events are
+  // swallowed and media position never advances off-tab.
+  const crossfadeFadeInStartedAtRef = useRef<number | null>(null);
   // True between the moment a new track is selected and the moment it actually
   // starts playing. The YouTube player can emit transient PAUSED/ENDED events
   // while swapping videos, which would otherwise stick playback in a paused
@@ -249,6 +253,7 @@ export default function AudioEngine() {
     setPlayerVolume(ratio);
     if (ratio >= 1) {
       crossfadePendingFadeInRef.current = false;
+      crossfadeFadeInStartedAtRef.current = null;
     }
     return true;
   };
@@ -285,6 +290,7 @@ export default function AudioEngine() {
     }
     crossfadeAdvancedRef.current = true;
     crossfadePendingFadeInRef.current = true;
+    crossfadeFadeInStartedAtRef.current = Date.now();
   };
 
   const triggerPlay = () => {
@@ -630,16 +636,16 @@ export default function AudioEngine() {
       if (audio.src && isSilentAudio(audio)) return;
       // A crossfade advanced the queue while the outgoing song was muted — fade
       // the newly started track in now that this element is the audible stream.
+      // The ramp is the plain setInterval fade even while the tab is hidden:
+      // timers still run (just elongated by throttling), which GUARANTEES the
+      // new track reaches audible volume. A position/latency-gated ramp instead
+      // can sit the new track at 0 forever off-tab, leaving the queue silent
+      // until the user returns — the regression this restores.
       if (crossfadePendingFadeInRef.current) {
+        crossfadeFadeInStartedAtRef.current = null;
+        crossfadePendingFadeInRef.current = false;
         setPlayerVolume(0);
-        // Visible tab: ramp with the setInterval fade as before. Hidden tab:
-        // timers are throttled so that ramp would take 15+s — keep the flag set
-        // and let the playback tick converge the volume from position
-        // (stepCrossfadeFadeIn) at the right media-time pace instead.
-        if (!document.hidden) {
-          crossfadePendingFadeInRef.current = false;
-          fadeVolume(0, 1, 800);
-        }
+        fadeVolume(0, 1, 800); // Smooth crossfade fade-in (visible or hidden tab)
       }
       // New track has taken over playback — clear the crossfade guard that was
       // set for the previous track. If it leaked, the next natural `ended`
@@ -734,6 +740,7 @@ export default function AudioEngine() {
               // (stepCrossfadeFadeIn) — hidden tabs can't run the setInterval
               // ramp, so without this the new song would burst in at full volume.
               crossfadePendingFadeInRef.current = true;
+              crossfadeFadeInStartedAtRef.current = Date.now();
               setPlayerVolume(0);
               usePlayerStore.getState().handleTrackEnded();
             } else {
@@ -1486,12 +1493,19 @@ try {
       // unstick it so the queue stays audible instead of playing mute until
       // the user returns to the tab.
       if (crossfadePendingFadeInRef.current) {
+        // Wall-clock fallback: if the ramp was armed long ago and is still
+        // pending (surface not yet reporting position), unstick it anyway so
+        // the queue never plays mute indefinitely.
+        const startedAt = crossfadeFadeInStartedAtRef.current;
+        const staleByWallClock =
+          startedAt !== null && Date.now() - startedAt > CROSSFADE_FADE_IN_MS + 2500;
         const fadeInRaw =
           currentBackgroundVideoIdRef.current === song.videoId && !isSilentAudio(audio)
             ? audio.currentTime
             : state.currentTime;
         const fadeInCurr = isFinite(fadeInRaw) ? fadeInRaw : state.currentTime;
-        if (fadeInCurr > (CROSSFADE_FADE_IN_MS / 1000) + 1) {
+        if (staleByWallClock || fadeInCurr > (CROSSFADE_FADE_IN_MS / 1000) + 1) {
+          crossfadeFadeInStartedAtRef.current = null;
           crossfadePendingFadeInRef.current = false;
           setPlayerVolume(1.0);
         }
@@ -2093,19 +2107,16 @@ try {
               ) {
                 return;
               }
-              // A crossfade advanced the queue with the old song faded to
-              // silence. Fade the NEW song in now that it is the audible stream
-              // (the fade-in suppressed during the track swap applies here).
+              // Fade the NEW song in now that it is the audible stream (the fade-in
+              // suppressed during the track swap applies here). The ramp is the
+              // plain setInterval fade even in a hidden tab — throttled but
+              // guaranteed to converge, instead of a position-gated ramp that
+              // can strand the new track mute until the user returns.
               if (crossfadePendingFadeInRef.current) {
+                crossfadeFadeInStartedAtRef.current = null;
+                crossfadePendingFadeInRef.current = false;
                 setPlayerVolume(0);
-                // Visible tab: ramp with the setInterval fade. Hidden tab:
-                // timers are throttled, so keep the flag set and let the
-                // progress timer converge the volume from position
-                // (stepCrossfadeFadeIn).
-                if (!document.hidden) {
-                  crossfadePendingFadeInRef.current = false;
-                  fadeVolume(0, 1, 800);
-                }
+                fadeVolume(0, 1, 800);
               }
               // The new song has taken over — the crossfade guard for the
               // *previous* track is no longer needed. If we kept it, the leaked
@@ -2294,6 +2305,7 @@ onError: () => {
                   handledTrackEndRef.current = true;
                   crossfadeAdvancedRef.current = true;
                   crossfadePendingFadeInRef.current = true;
+                  crossfadeFadeInStartedAtRef.current = Date.now();
                   setPlayerVolume(0);
                   state.handleTrackEnded();
                 } else {
