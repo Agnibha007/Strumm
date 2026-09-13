@@ -6,7 +6,7 @@ import {
   evaluateCrossfadeTick,
   backgroundCrossfadeProgress,
   crossfadeFadeInRatio,
-  CROSSFADE_DURATION_MS,
+  CROSSFADE_START_SECONDS_BEFORE_END,
   CROSSFADE_FADE_IN_MS,
 } from "web/lib/crossfade";
 import { getCachedDirectAudioUrl, resolveDirectAudioUrl } from "web/lib/direct-audio";
@@ -980,7 +980,7 @@ export default function AudioEngine() {
           );
           if (crossfadeAction === "start-fade") {
             hasTriggeredCrossfadeRef.current = true;
-            fadeVolume(1, 0, CROSSFADE_DURATION_MS, finalizeCrossfadeAdvance);
+            fadeVolume(1, 0, CROSSFADE_START_SECONDS_BEFORE_END * 1000, finalizeCrossfadeAdvance);
           } else if (crossfadeAction === "cancel-fade") {
             hasTriggeredCrossfadeRef.current = false;
             if (fadeIntervalRef.current) {
@@ -2616,7 +2616,7 @@ onError: () => {
               );
               if (crossfadeAction === "start-fade") {
                 hasTriggeredCrossfadeRef.current = true;
-                fadeVolume(1, 0, CROSSFADE_DURATION_MS, finalizeCrossfadeAdvance);
+                fadeVolume(1, 0, CROSSFADE_START_SECONDS_BEFORE_END * 1000, finalizeCrossfadeAdvance);
               } else if (crossfadeAction === "cancel-fade") {
                 hasTriggeredCrossfadeRef.current = false;
                 if (fadeIntervalRef.current) {

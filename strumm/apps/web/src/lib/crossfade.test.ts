@@ -5,13 +5,12 @@ import {
   crossfadeFadeInRatio,
   CROSSFADE_MIN_DURATION_SECONDS,
   CROSSFADE_START_SECONDS_BEFORE_END,
-  CROSSFADE_DURATION_MS,
   CROSSFADE_FADE_IN_MS,
 } from "./crossfade";
 
 describe("evaluateCrossfadeTick", () => {
   it("starts a fade when the track enters the final window", () => {
-    expect(evaluateCrossfadeTick(190, 200, false)).toBe("start-fade");
+    expect(evaluateCrossfadeTick(195, 200, false)).toBe("start-fade");
     expect(evaluateCrossfadeTick(200, 200, false)).toBe("start-fade");
   });
 
@@ -65,7 +64,7 @@ describe("evaluateCrossfadeTick", () => {
 
   it("never starts a fade when repeat mode is 'one'", () => {
     expect(evaluateCrossfadeTick(200, 200, false, "one")).toBe("none");
-    expect(evaluateCrossfadeTick(190, 200, false, "one")).toBe("none");
+    expect(evaluateCrossfadeTick(195, 200, false, "one")).toBe("none");
   });
 
   it("does not cancel an existing fade when repeat mode is 'one'", () => {
@@ -73,13 +72,13 @@ describe("evaluateCrossfadeTick", () => {
   });
 
   it("defaults to no repeat mode (crossfade allowed) when not provided", () => {
-    expect(evaluateCrossfadeTick(190, 200, false, "all")).toBe("start-fade");
-    expect(evaluateCrossfadeTick(190, 200, false)).toBe("start-fade");
+    expect(evaluateCrossfadeTick(195, 200, false, "all")).toBe("start-fade");
+    expect(evaluateCrossfadeTick(195, 200, false)).toBe("start-fade");
   });
 });
 
 describe("backgroundCrossfadeProgress", () => {
-  const FADE_SECONDS = CROSSFADE_DURATION_MS / 1000;
+  const FADE_SECONDS = CROSSFADE_START_SECONDS_BEFORE_END;
 
   it("is at full volume (0) before the fade window starts", () => {
     expect(backgroundCrossfadeProgress(180, 200)).toBe(0);
@@ -90,6 +89,14 @@ describe("backgroundCrossfadeProgress", () => {
     expect(backgroundCrossfadeProgress(200 - CROSSFADE_START_SECONDS_BEFORE_END + FADE_SECONDS, 200)).toBe(1);
     expect(backgroundCrossfadeProgress(200, 200)).toBe(1);
     expect(backgroundCrossfadeProgress(999, 200)).toBe(1);
+  });
+
+  it("reaches silence exactly at the track end, never earlier", () => {
+    // The fade-out window spans the final CROSSFADE_START_SECONDS_BEFORE_END
+    // seconds, so half a second before the end the tail is still audible and
+    // silence (and the queue advance) lands on the track's end.
+    expect(backgroundCrossfadeProgress(199.5, 200)).toBeCloseTo(0.9);
+    expect(backgroundCrossfadeProgress(200, 200)).toBe(1);
   });
 
   it("is linear between full volume and silence across the fade", () => {
