@@ -7,6 +7,7 @@ import {
   backgroundCrossfadeProgress,
   crossfadeFadeInRatio,
   CROSSFADE_DURATION_MS,
+  CROSSFADE_FADE_IN_MS,
 } from "web/lib/crossfade";
 import { getCachedDirectAudioUrl, resolveDirectAudioUrl } from "web/lib/direct-audio";
 import { usePlayerStore } from "web/store/usePlayerStore";
@@ -677,6 +678,22 @@ export default function AudioEngine() {
       setCurrentTime(curr);
       updatePositionState();
 
+      // The crossfade fade-IN must run even while a swap is in progress
+      // (transitioningRef stays true until the fresh play event lands): a
+      // hidden tab can be slow to deliver that event, but the new track must
+      // still ramp in or the queue would sit muted until the user returns. The
+      // owner check below already stops a stale stream (previous track, or the
+      // still-loading swipe target) from starting or finishing the ramp early.
+      const bgOwnerIsCurrent =
+        !currentBackgroundVideoIdRef.current ||
+        currentBackgroundVideoIdRef.current ===
+          usePlayerStore.getState().currentSong?.videoId;
+
+      // A crossfaded-in track ramps from silence via playback position (see
+      // stepCrossfadeFadeIn) — works in hidden tabs where timers are
+      // throttled. While the ramp is active, skip the fade-out evaluation.
+      if (stepCrossfadeFadeIn(curr, bgOwnerIsCurrent)) return;
+
       // Skip crossfade evaluation while swapping tracks so the leaked
       // "fade triggered" flag from the previous track can't cancel the fade-in.
       if (!transitioningRef.current) {
@@ -684,15 +701,6 @@ export default function AudioEngine() {
         // song — after an advance its stream can still be firing timeupdate for
         // the previous (ended) track while the next URL resolves. A null owner
         // means podcasts/host audio, which is always "current".
-        const bgOwnerIsCurrent =
-          !currentBackgroundVideoIdRef.current ||
-          currentBackgroundVideoIdRef.current ===
-            usePlayerStore.getState().currentSong?.videoId;
-
-        // A crossfaded-in track ramps from silence via playback position (see
-        // stepCrossfadeFadeIn) — works in hidden tabs where timers are
-        // throttled. While the ramp is active, skip the fade-out evaluation.
-        if (stepCrossfadeFadeIn(curr, bgOwnerIsCurrent)) return;
 
         if (backgroundModeRef.current) {
           // Backgrounded playback must not rely on the timer-driven crossfade:
@@ -1472,6 +1480,23 @@ try {
       const audio = htmlAudioRef.current;
       if (!audio) return;
 
+      // If the position-driven fade-in (stepCrossfadeFadeIn) was gated or its
+      // playback events were swallowed in a hidden tab, the new track would
+      // sit at 0 volume forever. Once it's clearly past its fade-in window,
+      // unstick it so the queue stays audible instead of playing mute until
+      // the user returns to the tab.
+      if (crossfadePendingFadeInRef.current) {
+        const fadeInRaw =
+          currentBackgroundVideoIdRef.current === song.videoId && !isSilentAudio(audio)
+            ? audio.currentTime
+            : state.currentTime;
+        const fadeInCurr = isFinite(fadeInRaw) ? fadeInRaw : state.currentTime;
+        if (fadeInCurr > (CROSSFADE_FADE_IN_MS / 1000) + 1) {
+          crossfadePendingFadeInRef.current = false;
+          setPlayerVolume(1.0);
+        }
+      }
+
       // The queue may have auto-advanced (or the user skipped via media keys)
       // while the page was hidden. If a direct URL is now available for the
       // current track but the host element is still on a stale src (previous
@@ -2228,17 +2253,22 @@ onError: () => {
           setCurrentTime(curr);
           if (dur !== undefined && dur !== null && !isNaN(dur)) setDuration(dur);
 
+          // The crossfade fade-IN runs even while a swap is in progress
+          // (transitioningRef stays true until the fresh play state lands) so
+          // a slow hidden tab can't leave the new track muted. The owner check
+          // stops a stale iframe from ramping (or finishing the ramp) early.
+          const state = usePlayerStore.getState();
+          const song = state.currentSong;
+          const ownerMatches = !!song && currentVideoIdRef.current === song.videoId;
+
+          // Fade in a crossfaded-in track from playback position (works in
+          // hidden tabs) — only while this iframe holds the CURRENT song.
+          if (stepCrossfadeFadeIn(curr, ownerMatches)) return;
+
           // Skip crossfade evaluation while swapping tracks so the leaked
           // "fade triggered" flag from the previous track can't cancel the
           // new track's fade-in.
           if (!transitioningRef.current) {
-            // Fade in a crossfaded-in track from playback position (works in
-            // hidden tabs) — only while this iframe holds the CURRENT song.
-            const state = usePlayerStore.getState();
-            const song = state.currentSong;
-            const ownerMatches = !!song && currentVideoIdRef.current === song.videoId;
-            if (stepCrossfadeFadeIn(curr, ownerMatches)) return;
-
             if (backgroundModeRef.current) {
               // Background + iframe surface: mirror the host-audio background
               // crossfade. Hidden tabs throttle timers, so the fade-out (where
