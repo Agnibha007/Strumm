@@ -13,6 +13,10 @@
 export const CROSSFADE_MIN_DURATION_SECONDS = 15;
 export const CROSSFADE_START_SECONDS_BEFORE_END = 10;
 export const CROSSFADE_DURATION_MS = 5000;
+// Position-driven crossfade fade-in ramp for the newly started track. Longer
+// than the on-tab 800ms timer fade so a background tab (throttled to ~1 tick
+// per second) still renders a perceptible ramp instead of a full-volume burst.
+export const CROSSFADE_FADE_IN_MS = 2000;
 
 export type CrossfadeTickAction = "start-fade" | "cancel-fade" | "none";
 
@@ -64,4 +68,17 @@ export function backgroundCrossfadeProgress(currentTime: number, duration: numbe
   const fadeStart = duration - CROSSFADE_START_SECONDS_BEFORE_END;
   const fadeSeconds = CROSSFADE_DURATION_MS / 1000;
   return Math.min(1, Math.max(0, (currentTime - fadeStart) / fadeSeconds));
+}
+
+/**
+ * Linear fade-in progress for a crossfaded-in track, derived from its playback
+ * position so the ramp converges even when `setInterval` is throttled (hidden
+ * tab). Returns 0 = still silent at the very start, 1 = full volume once
+ * CROSSFADE_FADE_IN_MS of media time has elapsed.
+ *
+ * @param currentTime - current playback position in seconds of the NEW track.
+ */
+export function crossfadeFadeInRatio(currentTime: number): number {
+  if (!isFinite(currentTime) || currentTime <= 0) return 0;
+  return Math.min(1, currentTime / (CROSSFADE_FADE_IN_MS / 1000));
 }

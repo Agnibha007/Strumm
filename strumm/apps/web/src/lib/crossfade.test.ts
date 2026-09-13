@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   evaluateCrossfadeTick,
   backgroundCrossfadeProgress,
+  crossfadeFadeInRatio,
   CROSSFADE_MIN_DURATION_SECONDS,
   CROSSFADE_START_SECONDS_BEFORE_END,
   CROSSFADE_DURATION_MS,
+  CROSSFADE_FADE_IN_MS,
 } from "./crossfade";
 
 describe("evaluateCrossfadeTick", () => {
@@ -100,5 +102,27 @@ describe("backgroundCrossfadeProgress", () => {
     expect(backgroundCrossfadeProgress(100, Number.NaN)).toBe(0);
     expect(backgroundCrossfadeProgress(100, 0)).toBe(0);
     expect(backgroundCrossfadeProgress(Number.NaN, 200)).toBe(0);
+  });
+});
+
+describe("crossfadeFadeInRatio", () => {
+  const FADE_IN_SECONDS = CROSSFADE_FADE_IN_MS / 1000;
+
+  it("is silent (0) before playback and at the very start", () => {
+    expect(crossfadeFadeInRatio(0)).toBe(0);
+    expect(crossfadeFadeInRatio(-5)).toBe(0);
+    expect(crossfadeFadeInRatio(Number.NaN)).toBe(0);
+    expect(crossfadeFadeInRatio(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+
+  it("reaches full volume (1) once the fade-in media time has elapsed", () => {
+    expect(crossfadeFadeInRatio(FADE_IN_SECONDS)).toBe(1);
+    expect(crossfadeFadeInRatio(FADE_IN_SECONDS * 2)).toBe(1);
+    expect(crossfadeFadeInRatio(999)).toBe(1);
+  });
+
+  it("is linear between silence and full volume across the ramp", () => {
+    expect(crossfadeFadeInRatio(FADE_IN_SECONDS / 2)).toBeCloseTo(0.5);
+    expect(crossfadeFadeInRatio(FADE_IN_SECONDS / 4)).toBeCloseTo(0.25);
   });
 });
