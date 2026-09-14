@@ -282,9 +282,14 @@ export default function AudioEngine() {
   // natural ended handler stop playback cleanly.
   const finalizeCrossfadeAdvance = () => {
     const before = usePlayerStore.getState().currentSong?.videoId ?? null;
+    const beforeIndex = usePlayerStore.getState().currentIndex;
     usePlayerStore.getState().next();
-    const after = usePlayerStore.getState().currentSong?.videoId ?? null;
-    if (!before || after === before) {
+    const afterIndex = usePlayerStore.getState().currentIndex;
+    // Bail only when the QUEUE did not move (end of queue / single-song queue
+    // with repeat off — "same videoId" must NOT be used here, because a queue
+    // whose next item is a duplicate of the current track legitimately advances
+    // to a fresh stream under an identical videoId).
+    if (!before || beforeIndex < 0 || afterIndex === beforeIndex) {
       const targetVal = usePlayerStore.getState().volume;
       if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.volume = targetVal;
@@ -564,6 +569,9 @@ export default function AudioEngine() {
     let appliedSeek = false;
     const applySeek = () => {
       if (appliedSeek) return;
+      // Don't touch an element that was swapped away while the load was
+      // in-flight — a demoted element must never act on the store's state.
+      if (audio !== htmlAudioRef.current) return;
       // Do NOT mark the seek as applied while the media has no metadata —
       // currentTime can't be honored yet, so a premature "applied" would drop
       // the resume position and restart the song from 0. Only commit once the
@@ -583,18 +591,25 @@ export default function AudioEngine() {
     // play() on an already-playing element is a no-op, so re-asserting on
     // loadedmetadata/canplay is harmless.
     const startPlayback = () => {
+      // Only play while this element is the audible one — the once-listeners
+      // survive a swap and would otherwise start a (demoted) staging element.
+      if (audio !== htmlAudioRef.current) return;
       try {
         audio.play().catch(() => {});
       } catch (e) {}
     };
 
-    applySeek();
-    audio.addEventListener("loadedmetadata", () => {
+    // Do NOT apply the seek or call play() synchronously right after the src
+    // assignment: the element still holds the PREVIOUS resource until its load
+    // task runs, so applySeek() would rewind the (just-finished) song to 0 and
+    // startPlayback() would audibly re-play it while the next stream loads.
+    // Wait for the new src's ready events instead.
+    const kickoff = () => {
       applySeek();
       startPlayback();
-    }, { once: true });
-    audio.addEventListener("canplay", startPlayback, { once: true });
-    startPlayback();
+    };
+    audio.addEventListener("loadedmetadata", kickoff, { once: true });
+    audio.addEventListener("canplay", kickoff, { once: true });
 
     // Delegate player controls to the host <audio> until we leave background mode.
     setPlayerRef({
@@ -1789,7 +1804,15 @@ try {
       }
 
       if (!audio.src || isSilentAudio(audio) || audio.error) return;
-      if (audio.paused && audio.readyState >= 2) {
+      // Only re-assert play() while this element is serving the CURRENT track.
+      // After an auto-advance the element can still hold the PREVIOUS (ended)
+      // stream while the next song's URL resolves — play() on an ended element
+      // RESTARTS it from 0:00 ("the current song plays again"), so leave it
+      // paused until the new track is actually handed over.
+      const ownsCurrent = song.metadata?.audioUrl
+        ? !isSilentAudio(audio)
+        : currentBackgroundVideoIdRef.current === song.videoId;
+      if (ownsCurrent && audio.paused && audio.readyState >= 2) {
         try {
           audio.play().catch(() => {});
         } catch (e) {}
@@ -2142,7 +2165,13 @@ try {
         switchToIframeSurface(currentSong.videoId);
       }
     }
-  }, [currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality, switchToIframeSurface]);
+    // Deps are keyed on the currentSong OBJECT (not just videoId): advancing to
+    // a queue item that shares the previous track's videoId is still a fresh
+    // playback — a videoId-only dep would skip the surface swap, leaving the
+    // old finished stream mounted while the playbar shows the "new" song at
+    // 0:00 (observed as "the same song repeats"). Queue edits and crossplay
+    // syncs keep the same currentSong object, so they don't re-trigger.
+  }, [currentSong, currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality, switchToIframeSurface]);
 
   // Podcast resume: auto-seek to the saved position and persist progress
   // periodically (and when leaving the episode). Only meaningful for HTML
