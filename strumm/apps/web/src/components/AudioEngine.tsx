@@ -280,6 +280,22 @@ export default function AudioEngine() {
   // playback silent and frozen (fade out, no next song). Detect that case and
   // bail out instead: restore the volume so the track plays out, and let the
   // natural ended handler stop playback cleanly.
+  // Drop the finished stream the instant the queue advances, so no stray play()
+  // (including the sync startPlayback in activateHostAudio) can resurrect the
+  // song that just ended — a mounted ended <audio> re-plays from 0:00 on any
+  // play() while the next track's URL is still loading. Pausing first keeps
+  // the strip silent even before the load task runs. Never touches the silent
+  // loop element (iframe-surface mode) — only real audio is ever stripped.
+  const silenceFinishedStream = () => {
+    const audio = htmlAudioRef.current;
+    if (!audio || isSilentAudio(audio)) return;
+    try {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    } catch (e) {}
+  };
+
   const finalizeCrossfadeAdvance = () => {
     const before = usePlayerStore.getState().currentSong?.videoId ?? null;
     const beforeIndex = usePlayerStore.getState().currentIndex;
@@ -310,6 +326,10 @@ export default function AudioEngine() {
     crossfadeAdvancedRef.current = true;
     crossfadePendingFadeInRef.current = true;
     crossfadeFadeInStartedAtRef.current = Date.now();
+    // The queue moved — kill the finished stream (guaranteed). In the bail
+    // branch above (queue at end, same index) we deliberately did NOT strip so
+    // the current track keeps playing out instead of going silent.
+    silenceFinishedStream();
   };
 
   const triggerPlay = () => {
@@ -599,17 +619,19 @@ export default function AudioEngine() {
       } catch (e) {}
     };
 
-    // Do NOT apply the seek or call play() synchronously right after the src
-    // assignment: the element still holds the PREVIOUS resource until its load
-    // task runs, so applySeek() would rewind the (just-finished) song to 0 and
-    // startPlayback() would audibly re-play it while the next stream loads.
-    // Wait for the new src's ready events instead.
-    const kickoff = () => {
+    // Safe to seek/play synchronously here even right after the src assignment:
+    // the advance already stripped the finished stream (silenceFinishedStream),
+    // so this element is empty — a play() cannot resurrect the previous song,
+    // and starting it immediately gets the fresh stream rolling as soon as it is
+    // loadable (fast handoff when the URL is cached). The ready-event re-asserts
+    // below cover Android's picky-first-play.
+    applySeek();
+    audio.addEventListener("loadedmetadata", () => {
       applySeek();
       startPlayback();
-    };
-    audio.addEventListener("loadedmetadata", kickoff, { once: true });
-    audio.addEventListener("canplay", kickoff, { once: true });
+    }, { once: true });
+    audio.addEventListener("canplay", startPlayback, { once: true });
+    startPlayback();
 
     // Delegate player controls to the host <audio> until we leave background mode.
     setPlayerRef({
@@ -956,6 +978,7 @@ export default function AudioEngine() {
               crossfadePendingFadeInRef.current = true;
               crossfadeFadeInStartedAtRef.current = Date.now();
               setPlayerVolume(0);
+              silenceFinishedStream();
               usePlayerStore.getState().handleTrackEnded();
             } else {
               setPlayerVolume(1 - fadeT);
@@ -990,6 +1013,7 @@ export default function AudioEngine() {
             bgOwnerIsCurrent
           ) {
             handledTrackEndRef.current = true;
+            silenceFinishedStream();
             handlePodcastEnded();
           }
         } else {
@@ -1055,9 +1079,11 @@ export default function AudioEngine() {
         bgCrossfadeRef.current = false;
         hasTriggeredCrossfadeRef.current = false;
         handledTrackEndRef.current = true;
+        silenceFinishedStream();
         usePlayerStore.getState().handleTrackEnded();
         return;
       }
+      silenceFinishedStream();
       handlePodcastEnded();
     };
 
@@ -1879,6 +1905,7 @@ try {
         handledTrackEndRef.current = true;
         bgCrossfadeRef.current = false;
         hasTriggeredCrossfadeRef.current = false;
+        silenceFinishedStream();
         state.handleTrackEnded();
         return;
       }
