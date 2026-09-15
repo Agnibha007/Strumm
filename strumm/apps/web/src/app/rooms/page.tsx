@@ -377,36 +377,36 @@ export default function RoomsPage() {
       </section>
 
       {/* Find + Discover */}
-      <section className="space-y-4 min-w-0">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 min-w-0">
-          <h3 className="font-editorial text-2xl font-bold text-text min-w-0 truncate">
+      <section className="space-y-5 min-w-0">
+        <div className="flex items-center justify-between gap-3 min-w-0">
+          <h3 className="font-editorial text-2xl font-bold text-text truncate min-w-0">
             {searchQuery.trim() ? `Results for "${searchQuery.trim()}"` : "Live Rooms"}
           </h3>
-          <form
-            onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }}
-            className="flex gap-2 md:w-80 w-full min-w-0 shrink-0"
-          >
-            <div className="flex-1 min-w-0 flex items-center gap-2 bg-surface/30 border border-border/60 focus-within:border-primary/50 rounded-xl px-3 transition">
-              <Search className="w-4 h-4 text-muted shrink-0" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch(searchQuery)}
-                placeholder="Find a room..."
-                className="flex-1 min-w-0 bg-transparent py-2.5 text-sm text-text focus:outline-none"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={searching}
-              className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-hover transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60 shrink-0"
-            >
-              {searching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-              Search
-            </button>
-          </form>
         </div>
+        <form
+          onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }}
+          className="flex gap-2 w-full max-w-md min-w-0"
+        >
+          <div className="flex-1 min-w-0 flex items-center gap-2 bg-surface/30 border border-border/60 focus-within:border-primary/50 rounded-xl px-3 transition">
+            <Search className="w-4 h-4 text-muted shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch(searchQuery)}
+              placeholder="Find a room..."
+              className="flex-1 min-w-0 w-full bg-transparent py-2.5 text-sm text-text focus:outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={searching}
+            className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-hover transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60 shrink-0"
+          >
+            {searching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+            Search
+          </button>
+        </form>
 
         {searchQuery.trim() && searchResults.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
