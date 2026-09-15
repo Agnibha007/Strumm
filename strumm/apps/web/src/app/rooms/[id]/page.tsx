@@ -77,6 +77,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const { currentSong, isPlaying, currentTime, setCurrentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
 
   const [room, setRoom] = useState<RoomDetails | null>(null);
+  const [roomError, setRoomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Track currently active members using WebSocket join/leave events
@@ -161,6 +162,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       const json = await response.json();
       if (json.success) {
         setRoom(json.data);
+        setRoomError(null);
         // Initialize active members with all members from initial fetch
         // (will be updated in real-time via WebSocket). members is an array of
         // user-ID strings (not objects), so flatten both shapes defensively.
@@ -169,9 +171,12 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             .map((m: any) => (typeof m === "string" ? m : m?.id))
             .filter(Boolean)
         ));
+      } else {
+        setRoomError(json.error || "Failed to load room.");
       }
     } catch (e) {
       console.error("Failed to load room details:", e);
+      setRoomError("Failed to load room details.");
     } finally {
       setLoading(false);
     }
@@ -193,12 +198,14 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     };
   }, [token, id, user?.id]);
 
+  const cleanQueueEntry = (s: any) => s && typeof s === "object" && s.videoId ? s : null;
+
   const applySnapshot = (snap: any) => {
     setRoom(prev => ({
       ...(prev || {}),
       currentTrack: snap.currentTrack ?? prev?.currentTrack,
       playbackState: snap.playbackState ?? prev?.playbackState,
-      queue: snap.queue ?? prev?.queue ?? [],
+      queue: (snap.queue ?? prev?.queue ?? []).map(cleanQueueEntry).filter(Boolean),
       hostId: snap.hostId ?? prev?.hostId,
       hostName: snap.hostName ?? prev?.hostName,
       controllers: snap.controllers ?? prev?.controllers ?? [],
@@ -243,12 +250,13 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     setActiveMemberIds(prev => new Set([...prev, user.id]));
 
     ws.onmessage = async (event) => {
-      const payload = JSON.parse(event.data);
-      const { event: wsEvent, data: eventData } = payload;
+      try {
+        const payload = JSON.parse(event.data);
+        const { event: wsEvent, data: eventData } = payload;
 
-      if (wsEvent === "room:state") {
-        applySnapshot(eventData);
-      }
+        if (wsEvent === "room:state") {
+          applySnapshot(eventData);
+        }
 
       else if (wsEvent === "room:joined") {
         setMessages(prev => [...prev, { sender: "System", text: `${eventData.displayName || "A listener"} joined the room.` }]);
@@ -317,7 +325,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }
 
       else if (wsEvent === "track:update") {
-        if (!isHostRef.current) {
+        if (!isHostRef.current && eventData.song) {
           playSong(eventData.song, [eventData.song]);
         }
         setRoom(prev => prev ? { ...prev, currentTrack: eventData.song } : null);
@@ -349,8 +357,10 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }
 
       else if (wsEvent === "queue:add") {
-        addToQueue(eventData.song);
-        setRoom(prev => prev ? { ...prev, queue: [...(prev.queue || []), eventData.song] } : null);
+        const entry = cleanQueueEntry(eventData.song);
+        if (!entry) return;
+        addToQueue(entry);
+        setRoom(prev => prev ? { ...prev, queue: [...(prev.queue || []), entry] } : null);
       }
 
       else if (wsEvent === "queue:removed") {
@@ -398,6 +408,17 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           await handleReceiveSignal(from, signal);
         }
       }
+      } catch (err) {
+        console.error("Failed to handle room message:", err);
+      }
+    };
+
+    ws.onerror = () => {
+      show("Room connection error — playback sync may be disrupted.", "error");
+    };
+
+    ws.onclose = () => {
+      show("Room connection lost.", "error");
     };
 
     return () => {
@@ -407,6 +428,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         next.delete(user?.id);
         return next;
       });
+      ws.onclose = null;
+      ws.onerror = null;
       ws.close();
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(t => t.stop());
@@ -857,7 +880,24 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     );
   }
 
-  if (!room) return null;
+  if (!room) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3 text-center px-6">
+        <MessageSquare className="w-8 h-8 text-primary" />
+        <p className="text-sm">{roomError || "Room not found."}</p>
+        <button
+          onClick={() => {
+            setLoading(true);
+            fetchRoomInfo();
+          }}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/15 hover:bg-primary/30 text-primary text-xs font-medium transition cursor-pointer"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full min-w-0 soft-enter pb-16">
@@ -1082,7 +1122,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                   </p>
                 ) : (
                   <div className="divide-y divide-border/10">
-                    {room.queue.map((song, index) => (
+                    {room.queue.filter(cleanQueueEntry).map((song, index) => (
                       <div key={`${song.videoId}-${index}`} className="flex items-center gap-3 py-2.5 text-xs min-w-0">
                         <span className="w-5 text-[10px] font-mono text-muted text-right shrink-0">{index + 1}</span>
                         <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 ring-1 ring-white/5">
