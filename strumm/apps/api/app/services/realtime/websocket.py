@@ -15,7 +15,7 @@ the JWT.  The connection is rejected if authentication fails or no message
 is received within 10 seconds.
 
 Room-scoped WebSocket connections (for synced playback + WebRTC) live
-under ``/social/rooms/{roomId}/ws`` and are handled in ``social.py``.
+under ``/social/rooms/{roomId}/ws`` and are handled in ``app/routes/rooms.py``.
 """
 
 from __future__ import annotations

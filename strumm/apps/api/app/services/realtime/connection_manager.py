@@ -117,6 +117,15 @@ class ConnectionManager:
             if not self._room_connections[room_id]:
                 del self._room_connections[room_id]
 
+    def disconnect_user_from_room(self, room_id: str, user_id: str) -> None:
+        """Remove every WebSocket a user holds in a room (e.g. after a kick)."""
+        if room_id in self._room_connections:
+            self._room_connections[room_id] = [
+                c for c in self._room_connections[room_id] if c[0] != user_id
+            ]
+            if not self._room_connections[room_id]:
+                del self._room_connections[room_id]
+
     # ------------------------------------------------------------------
     # Sending
     # ------------------------------------------------------------------

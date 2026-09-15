@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import mongodb as db
-from app.routes import auth, stream, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media
+from app.routes import auth, stream, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media, rooms
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 from app.services.normalizer import clean_song_text_fields
@@ -145,6 +145,23 @@ async def _background_startup_work():
         # --- Database indexes (non-critical) ---
         await _create_indexes(database)
         logger.info(f"[{time.time() - t0:.3f}s] Database indexes created.")
+
+        # --- Legacy room cleanup (idempotent; normalizes old room docs so the
+        # extracted rooms service never trips over pre-refactor data) ---
+        try:
+            from app.services.rooms import cleanup_legacy_rooms
+            room_stats = await cleanup_legacy_rooms(database)
+            logger.info(
+                f"[{time.time() - t0:.3f}s] Room cleanup: "
+                f"{room_stats.get('backfilledJoinCodes', 0)} join codes backfilled, "
+                f"{room_stats.get('deletedHostless', 0)} hostless rooms dropped, "
+                f"{room_stats.get('deletedEmpty', 0)} empty rooms dropped, "
+                f"{room_stats.get('removedStaleInvites', 0)} stale invites removed."
+            )
+        except Exception as exc:
+            logger.error(f"Legacy room cleanup failed (app continues serving): {exc}")
+            import sentry_sdk
+            sentry_sdk.capture_exception(exc)
 
         # --- Disk usage check ---
         _check_disk_usage()
@@ -526,6 +543,7 @@ app.include_router(podcast.router)
 app.include_router(recommendation.router)
 app.include_router(share.router)
 app.include_router(social.router)
+app.include_router(rooms.router)
 app.include_router(statistics.router)
 app.include_router(collaboration.router)
 app.include_router(feedback.router)

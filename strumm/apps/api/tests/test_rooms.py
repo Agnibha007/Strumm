@@ -8,8 +8,8 @@ Covers the production-readiness fixes:
   - GET /social/rooms/search + /social/rooms/suggestions.
   - POST /social/rooms: controllers seed + room:created push.
   - DELETE /social/rooms: host-only + room:deleted push.
-  - _can_control: host + approved-controller gating for playback events.
-  - _handle_room_disconnect: room:left broadcast, host auto-transfer to the
+  - can_control: host + approved-controller gating for playback events.
+  - handle_room_disconnect: room:left broadcast, host auto-transfer to the
     longest-connected member, hostless empty room deletion.
 
 MongoDB and the realtime manager are mocked; no external services are touched.
@@ -81,16 +81,26 @@ def _set_find(db, collection_key, docs):
 
 @pytest.fixture
 def mock_realtime():
-    """Patch the module-level ws_manager alias."""
-    with patch("app.routes.social.ws_manager") as m:
-        m.broadcast_to_circle = AsyncMock()
-        m.send_to_user = AsyncMock()
-        m.broadcast_to_room = AsyncMock()
-        m.send_json = AsyncMock()
-        m.connect_room = AsyncMock()
-        m.disconnect_room = MagicMock(return_value=None)
-        m.room_connected_user_ids = MagicMock(return_value=[])
-        yield m
+    """Patch the room manager wherever the new rooms modules reach it.
+
+    services.rooms uses ``manager = realtime_manager`` and routes/rooms.py
+    binds its own ``ws_manager`` alias at import time, so both module-level
+    names must point at the SAME mock for cross-module assertions (e.g. the
+    invite route pushes via ``ws_manager.send_to_user`` while disconnect
+    cleanup broadcasts via ``services.rooms.manager``).
+    """
+    manager = MagicMock()
+    manager.broadcast_to_circle = AsyncMock()
+    manager.send_to_user = AsyncMock()
+    manager.broadcast_to_room = AsyncMock()
+    manager.send_json = AsyncMock()
+    manager.connect_room = AsyncMock()
+    manager.disconnect_room = MagicMock(return_value=None)
+    manager.disconnect_user_from_room = MagicMock(return_value=None)
+    manager.room_connected_user_ids = MagicMock(return_value=[])
+    with patch("app.services.rooms.manager", manager), \
+         patch("app.routes.rooms.ws_manager", manager):
+        yield manager
 
 
 @pytest.fixture
@@ -369,12 +379,12 @@ async def test_delete_room_notifies_and_removes(client, mock_db, mock_realtime):
 
 
 # ---------------------------------------------------------------------------
-# _can_control — host + approved controller gating
+# can_control — host + approved controller gating
 # ---------------------------------------------------------------------------
 
 
 async def test_can_control_gates_by_host_then_controllers(mock_db):
-    from app.routes.social import _can_control
+    from app.services.rooms import can_control as _can_control
 
     room_id = "6630a1c2e4b0a1c2e4b0a1dd"
     room = {
@@ -393,7 +403,7 @@ async def test_can_control_gates_by_host_then_controllers(mock_db):
 
 
 async def test_can_control_missing_room_denied(mock_db):
-    from app.routes.social import _can_control
+    from app.services.rooms import can_control as _can_control
 
     room_id = "6630a1c2e4b0a1c2e4b0a1ee"
     mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=None)
@@ -429,7 +439,7 @@ async def test_room_ws_event_names_are_contract_stable(mock_db, mock_realtime):
 async def test_disconnect_broadcasts_canonical_room_left_constant(mock_db, mock_realtime):
     """The leave broadcast must use the ROOM_LEFT ('room:left') constant, NOT
     the legacy 'room:leave' string — the whole point of the room-fix."""
-    from app.routes.social import _handle_room_disconnect
+    from app.services.rooms import handle_room_disconnect as _handle_room_disconnect
     from app.services.realtime.events import ROOM_LEFT
 
     room_id = "6630a1c2e4b0a1c2e4b0a91f"
@@ -456,12 +466,12 @@ async def test_disconnect_broadcasts_canonical_room_left_constant(mock_db, mock_
 
 
 # ---------------------------------------------------------------------------
-# _handle_room_disconnect — room:left + host auto-transfer + empty-room delete
+# handle_room_disconnect — room:left + host auto-transfer + empty-room delete
 # ---------------------------------------------------------------------------
 
 
 async def test_disconnect_broadcasts_leave(mock_db, mock_realtime):
-    from app.routes.social import _handle_room_disconnect
+    from app.services.rooms import handle_room_disconnect as _handle_room_disconnect
 
     room_id = "6630a1c2e4b0a1c2e4b0a1ff"
     room = {
@@ -488,7 +498,7 @@ async def test_disconnect_broadcasts_leave(mock_db, mock_realtime):
 
 
 async def test_disconnect_auto_transfers_host(mock_db, mock_realtime):
-    from app.routes.social import _handle_room_disconnect
+    from app.services.rooms import handle_room_disconnect as _handle_room_disconnect
 
     room_id = "6630a1c2e4b0a1c2e4b0a111"
     room = {
@@ -532,7 +542,7 @@ async def test_disconnect_auto_transfers_host(mock_db, mock_realtime):
 
 
 async def test_disconnect_empties_and_deletes_room(mock_db, mock_realtime):
-    from app.routes.social import _handle_room_disconnect
+    from app.services.rooms import handle_room_disconnect as _handle_room_disconnect
 
     room_id = "6630a1c2e4b0a1c2e4b0a333"
     room = {
@@ -653,3 +663,313 @@ async def test_invite_rejects_non_friend(client, mock_db):
     )
     assert res.status_code == 403
     mock_db[mock_db.NOTIFICATIONS].insert_one.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Join codes — POST /social/rooms/{roomId}/join-code + GET /by-code/{code}
+# ---------------------------------------------------------------------------
+
+
+async def test_join_code_regen_is_host_only(client, mock_db):
+    room_id = ObjectId("6630a1c2e4b0a1c2e4b0a0aa")
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value={
+        "_id": room_id,
+        "name": "Their Room",
+        "hostId": "user_other",
+        "members": ["user_other"],
+        "visibility": "circle",
+    })
+    res = await client.post(f"/social/rooms/{room_id}/join-code")
+    assert res.status_code == 403
+
+
+async def test_join_code_regen_returns_new_code(client, mock_db):
+    room_id = ObjectId("6630a1c2e4b0a1c2e4b0a0bb")
+    room = {
+        "_id": room_id,
+        "name": "My Room",
+        "hostId": "user_host",
+        "members": ["user_host"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.ROOMS].update_one = AsyncMock()
+
+    res = await client.post(f"/social/rooms/{room_id}/join-code")
+    assert res.status_code == 200
+    code = res.json()["data"]["joinCode"]
+    assert len(code) == 6 and code.isalnum()
+
+    update_call = mock_db[mock_db.ROOMS].update_one.call_args
+    assert update_call.args[0] == {"_id": room_id}
+    assert update_call.args[1] == {"$set": {"joinCode": code}}
+
+
+async def test_join_code_generated_with_ambiguous_chars_excluded(mock_db):
+    """Join codes must never contain 0/O/1/I/l so spoken/printed codes work."""
+    from app.services.rooms import generate_join_code
+    safe = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    for _ in range(200):
+        code = generate_join_code()
+        assert all(c in safe for c in code)
+        assert len(code) == 6
+
+
+async def test_find_room_by_join_code_normalizes_case_and_spaces(mock_db):
+    from app.services.rooms import find_room_by_join_code
+
+    room = {"_id": ObjectId("6630a1c2e4b0a1c2e4b0a0cc"), "name": "X"}
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+
+    result = await find_room_by_join_code(mock_db, "  ab12 cd3  ")
+    assert result is not None
+    find_call = mock_db[mock_db.ROOMS].find_one.call_args
+    assert find_call.args[0]["joinCode"] == "AB12CD3"
+
+
+async def test_by_code_resolves_public_room(client, mock_db):
+    room_id = ObjectId("6630a1c2e4b0a1c2e4b0a0dd")
+    room = {
+        "_id": room_id,
+        "name": "Secret Sesh",
+        "hostId": "user_other",
+        "members": ["user_other", "user_host"],
+        "visibility": "public",
+        "joinCode": "K7JX2M",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.USERS].find_one = AsyncMock(return_value={
+        "_id": object(),
+        "displayName": "Someone Else",
+    })
+
+    res = await client.get("/social/rooms/by-code/K7JX2M")
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["id"] == str(room_id)
+    assert data["memberCount"] == 2
+
+
+async def test_by_code_404_unknown_code(client, mock_db):
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=None)
+    res = await client.get("/social/rooms/by-code/ZZZZZZ")
+    assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Kick — host kicks a listener out of the room
+# ---------------------------------------------------------------------------
+
+
+async def test_kick_requires_host(client, mock_db):
+    room_id = ObjectId("6630a1c2e4b0a1c2e4b0a0ee")
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value={
+        "_id": room_id,
+        "name": "Their Room",
+        "hostId": "user_other",
+        "members": ["user_other", "user_host"],
+        "visibility": "public",
+    })
+    res = await client.post(
+        f"/social/rooms/{room_id}/kick",
+        json={"userId": "user_host"},
+    )
+    assert res.status_code == 403
+
+
+async def test_kick_removes_listener_and_broadcasts(client, mock_db, mock_realtime):
+    from app.services.realtime.events import ROOM_KICKED
+
+    room_id = ObjectId("6630a1c2e4b0a1c2e4b0a0ff")
+    room = {
+        "_id": room_id,
+        "name": "My Room",
+        "hostId": "user_host",
+        "members": ["user_host", "listener_one"],
+        "controllers": ["user_host"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.USERS].find_one = AsyncMock(return_value=None)
+
+    res = await client.post(
+        f"/social/rooms/{room_id}/kick",
+        json={"userId": "listener_one"},
+    )
+    assert res.status_code == 200
+
+    kick_calls = [
+        c for c in mock_realtime.broadcast_to_room.call_args_list
+        if c.kwargs["message"]["event"] == ROOM_KICKED
+    ]
+    assert kick_calls, "expected a room:kicked broadcast"
+    assert kick_calls[0].kwargs["message"]["data"]["userId"] == "listener_one"
+    # Kicked user's live sockets are dropped from the room channel
+    assert mock_realtime.disconnect_user_from_room.called
+
+
+# ---------------------------------------------------------------------------
+# Leave — clean REST leave so a dead socket can't strand a member in a room
+# ---------------------------------------------------------------------------
+
+
+async def test_leave_disconnects_sockets_and_cleans_up(client, mock_db, mock_realtime):
+    room_id = ObjectId("6630a1c2e4b0a1c2e4b0a111")
+    room = {
+        "_id": room_id,
+        "name": "My Room",
+        "hostId": "user_host",
+        "members": ["user_host", "listener_one"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.ROOMS].update_one = AsyncMock()
+    mock_db[mock_db.USERS].find_one = AsyncMock(return_value=None)
+    mock_realtime.room_connected_user_ids.return_value = []
+
+    res = await client.post(f"/social/rooms/{room_id}/leave")
+    assert res.status_code == 200
+
+    mock_realtime.disconnect_user_from_room.assert_called_with(str(room_id), "user_host")
+    leave_calls = [
+        c for c in mock_realtime.broadcast_to_room.call_args_list
+        if c.kwargs["message"]["event"] == "room:left"
+    ]
+    assert leave_calls
+    assert mock_db[mock_db.ROOMS].delete_one.await_count >= 1  # no members left -> room gone
+
+
+async def test_leave_requires_membership(client, mock_db):
+    room_id = ObjectId("6630a1c2e4b0a1c2e4b0a122")
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value={
+        "_id": room_id,
+        "name": "Their Room",
+        "hostId": "user_other",
+        "members": ["user_other"],
+        "visibility": "public",
+    })
+    res = await client.post(f"/social/rooms/{room_id}/leave")
+    assert res.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# queue:remove + queue:clear — host/controller-gated queue mutations
+# ---------------------------------------------------------------------------
+
+
+async def test_queue_clear_clears_via_dollar_set(mock_db):
+    from app.services.rooms import queue_clear
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a133")
+    mock_db[mock_db.ROOMS].update_one = AsyncMock()
+
+    await queue_clear(mock_db, room_oid)
+    call = mock_db[mock_db.ROOMS].update_one.call_args
+    assert call.args[0] == {"_id": room_oid}
+    assert call.args[1] == {"$set": {"queue": []}}
+
+
+async def test_queue_remove_matches_video_id(mock_db):
+    from app.services.rooms import queue_remove
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a144")
+    mock_update = AsyncMock(modified_count=0)
+    mock_update.return_value.modified_count = 0
+    mock_db[mock_db.ROOMS].update_one = mock_update
+
+    removed = await queue_remove(mock_db, room_oid, "abc_123")
+    call = mock_update.call_args
+    assert call.args[0] == {"_id": room_oid}
+    assert call.args[1] == {"$pull": {"queue": {"videoId": "abc_123"}}}
+    assert removed == 0
+
+
+# ---------------------------------------------------------------------------
+# cleanup_legacy_rooms — idempotent one-shot normalization of old room docs
+# ---------------------------------------------------------------------------
+
+
+async def _legacy_cursor(docs):
+    """Wrap a doc list in an async-iterable cursor for `async for` loops."""
+    class _Cursor:
+        def __init__(self, docs):
+            self._docs = docs
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._docs:
+                raise StopAsyncIteration
+            return self._docs.pop(0)
+
+    return _Cursor(list(docs))
+
+
+def _user_cursor(doc_ids):
+    """Cursor whose to_list() resolves to user docs with the given _ids."""
+    import asyncio
+    cursor = MagicMock()
+    async def _to_list(length=0):
+        return [{"_id": i, "displayName": "U"} for i in doc_ids]
+    cursor.to_list = _to_list
+    return cursor
+
+
+async def test_cleanup_backfills_join_codes_and_dedupes(mock_db):
+    from app.services.rooms import cleanup_legacy_rooms
+
+    host_id = "6630a1c2e4b0a1c2e4b0a155"
+    room = {
+        "_id": ObjectId(host_id),
+        "name": "Legacy",
+        "hostId": host_id,
+        "members": [host_id, host_id, "deleted_member"],
+        "controllers": [host_id, "deleted_member"],
+        "visibility": "circle",
+    }
+    mock_db[mock_db.ROOMS].find = MagicMock(return_value=await _legacy_cursor([room]))
+    # Host exists (via find_one, which cleanup uses for the host check);
+    # the deleted_member id resolves to no user (via the batched find).
+    mock_db[mock_db.USERS].find_one = AsyncMock(
+        return_value={"_id": ObjectId(host_id), "displayName": "Hosty"},
+    )
+    mock_db[mock_db.USERS].find = MagicMock(
+        return_value=_user_cursor([ObjectId(host_id)]),
+    )
+    mock_delete = AsyncMock()
+    mock_delete.return_value.deleted_count = 0
+    mock_db[mock_db.NOTIFICATIONS].delete_many = mock_delete
+
+    stats = await cleanup_legacy_rooms(mock_db)
+    assert stats["backfilledJoinCodes"] == 1
+    set_call = mock_db[mock_db.ROOMS].update_one.call_args.args[1]["$set"]
+    assert set_call["members"] == [host_id]
+    assert set_call["controllers"] == [host_id]
+    assert stats["prunedMembers"] == 1
+    assert stats["prunedControllers"] == 1
+    mock_db[mock_db.NOTIFICATIONS].delete_many.assert_awaited()
+
+
+async def test_cleanup_drops_hostless_rooms(mock_db):
+    from app.services.rooms import cleanup_legacy_rooms
+
+    gone_host = "6630a1c2e4b0a1c2e4b0a177"
+    orphan = {
+        "_id": ObjectId("6630a1c2e4b0a1c2e4b0a166"),
+        "name": "Orphan",
+        "hostId": gone_host,
+        "members": [gone_host],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find = MagicMock(return_value=await _legacy_cursor([orphan]))
+    mock_db[mock_db.ROOMS].delete_one = AsyncMock()
+    mock_db[mock_db.USERS].find_one = AsyncMock(return_value=None)  # host account gone
+    mock_delete = AsyncMock()
+    mock_delete.return_value.deleted_count = 0
+    mock_db[mock_db.NOTIFICATIONS].delete_many = mock_delete
+
+    stats = await cleanup_legacy_rooms(mock_db)
+    assert stats["deletedHostless"] == 1
+    assert stats["deletedEmpty"] == 0
+    mock_db[mock_db.ROOMS].delete_one.assert_awaited()

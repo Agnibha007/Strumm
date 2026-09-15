@@ -51,6 +51,13 @@ ROOM_MEMBER_COUNT = "room:member_count"
 ROOM_HOST_TRANSFERRED = "room:host_transferred"
 ROOM_CONTROLLERS_UPDATED = "room:controllers_updated"
 ROOM_INVITED = "room:invited"
+ROOM_STATE = "room:state"        # Full room snapshot pushed to a joining member
+ROOM_KICKED = "room:kicked"      # Host kicked a listener out of the room
+
+# --- Room queue events (collaborative queue) ---
+QUEUE_ADDED = "queue:add"
+QUEUE_REMOVED = "queue:removed"
+QUEUE_CLEARED = "queue:cleared"
 
 # ---------------------------------------------------------------------------
 # Notification events

@@ -6,7 +6,31 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, API_ORIGIN } from "web/lib/api";
 import { searchYouTube } from "web/lib/search";
-import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2, UserPlus, X, Check } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Copy,
+  Crown,
+  KeyRound,
+  ListMusic,
+  Loader2,
+  LogOut,
+  MessageSquare,
+  Mic,
+  MicOff,
+  Pause,
+  Play,
+  Plus,
+  Radio,
+  RefreshCw,
+  Search,
+  Send,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { useRouter } from "next/navigation";
@@ -16,6 +40,7 @@ interface RoomDetails {
   id: string;
   name: string;
   hostId: string;
+  hostName: string;
   members: string[];
   membersProfiles: Array<{
     id: string;
@@ -31,37 +56,59 @@ interface RoomDetails {
   queue: any[];
   visibility: string;
   controllers?: string[];
+  joinCode?: string;
+}
+
+type RailTab = "queue" | "chat" | "people";
+
+function formatTime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
 }
 
 export default function RoomDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { show } = useNotificationStore();
-  
+
   const { token, user } = useAuthStore();
   const { currentSong, isPlaying, currentTime, setCurrentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
-  
+
   const [room, setRoom] = useState<RoomDetails | null>(null);
   const [loading, setLoading] = useState(true);
-  
+
   // Track currently active members using WebSocket join/leave events
   const [activeMemberIds, setActiveMemberIds] = useState<Set<string>>(new Set());
-  
+
   // WebSocket and WebRTC Refs
   const socketRef = useRef<WebSocket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
-  
+
   // UI states
+  const [railTab, setRailTab] = useState<RailTab>("queue");
   const [messages, setMessages] = useState<Array<{ sender: string; text: string }>>([]);
   const [inputText, setInputText] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
   const isHost = room && user ? room.hostId === user.id : false;
   // Host OR an approved controller can drive playback (backend enforces too).
   const canControl = isHost || !!room?.controllers?.includes(user?.id ?? "");
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const [suggestQuery, setSuggestQuery] = useState("");
   const [suggestResults, setSuggestResults] = useState<any[]>([]);
+  const [searchingSongs, setSearchingSongs] = useState(false);
   const [addedToQueue, setAddedToQueue] = useState<Set<string>>(new Set());
+
+  // Join code sheet
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [regeneratingCode, setRegeneratingCode] = useState(false);
+
+  // Leave / delete sheet
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   // Invite flow (host only): pick a Circle friend to invite into the room.
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -69,6 +116,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const [inviteLoading, setInviteLoading] = useState(false);
   const [invitingId, setInvitingId] = useState<string | null>(null);
   const [invitedMsg, setInvitedMsg] = useState<string | null>(null);
+
+  // Kick flow (host only)
+  const [kickingId, setKickingId] = useState<string | null>(null);
 
   const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const voiceActiveRef = useRef(voiceActive);
@@ -95,6 +145,11 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
+
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // Fetch Room Info
   const fetchRoomInfo = async () => {
@@ -138,6 +193,36 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     };
   }, [token, id, user?.id]);
 
+  const applySnapshot = (snap: any) => {
+    setRoom(prev => ({
+      ...(prev || {}),
+      currentTrack: snap.currentTrack ?? prev?.currentTrack,
+      playbackState: snap.playbackState ?? prev?.playbackState,
+      queue: snap.queue ?? prev?.queue ?? [],
+      hostId: snap.hostId ?? prev?.hostId,
+      hostName: snap.hostName ?? prev?.hostName,
+      controllers: snap.controllers ?? prev?.controllers ?? [],
+      visibility: snap.visibility ?? prev?.visibility,
+      joinCode: snap.joinCode ?? prev?.joinCode,
+      membersProfiles: snap.membersProfiles ?? prev?.membersProfiles ?? [],
+      members: (snap.membersProfiles || []).map((m: any) => m.id),
+    } as RoomDetails));
+
+    // Non-hosts sync their local player to the room's live state on connect.
+    if (!isHostRef.current && snap.currentTrack) {
+      const track = snap.currentTrack;
+      if (currentSongRef.current?.videoId !== track.videoId) {
+        playSong(track, [track]);
+      }
+      setPlaying(!!snap.playbackState?.playing);
+      const ts = snap.playbackState?.timestamp || 0;
+      setCurrentTime(ts);
+      if (playerRef?.seekTo) {
+        playerRef.seekTo(ts);
+      }
+    }
+  };
+
   // Connect WebSocket
   useEffect(() => {
     if (!token || !user?.id || !room) return;
@@ -161,13 +246,17 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       const payload = JSON.parse(event.data);
       const { event: wsEvent, data: eventData } = payload;
 
-      if (wsEvent === "room:join") {
-        setMessages(prev => [...prev, { sender: "System", text: `A listener joined the room.` }]);
+      if (wsEvent === "room:state") {
+        applySnapshot(eventData);
+      }
+
+      else if (wsEvent === "room:joined") {
+        setMessages(prev => [...prev, { sender: "System", text: `${eventData.displayName || "A listener"} joined the room.` }]);
         fetchRoomInfo();
         // Track active member
         const newMemberId = eventData.userId;
         setActiveMemberIds(prev => new Set([...prev, newMemberId]));
-        
+
         if (isHostRef.current && currentSongRef.current) {
           // Sync new member with host's current track state
           ws.send(JSON.stringify({
@@ -179,7 +268,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             data: { timestamp: currentTimeRef.current }
           }));
         }
-        
+
         // If voice is active, initiate WebRTC offer to the newly joined member
         if (voiceActiveRef.current && newMemberId !== user?.id) {
           const pc = createPeerConnection(newMemberId);
@@ -188,8 +277,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             sendSignal(newMemberId, { sdp: offer });
           });
         }
-      } 
-      
+      }
+
       else if (wsEvent === "room:left") {
         setMessages(prev => [...prev, { sender: "System", text: `A listener left the room.` }]);
         fetchRoomInfo();
@@ -206,19 +295,34 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           peerConnectionsRef.current[peerId].close();
           delete peerConnectionsRef.current[peerId];
         }
-      } 
-      
+      }
+
+      else if (wsEvent === "room:kicked") {
+        if (eventData.userId === user?.id) {
+          // I got kicked — head back to the lobby.
+          show("You were removed from this room by the host.", "error");
+          router.push("/rooms");
+          return;
+        }
+        setMessages(prev => [...prev, { sender: "System", text: `${eventData.displayName || "A listener"} was removed from the room.` }]);
+        setActiveMemberIds(prev => {
+          const next = new Set(prev);
+          next.delete(eventData.userId);
+          return next;
+        });
+      }
+
       else if (wsEvent === "chat:message") {
         setMessages(prev => [...prev, { sender: eventData.senderName, text: eventData.text }]);
-      } 
-      
+      }
+
       else if (wsEvent === "track:update") {
         if (!isHostRef.current) {
           playSong(eventData.song, [eventData.song]);
         }
         setRoom(prev => prev ? { ...prev, currentTrack: eventData.song } : null);
-      } 
-      
+      }
+
       else if (wsEvent === "play") {
         if (!isHostRef.current) {
           setPlaying(true);
@@ -227,14 +331,14 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             playerRef.seekTo(eventData.timestamp);
           }
         }
-      } 
-      
+      }
+
       else if (wsEvent === "pause") {
         if (!isHostRef.current) {
           setPlaying(false);
         }
-      } 
-      
+      }
+
       else if (wsEvent === "seek") {
         if (!isHostRef.current) {
           setCurrentTime(eventData.timestamp);
@@ -242,20 +346,38 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             playerRef.seekTo(eventData.timestamp);
           }
         }
-      } 
-      
+      }
+
       else if (wsEvent === "queue:add") {
         addToQueue(eventData.song);
         setRoom(prev => prev ? { ...prev, queue: [...(prev.queue || []), eventData.song] } : null);
-      } 
-      
+      }
+
+      else if (wsEvent === "queue:removed") {
+        setRoom(prev => prev
+          ? { ...prev, queue: (prev.queue || []).filter((s) => s.videoId !== eventData.videoId) }
+          : null);
+      }
+
+      else if (wsEvent === "queue:cleared") {
+        setRoom(prev => prev ? { ...prev, queue: [] } : null);
+      }
+
+      else if (wsEvent === "control:denied") {
+        show(eventData.reason || "You don't have permission to do that in this room.", "error");
+      }
+
       else if (wsEvent === "room:host_transferred") {
         const newHostId = eventData.hostId;
         setMessages(prev => [...prev, {
           sender: "System",
           text: `${eventData.hostName || "Someone"} is now hosting the room.`,
         }]);
-        setRoom(prev => prev ? { ...prev, hostId: newHostId } : null);
+        setRoom(prev => prev ? {
+          ...prev,
+          hostId: newHostId,
+          hostName: eventData.hostName || prev.hostName,
+        } : null);
         if (newHostId === user?.id) {
           fetchRoomInfo();
         }
@@ -266,10 +388,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }
 
       else if (wsEvent === "room:deleted" || payload.type === "room_deleted") {
-        alert("This Strumm Room has been deleted by the host.");
         router.push("/rooms");
       }
-      
+
       else if (wsEvent === "signal") {
         const { from, signal } = eventData;
         // WebRTC Signaling Answer/Offer/Candidate Processing
@@ -348,7 +469,6 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   };
 
   const handleDeleteRoom = async () => {
-    if (!confirm("Are you sure you want to delete this room? This will disconnect all listeners.")) return;
     try {
       const response = await authFetch(apiUrl(`/social/rooms/${id}`), {
         method: "DELETE",
@@ -364,6 +484,27 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       console.error(e);
       alert("Error deleting room.");
     }
+  };
+
+  // Leave = close the socket. The backend's disconnect handling removes the
+  // member from the room (and auto-transfers hosting if the host leaves), so no
+  // dedicated leave endpoint is needed.
+  const handleLeaveRoom = () => {
+    socketRef.current?.close();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
+    Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
+    peerConnectionsRef.current = {};
+    setVoiceActive(false);
+    router.push("/rooms");
+  };
+
+  const handleLeaveFromSheet = () => {
+    setLeaving(true);
+    // Close socket then navigate; the backend cleans membership on disconnect.
+    handleLeaveRoom();
   };
 
   // Fetch the host's Circle friends so they can be invited directly into the room.
@@ -422,23 +563,45 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  // Leave = close the socket. The backend's disconnect handling removes the
-  // member from the room (and auto-transfers hosting if the host leaves), so no
-  // dedicated leave endpoint is needed.
-  const handleLeaveRoom = () => {
-    socketRef.current?.close();
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
+  const handleKickMember = async (memberId: string, memberName: string) => {
+    if (!isHost) return;
+    setKickingId(memberId);
+    try {
+      const response = await authFetch(apiUrl(`/social/rooms/${id}/kick`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ userId: memberId })
+      });
+      const json = await response.json();
+      if (!json.success) {
+        show(json.error || json.detail || "Failed to kick that listener.", "error");
+      } else {
+        show(`${memberName} was removed from the room.`);
+      }
+    } catch (e) {
+      console.error(e);
+      show("Unable to reach the room server.", "error");
+    } finally {
+      setKickingId(null);
     }
-    Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
-    peerConnectionsRef.current = {};
-    setVoiceActive(false);
-    router.push("/rooms");
+  };
+
+  const handleToggleController = (memberId: string) => {
+    if (!canControl || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    const controllers = room?.controllers || [];
+    const isController = controllers.includes(memberId);
+    socketRef.current.send(JSON.stringify({
+      event: isController ? "room:controller-remove" : "room:controller-add",
+      data: { userId: memberId }
+    }));
   };
 
   const handleSuggestSearch = async () => {
     if (!suggestQuery.trim()) return;
+    setSearchingSongs(true);
     try {
       const results = await searchYouTube({
         query: suggestQuery,
@@ -447,6 +610,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       setSuggestResults(results.songs);
     } catch (e) {
       console.error(e);
+    } finally {
+      setSearchingSongs(false);
     }
   };
 
@@ -486,6 +651,59 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     }, 2000);
   };
 
+  const handleRemoveFromQueue = (videoId: string) => {
+    if (!canControl || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({
+      event: "queue:remove",
+      data: { videoId }
+    }));
+  };
+
+  const handleClearQueue = () => {
+    if (!canControl || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({
+      event: "queue:clear",
+      data: {}
+    }));
+  };
+
+  const handlePlayNow = (song: any) => {
+    if (!canControl) return;
+    playSong(song, [song]);
+    setRoom(prev => prev ? { ...prev, currentTrack: song } : null);
+  };
+
+  const handleCopyCode = (code: string) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code).catch(() => {});
+    }
+    setCodeCopied(true);
+    window.setTimeout(() => setCodeCopied(false), 1500);
+  };
+
+  const handleRegenCode = async () => {
+    if (!isHost) return;
+    setRegeneratingCode(true);
+    try {
+      const response = await authFetch(apiUrl(`/social/rooms/${id}/join-code`), {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const json = await response.json();
+      if (json.success && json.data?.joinCode) {
+        setRoom(prev => prev ? { ...prev, joinCode: json.data.joinCode } : null);
+        show("New invite code generated.");
+      } else {
+        show(json.error || json.detail || "Failed to regenerate the code.", "error");
+      }
+    } catch (e) {
+      console.error(e);
+      show("Unable to reach the room server.", "error");
+    } finally {
+      setRegeneratingCode(false);
+    }
+  };
+
   // WebRTC Signal Exchanger
   const sendSignal = (toUserId: string, signalData: any) => {
     if (!socketRef.current) return;
@@ -512,7 +730,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         await pc.setLocalDescription(answer);
         sendSignal(fromPeerId, { sdp: answer });
       }
-      
+
       // Process any queued candidates for this peer
       const queued = pendingCandidatesRef.current[fromPeerId] || [];
       for (const cand of queued) {
@@ -521,7 +739,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         } catch (e) {}
       }
       delete pendingCandidatesRef.current[fromPeerId];
-      
+
     } else if (signal.candidate) {
       if (pc.remoteDescription) {
         try {
@@ -610,7 +828,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           });
         }
       } catch (err) {
-        alert("Microphone permission requested to activate Voice Channel.");
+        show("Microphone permission is needed to activate the Voice Channel.", "error");
       }
     }
   };
@@ -628,6 +846,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     setInputText("");
   };
 
+  const activeListeners = (room?.membersProfiles || []).filter(m => activeMemberIds.has(m.id));
+
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
@@ -640,144 +860,450 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   if (!room) return null;
 
   return (
-    <div className="max-w-6xl space-y-8 pb-12 w-full px-4 md:px-0 min-w-0 soft-enter">
-      {/* Title */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 min-w-0 border-b border-border/20 pb-4">
-        <div className="min-w-0">
-          <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-            Strumm Room
-          </span>
-          <h2 className="text-2xl font-editorial font-bold text-text truncate max-w-full">
-            {room.name}
-          </h2>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleLeaveRoom}
-            className="py-2 px-4 bg-surface border border-border/60 hover:bg-surface-elevated text-text rounded-xl text-xs font-semibold cursor-pointer transition"
-          >
-            Leave Room
-          </button>
-
-          {isHost && (
-            <button
-              onClick={openInviteModal}
-              className="py-2 px-4 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              Invite
-            </button>
-          )}
-
-          <button
-            onClick={toggleVoiceChat}
-            className={`py-2 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition ${
-              voiceActive 
-                ? "bg-green-500/10 border border-green-500/30 text-green-400" 
-                : "bg-surface border border-border/60 hover:bg-surface-elevated text-text"
-            }`}
-          >
-            {voiceActive ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-            {voiceActive ? "Voice Connected" : "Voice Channel"}
-          </button>
-          
-          {isHost && (
-            <button
-              onClick={handleDeleteRoom}
-              className="py-2 px-4 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-xl text-xs font-semibold cursor-pointer transition"
-            >
-              Delete Room
-            </button>
-          )}
-        </div>
+    <div className="relative w-full min-w-0 soft-enter pb-16">
+      {/* Full-bleed blurred artwork backdrop */}
+      <div className="fixed inset-0 -z-10">
+        {room.currentTrack ? (
+          <SongArtwork
+            song={room.currentTrack}
+            className="w-full h-full blur-3xl scale-110 opacity-30"
+            quality={ARTWORK_QUALITY_LOW}
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-b from-surface-elevated/40 via-surface/10 to-background" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/30 to-background" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start min-w-0">
-        
-        {/* Left pane: Playback state + suggestions */}
-        <div className="lg:col-span-8 space-y-6 min-w-0">
-          
-          {/* Synchronized Song Display */}
-          <div className="bg-surface/40 border border-border/60 p-6 rounded-2xl flex flex-col md:flex-row items-center gap-6 min-w-0">
-             <SongArtwork song={room.currentTrack} className="w-32 h-32 rounded shadow-2xl flex-shrink-0" quality={ARTWORK_QUALITY_HIGH} />
-            <div className="min-w-0 flex-1 text-center md:text-left">
-              {room.currentTrack ? (
-                <>
-                  <span className="text-[9px] uppercase tracking-wider text-primary font-bold">Now Synced</span>
-                  <h3 className="font-editorial text-2xl font-bold text-text mt-1 truncate max-w-full">
-                    {room.currentTrack.title}
-                  </h3>
-                  <p className="text-sm text-muted truncate mt-0.5 max-w-full">
-                    {room.currentTrack.artist}
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-muted italic">Waiting for host to load a song...</p>
-              )}
-
-              {/* Playback Controls */}
-              {canControl && room.currentTrack && (
-                <div className="flex items-center justify-center md:justify-start gap-4 mt-4">
-                  <button
-                    onClick={() => {
-                      setPlaying(!isPlaying);
-                      sendPlaybackState(isPlaying ? "pause" : "play");
-                    }}
-                    className="p-3 bg-primary text-white rounded-full transition shadow hover:scale-105"
-                  >
-                    {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                  </button>
-                  <button
-                    onClick={() => sendPlaybackState("seek")}
-                    className="px-3 py-1.5 border border-border hover:bg-surface-elevated text-xs font-semibold rounded-lg transition"
-                  >
-                    Sync Seek Timestamps
-                  </button>
-                </div>
-              )}
+      {/* Top bar */}
+      <div className="w-full px-4 md:px-6 pt-5 pb-4 border-b border-border/10 backdrop-blur-sm bg-background/30 sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => router.push("/rooms")}
+              className="p-2 -ml-1 hover:bg-surface-elevated/60 text-muted hover:text-text rounded-lg transition cursor-pointer"
+              title="Back to Rooms"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="font-editorial text-lg font-bold text-text truncate max-w-full">{room.name}</h2>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 px-2 py-0.5 text-[8px] uppercase tracking-wider font-bold shrink-0">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                  </span>
+                  {activeListeners.length} live
+                </span>
+              </div>
+              <p className="text-[10px] text-muted mt-0.5 flex items-center gap-1.5 truncate">
+                <Crown className="w-3 h-3 text-primary shrink-0" />
+                <span className="truncate">{room.hostName}</span>
+                <span className="opacity-50">·</span>
+                <span className="capitalize">{room.visibility}</span>
+              </p>
             </div>
           </div>
 
-          {/* Collaborative Queue List */}
-          <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
-            <h3 className="font-editorial text-lg text-text font-bold flex items-center gap-2">
-              <Radio className="w-5 h-5 text-primary animate-pulse" /> Collaborative Queue ({room.queue?.length || 0})
-            </h3>
-            {(!room.queue || room.queue.length === 0) ? (
-              <p className="text-xs text-muted italic pb-2">No songs in the queue yet. Suggest some below!</p>
-            ) : (
-              <div className="divide-y divide-border/20 font-sans max-h-60 overflow-y-auto pr-1">
-                {room.queue.map((song, index) => (
-                  <div key={`${song.videoId}-${index}`} className="flex justify-between items-center py-3 text-xs">
-                    <div className="min-w-0 flex-1 flex items-center gap-3">
-                       <SongArtwork song={song} className="w-10 h-10 rounded object-cover flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
-                      <div className="min-w-0">
-                        <span className="font-semibold text-text truncate block">{song.title}</span>
-                        <span className="text-[10px] text-muted truncate block">{song.artist}</span>
-                      </div>
-                    </div>
-                    {isHost && (
-                      <button
-                        onClick={() => {
-                          playSong(song, [song]);
-                          setRoom(prev => prev ? { ...prev, currentTrack: song } : null);
-                        }}
-                        className="px-3 py-1 bg-primary/20 hover:bg-primary/40 text-primary font-bold rounded text-[10px] transition cursor-pointer"
-                      >
-                        Play Now
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => { setCodeOpen(true); setCodeCopied(false); }}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface/60 border border-border/50 hover:bg-surface-elevated text-text text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+              title="Invite code"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-primary" />
+              {room.joinCode || "-----"}
+            </button>
+            <button
+              onClick={toggleVoiceChat}
+              className={`p-2.5 rounded-lg border transition cursor-pointer ${
+                voiceActive
+                  ? "bg-green-500/10 border-green-500/30 text-green-400"
+                  : "bg-surface/60 border-border/50 hover:bg-surface-elevated text-text"
+              }`}
+              title={voiceActive ? "Disconnect voice" : "Voice channel"}
+            >
+              {voiceActive ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+            </button>
+            {isHost && (
+              <button
+                onClick={openInviteModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Invite
+              </button>
             )}
+            <button
+              onClick={() => setLeaveOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-surface/60 border border-border/50 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 text-text text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Leave
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 md:px-0 pt-10 space-y-8">
+        {/* Now-playing stage */}
+        <section className="flex flex-col items-center text-center gap-6 min-w-0">
+          <div className="relative w-56 h-56 md:w-64 md:h-64 shrink-0">
+            <div className="absolute inset-0 rounded-full bg-primary/20 blur-3xl opacity-60" />
+            <SongArtwork
+              song={room.currentTrack}
+              className="relative w-full h-full rounded-3xl shadow-2xl shadow-black/60 ring-1 ring-white/10"
+              quality={ARTWORK_QUALITY_HIGH}
+              iconClassName="w-10 h-10"
+              priority
+            />
           </div>
 
-          {/* Collaborative Queue Song suggestion inputs */}
-          <div className="bg-surface/30 border border-border/60 rounded-2xl p-6 space-y-4 min-w-0">
-            <h3 className="font-editorial text-lg text-text font-bold">
-              {canControl ? "Search & Control Music" : "Suggest Songs"}
-            </h3>
+          {room.currentTrack ? (
+            <>
+              <div className="min-w-0 max-w-2xl">
+                <span className="text-[9px] uppercase tracking-widest text-primary font-bold inline-flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5" />
+                  Now Synced
+                </span>
+                <h1 className="font-editorial text-3xl md:text-4xl font-bold text-text mt-1.5 truncate max-w-full leading-tight">
+                  {room.currentTrack.title}
+                </h1>
+                <p className="text-sm text-muted mt-1 truncate max-w-full">
+                  {room.currentTrack.artist || "—"}
+                </p>
+              </div>
+
+              {/* Transport */}
+              <div className="flex items-center gap-5">
+                <button
+                  onClick={() => {
+                    setPlaying(!isPlaying);
+                    sendPlaybackState(isPlaying ? "pause" : "play");
+                  }}
+                  disabled={!canControl}
+                  className="w-14 h-14 rounded-full bg-primary text-white hover:bg-primary-hover hover:scale-105 transition shadow-xl shadow-primary/25 inline-flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  title={canControl ? (isPlaying ? "Pause" : "Play") : "Only the host or controllers control playback"}
+                >
+                  {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+                </button>
+                <div className="text-left">
+                  <div className="text-xs font-mono text-text tabular-nums">
+                    {formatTime(currentTime)} <span className="text-muted">/</span>{" "}
+                    <span className="text-muted">{room.currentTrack.duration ? formatTime(room.currentTrack.duration) : "..."}</span>
+                  </div>
+                  <p className="text-[9px] uppercase tracking-widest text-muted mt-0.5">
+                    {isPlaying ? "Playing now" : canControl ? "Paused" : "Room is paused"}
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2 min-w-0 max-w-xl">
+              <h1 className="font-editorial text-2xl md:text-3xl font-bold text-text">Waiting for the first track</h1>
+              <p className="text-sm text-muted">
+                {canControl ? "Drop a song into the queue using the Suggest button to get the listening party going." : "The host hasn't loaded a song yet — sit tight."}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              onClick={() => setSuggestOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface/60 border border-border/50 hover:border-primary/50 text-text text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 text-primary" />
+              {canControl ? "Add a song" : "Suggest"}
+            </button>
+            <button
+              onClick={() => { setCodeOpen(true); setCodeCopied(false); }}
+              className="sm:hidden inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface/60 border border-border/50 hover:border-primary/50 text-text text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-primary" />
+              {room.joinCode || "-----"}
+            </button>
+            {isHost && room.joinCode && (
+              <button
+                onClick={() => handleCopyCode(room.joinCode || "")}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface/60 border border-border/50 hover:border-primary/50 text-text text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+              >
+                {codeCopied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5 text-primary" />}
+                {codeCopied ? "Copied" : "Copy code"}
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* Rail: Queue / Chat / Listeners */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start min-w-0">
+          {/* Queue */}
+          <section className="lg:col-span-8 space-y-4 min-w-0">
+            <div className="flex items-center justify-between gap-3 min-w-0">
+              <div className="flex items-center gap-1.5 rounded-xl bg-surface/50 border border-border/40 p-1">
+                {([
+                  ["queue", "Up Next", ListMusic],
+                  ["chat", "Chat", MessageSquare],
+                  ["people", "Listeners", Users],
+                ] as Array<[RailTab, string, any]>).map(([tab, label, Icon]) => (
+                  <button
+                    key={tab}
+                    onClick={() => setRailTab(tab)}
+                    className={`px-3.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition cursor-pointer inline-flex items-center gap-1.5 ${
+                      railTab === tab
+                        ? "bg-primary text-white shadow"
+                        : "text-muted hover:text-text"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                    {tab === "queue" && ` (${room.queue?.length || 0})`}
+                    {tab === "people" && ` (${activeListeners.length})`}
+                  </button>
+                ))}
+              </div>
+
+              {railTab === "queue" && canControl && (room.queue?.length || 0) > 0 && (
+                <button
+                  onClick={handleClearQueue}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider text-muted hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {railTab === "queue" && (
+              <div className="bg-surface/40 backdrop-blur-sm border border-border/50 rounded-2xl p-4 space-y-2 min-w-0">
+                {(!room.queue || room.queue.length === 0) ? (
+                  <p className="text-xs text-muted italic py-6 text-center">
+                    No songs in the queue yet. Suggest one below to start the party.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-border/10">
+                    {room.queue.map((song, index) => (
+                      <div key={`${song.videoId}-${index}`} className="flex items-center gap-3 py-2.5 text-xs min-w-0">
+                        <span className="w-5 text-[10px] font-mono text-muted text-right shrink-0">{index + 1}</span>
+                        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 ring-1 ring-white/5">
+                          <SongArtwork song={song} className="w-full h-full" quality={ARTWORK_QUALITY_LOW} iconClassName="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="font-semibold text-text truncate block leading-snug">{song.title}</span>
+                          <span className="text-[10px] text-muted truncate block mt-0.5">{song.artist || "—"}</span>
+                        </div>
+                        {canControl && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => handlePlayNow(song)}
+                              className="w-7 h-7 rounded-lg bg-primary/15 hover:bg-primary/30 text-primary inline-flex items-center justify-center transition cursor-pointer"
+                              title="Play now"
+                            >
+                              <Play className="w-3 h-3 ml-px" />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveFromQueue(song.videoId)}
+                              className="w-7 h-7 rounded-lg bg-surface-elevated/60 hover:bg-red-500/10 text-muted hover:text-red-400 inline-flex items-center justify-center transition cursor-pointer"
+                              title="Remove from queue"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {railTab === "chat" && (
+              <div className="bg-surface/40 backdrop-blur-sm border border-border/50 rounded-2xl p-4 flex flex-col justify-between h-[420px] min-w-0">
+                <div className="overflow-y-auto space-y-2 flex-1 pr-1 pb-3 text-xs">
+                  {messages.map((m, idx) => (
+                    <div key={idx} className="leading-relaxed">
+                      <span className={`font-bold ${m.sender === "System" ? "text-primary" : m.sender === "You" ? "text-accent" : "text-text"}`}>
+                        {m.sender}
+                        {m.sender !== "System" && ":"}
+                      </span>{" "}
+                      <span className="text-muted/95">{m.text}</span>
+                    </div>
+                  ))}
+                  <div ref={chatEndRef} />
+                  {messages.length === 0 && (
+                    <p className="text-xs text-muted italic text-center py-8">Say hi to the room.</p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 border-t border-border/20 pt-3">
+                  <input
+                    type="text"
+                    placeholder="Say hello..."
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSendChatMessage()}
+                    className="flex-1 bg-background border border-border/60 rounded-xl px-3 py-2 text-xs text-text focus:outline-none focus:border-primary/50"
+                  />
+                  <button
+                    onClick={handleSendChatMessage}
+                    className="p-2 bg-primary text-white rounded-xl hover:bg-primary-hover transition cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {railTab === "people" && (
+              <div className="bg-surface/40 backdrop-blur-sm border border-border/50 rounded-2xl p-4 space-y-2 min-w-0">
+                {activeListeners.length === 0 ? (
+                  <p className="text-xs text-muted italic py-6 text-center">No listeners online right now.</p>
+                ) : (
+                  <div className="divide-y divide-border/10">
+                    {room.membersProfiles
+                      .filter(m => activeMemberIds.has(m.id))
+                      .map((m) => {
+                        const isRoomHost = m.id === room.hostId;
+                        const isController = (room.controllers || []).includes(m.id);
+                        const isMe = m.id === user?.id;
+                        return (
+                          <div key={m.id} className="flex items-center gap-3 py-2.5 min-w-0">
+                            <div className="relative shrink-0">
+                              {m.avatar ? (
+                                <img src={m.avatar} alt={m.displayName} loading="lazy" decoding="async" className="w-9 h-9 rounded-full object-cover ring-1 ring-border" />
+                              ) : (
+                                <div className="w-9 h-9 rounded-full bg-surface-elevated border border-border flex items-center justify-center">
+                                  <Users className="w-4 h-4 text-accent" />
+                                </div>
+                              )}
+                              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="text-xs font-bold text-text truncate block leading-snug">
+                                {m.displayName}
+                                {isMe && <span className="text-muted font-normal"> (you)</span>}
+                              </span>
+                              <span className="text-[9px] text-muted truncate block mt-0.5 flex items-center gap-1">
+                                {isRoomHost ? (
+                                  <>
+                                    <Crown className="w-3 h-3 text-primary" /> Host
+                                  </>
+                                ) : isController ? (
+                                  <ShieldCheck className="w-3 h-3 text-accent" />
+                                ) : (
+                                  "Listener"
+                                )}
+                              </span>
+                            </div>
+                            {isHost && !isRoomHost && (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => handleToggleController(m.id)}
+                                  className={`px-2 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition cursor-pointer ${
+                                    isController
+                                      ? "bg-accent/15 text-accent hover:bg-accent/25"
+                                      : "bg-surface-elevated/60 text-muted hover:text-text"
+                                  }`}
+                                  title={isController ? "Revoke control" : "Grant control"}
+                                >
+                                  {isController ? "Controller" : "Grant control"}
+                                </button>
+                                <button
+                                  onClick={() => handleKickMember(m.id, m.displayName)}
+                                  disabled={kickingId === m.id}
+                                  className="w-7 h-7 rounded-lg bg-surface-elevated/60 hover:bg-red-500/10 text-muted hover:text-red-400 inline-flex items-center justify-center transition cursor-pointer disabled:opacity-50"
+                                  title="Remove listener"
+                                >
+                                  {kickingId === m.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Right rail: quick actions */}
+          <aside className="lg:col-span-4 space-y-4 min-w-0">
+            <button
+              onClick={() => setSuggestOpen(true)}
+              className="w-full p-5 rounded-2xl bg-gradient-to-br from-primary/15 via-surface/50 to-surface/30 border border-primary/20 hover:border-primary/50 transition text-left cursor-pointer group"
+            >
+              <div className="flex items-center gap-2 text-primary">
+                <Search className="w-4 h-4" />
+                <span className="text-[10px] uppercase tracking-widest font-bold">Suggest songs</span>
+              </div>
+              <p className="text-xs text-text mt-2 font-semibold group-hover:text-primary transition">
+                {canControl ? "Search & drop the next track" : "Add your pick to the queue"}
+              </p>
+              <p className="text-[10px] text-muted mt-1">Powering the room&apos;s collaborative queue.</p>
+            </button>
+
+            <div className="rounded-2xl bg-surface/40 backdrop-blur-sm border border-border/50 p-5 space-y-3 min-w-0">
+              <span className="text-[10px] uppercase tracking-widest font-bold text-muted">Join this room</span>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2.5 text-lg font-mono tracking-[0.25em] text-primary text-center">
+                  {room.joinCode || "-----"}
+                </div>
+                <button
+                  onClick={() => handleCopyCode(room.joinCode || "")}
+                  className="p-2.5 rounded-xl border border-border/50 hover:bg-surface-elevated text-muted hover:text-text transition cursor-pointer"
+                  title="Copy invite code"
+                >
+                  {codeCopied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted leading-relaxed">
+                Share this code with friends — they can enter it from the Rooms lobby.
+              </p>
+              {isHost && (
+                <button
+                  onClick={handleRegenCode}
+                  disabled={regeneratingCode}
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl border border-border/50 hover:bg-surface-elevated text-text text-[10px] font-bold uppercase tracking-wider transition cursor-pointer disabled:opacity-50"
+                >
+                  {regeneratingCode ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 text-primary" />}
+                  New code
+                </button>
+              )}
+            </div>
+
+            <div className="rounded-2xl bg-surface/40 backdrop-blur-sm border border-border/50 p-5 space-y-2.5 min-w-0">
+              <span className="text-[10px] uppercase tracking-widest font-bold text-muted">About this room</span>
+              <p className="text-[11px] text-text/90 leading-relaxed">
+                Playback, queue, and voice are synced on your own player. The host controls the
+                mic and who can drive the music — controllers can play tracks too.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      {/* Suggest songs sheet */}
+      {suggestOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" onClick={() => setSuggestOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-lg bg-surface border border-border/85 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl space-y-4 soft-enter max-h-[85vh] overflow-y-auto"
+          >
+            <div className="flex items-start justify-between min-w-0">
+              <div className="min-w-0">
+                <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">Collaborative queue</span>
+                <h3 className="font-editorial text-xl font-bold text-text mt-0.5">{canControl ? "Add the next track" : "Suggest a song"}</h3>
+              </div>
+              <button
+                onClick={() => setSuggestOpen(false)}
+                className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
             <div className="flex gap-2">
               <input
                 type="text"
@@ -785,37 +1311,44 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                 value={suggestQuery}
                 onChange={(e) => setSuggestQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSuggestSearch()}
-                className="flex-1 bg-background border border-border/60 rounded-xl px-4 py-2 text-xs text-text focus:outline-none focus:border-primary/50"
+                className="flex-1 bg-background border border-border/60 rounded-xl px-4 py-2.5 text-xs text-text focus:outline-none focus:border-primary/50"
               />
               <button
                 onClick={handleSuggestSearch}
-                className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-hover transition cursor-pointer"
+                disabled={searchingSongs}
+                className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-hover transition cursor-pointer disabled:opacity-60 inline-flex items-center gap-1.5"
               >
+                {searchingSongs ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                 Search
               </button>
             </div>
 
             {suggestResults.length > 0 && (
-              <div className="divide-y divide-border/20 font-sans max-h-40 overflow-y-auto pr-1">
+              <div className="divide-y divide-border/10 font-sans max-h-80 overflow-y-auto pr-1">
                 {suggestResults.map((song) => (
-                  <div key={song.videoId} className="flex justify-between items-center py-2 text-xs">
-                    <div className="min-w-0 flex-1">
-                      <span className="font-semibold text-text truncate block">{song.title}</span>
-                      <span className="text-[10px] text-muted truncate block">{song.artist}</span>
+                  <div key={song.videoId} className="flex justify-between items-center py-2.5 text-xs min-w-0">
+                    <div className="min-w-0 flex-1 flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 ring-1 ring-white/5">
+                        <SongArtwork song={song} className="w-full h-full" quality={ARTWORK_QUALITY_LOW} iconClassName="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-text truncate block">{song.title}</span>
+                        <span className="text-[10px] text-muted truncate block mt-0.5">{song.artist}</span>
+                      </div>
                     </div>
-                    <div className="flex gap-2 ml-4">
+                    <div className="flex gap-1.5 ml-3 shrink-0">
                       {canControl ? (
                         <>
                           <button
-                            onClick={() => playSong(song, [song])}
-                            className="px-2.5 py-1 bg-primary/20 hover:bg-primary/40 text-primary font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                            onClick={() => { handlePlayNow(song); setSuggestOpen(false); }}
+                            className="px-2.5 py-1.5 bg-primary/15 hover:bg-primary/30 text-primary font-bold rounded-lg text-[10px] transition cursor-pointer whitespace-nowrap"
                           >
                             Play Now
                           </button>
                           <button
                             onClick={() => handleAddToQueue(song)}
                             disabled={addedToQueue.has(song.videoId)}
-                            className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer disabled:cursor-default whitespace-nowrap inline-flex items-center gap-1"
+                            className="px-2.5 py-1.5 bg-accent/15 hover:bg-accent/30 text-accent font-bold rounded-lg text-[10px] transition cursor-pointer disabled:opacity-50 whitespace-nowrap inline-flex items-center gap-1"
                           >
                             {addedToQueue.has(song.videoId) ? (
                               <>
@@ -823,16 +1356,24 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                                 Added
                               </>
                             ) : (
-                              "Add to Queue"
+                              "Add"
                             )}
                           </button>
                         </>
                       ) : (
                         <button
                           onClick={() => handleAddSuggestedSong(song)}
-                          className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                          disabled={addedToQueue.has(song.videoId)}
+                          className="px-2.5 py-1.5 bg-accent/15 hover:bg-accent/30 text-accent font-bold rounded-lg text-[10px] transition cursor-pointer disabled:opacity-50 whitespace-nowrap inline-flex items-center gap-1"
                         >
-                          Suggest
+                          {addedToQueue.has(song.videoId) ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              Suggested
+                            </>
+                          ) : (
+                            "Suggest"
+                          )}
                         </button>
                       )}
                     </div>
@@ -840,79 +1381,29 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                 ))}
               </div>
             )}
+            {suggestQuery.trim() && !searchingSongs && suggestResults.length === 0 && (
+              <p className="text-xs text-muted italic text-center py-4">No songs found for that search.</p>
+            )}
+            {!suggestQuery.trim() && (
+              <p className="text-xs text-muted italic text-center py-4">
+                Search for any song — anyone in the room can see suggestions.
+              </p>
+            )}
           </div>
         </div>
+      )}
 
-        {/* Right pane: Room members, Chatbox */}
-        <div className="lg:col-span-4 space-y-6 min-w-0">
-          
-          {/* Active Members */}
-          <div className="bg-surface/30 border border-border/60 rounded-2xl p-5 space-y-4 min-w-0">
-            <h3 className="font-editorial text-base text-text font-bold border-b border-border/20 pb-2">
-              Active Listeners ({room.membersProfiles.filter(m => activeMemberIds.has(m.id)).length})
-            </h3>
-            <div className="flex flex-wrap gap-2.5 max-h-40 overflow-y-auto">
-              {room.membersProfiles
-                .filter(m => activeMemberIds.has(m.id))
-                .map((m) => (
-                <div key={m.id} className="flex items-center gap-2 p-1.5 bg-surface-elevated/40 border border-border/40 rounded-xl max-w-full">
-                  {m.avatar ? (
-                    <img src={m.avatar} alt={m.displayName} loading="lazy" decoding="async" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-5 h-5 rounded-full bg-surface border border-border flex items-center justify-center flex-shrink-0">
-                      <Users className="w-3.5 h-3.5 text-accent" />
-                    </div>
-                  )}
-                  <span className="text-[10px] font-bold text-text truncate">{m.displayName}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Simple text ChatBox */}
-          <div className="bg-surface/35 border border-border/60 rounded-2xl p-5 flex flex-col justify-between h-[360px] min-w-0">
-            <div className="overflow-y-auto space-y-2 flex-1 pr-1 pb-3 text-xs">
-              {messages.map((m, idx) => (
-                <div key={idx} className="leading-relaxed">
-                  <span className={`font-bold ${m.sender === "System" ? "text-primary" : m.sender === "You" ? "text-accent" : "text-text"}`}>
-                    {m.sender}:{" "}
-                  </span>
-                  <span className="text-muted/95">{m.text}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-2 border-t border-border/20 pt-3">
-              <input
-                type="text"
-                placeholder="Say hello..."
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendChatMessage()}
-                className="flex-1 bg-background border border-border/60 rounded-xl px-3 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-              />
-              <button
-                onClick={handleSendChatMessage}
-                className="p-2 bg-primary text-white rounded-xl hover:bg-primary-hover transition cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Invite Circle friends modal */}
+      {/* Invite sheet (host) */}
       {inviteOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-background/85 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-surface border border-border/80 rounded-2xl p-5 shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border/20 pb-3">
+        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" onClick={() => setInviteOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-sm bg-surface border border-border/85 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl space-y-4 soft-enter max-h-[85vh] overflow-y-auto"
+          >
+            <div className="flex items-start justify-between min-w-0">
               <div className="min-w-0">
-                <span className="text-[8px] uppercase tracking-widest text-primary font-bold block">Invite to Room</span>
-                <h3 className="font-editorial text-base text-text font-bold truncate leading-tight">
-                  Invite Circle friends to {room.name}
-                </h3>
+                <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">Invite to room</span>
+                <h3 className="font-editorial text-xl font-bold text-text mt-0.5 truncate">Invite Circle friends</h3>
               </div>
               <button
                 onClick={() => setInviteOpen(false)}
@@ -971,6 +1462,96 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Join-code sheet */}
+      {codeOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" onClick={() => setCodeOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-sm bg-surface border border-border/85 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl space-y-4 soft-enter"
+          >
+            <div className="flex items-start justify-between min-w-0">
+              <div className="min-w-0">
+                <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">Share this room</span>
+                <h3 className="font-editorial text-xl font-bold text-text mt-0.5">{room.name}</h3>
+              </div>
+              <button
+                onClick={() => setCodeOpen(false)}
+                className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-6 text-center space-y-2">
+              <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">Invite code</span>
+              <div className="text-3xl font-mono tracking-[0.35em] text-text">
+                {room.joinCode || "-----"}
+              </div>
+            </div>
+
+            <button
+              onClick={() => handleCopyCode(room.joinCode || "")}
+              className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-xl transition cursor-pointer inline-flex items-center justify-center gap-2"
+            >
+              {codeCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {codeCopied ? "Copied to clipboard" : "Copy invite code"}
+            </button>
+            <p className="text-[10px] text-muted text-center leading-relaxed">
+              Friends can paste this code into the &quot;Enter with Code&quot; field in the Rooms lobby.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Leave / Delete sheet */}
+      {leaveOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" onClick={() => setLeaveOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-sm bg-surface border border-border/85 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl space-y-4 soft-enter"
+          >
+            <div className="min-w-0">
+              <span className="text-[9px] uppercase tracking-widest text-red-400 font-bold block">Leave room</span>
+              <h3 className="font-editorial text-xl font-bold text-text mt-0.5">
+                {isHost ? "End the listening party?" : "Leave the room?"}
+              </h3>
+              <p className="text-xs text-muted mt-2 leading-relaxed">
+                {isHost
+                  ? "As the host, leaving transfers hosting to another listener. You can also delete the room to disconnect everyone."
+                  : "You can rejoin anytime with the invite code."}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {isHost && (
+                <button
+                  onClick={handleDeleteRoom}
+                  className="w-full py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-red-400 text-xs font-semibold transition cursor-pointer inline-flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete room & disconnect everyone
+                </button>
+              )}
+              <button
+                onClick={handleLeaveFromSheet}
+                disabled={leaving}
+                className="w-full py-2.5 rounded-xl bg-surface-elevated border border-border/60 hover:bg-surface-elevated/80 text-text text-xs font-semibold transition cursor-pointer inline-flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {leaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+                {isHost ? "Transfer hosting & leave" : "Leave room"}
+              </button>
+              <button
+                onClick={() => setLeaveOpen(false)}
+                className="w-full py-2.5 rounded-xl border border-border/40 text-muted hover:text-text text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
