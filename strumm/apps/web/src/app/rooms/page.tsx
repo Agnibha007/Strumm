@@ -379,14 +379,14 @@ export default function RoomsPage() {
       {/* Find + Discover */}
       <section className="space-y-4 min-w-0">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 min-w-0">
-          <h3 className="font-editorial text-2xl font-bold text-text">
+          <h3 className="font-editorial text-2xl font-bold text-text min-w-0 truncate">
             {searchQuery.trim() ? `Results for "${searchQuery.trim()}"` : "Live Rooms"}
           </h3>
           <form
             onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }}
-            className="flex gap-2 md:w-80 w-full"
+            className="flex gap-2 md:w-80 w-full min-w-0 shrink-0"
           >
-            <div className="flex-1 flex items-center gap-2 bg-surface/30 border border-border/60 focus-within:border-primary/50 rounded-xl px-3 transition">
+            <div className="flex-1 min-w-0 flex items-center gap-2 bg-surface/30 border border-border/60 focus-within:border-primary/50 rounded-xl px-3 transition">
               <Search className="w-4 h-4 text-muted shrink-0" />
               <input
                 type="text"
@@ -394,7 +394,7 @@ export default function RoomsPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch(searchQuery)}
                 placeholder="Find a room..."
-                className="flex-1 bg-transparent py-2.5 text-sm text-text focus:outline-none"
+                className="flex-1 min-w-0 bg-transparent py-2.5 text-sm text-text focus:outline-none"
               />
             </div>
             <button
