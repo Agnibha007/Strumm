@@ -434,7 +434,7 @@ async def cleanup_legacy_rooms(database) -> dict:
     join codes; it never touches live rooms with a valid host and members.
     Returns per-action counts for startup logging.
     """
-    if not database or database is None:
+    if database is None:
         return {}
     rooms = database[db.ROOMS]
     users = database[db.USERS]

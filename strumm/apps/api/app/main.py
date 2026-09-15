@@ -436,6 +436,16 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    if "/play-event" in request.url.path:
+        logger.warning(
+            "PlayEventValidation422 %s %s errors=%s",
+            request.method,
+            request.url.path,
+            [
+                {"field": err.get("loc")[-1], "type": err.get("type"), "msg": err.get("msg")}
+                for err in exc.errors()
+            ],
+        )
     response = await _fastapi_validation_exception_handler(request, exc)
     for header, value in _security_headers().items():
         response.headers[header] = value

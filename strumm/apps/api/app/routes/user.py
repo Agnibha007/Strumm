@@ -4,7 +4,7 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
-from app.models.schemas import SongSchema, UserSettingsSchema
+from app.models.schemas import PlayEventSongSchema, SongSchema, UserSettingsSchema
 from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
 from app.services.normalizer import canonical_artist, normalize_artist, classify_genre
 from app.services.email_service import send_account_deleted_email
@@ -804,7 +804,7 @@ async def _check_podcast_badges(user_id: str, video_id: str) -> None:
         logger.error(f"Podcast badge check failed for {user_id}: {type(e).__name__}")
 
 class PlayEventRequest(BaseModel):
-    song: SongSchema
+    song: PlayEventSongSchema
     listenDuration: int # seconds listened in this interval (e.g., 30s sync)
     # Client-generated idempotency key. When present, the same eventId is never
     # counted twice (a unique sparse index on playbackhistories.eventId backs an

@@ -103,7 +103,11 @@ async def test_play_event_accepts_empty_and_whitespace_video_id(client, mock_db)
 @pytest.mark.asyncio
 async def test_play_event_rejects_malformed_video_id(client, mock_db):
     resp = await client.post("/play-event", json=make_payload(video_id="invalid-not-youtube-not-podcast"))
-    assert resp.status_code == 422
+    # PlayEventSongSchema is lenient: opaque videoIds are accepted as history
+    # (videoId is a grouping key, never used for playback). Strict validation
+    # remains on playlists/rooms/player-state via the base SongSchema.
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
 
 
 @pytest.mark.asyncio

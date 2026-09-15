@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
-from typing import List, Optional, Dict, Any
+from typing import ClassVar, List, Optional, Dict, Any
 from datetime import datetime
 from app.services.security import PODCAST_EPISODE_ID_RE, is_valid_youtube_id, sanitize_enum, sanitize_multiline_text, sanitize_positive_int, sanitize_text
 
@@ -17,6 +17,12 @@ class SongMetadata(BaseModel):
 
 class SongSchema(BaseModel):
     model_config = {"extra": "allow"}
+
+    # Strict mode enforces canonical YouTube/podcast ids (required wherever the
+    # id must be playable: playlists, rooms, player state). History-only
+    # schemas (PlayEventSongSchema) disable it so opaque/synthetic ids never
+    # cause a play-event to be rejected and listening time silently dropped.
+    strict_video_id: ClassVar[bool] = True
 
     videoId: Optional[str] = Field(None, description="YouTube video ID, primary music identifier")
     title: str
@@ -38,6 +44,11 @@ class SongSchema(BaseModel):
         # rejected (raise) so malformed external ids never reach storage.
         if is_valid_youtube_id(cleaned) or PODCAST_EPISODE_ID_RE.fullmatch(cleaned):
             return cleaned
+        if not cls.strict_video_id:
+            # History-only: accept any non-empty id up to a length cap. The id
+            # is an opaque grouping key (never used for playback), so rejections
+            # here would only discard legitimate listening time.
+            return cleaned[:64]
         raise ValueError("Invalid YouTube video ID.")
 
     @field_validator("title", "artist")
@@ -72,6 +83,16 @@ class SongSchema(BaseModel):
             val = 86400
             
         return val
+
+class PlayEventSongSchema(SongSchema):
+    """Lenient song schema for the append-only play-event history log.
+
+    The videoId here is an opaque grouping key (used for stats aggregation, never
+    for playback), so non-canonical youtube/podcast ids must not cause the whole
+    play-event to be rejected and the listening time silently dropped.
+    """
+
+    strict_video_id: ClassVar[bool] = False
 
 # --- User & Settings ---
 class UserSettingsSchema(BaseModel):
