@@ -862,7 +862,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="relative w-full min-w-0 soft-enter pb-16">
       {/* Full-bleed blurred artwork backdrop */}
-      <div className="fixed inset-0 -z-10">
+      <div className="fixed inset-0 -z-10 overflow-hidden">
         {room.currentTrack ? (
           <SongArtwork
             song={room.currentTrack}
