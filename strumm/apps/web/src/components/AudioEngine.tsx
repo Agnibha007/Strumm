@@ -182,6 +182,20 @@ export default function AudioEngine() {
   // silent skip cycle.
   const consecutiveErrorsRef = useRef<number>(0);
 
+  // True-overlap crossfade state: while the outgoing (iframe / host-audio) track
+  // fades out over its final seconds, the PREDICTED next track's direct stream is
+  // already live on the staging element at a ramping volume, so the two songs
+  // actually overlap (no fade-to-silence gap). Holding the incoming track on the
+  // preload element keeps it invisible to every shared handler (they gate on
+  // htmlAudioRef), so it drives no progress/state until promoted at the boundary.
+  const overlapVideoIdRef = useRef<string | null>(null);
+  const overlapUrlRef = useRef<string | null>(null);
+  const overlapRampTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // One-shot gate: a crossfade overlap has already promoted the new song onto the
+  // audible element at full volume, so the track-change effect must not re-mute
+  // and ramp it (that would dip the boundary back into silence).
+  const skipTrackChangeVolumeResetRef = useRef<boolean>(false);
+
   // End-of-track handler that also clears/saves podcast resume position. Used
   // by the HTML audio `ended` handler (and the YouTube ENDED branch) so a
   // finished episode doesn't restart from an old position next time.
@@ -297,6 +311,13 @@ export default function AudioEngine() {
   };
 
   const finalizeCrossfadeAdvance = () => {
+    // The overlap stream was pre-buffered for the predicted next track. If the
+    // queue changed mid-fade (edited / repeat-mode toggled / manual skip), that
+    // prediction may no longer match what next() actually picks — drop the
+    // stream so a wrong song can never bleed under the fade-out.
+    if (overlapVideoIdRef.current && predictedNextVideoId() !== overlapVideoIdRef.current) {
+      stopCrossfadeOverlap();
+    }
     const before = usePlayerStore.getState().currentSong?.videoId ?? null;
     const beforeIndex = usePlayerStore.getState().currentIndex;
     usePlayerStore.getState().next();
@@ -306,6 +327,10 @@ export default function AudioEngine() {
     // whose next item is a duplicate of the current track legitimately advances
     // to a fresh stream under an identical videoId).
     if (!before || beforeIndex < 0 || afterIndex === beforeIndex) {
+      // The queue is not advancing — the overlap element (if any) is not going
+      // to be promoted, so put the next-track stream out of its misery rather
+      // than leave it playing silently in the background.
+      stopCrossfadeOverlap();
       const targetVal = usePlayerStore.getState().volume;
       if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.volume = targetVal;
@@ -416,6 +441,87 @@ export default function AudioEngine() {
     } catch (e) {}
   }, []);
 
+  // Tear down an in-flight crossfade overlap: stop the incoming track that was
+  // playing on the staging element and forget that it was ever staged. Idempotent
+  // and safe to call from every path where the overlap's boundary promotion can
+  // no longer happen (cancel-fade, backgrounding, iframe handoff, manual skip,
+  // queue advance bail, unmount).
+  const stopCrossfadeOverlap = useCallback(() => {
+    if (overlapRampTimerRef.current) {
+      clearInterval(overlapRampTimerRef.current);
+      overlapRampTimerRef.current = null;
+    }
+    if (overlapVideoIdRef.current) {
+      const el = preloadAudioRef.current;
+      if (el) {
+        try {
+          el.pause();
+          el.removeAttribute("src");
+          el.load();
+        } catch (e) {}
+      }
+      preloadedVideoIdRef.current = null;
+      preloadedUrlRef.current = null;
+    }
+    overlapVideoIdRef.current = null;
+    overlapUrlRef.current = null;
+  }, []);
+
+  // Start the incoming track (the pre-resolved, pre-buffered prediction) on the
+  // staging element as the outgoing track enters its crossfade window. The two
+  // songs genuinely overlap: the incoming ramps 0→1 while the outgoing fades
+  // 1→0, so the boundary is a blend followed by a continuous, already-audible
+  // next track. Skipped (classic fade-to-silence fallback) when the prediction
+  // is nondeterministic (shuffle), repeat-one, data-saver quality, or the stream
+  // isn't staged and buffered.
+  const startCrossfadeOverlap = useCallback(() => {
+    if (backgroundModeRef.current) return;
+    const state = usePlayerStore.getState();
+    if (state.isShuffle || state.repeatMode === "one" || audioQuality === "data-saver") return;
+    const videoId = predictedNextVideoId();
+    if (!videoId) return;
+    const url = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
+    if (!url) return; // no direct stream → classic fade-to-silence
+    const el = preloadAudioRef.current;
+    const staged =
+      !!el &&
+      el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+      preloadedVideoIdRef.current === videoId &&
+      preloadedUrlRef.current === url;
+    if (!staged || !el) return;
+    try {
+      directAudioUrlsRef.current[videoId] = url;
+      el.volume = 0;
+      el.loop = false;
+      overlapVideoIdRef.current = videoId;
+      overlapUrlRef.current = url;
+      // Ramp the incoming track up over the fade window, finishing marginally
+      // before the boundary so the handoff is a clean blend into full volume.
+      const steps = 20;
+      const rampMs = Math.max(400, CROSSFADE_START_SECONDS_BEFORE_END * 1000 - 400);
+      let step = 0;
+      el.play().catch(() => {});
+      if (overlapRampTimerRef.current) {
+        clearInterval(overlapRampTimerRef.current);
+      }
+      overlapRampTimerRef.current = setInterval(() => {
+        step += 1;
+        if (overlapVideoIdRef.current !== videoId) {
+          if (overlapRampTimerRef.current) {
+            clearInterval(overlapRampTimerRef.current);
+            overlapRampTimerRef.current = null;
+          }
+          return;
+        }
+        el.volume = (step / steps) * usePlayerStore.getState().volume;
+        if (step >= steps && overlapRampTimerRef.current) {
+          clearInterval(overlapRampTimerRef.current);
+          overlapRampTimerRef.current = null;
+        }
+      }, rampMs / steps);
+    } catch (e) {}
+  }, [predictedNextVideoId, audioQuality]);
+
   // Hand a YouTube song to the host <audio> element, either because the page
   // is backgrounded (lock-screen) or because a resolved direct stream lets the
   // foreground skip the (slower, less reliable) YouTube iframe. Returns false
@@ -430,6 +536,13 @@ export default function AudioEngine() {
 
     const url = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
     if (!url) return false;
+    if (overlapVideoIdRef.current && overlapVideoIdRef.current !== videoId) {
+      // A song change landed mid-overlap: the staging element may still be
+      // playing a track that is no longer the active prediction. Kill it so a
+      // wrong song can't stay audible, then fall through to the normal
+      // activation for the new song.
+      stopCrossfadeOverlap();
+    }
     if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
       try {
         playerInstanceRef.current.pauseVideo();
@@ -447,6 +560,110 @@ export default function AudioEngine() {
       preloadedVideoIdRef.current === videoId &&
       preloadedUrlRef.current === url;
     if (stagedReady) {
+      // ── Overlap promotion ─────────────────────────────────────────────
+      // The staging element is ALREADY playing the target song at (near) full
+      // volume — startCrossfadeOverlap kicked it off during the outgoing
+      // track's fade. Promote it as the audible surface without seek/restart:
+      // the song continues seamlessly across the boundary.
+      if (
+        overlapVideoIdRef.current === videoId &&
+        overlapUrlRef.current === url &&
+        stagedEl &&
+        !stagedEl.paused
+      ) {
+        overlapVideoIdRef.current = null;
+        overlapUrlRef.current = null;
+        if (overlapRampTimerRef.current) {
+          clearInterval(overlapRampTimerRef.current);
+          overlapRampTimerRef.current = null;
+        }
+        transitioningRef.current = true;
+        const prevEl = htmlAudioRef.current;
+        if (prevEl && prevEl !== stagedEl) {
+          try {
+            prevEl.pause();
+          } catch (e) {}
+          try {
+            prevEl.removeAttribute("src");
+            prevEl.load();
+          } catch (e) {}
+        }
+        preloadAudioRef.current = prevEl;
+        htmlAudioRef.current = stagedEl;
+        preloadedVideoIdRef.current = null;
+        preloadedUrlRef.current = null;
+        currentBackgroundUrlRef.current = url;
+        currentBackgroundVideoIdRef.current = videoId;
+        // The iframe is idle now; force a future iframe handoff to fresh-load.
+        currentVideoIdRef.current = null;
+        try {
+          stagedEl.preload = "auto";
+          stagedEl.loop = false;
+          stagedEl.volume = usePlayerStore.getState().volume;
+          // Preserve the live position instead of the 0:00 the store reset to
+          // at the boundary — the stream has been playing for ~5 seconds.
+          const livePos = stagedEl.currentTime;
+          if (isFinite(livePos)) setCurrentTime(livePos);
+          if (isFinite(stagedEl.duration) && stagedEl.duration > 0) setDuration(stagedEl.duration);
+        } catch (e) {}
+        // The overlap ramp already blended this song in — no position-driven
+        // fade-in on top of it.
+        crossfadePendingFadeInRef.current = false;
+        crossfadeFadeInStartedAtRef.current = null;
+        // The promoted element gives no fresh `play` event (it was already
+        // playing), so reset the flags onPlay would normally own — otherwise a
+        // leaked crossfade latch would swallow THIS track's natural end (hard
+        // cut, no fade) or a stale handledTrackEnd precedes it.
+        hasTriggeredCrossfadeRef.current = false;
+        crossfadeAdvancedRef.current = false;
+        bgCrossfadeRef.current = false;
+        handledTrackEndRef.current = false;
+        consecutiveErrorsRef.current = 0;
+        isFadingRef.current = false;
+        transitioningRef.current = false;
+        usePlayerStore.getState().setPlaying(true);
+        // Re-register controls against the promoted element so seek/pause act
+        // on the (now audible) stream.
+        setPlayerRef({
+          playVideo: () => {
+            if (htmlAudioRef.current) htmlAudioRef.current.play();
+          },
+          pauseVideo: () => {
+            if (htmlAudioRef.current) htmlAudioRef.current.pause();
+          },
+          seekTo: (sec: number) => {
+            if (htmlAudioRef.current) htmlAudioRef.current.currentTime = sec;
+          },
+          setVolume: (vol: number) => {
+            if (htmlAudioRef.current) htmlAudioRef.current.volume = vol / 100;
+          },
+          setPlaybackRate: (rate: number) => {
+            if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
+          },
+        });
+        // The track-change effect would re-mute and ramp the fresh song — but
+        // this song is already audible at full volume; skip that reset.
+        skipTrackChangeVolumeResetRef.current = true;
+        // Restage the demoted element for the NEXT predicted track so the
+        // following handoff is pre-buffered too.
+        if (audioQuality !== "data-saver" && prevEl) {
+          const nextId = predictedNextVideoId();
+          if (nextId) {
+            const cachedNext = getCachedDirectAudioUrl(nextId) || directAudioUrlsRef.current[nextId];
+            if (cachedNext) {
+              stagePreloadUrl(nextId, cachedNext);
+            } else {
+              resolveDirectAudioUrl(nextId)
+                .then((u) => {
+                  if (u) stagePreloadUrl(nextId, u);
+                })
+                .catch(() => {});
+            }
+          }
+        }
+        return true;
+      }
+
       // Flag the switch BEFORE touching the old stream so its transient pause
       // event isn't misread as a user pause.
       transitioningRef.current = true;
@@ -671,6 +888,9 @@ export default function AudioEngine() {
     bgCrossfadeRef.current = false;
     hasTriggeredCrossfadeRef.current = false;
     crossfadeAdvancedRef.current = false;
+    // A manual song switch to the iframe mid-overlap must not leave the
+    // incoming (preload) stream playing — it is no longer the next song.
+    stopCrossfadeOverlap();
 
     // Play a silent audio track so the host page retains the OS MediaSession
     // keys (prevents the YouTube iframe from hijacking media hardware buttons).
@@ -783,6 +1003,9 @@ export default function AudioEngine() {
     return () => {
       if (fadeIntervalRef.current) {
         clearInterval(fadeIntervalRef.current);
+      }
+      if (overlapRampTimerRef.current) {
+        clearInterval(overlapRampTimerRef.current);
       }
     };
   }, []);
@@ -1025,9 +1248,13 @@ export default function AudioEngine() {
           );
           if (crossfadeAction === "start-fade") {
             hasTriggeredCrossfadeRef.current = true;
+            // True-overlap crossfade: kick off the predicted next track on the
+            // staging element so both songs blend instead of gap-to-silence.
+            startCrossfadeOverlap();
             fadeVolume(1, 0, CROSSFADE_START_SECONDS_BEFORE_END * 1000, finalizeCrossfadeAdvance);
           } else if (crossfadeAction === "cancel-fade") {
             hasTriggeredCrossfadeRef.current = false;
+            stopCrossfadeOverlap();
             if (fadeIntervalRef.current) {
               clearInterval(fadeIntervalRef.current);
               fadeIntervalRef.current = null;
@@ -1509,6 +1736,10 @@ export default function AudioEngine() {
         isFadingRef.current = false;
         hasTriggeredCrossfadeRef.current = false;
         bgCrossfadeRef.current = false;
+        // A hidden tab throttles timers, so the overlap ramp cannot complete
+        // reliably — stop the incoming track (it would otherwise be the wrong
+        // song or dead weight when the tab is closed).
+        stopCrossfadeOverlap();
         const vol = usePlayerStore.getState().volume;
         if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
           htmlAudioRef.current.volume = vol;
@@ -2288,6 +2519,17 @@ try {
       prevSongIdRef.current = currentSongId;
       prevIsPlayingRef.current = isPlaying;
 
+      // A crossfade overlap just promoted the new song onto the audible host
+      // element at full volume — the normal mute-and-fade-in below would dip
+      // the boundary back into silence. Consume the gate and leave it alone.
+      if (skipTrackChangeVolumeResetRef.current) {
+        skipTrackChangeVolumeResetRef.current = false;
+        return;
+      }
+      // No live overlap (or it was torn down) — clear any lingering overlap
+      // bookkeeping so a stale stream can't be promoted into a later song.
+      stopCrossfadeOverlap();
+
       // Mark the swap in progress so transient player events (PAUSED/ENDED)
       // fired while the new video loads don't get misread as user intent.
       transitioningRef.current = true;
@@ -2692,9 +2934,13 @@ onError: () => {
               );
               if (crossfadeAction === "start-fade") {
                 hasTriggeredCrossfadeRef.current = true;
+                // True-overlap crossfade: kick off the predicted next track on the
+                // staging element so both songs blend instead of gap-to-silence.
+                startCrossfadeOverlap();
                 fadeVolume(1, 0, CROSSFADE_START_SECONDS_BEFORE_END * 1000, finalizeCrossfadeAdvance);
               } else if (crossfadeAction === "cancel-fade") {
                 hasTriggeredCrossfadeRef.current = false;
+                stopCrossfadeOverlap();
                 if (fadeIntervalRef.current) {
                   clearInterval(fadeIntervalRef.current);
                   fadeIntervalRef.current = null;

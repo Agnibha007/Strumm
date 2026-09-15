@@ -45,3 +45,13 @@ if (typeof globalThis !== "undefined") {
     });
   }
 }
+
+// jsdom's HTMLMediaElement stubs return undefined from play()/pause(), but the
+// playback engine (AudioEngine) chains `.catch()` off play(). Component tests
+// mount real elements, so give the prototypes spec-shaped promise semantics.
+if (typeof HTMLMediaElement !== "undefined") {
+  HTMLMediaElement.prototype.play = function () {
+    return Promise.resolve();
+  };
+  HTMLMediaElement.prototype.pause = function () {};
+}

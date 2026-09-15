@@ -15,4 +15,10 @@ export default defineConfig({
       "@strumm/ui": path.resolve(__dirname, "../../packages/ui/src"),
     },
   },
+  // The app's tsconfig sets `jsx: preserve` (Next transforms JSX at build).
+  // Vitest doesn't run Next's transform, so apply the automatic React runtime
+  // for component tests (matches the runtime Next uses under the hood).
+  oxc: {
+    jsx: { runtime: "automatic" },
+  },
 });
