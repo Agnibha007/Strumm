@@ -310,6 +310,15 @@ export default function AudioEngine() {
     } catch (e) {}
   };
 
+  const pauseStaleIframeSurface = () => {
+    try {
+      if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
+        playerInstanceRef.current.pauseVideo();
+      }
+    } catch (e) {}
+    currentVideoIdRef.current = null;
+  };
+
   const finalizeCrossfadeAdvance = () => {
     // The overlap stream was pre-buffered for the predicted next track. If the
     // queue changed mid-fade (edited / repeat-mode toggled / manual skip), that
@@ -371,7 +380,11 @@ export default function AudioEngine() {
       if (htmlAudioRef.current && isSilentAudio(htmlAudioRef.current)) {
         htmlAudioRef.current.play().catch(() => {});
       }
-      if (playerInstanceRef.current && typeof playerInstanceRef.current.playVideo === "function") {
+      if (
+        playerInstanceRef.current &&
+        typeof playerInstanceRef.current.playVideo === "function" &&
+        currentVideoIdRef.current === currentSong?.videoId
+      ) {
         try {
           playerInstanceRef.current.playVideo();
         } catch (e) {}
@@ -1202,6 +1215,7 @@ export default function AudioEngine() {
               crossfadeFadeInStartedAtRef.current = Date.now();
               setPlayerVolume(0);
               silenceFinishedStream();
+              pauseStaleIframeSurface();
               usePlayerStore.getState().handleTrackEnded();
             } else {
               setPlayerVolume(1 - fadeT);
@@ -2400,6 +2414,17 @@ try {
       // URL isn't ready yet (fresh extraction) ensureBackgroundAudio commits
       // the takeover request and fires the moment the URL lands.
       if (backgroundModeRef.current && currentSong?.videoId) {
+        if (
+          playerInstanceRef.current &&
+          typeof playerInstanceRef.current.pauseVideo === "function" &&
+          currentVideoIdRef.current !== null &&
+          currentVideoIdRef.current !== currentSong.videoId
+        ) {
+          try {
+            playerInstanceRef.current.pauseVideo();
+          } catch (e) {}
+          currentVideoIdRef.current = null;
+        }
         ensureBackgroundAudio(currentSong.videoId);
         return;
       }
@@ -2889,6 +2914,7 @@ onError: () => {
                   crossfadePendingFadeInRef.current = true;
                   crossfadeFadeInStartedAtRef.current = Date.now();
                   setPlayerVolume(0);
+                  pauseStaleIframeSurface();
                   state.handleTrackEnded();
                 } else {
                   setPlayerVolume(1 - fadeT);
@@ -2923,6 +2949,7 @@ onError: () => {
                 ownerMatches
               ) {
                 handledTrackEndRef.current = true;
+                pauseStaleIframeSurface();
                 state.handleTrackEnded();
               }
             } else {

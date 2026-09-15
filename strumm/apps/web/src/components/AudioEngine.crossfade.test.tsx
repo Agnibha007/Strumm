@@ -7,9 +7,12 @@ import { Song } from "@strumm/types";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
 
-// Direct-audio resolution is overridden per-suite: by default nothing resolves
-// (keeping the iframe-based tests below byte-for-byte identical), and the overlap
-// suite points BBBB at a fake stream so the engine can pre-stage and overlap it.
+// Direct-audio resolution is overridden per-suite: by default nothing resolves,
+// keeping the iframe-based tests byte-for-byte identical. The overlap suite
+// points BBBB at a fake stream so the engine can pre-stage and overlap it; the
+// background suite leaves BBBB pending until the test resolves it, so the
+// window between the crossfade boundary and the next song's handoff is
+// observable.
 const { mockGetCachedDirectAudioUrl, mockResolveDirectAudioUrl } = vi.hoisted(() => ({
   mockGetCachedDirectAudioUrl: vi.fn((id: string): string | null => {
     void id;
@@ -358,6 +361,90 @@ describe("AudioEngine true-overlap crossfade", () => {
       expect(preload.volume).toBeGreaterThan(0.7);
       await flush(300);
       expect(preload.volume).toBeGreaterThan(0.7);
+    },
+  );
+});
+
+describe("AudioEngine background crossfade (iframe surface)", () => {
+  let yt: ReturnType<typeof makeFakeYT>;
+  let pendingB: Promise<string | null>;
+  let resolveB: (url: string | null) => void;
+
+  beforeEach(() => {
+    yt = makeFakeYT();
+    yt.install();
+    act(() => {
+      usePlayerStore.setState({
+        currentSong: null,
+        queue: [],
+        currentIndex: -1,
+        isPlaying: false,
+        currentTime: 0,
+        duration: 0,
+        shufflePlayedIds: [],
+      });
+    });
+
+    // Nothing resolves for A, so after the page is backgrounded it stays on the
+    // iframe surface (the direct-stream failure fallback). B's URL is left
+    // pending for the test to resolve later, exposing the window between the
+    // crossfade boundary and the next song's activation.
+    mockGetCachedDirectAudioUrl.mockImplementation(() => null);
+    pendingB = new Promise<string | null>((r) => {
+      resolveB = r;
+    });
+    mockResolveDirectAudioUrl.mockImplementation(async (id: string) =>
+      id === "BBBB" ? pendingB : null,
+    );
+  });
+
+  afterEach(() => {
+    mockGetCachedDirectAudioUrl.mockReset().mockImplementation(() => null);
+    mockResolveDirectAudioUrl.mockReset().mockImplementation(async () => null);
+  });
+
+  it(
+    "pauses the old song on the iframe the instant the background crossfade completes",
+    { timeout: 20_000 },
+    async () => {
+      await seedAndMount(yt.fake);
+
+      // Background the page: A has no direct stream, so the iframe remains the
+      // audible surface and the host <audio> only runs the silent loop.
+      act(() => {
+        window.dispatchEvent(new Event("pagehide"));
+      });
+      await flush(400);
+
+      // Crossfade window: the background fade-out — driven from the YouTube
+      // progress timer (not setInterval), mirroring a throttled hidden tab —
+      // ramps the iframe volume down toward silence.
+      yt.fake.currentTime = 196;
+      await flush(600);
+      yt.fake.currentTime = 199;
+      await flush(600);
+      const faded = yt.fake.setVolumeCalls.slice(-3);
+      expect(Math.min(...faded)).toBeLessThan(80);
+
+      // The track reaches its end: the queue advances, and the stale iframe
+      // must be PAUSED at the boundary. B's direct URL is still resolving — if
+      // the old song were left PLAYING here, it would stay audible for the
+      // whole resolution window and then cut abruptly when B activates.
+      yt.fake.currentTime = 200;
+      await flush(600);
+      expect(usePlayerStore.getState().currentIndex).toBe(1);
+      expect(usePlayerStore.getState().currentSong?.videoId).toBe("BBBB");
+      expect(yt.fake.state).toBe(2);
+      expect(yt.fake.loadVideoIds).not.toContain("BBBB");
+
+      // B's direct stream arrives: playback hands off to the host <audio>
+      // element; the iframe stays parked on the old paused video.
+      act(() => {
+        resolveB("https://direct.example/bbbb.mp3");
+      });
+      await flush(600);
+      expect(yt.fake.state).toBe(2);
+      expect(usePlayerStore.getState().currentSong?.videoId).toBe("BBBB");
     },
   );
 });
