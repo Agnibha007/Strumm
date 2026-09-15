@@ -10,6 +10,7 @@ import { Users, Radio, Play, Pause, Send, Mic, MicOff, Loader2, UserPlus, X, Che
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { useRouter } from "next/navigation";
+import { useNotificationStore } from "web/store/useNotificationStore";
 
 interface RoomDetails {
   id: string;
@@ -35,6 +36,7 @@ interface RoomDetails {
 export default function RoomDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const { show } = useNotificationStore();
   
   const { token, user } = useAuthStore();
   const { currentSong, isPlaying, currentTime, setCurrentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
@@ -59,6 +61,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const canControl = isHost || !!room?.controllers?.includes(user?.id ?? "");
   const [suggestQuery, setSuggestQuery] = useState("");
   const [suggestResults, setSuggestResults] = useState<any[]>([]);
+  const [addedToQueue, setAddedToQueue] = useState<Set<string>>(new Set());
 
   // Invite flow (host only): pick a Circle friend to invite into the room.
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -448,13 +451,39 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   };
 
   const handleAddSuggestedSong = (song: any) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      show("Your connection to the room is offline — try again in a moment.", "error");
+      return;
+    }
     socketRef.current.send(JSON.stringify({
       event: "queue:add",
       data: { song }
     }));
     setSuggestQuery("");
     setSuggestResults([]);
+  };
+
+  const handleAddToQueue = (song: any) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      show("Your connection to the room is offline — try again in a moment.", "error");
+      return;
+    }
+    socketRef.current.send(JSON.stringify({
+      event: "queue:add",
+      data: { song }
+    }));
+    setAddedToQueue(prev => {
+      const next = new Set(prev);
+      next.add(song.videoId);
+      return next;
+    });
+    window.setTimeout(() => {
+      setAddedToQueue(prev => {
+        const next = new Set(prev);
+        next.delete(song.videoId);
+        return next;
+      });
+    }, 2000);
   };
 
   // WebRTC Signal Exchanger
@@ -784,17 +813,18 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                             Play Now
                           </button>
                           <button
-                            onClick={() => {
-                              if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-                                socketRef.current.send(JSON.stringify({
-                                  event: "queue:add",
-                                  data: { song }
-                                }));
-                              }
-                            }}
-                            className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer whitespace-nowrap"
+                            onClick={() => handleAddToQueue(song)}
+                            disabled={addedToQueue.has(song.videoId)}
+                            className="px-2.5 py-1 bg-accent/20 hover:bg-accent/40 text-accent font-bold rounded text-[10px] transition cursor-pointer disabled:cursor-default whitespace-nowrap inline-flex items-center gap-1"
                           >
-                            Add to Queue
+                            {addedToQueue.has(song.videoId) ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                Added
+                              </>
+                            ) : (
+                              "Add to Queue"
+                            )}
                           </button>
                         </>
                       ) : (
