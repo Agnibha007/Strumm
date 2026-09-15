@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, use } from "react";
-import { useAuthStore } from "web/store/useAuthStore";
+import { isAccessTokenExpiredOrAbsent, useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, API_ORIGIN } from "web/lib/api";
@@ -230,9 +230,17 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  // Connect WebSocket
+  // Keep the latest access token so WS (re)connects use a fresh credential
+  // without tearing the socket down every time auth rotates it in the background.
+  const tokenRef = useRef(token);
   useEffect(() => {
-    if (!token || !user?.id || !room) return;
+    tokenRef.current = token;
+  }, [token]);
+
+  // Connect WebSocket (auto-reconnects with backoff + heartbeat so a dropped or
+  // idle-killed socket recovers instead of leaving the room silently "offline").
+  useEffect(() => {
+    if (!user?.id || !room) return;
 
     let baseWs = API_ORIGIN.replace(/^http/, "ws");
     if (baseWs.endsWith("/")) {
@@ -243,13 +251,42 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     // accepts "authorization, <token>"; the query-param fallback stays for
     // older clients.
     const wsUrl = baseWs + `/social/rooms/${id}/ws`;
-    const ws = new WebSocket(wsUrl, ["authorization", token]);
-    socketRef.current = ws;
 
-    // Add current user to active members on connect
-    setActiveMemberIds(prev => new Set([...prev, user.id]));
+    let alive = true;
+    let ws!: WebSocket;
+    let reconnectDelay = 1000;
+    let reconnectTimer: number | null = null;
+    let heartbeatTimer: number | null = null;
+    let lostToastShown = false;
 
-    ws.onmessage = async (event) => {
+    const scheduleReconnect = () => {
+      if (!alive) return;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, Math.min(reconnectDelay, 30000));
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    };
+
+    const connect = () => {
+      if (!alive) return;
+      const currentToken = tokenRef.current;
+      if (!currentToken || isAccessTokenExpiredOrAbsent(currentToken)) {
+        scheduleReconnect();
+        return;
+      }
+      ws = new WebSocket(wsUrl, ["authorization", currentToken]);
+      socketRef.current = ws;
+
+      // Add current user to active members on connect (re-added on every retry)
+      setActiveMemberIds(prev => new Set([...prev, user.id]));
+
+      ws.onopen = () => {
+        reconnectDelay = 1000;
+      };
+
+      ws.onmessage = async (event) => {
       try {
         const payload = JSON.parse(event.data);
         const { event: wsEvent, data: eventData } = payload;
@@ -414,29 +451,49 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     };
 
     ws.onerror = () => {
-      show("Room connection error — playback sync may be disrupted.", "error");
+      show("Room connection error — reconnecting…", "error");
     };
 
     ws.onclose = () => {
-      show("Room connection lost.", "error");
+      socketRef.current = null;
+      if (!alive) return;
+      if (!lostToastShown) {
+        show("Room connection lost — reconnecting…", "error");
+        lostToastShown = true;
+      }
+      scheduleReconnect();
+    };
     };
 
+    heartbeatTimer = window.setInterval(() => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ event: "ping" }));
+      }
+    }, 25000);
+
+    connect();
+
     return () => {
+      alive = false;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      if (heartbeatTimer) window.clearInterval(heartbeatTimer);
       // Remove current user from active members on disconnect
       setActiveMemberIds(prev => {
         const next = new Set(prev);
         next.delete(user?.id);
         return next;
       });
-      ws.onclose = null;
-      ws.onerror = null;
-      ws.close();
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      }
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(t => t.stop());
       }
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
     };
-  }, [token, room?.id, user?.id]);
+  }, [id, room?.id, user?.id]);
 
   // Host Action Broadcasters
   useEffect(() => {
