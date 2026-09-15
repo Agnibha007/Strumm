@@ -73,7 +73,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const { show } = useNotificationStore();
 
-  const { token, user } = useAuthStore();
+  const { token, user, silentRefresh } = useAuthStore();
   const { currentSong, isPlaying, currentTime, setCurrentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
 
   const [room, setRoom] = useState<RoomDetails | null>(null);
@@ -233,8 +233,17 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   // Keep the latest access token so WS (re)connects use a fresh credential
   // without tearing the socket down every time auth rotates it in the background.
   const tokenRef = useRef(token);
+  // Latest connect / silent-refresh closures so the token effect (which lives
+  // outside the WS effect) can force an immediate reconnect.
+  const connectNowRef = useRef<(() => void) | null>(null);
+  const silentRefreshRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     tokenRef.current = token;
+    // A rotating/recovered access token may unblock the WebSocket: reconnect
+    // immediately instead of waiting out the reconnect backoff window.
+    if (token && !isAccessTokenExpiredOrAbsent(token)) {
+      connectNowRef.current?.();
+    }
   }, [token]);
 
   // Connect WebSocket (auto-reconnects with backoff + heartbeat so a dropped or
@@ -271,8 +280,19 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
 
     const connect = () => {
       if (!alive) return;
+      // Idempotent: never stack a second socket on top of a live/connecting one.
+      if (socketRef.current &&
+          (socketRef.current.readyState === WebSocket.OPEN ||
+           socketRef.current.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
       const currentToken = tokenRef.current;
       if (!currentToken || isAccessTokenExpiredOrAbsent(currentToken)) {
+        // The access token is gone or expired, so a handshake now would be
+        // doomed (server rejects then closes). Kick a silent refresh so a fresh
+        // token can unblock the socket, and retry on the backoff so a cold or
+        // briefly-failed refresh still recovers.
+        silentRefreshRef.current?.();
         scheduleReconnect();
         return;
       }
@@ -471,10 +491,22 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }
     }, 25000);
 
+    silentRefreshRef.current = () => { silentRefresh().catch(() => {}); };
+    connectNowRef.current = () => {
+      if (!alive) return;
+      if (socketRef.current && socketRef.current.readyState !== WebSocket.CLOSED) return;
+      reconnectDelay = 1000;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      connect();
+    };
+
     connect();
 
     return () => {
       alive = false;
+      silentRefreshRef.current = null;
+      connectNowRef.current = null;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       if (heartbeatTimer) window.clearInterval(heartbeatTimer);
       // Remove current user from active members on disconnect
