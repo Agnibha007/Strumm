@@ -214,9 +214,21 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const cleanQueueEntry = (s: any) => s && typeof s === "object" && s.videoId ? s : null;
 
   const applySnapshot = (snap: any) => {
+    // The host is the source of truth for the current track. A server snapshot
+    // taken before the host's latest track:update landed would otherwise
+    // overwrite the song the host is actually playing; re-push it so both the
+    // server and listeners catch up.
+    let effectiveTrack = snap.currentTrack;
+    if (isHostRef.current && currentSongRef.current) {
+      const hostTrack = currentSongRef.current;
+      if (hostTrack.videoId !== effectiveTrack?.videoId) {
+        effectiveTrack = hostTrack;
+        sendWhenConnected({ event: "track:update", data: { song: hostTrack } }, () => {});
+      }
+    }
     setRoom(prev => ({
       ...(prev || {}),
-      currentTrack: snap.currentTrack ?? prev?.currentTrack,
+      currentTrack: effectiveTrack ?? prev?.currentTrack,
       playbackState: snap.playbackState ?? prev?.playbackState,
       queue: (snap.queue ?? prev?.queue ?? []).map(cleanQueueEntry).filter(Boolean),
       hostId: snap.hostId ?? prev?.hostId,
@@ -553,11 +565,14 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         socketRef.current.send(JSON.stringify(payload));
         return;
       }
-      if (attempt >= 8) {
+      // Right after joining, the socket can take a few seconds to reach OPEN.
+      // Nudge a reconnect each tick (idempotent) and only declare the action
+      // lost once a generous window has passed.
+      if (attempt >= 25) {
         onLost();
         return;
       }
-      if (attempt === 0) connectNowRef.current?.();
+      connectNowRef.current?.();
       window.setTimeout(() => trySend(attempt + 1), 400);
     };
     trySend();
