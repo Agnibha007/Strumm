@@ -727,28 +727,34 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     }
   };
 
+  const sendWhenConnected = (payload: unknown, onLost: () => void) => {
+    const trySend = (attempt = 0): void => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify(payload));
+        return;
+      }
+      if (attempt >= 8) {
+        onLost();
+        return;
+      }
+      if (attempt === 0) connectNowRef.current?.();
+      window.setTimeout(() => trySend(attempt + 1), 400);
+    };
+    trySend();
+  };
+
   const handleAddSuggestedSong = (song: any) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+    sendWhenConnected({ event: "queue:add", data: { song } }, () => {
       show("Your connection to the room is offline — try again in a moment.", "error");
-      return;
-    }
-    socketRef.current.send(JSON.stringify({
-      event: "queue:add",
-      data: { song }
-    }));
+    });
     setSuggestQuery("");
     setSuggestResults([]);
   };
 
   const handleAddToQueue = (song: any) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+    sendWhenConnected({ event: "queue:add", data: { song } }, () => {
       show("Your connection to the room is offline — try again in a moment.", "error");
-      return;
-    }
-    socketRef.current.send(JSON.stringify({
-      event: "queue:add",
-      data: { song }
-    }));
+    });
     setAddedToQueue(prev => {
       const next = new Set(prev);
       next.add(song.videoId);
