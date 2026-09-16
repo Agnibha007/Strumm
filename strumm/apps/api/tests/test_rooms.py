@@ -9,9 +9,11 @@ Covers the production-readiness fixes:
   - POST /social/rooms: controllers seed + room:created push.
   - DELETE /social/rooms: host-only + room:deleted push.
   - can_control: host + approved-controller gating for playback events.
-  - handle_room_disconnect: room:left broadcast, host auto-transfer to the
-    longest-connected member, and deferred (grace-window) deletion of a
-    hostless empty room that stays empty — not an instant delete on socket drop.
+  - handle_room_disconnect: room:left broadcast, DEFERRED host transfer (a
+    transient host socket drop never strips the host's controls; ownership is
+    handed to the longest-connected member only after a grace window, and a
+    reconnect cancels it), and deferred (grace-window) deletion of a hostless
+    empty room that stays empty — not an instant delete on socket drop.
 
 MongoDB and the realtime manager are mocked; no external services are touched.
 """
@@ -500,7 +502,12 @@ async def test_disconnect_broadcasts_leave(mock_db, mock_realtime):
     mock_db[mock_db.ROOMS].delete_one.assert_not_awaited()
 
 
-async def test_disconnect_auto_transfers_host(mock_db, mock_realtime):
+async def test_disconnect_auto_transfers_host_after_grace(mock_db, mock_realtime):
+    """A host socket drop while listeners are connected does NOT transfer
+    ownership instantly — the hand-off is deferred by ROOM_HOST_TRANSFER_GRACE
+    so a transient blip can't strip the host's controls. After the grace (here
+    shortened to ~0) with the host still gone, the room transfers to the first
+    remaining connected member."""
     from app.services.rooms import handle_room_disconnect as _handle_room_disconnect
 
     room_id = "6630a1c2e4b0a1c2e4b0a111"
@@ -516,31 +523,102 @@ async def test_disconnect_auto_transfers_host(mock_db, mock_realtime):
     mock_db[mock_db.ROOMS].delete_one = AsyncMock()
     host_doc = {"_id": ObjectId("6630a1c2e4b0a1c2e4b0a222"), "displayName": "Veteran"}
     mock_db[mock_db.USERS].find_one = AsyncMock(return_value=host_doc)
+    conn_cursor = AsyncMock()
+    conn_cursor.to_list = AsyncMock(return_value=[])
+    mock_db[mock_db.CONNECTIONS].find = MagicMock(return_value=conn_cursor)
 
     # Room manager still holds veteran connected, in join order.
     mock_realtime.room_connected_user_ids.return_value = ["veteran", "newbie"]
 
-    await _handle_room_disconnect(room_id, "host")
+    # Transfer is deferred: the moment the host disconnects, ownership is
+    # untouched (no hostId update, no host_transferred broadcast, no
+    # room:left, no member removal).
+    with patch("app.services.rooms.ROOM_HOST_TRANSFER_GRACE", 60.0):
+        await _handle_room_disconnect(room_id, "host")
+        await asyncio.sleep(0.05)
 
-    # hostId updated to the longest-connected remaining member
-    update_call = [
-        c for c in mock_db[mock_db.ROOMS].update_one.call_args_list
-        if c.kwargs.get("$set")
+    transfer_calls = [
+        c for c in mock_realtime.broadcast_to_room.call_args_list
+        if c.kwargs["message"]["event"] == "room:host_transferred"
     ]
-    # update_one is called with positional filter and dict -- assert via call args
-    for call in mock_db[mock_db.ROOMS].update_one.call_args_list:
-        if isinstance(call.args[1], dict) and call.args[1].get("$set", {}).get("hostId"):
-            assert call.args[1]["$set"]["hostId"] == "veteran"
-    assert not update_call or True  # documented above
+    assert not transfer_calls
+    host_transfer_updates = [
+        call for call in mock_db[mock_db.ROOMS].update_one.call_args_list
+        if isinstance(call.args[1], dict) and call.args[1].get("$set", {}).get("hostId")
+    ]
+    assert not host_transfer_updates
+    mock_db[mock_db.ROOMS].delete_one.assert_not_awaited()
 
-    # host transfer broadcast was sent to the room
+    # Cancel the still-pending long-grace task, then let a fresh grace elapse
+    # with the host still gone -> transfer commits to the first remaining
+    # connected member.
+    from app.services.rooms import cancel_pending_host_transfer
+    cancel_pending_host_transfer(room_id)
+    with patch("app.services.rooms.ROOM_HOST_TRANSFER_GRACE", 0.0):
+        await _handle_room_disconnect(room_id, "host")
+        await asyncio.sleep(0.05)
+
     transfer_calls = [
         c for c in mock_realtime.broadcast_to_room.call_args_list
         if c.kwargs["message"]["event"] == "room:host_transferred"
     ]
     assert transfer_calls
     assert transfer_calls[0].kwargs["message"]["data"]["hostId"] == "veteran"
+    host_transfer_updates = [
+        call for call in mock_db[mock_db.ROOMS].update_one.call_args_list
+        if isinstance(call.args[1], dict) and call.args[1].get("$set", {}).get("hostId")
+    ]
+    assert host_transfer_updates
+    assert host_transfer_updates[0].args[1]["$set"]["hostId"] == "veteran"
 
+    mock_db[mock_db.ROOMS].delete_one.assert_not_awaited()
+
+
+async def test_disconnect_host_reconnect_cancels_transfer(mock_db, mock_realtime):
+    """If the host's socket comes back inside the grace window, the deferred
+    host hand-off is cancelled and the host keeps control."""
+    from app.services.rooms import (
+        cancel_pending_host_transfer,
+        handle_room_disconnect as _handle_room_disconnect,
+    )
+
+    room_id = "6630a1c2e4b0a1c2e4b0a112"
+    room = {
+        "_id": ObjectId(room_id),
+        "name": "Room",
+        "hostId": "host",
+        "members": ["host", "veteran"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.ROOMS].update_one = AsyncMock()
+    mock_db[mock_db.ROOMS].delete_one = AsyncMock()
+    host_doc = {"_id": ObjectId("6630a1c2e4b0a1c2e4b0a222"), "displayName": "Veteran"}
+    mock_db[mock_db.USERS].find_one = AsyncMock(return_value=host_doc)
+    conn_cursor = AsyncMock()
+    conn_cursor.to_list = AsyncMock(return_value=[])
+    mock_db[mock_db.CONNECTIONS].find = MagicMock(return_value=conn_cursor)
+    mock_realtime.room_connected_user_ids.return_value = ["veteran"]
+
+    with patch("app.services.rooms.ROOM_HOST_TRANSFER_GRACE", 60.0):
+        # Host socket drops while a listener is connected -> transfer scheduled.
+        await _handle_room_disconnect(room_id, "host")
+
+        # The room WS accept path calls this when the host reconnects.
+        cancel_pending_host_transfer(room_id)
+        await asyncio.sleep(0.05)
+
+    # No hostId update, no host_transferred broadcast — host kept the room.
+    host_transfer_updates = [
+        call for call in mock_db[mock_db.ROOMS].update_one.call_args_list
+        if isinstance(call.args[1], dict) and call.args[1].get("$set", {}).get("hostId")
+    ]
+    assert not host_transfer_updates
+    transfer_calls = [
+        c for c in mock_realtime.broadcast_to_room.call_args_list
+        if c.kwargs["message"]["event"] == "room:host_transferred"
+    ]
+    assert not transfer_calls
     mock_db[mock_db.ROOMS].delete_one.assert_not_awaited()
 
 

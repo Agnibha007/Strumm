@@ -55,6 +55,7 @@ from app.services.rooms import (
     build_member_profiles,
     can_access_room,
     can_control,
+    cancel_pending_host_transfer,
     cancel_pending_room_delete,
     circle_user_ids,
     ensure_join_code,
@@ -338,7 +339,7 @@ async def leave_room(roomId: str, current_user: dict = Depends(get_current_user)
     room_id_str = str(room["_id"])
     # Drop any live room sockets first so the lifecycle cleanup sees an empty slot.
     ws_manager.disconnect_user_from_room(room_id_str, my_id)
-    await handle_room_disconnect(room_id_str, my_id)
+    await handle_room_disconnect(room_id_str, my_id, explicit=True)
 
     return {"success": True, "message": "Left the room."}
 
@@ -385,7 +386,7 @@ async def kick_member(
     # (room:left broadcast + member removal; host transfer is impossible since
     # a host may never kick themselves).
     ws_manager.disconnect_user_from_room(room_id_str, target_id)
-    await handle_room_disconnect(room_id_str, target_id)
+    await handle_room_disconnect(room_id_str, target_id, explicit=True)
 
     return {"success": True, "message": f"Kicked {target_name} from the room."}
 
@@ -492,6 +493,10 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
     # A reconnect (e.g. after the host's socket dropped) cancels any pending
     # deferred hostless-room delete so the room survives the blip.
     cancel_pending_room_delete(roomId)
+    # If the host is the one reconnecting, also cancel the deferred host
+    # hand-off scheduled when their socket dropped — they never actually left.
+    if room.get("hostId") == userId:
+        cancel_pending_host_transfer(roomId)
 
     # Update room member lists
     await database[db.ROOMS].update_one(

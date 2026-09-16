@@ -60,7 +60,14 @@ async def _flush_hostless_room_delete(database, room_id_str: str) -> None:
         room = await database[db.ROOMS].find_one({"_id": ObjectId(room_id_str)})
         if not room:
             return
-        if manager.room_connected_user_ids(room_id_str):
+        remaining = manager.room_connected_user_ids(room_id_str)
+        if remaining:
+            # The host never came back, but a listener reanimated the room in
+            # the meantime: hand ownership over instead of deleting under them
+            # (or leaving a permanent hostless zombie). A transfer is only ever
+            # committed here after the host has been gone for the full grace.
+            if remaining[0] != room.get("hostId"):
+                await _commit_host_transfer(database, room, room_id_str, remaining[0])
             return
         await database[db.ROOMS].delete_one({"_id": ObjectId(room_id_str)})
         await notify_room_deleted(database, room, room_id_str)
@@ -87,6 +94,98 @@ def schedule_hostless_room_delete(database, room_id_str: str) -> None:
 def cancel_pending_room_delete(room_id_str: str) -> None:
     """Cancel a pending deferred delete because someone reconnected to the room."""
     task = _pending_room_deletes.pop(room_id_str, None)
+    if task and not task.done():
+        task.cancel()
+
+
+# ---------------------------------------------------------------------------
+# Deferred host transfer: a transient host socket drop must NOT give ownership
+# away. Same reasoning as the hostless delete above — if the host's socket blips
+# while listeners are connected, the old code immediately removed the host from
+# members/controllers and handed the room to the first remaining listener; the
+# (still-present) host then saw every host control flip away (Suggest instead of
+# Play/Add to queue, no Invite, no playback). Transfer is instead deferred by a
+# grace window and cancelled if the host reconnects first.
+# ---------------------------------------------------------------------------
+
+ROOM_HOST_TRANSFER_GRACE = 60.0
+_pending_host_transfers: dict[str, asyncio.Task] = {}
+
+
+async def _commit_host_transfer(database, room: dict, room_id_str: str, new_host_id: str) -> None:
+    """Persist a host hand-off to ``new_host_id`` and notify the room + circle."""
+    old_host_id = room.get("hostId")
+    if old_host_id == new_host_id:
+        return
+    new_host_name = await fetch_host_name(database, new_host_id, default="Someone")
+    if old_host_id:
+        leaver_name = await fetch_host_name(database, old_host_id, default="Someone")
+    else:
+        leaver_name = "Someone"
+    await database[db.ROOMS].update_one(
+        {"_id": ObjectId(room_id_str)}, {"$set": {"hostId": new_host_id}}
+    )
+    room["hostId"] = new_host_id
+    if old_host_id:
+        await remove_member(database, room, old_host_id)
+        room["members"] = [m for m in (room.get("members") or []) if m != old_host_id]
+        await manager.broadcast_to_room(
+            room_id=room_id_str,
+            message={"event": ROOM_LEFT, "data": {"userId": old_host_id, "displayName": leaver_name}},
+            exclude_user_id=old_host_id,
+        )
+    await manager.broadcast_to_room(
+        room_id=room_id_str,
+        message={
+            "event": ROOM_HOST_TRANSFERRED,
+            "data": {"hostId": new_host_id, "hostName": new_host_name},
+        },
+    )
+    await notify_room_updated(database, room, host_name=new_host_name)
+
+
+async def _flush_host_transfer(database, room_id_str: str, host_id: str) -> None:
+    """Transfer host ownership to a remaining listener, but only if the host's
+    socket stays gone for the grace window."""
+    try:
+        await asyncio.sleep(ROOM_HOST_TRANSFER_GRACE)
+        if _pending_host_transfers.get(room_id_str) is not asyncio.current_task():
+            return
+        _pending_host_transfers.pop(room_id_str, None)
+        room = await database[db.ROOMS].find_one({"_id": ObjectId(room_id_str)})
+        if not room:
+            return
+        if room.get("hostId") != host_id:
+            return  # Host retook ownership (or it changed); nothing to do.
+        remaining = manager.room_connected_user_ids(room_id_str)
+        if not remaining:
+            # Host still gone and the room is now empty — fall back to delete.
+            schedule_hostless_room_delete(database, room_id_str)
+            return
+        await _commit_host_transfer(database, room, room_id_str, remaining[0])
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        import traceback
+        logger.error(
+            "Host transfer (grace) failed (room=%s): %s\n%s",
+            room_id_str, exc, traceback.format_exc(),
+        )
+        import sentry_sdk
+        sentry_sdk.capture_exception(exc)
+
+
+def schedule_host_transfer(database, room_id_str: str, host_id: str) -> None:
+    """Schedule (or reuse) the deferred transfer for a disconnected host."""
+    if room_id_str in _pending_host_transfers:
+        return
+    task = asyncio.ensure_future(_flush_host_transfer(database, room_id_str, host_id))
+    _pending_host_transfers[room_id_str] = task
+
+
+def cancel_pending_host_transfer(room_id_str: str) -> None:
+    """Cancel a pending deferred host transfer because the host reconnected."""
+    task = _pending_host_transfers.pop(room_id_str, None)
     if task and not task.done():
         task.cancel()
 
@@ -354,11 +453,19 @@ async def remove_member(database, room: dict, user_id: str) -> None:
     )
 
 
-async def handle_room_disconnect(room_id: str, user_id: str) -> None:
+async def handle_room_disconnect(room_id: str, user_id: str, explicit: bool = False) -> None:
     """
     Room WebSocket cleanup: broadcast room:left, remove the member, and — if the
-    host left — auto-transfer host to the longest-connected remaining member.
-    An empty room with no host candidate is deleted to avoid hostless zombies.
+    host left — hand ownership to the longest-connected remaining member (or
+    defer it, see below). An empty room with no host candidate is deleted after
+    a grace window to avoid hostless zombies.
+
+    ``explicit=True`` means the user deliberately left via the Leave/kick
+    endpoints: cleanup is immediate. ``explicit=False`` is a raw socket drop,
+    which is frequently transient (gateway kills, refresh, network blips) — a
+    host drop never strips the host's membership/controllers or hands the room
+    away on the spot; the hand-off is deferred and cancelled if the host
+    reconnects within the grace window.
     """
     if not ObjectId.is_valid(str(room_id)):
         return
@@ -370,11 +477,61 @@ async def handle_room_disconnect(room_id: str, user_id: str) -> None:
             return
         room_id_str = str(room["_id"])
 
-        # Derive the data payload from the leaving user (best-effort).
+        if room.get("hostId") == user_id:
+            remaining = manager.room_connected_user_ids(room_id_str)
+            if remaining:
+                if explicit:
+                    # A deliberate leave/kick isn't a transient blip: notify the
+                    # room, remove the host, and hand over right away.
+                    leaver_name = "Someone"
+                    try:
+                        leaver_name = await fetch_host_name(database, user_id, default="Someone")
+                    except Exception:
+                        pass
+                    await manager.broadcast_to_room(
+                        room_id=room_id_str,
+                        message={"event": ROOM_LEFT, "data": {"userId": user_id, "displayName": leaver_name}},
+                        exclude_user_id=user_id,
+                    )
+                    await remove_member(database, room, user_id)
+                    room["members"] = [m for m in (room.get("members") or []) if m != user_id]
+                    await _commit_host_transfer(database, room, room_id_str, remaining[0])
+                    return
+
+                # Socket blep: removing the host from members/controllers and
+                # handing the room to someone else right away would strip the
+                # still-active host of every control (Suggest instead of Play,
+                # no Invite, no playback). Defer the hand-off; a reconnect
+                # within the grace window cancels it.
+                schedule_host_transfer(database, room_id_str, user_id)
+                return
+
+            # The host left with nobody else connected. Don't destroy the room
+            # the instant the socket drops or remove the host's own membership
+            # (a quick return should be seamless); a room that stays empty
+            # self-removes after the grace window.
+            if explicit:
+                leaver_name = "Someone"
+                try:
+                    leaver_name = await fetch_host_name(database, user_id, default="Someone")
+                except Exception:
+                    pass
+                await manager.broadcast_to_room(
+                    room_id=room_id_str,
+                    message={"event": ROOM_LEFT, "data": {"userId": user_id, "displayName": leaver_name}},
+                    exclude_user_id=user_id,
+                )
+                await remove_member(database, room, user_id)
+                room["members"] = [m for m in (room.get("members") or []) if m != user_id]
+            schedule_hostless_room_delete(database, room_id_str)
+            return
+
+        # Non-host member departure: notify the room and remove them promptly.
+        leaver_name = "Someone"
         try:
             leaver_name = await fetch_host_name(database, user_id, default="Someone")
         except Exception:
-            leaver_name = "Someone"
+            pass
 
         await manager.broadcast_to_room(
             room_id=room_id_str,
@@ -384,32 +541,6 @@ async def handle_room_disconnect(room_id: str, user_id: str) -> None:
 
         await remove_member(database, room, user_id)
         room["members"] = [m for m in (room.get("members") or []) if m != user_id]
-
-        if room.get("hostId") != user_id:
-            return
-
-        remaining = manager.room_connected_user_ids(room_id_str)
-        if remaining:
-            new_host_id = remaining[0]
-            new_host_name = await fetch_host_name(database, new_host_id, default="Someone")
-            await database[db.ROOMS].update_one(
-                {"_id": oid}, {"$set": {"hostId": new_host_id}}
-            )
-            room["hostId"] = new_host_id
-            await manager.broadcast_to_room(
-                room_id=room_id_str,
-                message={
-                    "event": ROOM_HOST_TRANSFERRED,
-                    "data": {"hostId": new_host_id, "hostName": new_host_name},
-                },
-            )
-            await notify_room_updated(database, room, host_name=new_host_name)
-        else:
-            # The host left with nobody else connected. Don't destroy the room
-            # the instant the socket drops (transient gateway/network losses
-            # are common and would permanently 403 every reconnect); delete it
-            # after the grace window only if it is still empty.
-            schedule_hostless_room_delete(database, room_id_str)
     except Exception as exc:
         import traceback
         logger.error(
