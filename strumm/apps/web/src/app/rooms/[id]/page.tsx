@@ -794,6 +794,25 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     setSuggestResults([]);
   };
 
+  const handleAddToQueue = (song: any) => {
+    if (!canControl) return;
+    sendWhenConnected({ event: "queue:add", data: { song } }, () => {
+      show("Your connection to the room is offline — try again in a moment.", "error");
+    });
+    setAddedToQueue(prev => {
+      const next = new Set(prev);
+      next.add(song.videoId);
+      return next;
+    });
+    window.setTimeout(() => {
+      setAddedToQueue(prev => {
+        const next = new Set(prev);
+        next.delete(song.videoId);
+        return next;
+      });
+    }, 2000);
+  };
+
   const handleRemoveFromQueue = (videoId: string) => {
     if (!canControl || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
     socketRef.current.send(JSON.stringify({
@@ -1498,12 +1517,28 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div className="flex gap-1.5 ml-3 shrink-0">
                       {canControl ? (
-                        <button
-                          onClick={() => { handlePlayNow(song); setSuggestOpen(false); }}
-                          className="px-2.5 py-1.5 bg-primary/15 hover:bg-primary/30 text-primary font-bold rounded-lg text-[10px] transition cursor-pointer whitespace-nowrap"
-                        >
-                          Play Now
-                        </button>
+                        <>
+                          <button
+                            onClick={() => { handlePlayNow(song); setSuggestOpen(false); }}
+                            className="px-2.5 py-1.5 bg-primary/15 hover:bg-primary/30 text-primary font-bold rounded-lg text-[10px] transition cursor-pointer whitespace-nowrap"
+                          >
+                            Play
+                          </button>
+                          <button
+                            onClick={() => handleAddToQueue(song)}
+                            disabled={addedToQueue.has(song.videoId)}
+                            className="px-2.5 py-1.5 bg-accent/15 hover:bg-accent/30 text-accent font-bold rounded-lg text-[10px] transition cursor-pointer disabled:opacity-50 whitespace-nowrap inline-flex items-center gap-1"
+                          >
+                            {addedToQueue.has(song.videoId) ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                Added
+                              </>
+                            ) : (
+                              "Add to queue"
+                            )}
+                          </button>
+                        </>
                       ) : (
                         <button
                           onClick={() => handleAddSuggestedSong(song)}
