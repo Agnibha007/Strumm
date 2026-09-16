@@ -528,16 +528,29 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   }, [id, room?.id, user?.id]);
 
   // Host Action Broadcasters
+  const sendWhenConnected = (payload: unknown, onLost: () => void) => {
+    const trySend = (attempt = 0): void => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify(payload));
+        return;
+      }
+      if (attempt >= 8) {
+        onLost();
+        return;
+      }
+      if (attempt === 0) connectNowRef.current?.();
+      window.setTimeout(() => trySend(attempt + 1), 400);
+    };
+    trySend();
+  };
+
   useEffect(() => {
-    if (!canControl || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (!canControl) return;
 
     // Broadcast track update and update local room state for host
     if (currentSong) {
       const song = currentSong;
-      socketRef.current.send(JSON.stringify({
-        event: "track:update",
-        data: { song }
-      }));
+      sendWhenConnected({ event: "track:update", data: { song } }, () => {});
       // Immediately reflect change in UI for host
       setRoom(prev => prev ? { ...prev, currentTrack: song } : null);
     }
@@ -727,31 +740,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  const sendWhenConnected = (payload: unknown, onLost: () => void) => {
-    const trySend = (attempt = 0): void => {
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify(payload));
-        return;
-      }
-      if (attempt >= 8) {
-        onLost();
-        return;
-      }
-      if (attempt === 0) connectNowRef.current?.();
-      window.setTimeout(() => trySend(attempt + 1), 400);
-    };
-    trySend();
-  };
-
   const handleAddSuggestedSong = (song: any) => {
-    sendWhenConnected({ event: "queue:add", data: { song } }, () => {
-      show("Your connection to the room is offline — try again in a moment.", "error");
-    });
-    setSuggestQuery("");
-    setSuggestResults([]);
-  };
-
-  const handleAddToQueue = (song: any) => {
     sendWhenConnected({ event: "queue:add", data: { song } }, () => {
       show("Your connection to the room is offline — try again in a moment.", "error");
     });
@@ -767,6 +756,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         return next;
       });
     }, 2000);
+    setSuggestQuery("");
+    setSuggestResults([]);
   };
 
   const handleRemoveFromQueue = (videoId: string) => {
@@ -1473,28 +1464,12 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div className="flex gap-1.5 ml-3 shrink-0">
                       {canControl ? (
-                        <>
-                          <button
-                            onClick={() => { handlePlayNow(song); setSuggestOpen(false); }}
-                            className="px-2.5 py-1.5 bg-primary/15 hover:bg-primary/30 text-primary font-bold rounded-lg text-[10px] transition cursor-pointer whitespace-nowrap"
-                          >
-                            Play Now
-                          </button>
-                          <button
-                            onClick={() => handleAddToQueue(song)}
-                            disabled={addedToQueue.has(song.videoId)}
-                            className="px-2.5 py-1.5 bg-accent/15 hover:bg-accent/30 text-accent font-bold rounded-lg text-[10px] transition cursor-pointer disabled:opacity-50 whitespace-nowrap inline-flex items-center gap-1"
-                          >
-                            {addedToQueue.has(song.videoId) ? (
-                              <>
-                                <Check className="w-3 h-3" />
-                                Added
-                              </>
-                            ) : (
-                              "Add"
-                            )}
-                          </button>
-                        </>
+                        <button
+                          onClick={() => { handlePlayNow(song); setSuggestOpen(false); }}
+                          className="px-2.5 py-1.5 bg-primary/15 hover:bg-primary/30 text-primary font-bold rounded-lg text-[10px] transition cursor-pointer whitespace-nowrap"
+                        >
+                          Play Now
+                        </button>
                       ) : (
                         <button
                           onClick={() => handleAddSuggestedSong(song)}
