@@ -55,6 +55,7 @@ from app.services.rooms import (
     build_member_profiles,
     can_access_room,
     can_control,
+    cancel_pending_room_delete,
     circle_user_ids,
     ensure_join_code,
     fetch_host_name,
@@ -414,6 +415,7 @@ async def delete_room(roomId: str, current_user: dict = Depends(get_current_user
         raise HTTPException(status_code=403, detail="Only the room host can delete this room.")
 
     room_id_str = str(room["_id"])
+    cancel_pending_room_delete(room_id_str)
     await notify_room_deleted(database, room, room_id_str)
     await database[db.ROOMS].delete_one({"_id": room["_id"]})
 
@@ -487,6 +489,9 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
     # MUST accept before sending/receiving any frames.
     await websocket.accept()
     await ws_manager.connect_room(roomId, userId, websocket)
+    # A reconnect (e.g. after the host's socket dropped) cancels any pending
+    # deferred hostless-room delete so the room survives the blip.
+    cancel_pending_room_delete(roomId)
 
     # Update room member lists
     await database[db.ROOMS].update_one(

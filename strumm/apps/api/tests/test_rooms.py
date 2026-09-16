@@ -10,12 +10,15 @@ Covers the production-readiness fixes:
   - DELETE /social/rooms: host-only + room:deleted push.
   - can_control: host + approved-controller gating for playback events.
   - handle_room_disconnect: room:left broadcast, host auto-transfer to the
-    longest-connected member, hostless empty room deletion.
+    longest-connected member, and deferred (grace-window) deletion of a
+    hostless empty room that stays empty — not an instant delete on socket drop.
 
 MongoDB and the realtime manager are mocked; no external services are touched.
 """
 
 from __future__ import annotations
+
+import asyncio
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -565,7 +568,11 @@ async def test_disconnect_empties_and_deletes_room(mock_db, mock_realtime):
     ])
     mock_db[mock_db.CONNECTIONS].find = MagicMock(return_value=conn_cursor)
 
-    await _handle_room_disconnect(room_id, "host")
+    # Instant-disconnect deletes are gone: an emptied hostless room is removed
+    # only after the (here shortened to ~0) grace window stays empty.
+    with patch("app.services.rooms.ROOM_HOSTLESS_DELETE_GRACE", 0.0):
+        await _handle_room_disconnect(room_id, "host")
+        await asyncio.sleep(0.05)
 
     mock_db[mock_db.ROOMS].delete_one.assert_awaited()
     # room:deleted pushed (room + circle channels)
@@ -575,6 +582,47 @@ async def test_disconnect_empties_and_deletes_room(mock_db, mock_realtime):
     ]
     assert deleted_calls
     assert mock_realtime.broadcast_to_circle.await_count >= 1
+
+
+async def test_disconnect_survives_reconnect_within_grace(mock_db, mock_realtime):
+    """A transient host socket drop must NOT destroy the room before anyone
+    (including the host) has a chance to reconnect: the deferred delete exists,
+    so a reconnect within the grace window keeps the room alive."""
+    from app.services.rooms import (
+        cancel_pending_room_delete,
+        handle_room_disconnect as _handle_room_disconnect,
+    )
+
+    room_id = "6630a1c2e4b0a1c2e4b0a334"
+    room = {
+        "_id": ObjectId(room_id),
+        "name": "Solo Room",
+        "hostId": "host",
+        "members": ["host"],
+        "visibility": "public",
+    }
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value=room)
+    mock_db[mock_db.ROOMS].update_one = AsyncMock()
+    mock_db[mock_db.ROOMS].delete_one = AsyncMock()
+    mock_db[mock_db.USERS].find_one = AsyncMock(return_value=None)
+    mock_realtime.room_connected_user_ids.return_value = []
+
+    # Grace is far in the future so the socket drop cannot delete anything.
+    with patch("app.services.rooms.ROOM_HOSTLESS_DELETE_GRACE", 900.0):
+        await _handle_room_disconnect(room_id, "host")
+        mock_db[mock_db.ROOMS].delete_one.assert_not_awaited()
+
+        # The room WS accept path calls this on every (re)connect.
+        cancel_pending_room_delete(room_id)
+        await asyncio.sleep(0.05)
+
+    # Room survived — reconnect cancelled the deferred delete for good.
+    mock_db[mock_db.ROOMS].delete_one.assert_not_awaited()
+    room_deleted = [
+        c for c in mock_realtime.broadcast_to_room.call_args_list
+        if c.kwargs["message"]["event"] == "room:deleted"
+    ]
+    assert not room_deleted
 
 
 # ---------------------------------------------------------------------------
@@ -827,8 +875,11 @@ async def test_leave_disconnects_sockets_and_cleans_up(client, mock_db, mock_rea
     mock_db[mock_db.USERS].find_one = AsyncMock(return_value=None)
     mock_realtime.room_connected_user_ids.return_value = []
 
-    res = await client.post(f"/social/rooms/{room_id}/leave")
-    assert res.status_code == 200
+    # No members left -> the room is removed once the grace window elapses.
+    with patch("app.services.rooms.ROOM_HOSTLESS_DELETE_GRACE", 0.0):
+        res = await client.post(f"/social/rooms/{room_id}/leave")
+        assert res.status_code == 200
+        await asyncio.sleep(0.05)
 
     mock_realtime.disconnect_user_from_room.assert_called_with(str(room_id), "user_host")
     leave_calls = [
@@ -836,7 +887,7 @@ async def test_leave_disconnects_sockets_and_cleans_up(client, mock_db, mock_rea
         if c.kwargs["message"]["event"] == "room:left"
     ]
     assert leave_calls
-    assert mock_db[mock_db.ROOMS].delete_one.await_count >= 1  # no members left -> room gone
+    assert mock_db[mock_db.ROOMS].delete_one.await_count >= 1  # room gone
 
 
 async def test_leave_requires_membership(client, mock_db):

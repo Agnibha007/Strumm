@@ -152,6 +152,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Guards against duplicate "room is gone" redirects across fetch + socket paths.
+  const roomGoneRef = useRef(false);
+
   // Fetch Room Info
   const fetchRoomInfo = async () => {
     if (!user) return;
@@ -172,6 +175,16 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             .filter(Boolean)
         ));
       } else {
+        if (response.status === 404) {
+          // The room no longer exists server-side (deleted or expired). Leave
+          // for the lobby instead of looping "offline" toasts against a ghost.
+          if (!roomGoneRef.current) {
+            roomGoneRef.current = true;
+            show("This room no longer exists.", "error");
+            router.push("/rooms");
+          }
+          return;
+        }
         setRoomError(json.error || "Failed to load room.");
       }
     } catch (e) {
@@ -474,9 +487,15 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       show("Room connection error — reconnecting…", "error");
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       socketRef.current = null;
       if (!alive) return;
+      if (event.reason && event.reason.toLowerCase().includes("room not found") && !roomGoneRef.current) {
+        roomGoneRef.current = true;
+        show("This room no longer exists.", "error");
+        router.push("/rooms");
+        return;
+      }
       if (!lostToastShown) {
         show("Room connection lost — reconnecting…", "error");
         lostToastShown = true;

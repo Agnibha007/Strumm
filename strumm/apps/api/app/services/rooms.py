@@ -16,6 +16,7 @@ the server broadcast and every client handler in ``apps/web``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 from datetime import datetime
@@ -38,6 +39,56 @@ from app.services.realtime.events import (
 )
 
 logger = logging.getLogger("strumm-rooms")
+
+# A room is NOT deleted the instant its host's socket drops. Transient drops are
+# common (HF gateway kills, client refresh, network blips) and deleting the room
+# then would destroy a room the owner expects to keep — every reconnect hit 403
+# and the app looked permanently "offline". Hostless-room deletion is instead
+# deferred by this grace window and cancelled if anyone (including the host)
+# reconnects first; a room that stays truly empty self-removes shortly after.
+ROOM_HOSTLESS_DELETE_GRACE = 900.0
+_pending_room_deletes: dict[str, asyncio.Task] = {}
+
+
+async def _flush_hostless_room_delete(database, room_id_str: str) -> None:
+    """Delete a hostless room, but only if it is still empty after the grace window."""
+    try:
+        await asyncio.sleep(ROOM_HOSTLESS_DELETE_GRACE)
+        if _pending_room_deletes.get(room_id_str) is not asyncio.current_task():
+            return
+        _pending_room_deletes.pop(room_id_str, None)
+        room = await database[db.ROOMS].find_one({"_id": ObjectId(room_id_str)})
+        if not room:
+            return
+        if manager.room_connected_user_ids(room_id_str):
+            return
+        await database[db.ROOMS].delete_one({"_id": ObjectId(room_id_str)})
+        await notify_room_deleted(database, room, room_id_str)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        import traceback
+        logger.error(
+            "Hostless room delete (grace) failed (room=%s): %s\n%s",
+            room_id_str, exc, traceback.format_exc(),
+        )
+        import sentry_sdk
+        sentry_sdk.capture_exception(exc)
+
+
+def schedule_hostless_room_delete(database, room_id_str: str) -> None:
+    """Schedule (or reuse) the deferred delete for a now-empty hostless room."""
+    if room_id_str in _pending_room_deletes:
+        return
+    task = asyncio.ensure_future(_flush_hostless_room_delete(database, room_id_str))
+    _pending_room_deletes[room_id_str] = task
+
+
+def cancel_pending_room_delete(room_id_str: str) -> None:
+    """Cancel a pending deferred delete because someone reconnected to the room."""
+    task = _pending_room_deletes.pop(room_id_str, None)
+    if task and not task.done():
+        task.cancel()
 
 # Manager used for room channel + circle broadcasts (alias keeps tests simple).
 manager = realtime_manager
@@ -354,8 +405,11 @@ async def handle_room_disconnect(room_id: str, user_id: str) -> None:
             )
             await notify_room_updated(database, room, host_name=new_host_name)
         else:
-            await database[db.ROOMS].delete_one({"_id": oid})
-            await notify_room_deleted(database, room, room_id_str)
+            # The host left with nobody else connected. Don't destroy the room
+            # the instant the socket drops (transient gateway/network losses
+            # are common and would permanently 403 every reconnect); delete it
+            # after the grace window only if it is still empty.
+            schedule_hostless_room_delete(database, room_id_str)
     except Exception as exc:
         import traceback
         logger.error(
