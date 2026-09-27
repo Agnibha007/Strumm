@@ -87,6 +87,19 @@ class Harness {
     this.notify();
   }
 
+  /**
+   * Report ONE unusable (NaN) position sample, then restore the previous
+   * position. Models both real sources of a NaN sample: a media element whose
+   * `currentTime` is NaN until its metadata loads, and a player surface
+   * reporting NaN for a tick while it re-initialises.
+   */
+  nanSample(): void {
+    const previous = this.currentTime;
+    this.currentTime = Number.NaN;
+    this.notify();
+    this.currentTime = previous;
+  }
+
   changeSong(song: ListeningSong, atSeconds = 0): void {
     this.song = song;
     this.currentTime = atSeconds;
@@ -128,6 +141,87 @@ class Harness {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("ListeningTracker non-finite position samples", () => {
+  it("ignores a NaN position instead of poisoning every later event", async () => {
+    // A media element reports `currentTime === NaN` until its metadata loads,
+    // which is the normal state right after `src` is set. NaN used to flow into
+    // `accumulated`, and because `NaN - NaN` is still NaN and `NaN < 1` is
+    // false, it never recovered: every subsequent event serialized as JSON
+    // `null` and the API answered 422 (`listenDuration: int_type`), silently
+    // losing the user's listening time for the rest of the session.
+    const h = new Harness();
+    const tracker = h.createTracker();
+    tracker.start();
+
+    // A NaN sample lands mid-playback.
+    h.nanSample();
+    expect(h.sent.length).toBe(0);
+
+    // Playback resumes normally afterwards and must still be counted.
+    h.advance(30);
+    await flushMicrotasks();
+
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0].seconds).toBe(30);
+    expect(Number.isFinite(h.sent[0].seconds)).toBe(true);
+  });
+
+  it("recovers from repeated NaN samples and keeps counting", async () => {
+    const h = new Harness();
+    const tracker = h.createTracker();
+    tracker.start();
+
+    for (let i = 0; i < 4; i += 1) {
+      h.advance(10);
+      h.nanSample();
+    }
+    for (let i = 0; i < 8; i += 1) h.advance(10);
+    await flushMicrotasks();
+
+    // Every delivered event must be a finite whole number of seconds — the
+    // shape the API accepts. All 120s of real playback is still accounted for:
+    // the NaN ticks are discarded, not debited.
+    for (const event of h.sent) {
+      expect(Number.isInteger(event.seconds)).toBe(true);
+      expect(event.seconds).toBeGreaterThan(0);
+    }
+    expect(h.totalSent()).toBe(120);
+  });
+
+  it("ignores an Infinity sample", async () => {
+    const h = new Harness();
+    const tracker = h.createTracker();
+    tracker.start();
+
+    h.currentTime = Number.POSITIVE_INFINITY;
+    h.notify();
+    h.silentJump(0);
+    h.advance(30);
+    await flushMicrotasks();
+
+    expect(h.sent.length).toBe(1);
+    expect(h.sent[0].seconds).toBe(30);
+  });
+
+  it("never sends NaN even when a poisoned accumulator is flushed", async () => {
+    // Belt-and-braces: `JSON.stringify(NaN)` is `null`, which the API rejects
+    // outright, so a non-finite value must never reach the wire.
+    const h = new Harness();
+    const tracker = h.createTracker();
+    tracker.start();
+
+    h.advance(10);
+    h.nanSample();
+    h.setPlaying(false); // triggers flushPartial()
+    await flushMicrotasks();
+
+    for (const event of h.sent) {
+      expect(Number.isFinite(event.seconds)).toBe(true);
+    }
+    expect(h.totalSent()).toBe(10);
+  });
 });
 
 describe("ListeningTracker measurement (position-based, not wall-clock)", () => {

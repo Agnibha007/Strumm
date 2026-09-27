@@ -3,9 +3,13 @@ import {
   evaluateCrossfadeTick,
   backgroundCrossfadeProgress,
   crossfadeFadeInRatio,
+  crossfadeFadeOutRatio,
+  crossfadeOverlapFadeInRatio,
+  crossfadeVolumeRatio,
   CROSSFADE_MIN_DURATION_SECONDS,
   CROSSFADE_START_SECONDS_BEFORE_END,
   CROSSFADE_FADE_IN_MS,
+  CROSSFADE_FADE_OUT_MS,
 } from "./crossfade";
 
 describe("evaluateCrossfadeTick", () => {
@@ -131,5 +135,127 @@ describe("crossfadeFadeInRatio", () => {
   it("is linear between silence and full volume across the ramp", () => {
     expect(crossfadeFadeInRatio(FADE_IN_SECONDS / 2)).toBeCloseTo(0.5);
     expect(crossfadeFadeInRatio(FADE_IN_SECONDS / 4)).toBeCloseTo(0.25);
+  });
+});
+
+describe("crossfadeFadeOutRatio", () => {
+  it("is the exact inverse of backgroundCrossfadeProgress", () => {
+    // 195 is the first second of the window (progress 0 → still full volume),
+    // 197.5 is halfway (progress 0.5), 200 is silence.
+    expect(crossfadeFadeOutRatio(180, 200)).toBe(1);
+    expect(crossfadeFadeOutRatio(195, 200)).toBe(1);
+    expect(crossfadeFadeOutRatio(197.5, 200)).toBeCloseTo(0.5);
+    expect(crossfadeFadeOutRatio(200, 200)).toBe(0);
+    expect(crossfadeFadeOutRatio(999, 200)).toBe(0);
+  });
+
+  it("holds at full volume for unknown/zero durations", () => {
+    expect(crossfadeFadeOutRatio(100, Number.NaN)).toBe(1);
+    expect(crossfadeFadeOutRatio(100, 0)).toBe(1);
+    expect(crossfadeFadeOutRatio(Number.NaN, 200)).toBe(1);
+  });
+
+  it("reaches silence only at the track end, never earlier", () => {
+    // Guards the "huge delay between songs" fix: the fade must consume exactly
+    // the final CROSSFADE_FADE_OUT_MS of MEDIA time, so a throttled timer can't
+    // stretch it and the advance lands on the track's real end.
+    const dur = 200;
+    expect(crossfadeFadeOutRatio(dur - CROSSFADE_START_SECONDS_BEFORE_END, dur)).toBe(1);
+    expect(crossfadeFadeOutRatio(dur - 0.001, dur)).toBeGreaterThan(0);
+    expect(crossfadeFadeOutRatio(dur, dur)).toBe(0);
+    expect(CROSSFADE_FADE_OUT_MS).toBe(CROSSFADE_START_SECONDS_BEFORE_END * 1000);
+  });
+});
+
+describe("crossfadeOverlapFadeInRatio", () => {
+  it("reaches full volume exactly as the outgoing track reaches silence", () => {
+    // The incoming track starts CROSSFADE_START_SECONDS_BEFORE_END seconds
+    // early, so ramping it across the same window makes the two curves meet at
+    // the boundary — that is what makes it a crossfade rather than a handoff.
+    const dur = 200;
+    const overlapStart = dur - CROSSFADE_START_SECONDS_BEFORE_END;
+    const elapsed = 2;
+    expect(crossfadeOverlapFadeInRatio(0)).toBe(0);
+    expect(crossfadeOverlapFadeInRatio(elapsed)).toBeCloseTo(
+      1 - crossfadeFadeOutRatio(overlapStart + elapsed, dur)
+    );
+    expect(crossfadeOverlapFadeInRatio(CROSSFADE_START_SECONDS_BEFORE_END)).toBe(1);
+  });
+
+  it("is silent and clamped for invalid positions", () => {
+    expect(crossfadeOverlapFadeInRatio(-3)).toBe(0);
+    expect(crossfadeOverlapFadeInRatio(Number.NaN)).toBe(0);
+    expect(crossfadeOverlapFadeInRatio(999)).toBe(1);
+  });
+});
+
+describe("crossfadeVolumeRatio", () => {
+  const base = {
+    fadeInPending: false,
+    fadeInTime: 0,
+    fadingOut: false,
+    fadeOutTime: 0,
+    duration: 200,
+    desired: 1,
+  };
+
+  it("honours the caller's desired ratio when no ramp is active", () => {
+    expect(crossfadeVolumeRatio(base)).toBe(1);
+    expect(crossfadeVolumeRatio({ ...base, desired: 0.5 })).toBe(0.5);
+  });
+
+  it("clamps and sanitises the desired ratio", () => {
+    expect(crossfadeVolumeRatio({ ...base, desired: 5 })).toBe(1);
+    expect(crossfadeVolumeRatio({ ...base, desired: -1 })).toBe(0);
+    expect(crossfadeVolumeRatio({ ...base, desired: Number.NaN })).toBe(1);
+  });
+
+  it("lets the fade-in ramp win over any desired value", () => {
+    // The regression this encodes: activating a stream asked for `desired: 1`
+    // while a fade-in was already armed and computing ~0 for a track a fraction
+    // of a second old. Two writers, one element, opposite answers — audible as
+    // "plays suddenly, then fades out, then fades back in".
+    expect(
+      crossfadeVolumeRatio({
+        ...base,
+        fadeInPending: true,
+        fadeInTime: 0,
+        desired: 1,
+      })
+    ).toBe(0);
+    expect(
+      crossfadeVolumeRatio({ ...base, fadeInPending: true, fadeInTime: 0.5, desired: 1 })
+    ).toBeCloseTo(0.25);
+  });
+
+  it("lets the fade-in win over an active fade-out (the ramp is newer)", () => {
+    expect(
+      crossfadeVolumeRatio({
+        ...base,
+        fadeInPending: true,
+        fadeInTime: 0.25,
+        fadingOut: true,
+        fadeOutTime: 199,
+        desired: 1,
+      })
+    ).toBeCloseTo(0.125);
+  });
+
+  it("lets the fade-out ramp win over any desired value", () => {
+    expect(
+      crossfadeVolumeRatio({ ...base, fadingOut: true, fadeOutTime: 197.5, desired: 1 })
+    ).toBeCloseTo(0.5);
+    expect(
+      crossfadeVolumeRatio({ ...base, fadingOut: true, fadeOutTime: 200, desired: 1 })
+    ).toBe(0);
+  });
+
+  it("converges to full volume so a ramp can never strand a track quiet", () => {
+    expect(
+      crossfadeVolumeRatio({ ...base, fadeInPending: true, fadeInTime: 999, desired: 0 })
+    ).toBe(1);
+    expect(
+      crossfadeVolumeRatio({ ...base, fadingOut: true, fadeOutTime: 0, desired: 0 })
+    ).toBe(1);
   });
 });

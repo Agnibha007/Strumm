@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { authFetch } from "web/lib/auth-client";
-import { apiUrl } from "web/lib/api";
+import { apiUrl, cleanText } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import { Play, Sparkles, Loader2, Radio } from "lucide-react";
@@ -136,14 +136,17 @@ export default function DiscoverySection({ token }: { token: string | null }) {
   }
 
   return (
-    <section aria-label="AI-powered music recommendations">
+    // This mix is built by the deterministic recommendation engine from the
+    // signed-in user's own listening history, likes, and top artists — the AI
+    // layer is not on this code path, so the label must not claim otherwise.
+    <section aria-label="Personalized music recommendations">
       <div className="space-y-4">
         <header className="flex items-center justify-between border-b border-border/20 pb-2">
           <h2 className="font-editorial text-2xl text-text font-bold flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
             Discovery Mix
           </h2>
-          <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">Adaptive</span>
+          <span className="text-[10px] text-muted uppercase tracking-wider font-semibold">Based on your listening</span>
         </header>
 
         {recommendations.length === 0 ? (
@@ -154,6 +157,10 @@ export default function DiscoverySection({ token }: { token: string | null }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {recommendations.map((song, idx) => {
               const isTransitioning = transitioningIndices.includes(idx);
+              // Songs arrive from several providers and can carry HTML entities;
+              // decode for display so the mix matches the player.
+              const title = cleanText(song.title || "", 200);
+              const artist = cleanText(song.artist || "", 120);
               return (
                 <article
                   key={`rec-${song.videoId}-${idx}`}
@@ -170,17 +177,17 @@ export default function DiscoverySection({ token }: { token: string | null }) {
                   >
                     <figure className="w-12 h-12 rounded overflow-hidden flex-shrink-0 relative m-0">
                       <SongArtwork song={song} className="w-full h-full object-cover" quality={ARTWORK_QUALITY_MEDIUM} />
-                      <figcaption className="sr-only">{song.title} by {song.artist}</figcaption>
+                      <figcaption className="sr-only">{title} by {artist}</figcaption>
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <Play className="w-4 h-4 text-white fill-current" />
                       </div>
                     </figure>
                     <div className="min-w-0 flex-grow">
                       <div className="font-editorial text-sm font-bold text-text truncate group-hover:text-primary transition">
-                        {song.title}
+                        {title}
                       </div>
                       <div className="text-[10px] text-muted truncate mt-0.5">
-                        {song.artist}
+                        {artist}
                       </div>
                     </div>
                   </button>
@@ -205,7 +212,7 @@ export default function DiscoverySection({ token }: { token: string | null }) {
 
 export function DiscoverySkeleton() {
   return (
-    <section aria-label="AI-powered music recommendations">
+    <section aria-label="Personalized music recommendations">
       <div className="space-y-4 animate-pulse">
         <header className="flex items-center justify-between border-b border-border/20 pb-2">
           <div className="flex items-center gap-2">

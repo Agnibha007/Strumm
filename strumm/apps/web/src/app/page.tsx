@@ -19,7 +19,7 @@ import RecentlyPlayedPlaylist from "web/components/RecentlyPlayedPlaylist";
 
 export default function HomePage() {
   const { user, token } = useAuthStore();
-  const { playSong } = usePlayerStore();
+  const { playSongAndContinue } = usePlayerStore();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Song[]>([]);
@@ -84,24 +84,34 @@ export default function HomePage() {
               <div className="bg-surface/90 border border-border rounded-xl p-4 space-y-3">
                 <h2 className="text-xs uppercase tracking-wider text-primary font-semibold">Catalog Matches</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {searchResults.map((song) => (
+                  {searchResults.map((song) => {
+                    // Decode provider-supplied entities for display. The player
+                    // store does this on the way into the queue, so without it
+                    // the same song showed as `Tom &amp; Jerry` here and
+                    // `Tom & Jerry` in the player.
+                    const title = cleanText(song.title || "", 200);
+                    const artist = cleanText(song.artist || "", 120);
+                    return (
                     <article key={song.videoId}>
                       <button
                         onClick={() => {
-                          playSong(song, searchResults);
+                          // Only the picked result — the rest of the result list
+                          // must not silently become the up-next queue.
+                          playSongAndContinue(song);
                         }}
-                        aria-label={`Play ${song.title} by ${song.artist}`}
+                        aria-label={`Play ${title} by ${artist}`}
                         className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-elevated text-left w-full cursor-pointer transition border border-transparent hover:border-border/60"
                       >
                         <SongArtwork song={song} className="w-10 h-10 rounded shadow flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
                         <div className="min-w-0 flex-grow">
-                          <div className="text-sm font-semibold text-text truncate leading-snug">{song.title}</div>
-                          <div className="text-xs text-muted truncate">{song.artist}</div>
+                          <div className="text-sm font-semibold text-text truncate leading-snug">{title}</div>
+                          <div className="text-xs text-muted truncate">{artist}</div>
                         </div>
                         <Play className="w-3.5 h-3.5 text-muted fill-current hover:text-primary transition" />
                       </button>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </section>

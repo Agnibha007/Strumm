@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.models.schemas import PlayEventSongSchema, SongSchema, UserSettingsSchema
-from app.services.security import escaped_regex, parse_object_id, sanitize_positive_int, sanitize_text
+from app.services.security import escaped_regex, parse_object_id, sanitize_text
 from app.services.normalizer import canonical_artist, normalize_artist, classify_genre
 from app.services.email_service import send_account_deleted_email
 from app.services.avatar import decorate_user_avatar
 from app.services.user_serializer import serialize_user
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pymongo.errors import DuplicateKeyError
 import asyncio
 import logging
@@ -803,6 +803,12 @@ async def _check_podcast_badges(user_id: str, video_id: str) -> None:
     except Exception as e:
         logger.error(f"Podcast badge check failed for {user_id}: {type(e).__name__}")
 
+# Upper bound on the listening time a single play event may contribute. A client
+# already caps its batches here; anything larger is a client bug or a corrupt
+# delta, and is clamped rather than rejected (see _coerce_listen_duration).
+PLAY_EVENT_MAX_SECONDS = 300
+
+
 class PlayEventRequest(BaseModel):
     song: PlayEventSongSchema
     listenDuration: int # seconds listened in this interval (e.g., 30s sync)
@@ -811,6 +817,45 @@ class PlayEventRequest(BaseModel):
     # insert-first claim). Retries after a lost response therefore cannot double
     # the user's total listening time.
     eventId: Optional[str] = None
+
+    @field_validator("listenDuration", mode="before")
+    @classmethod
+    def _coerce_listen_duration(cls, value):
+        """Accept fractional, stringified, and null durations.
+
+        The client measures seconds from media-position deltas, so a float is a
+        perfectly ordinary value here, and a JSON `null` is what a NaN position
+        becomes on the wire. Both are measurement artefacts, not abuse.
+
+        Rejecting the whole event with a 422 was the worst possible response: the
+        client keeps unacknowledged events in a persisted queue and replays
+        them, so a value that can never become valid is retried forever while the
+        user's real listening time is silently lost for the rest of the session.
+
+        Everything is therefore normalised rather than rejected:
+          * null / non-numeric / non-positive -> 0 ("nothing measurable")
+          * fractional -> truncated (never rounded up, so a value cannot inflate
+            the total)
+          * above the per-event ceiling -> clamped, for the same reason: the
+            alternative is a permanent replay loop for an event that can never
+            succeed.
+        """
+        if value is None:
+            return 0
+        # bool is an int subclass; True must not become 1 second of listening.
+        if isinstance(value, bool):
+            return 0
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return 0
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return 0
+        if not math.isfinite(parsed) or parsed <= 0:
+            return 0
+        return min(int(parsed), PLAY_EVENT_MAX_SECONDS)
 
 class PlayerStateRequest(BaseModel):
     deviceId: str = "primary"
@@ -833,7 +878,25 @@ async def register_play_event(
         database = db.get_db()
         userId = ObjectId(current_user["id"])
         song_dict = payload.song.model_dump()
-        duration_delta = sanitize_positive_int(payload.listenDuration, minimum=1, maximum=300)
+
+        if payload.listenDuration <= 0:
+            # Nothing measurable to count. Acknowledge rather than 422: the
+            # client keeps unacknowledged events in a persisted queue and
+            # retries them, so an error response here would replay a value that
+            # can never become valid and stall the whole queue behind it.
+            return {
+                "success": True,
+                "data": {
+                    "message": "No measurable listening time in this interval; +0 seconds added.",
+                    "totalListeningTime": (current_user.get("statistics", {}).get("totalListeningTime", 0) or 0)
+                }
+            }
+
+        # The schema has already normalised and clamped this to
+        # [0, PLAY_EVENT_MAX_SECONDS], and 0 returned above, so this cannot
+        # raise. Clamping rather than validating is deliberate: a rejected event
+        # is replayed by the client forever.
+        duration_delta = min(payload.listenDuration, PLAY_EVENT_MAX_SECONDS)
 
         event_id = sanitize_text(payload.eventId or "", max_length=64) or None
 

@@ -20,6 +20,14 @@ export const CROSSFADE_START_SECONDS_BEFORE_END = 5;
 // than the on-tab 800ms timer fade so a background tab (throttled to ~1 tick
 // per second) still renders a perceptible ramp instead of a full-volume burst.
 export const CROSSFADE_FADE_IN_MS = 2000;
+/**
+ * Length of the crossfade window in milliseconds. The incoming track's overlap
+ * ramp is driven by ITS OWN playback position across this window, so it reaches
+ * full volume exactly as the outgoing track reaches silence — a true crossfade
+ * that is completely independent of `setInterval` (and therefore unaffected by
+ * the aggressive timer throttling hidden tabs apply).
+ */
+export const CROSSFADE_FADE_OUT_MS = CROSSFADE_START_SECONDS_BEFORE_END * 1000;
 
 export type CrossfadeTickAction = "start-fade" | "cancel-fade" | "none";
 
@@ -85,4 +93,85 @@ export function backgroundCrossfadeProgress(currentTime: number, duration: numbe
 export function crossfadeFadeInRatio(currentTime: number): number {
   if (!isFinite(currentTime) || currentTime <= 0) return 0;
   return Math.min(1, currentTime / (CROSSFADE_FADE_IN_MS / 1000));
+}
+
+/**
+ * Fade-in ratio for the INCOMING track during a true-overlap crossfade.
+ *
+ * The incoming track is started CROSSFADE_START_SECONDS_BEFORE_END seconds
+ * before the outgoing track ends, so ramping it across that same window makes
+ * it reach full volume exactly as the outgoing track reaches silence. Driven by
+ * the incoming element's own media time, so it behaves identically in a
+ * foreground tab and a hidden one.
+ */
+export function crossfadeOverlapFadeInRatio(currentTime: number): number {
+  if (!isFinite(currentTime) || currentTime <= 0) return 0;
+  return Math.min(1, currentTime / (CROSSFADE_START_SECONDS_BEFORE_END));
+}
+
+/**
+ * Volume multiplier (1 → 0) for a track that is fading OUT, derived from its
+ * own playback position.
+ *
+ * Deliberately a pure function of the element's own media time rather than a
+ * `setInterval` ramp: hidden tabs throttle timers to ~1 tick/second (and to
+ * 1 tick/minute once the tab has been backgrounded for a while), which
+ * stretched the old timer fade to 15–300 real seconds and was the source of the
+ * "huge delay between songs". Media-position ramps are immune to throttling
+ * because the `<audio>` element keeps playing and keeps firing `timeupdate`.
+ *
+ * @param currentTime - current playback position in seconds.
+ * @param duration - total track duration in seconds (NaN/unknown → 1, no fade).
+ */
+export function crossfadeFadeOutRatio(currentTime: number, duration: number): number {
+  if (!isFinite(currentTime) || !isFinite(duration) || duration <= 0) return 1;
+  return 1 - backgroundCrossfadeProgress(currentTime, duration);
+}
+
+export interface CrossfadeVolumeInput {
+  /** True while the audible track is still ramping in from silence. */
+  fadeInPending: boolean;
+  /** Playback position of the audible (fading-in) track, in seconds. */
+  fadeInTime: number;
+  /** True while the audible track is ramping out toward silence. */
+  fadingOut: boolean;
+  /** Playback position of the audible (fading-out) track, in seconds. */
+  fadeOutTime: number;
+  /** Total duration of the audible (fading-out) track, in seconds. */
+  duration: number;
+  /** The ratio the caller WANTS (1 = steady state). Used only when no crossfade ramp is active. */
+  desired: number;
+}
+
+/**
+ * The single authority for a track's crossfade volume ratio.
+ *
+ * Every code path that touches the audible element's volume MUST go through
+ * this, because the bug this prevents is two writers disagreeing about the
+ * same element:
+ *
+ *   1. the track-change effect activates the new stream and sets it to FULL
+ *      volume (it is about to play, so full volume is "correct" in isolation);
+ *   2. a tick later the position-driven fade-in runs and computes a ratio of
+ *      ~0, because a track 0.1s into playback IS at crossfadeFadeInRatio(0.1).
+ *
+ * The result was audible as: full-volume burst → volume slams to near-silence
+ * → ramp back up over CROSSFADE_FADE_IN_MS. ("Plays suddenly then fades out
+ * then fades back in".)
+ *
+ * The invariant encoded here: while a crossfade ramp is armed, the ramp OWNS
+ * the volume and no caller can force it to `desired`. A ramp always converges
+ * to 1 exactly when the track reaches CROSSFADE_FADE_IN_MS of media time, so
+ * suppressing `desired` can never leave a track stuck quiet.
+ */
+export function crossfadeVolumeRatio(input: CrossfadeVolumeInput): number {
+  if (input.fadeInPending) {
+    return crossfadeFadeInRatio(input.fadeInTime);
+  }
+  if (input.fadingOut) {
+    return crossfadeFadeOutRatio(input.fadeOutTime, input.duration);
+  }
+  const desired = input.desired;
+  if (!isFinite(desired)) return 1;
+  return Math.min(1, Math.max(0, desired));
 }

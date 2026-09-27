@@ -317,14 +317,47 @@ class RecommendationEngine:
         top_artists = []
         if user_doc:
             stats = user_doc.get("statistics") or {}
-            top_artists = [
-                a.get("name", "") for a in (stats.get("topArtists") or [])
-            ][:5]
+            top_artists = self._extract_top_artist_names(stats.get("topArtists") or [])[:5]
 
         # Compute top genres from history
         top_genres = self._compute_top_genres(history)
 
         return likes, history, stats, top_artists, top_genres
+
+    @staticmethod
+    def _extract_top_artist_names(entries: list) -> list[str]:
+        """Pull artist names out of a ``statistics.topArtists`` array.
+
+        The stats writer (see ``routes/user.py``) stores each entry under
+        ``"artist"``, plus a ``"display_name"``.  An older reader looked only for
+        ``"name"``, found nothing, and produced a list of empty strings — which
+        then (a) never matched any real artist, so artist affinity contributed
+        nothing to scoring, and (b) fed ``re.escape("")`` into the candidate
+        query, i.e. an empty regex that matches EVERY playlist in the database.
+        The two bugs together made recommendations look random no matter how
+        much the user listened.
+
+        All three keys are accepted so rows written by any version of the stats
+        job work, and blanks are dropped rather than propagated.
+        """
+        names: list[str] = []
+        seen: set[str] = set()
+        for entry in entries or []:
+            if isinstance(entry, str):
+                name = entry
+            elif isinstance(entry, dict):
+                name = entry.get("artist") or entry.get("display_name") or entry.get("name") or ""
+            else:
+                continue
+            name = str(name).strip()
+            if not name:
+                continue
+            key = canonical_artist(name)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            names.append(name)
+        return names
 
     async def _build_candidates(
         self,
@@ -359,25 +392,29 @@ class RecommendationEngine:
                 candidates.append(self._to_song_dict(song))
 
         # --- Source 3: Songs from playlists matching top artists ---
-        if top_artists:
-            artist_patterns = [
-                {"songs.artist": {"$regex": re.escape(a), "$options": "i"}}
-                for a in top_artists[:3]
-            ]
-            if artist_patterns:
-                playlist_cursor = database[db.PLAYLISTS].aggregate([
-                    {"$match": {"$or": artist_patterns}},
-                    {"$unwind": "$songs"},
-                    {"$sample": {"size": 15}},
-                    {"$replaceRoot": {"newRoot": "$songs"}},
-                ])
-                async for song in playlist_cursor:
-                    vid = song.get("videoId")
-                    if vid and vid not in seen_vids:
-                        seen_vids.add(vid)
-                        candidates.append(self._to_song_dict(song))
-                        if len(candidates) >= CANDIDATE_POOL_SIZE:
-                            break
+        # Only ever build a regex from a NON-EMPTY name. `re.escape("")` is "",
+        # and a `$regex: ""` matches every document in the collection — so one
+        # blank artist name silently turned this "find playlists by my favourite
+        # artists" query into "sample the entire catalogue at random".
+        artist_patterns = [
+            {"songs.artist": {"$regex": re.escape(a), "$options": "i"}}
+            for a in (n.strip() for n in top_artists[:3])
+            if a
+        ]
+        if artist_patterns:
+            playlist_cursor = database[db.PLAYLISTS].aggregate([
+                {"$match": {"$or": artist_patterns}},
+                {"$unwind": "$songs"},
+                {"$sample": {"size": 15}},
+                {"$replaceRoot": {"newRoot": "$songs"}},
+            ])
+            async for song in playlist_cursor:
+                vid = song.get("videoId")
+                if vid and vid not in seen_vids:
+                    seen_vids.add(vid)
+                    candidates.append(self._to_song_dict(song))
+                    if len(candidates) >= CANDIDATE_POOL_SIZE:
+                        break
 
         # --- Source 4: Random sampling for discovery ---
         if len(candidates) < CANDIDATE_POOL_SIZE:
@@ -449,16 +486,46 @@ class RecommendationEngine:
         """Score each candidate. Higher = better match.
 
         When ``discovery_boost`` is True (used by the Home page Discovery Mix),
-        the boost for known songs is lowered so that fresh/unfamiliar tracks
-        have a better chance of surfacing.
+        the boost for known songs is lowered and already-heard tracks are
+        *penalised*, because a "Fresh & Undiscovered" mix that leads with
+        tracks the user just played through is not discovery at all.
         """
         liked_vids = {l.get("song", {}).get("videoId") for l in likes}
-        history_vids = {h.get("song", {}).get("videoId") for h in history}
-        history_artists = set()
-        for h in history[:30]:
-            artist = h.get("song", {}).get("artist", "")
-            if artist:
-                history_artists.add(canonical_artist(artist))
+
+        # --- How much the user actually ENGAGED with each track ---
+        # A raw "was played" set treats a track skipped after 4 seconds the same
+        # as one played to the end. `listenDuration / duration` separates them,
+        # so a genuinely loved track pulls its artist's other songs up the
+        # ranking and a flopped one does not.
+        heard_seconds: dict[str, float] = {}
+        for h in history:
+            song = h.get("song") or {}
+            vid = song.get("videoId")
+            if not vid:
+                continue
+            heard_seconds[vid] = heard_seconds.get(vid, 0.0) + float(
+                h.get("listenDuration") or 0
+            )
+        history_vids = set(heard_seconds)
+
+        # --- Artist affinity, weighted by how much each artist was played ---
+        artist_affinity: dict[str, float] = {}
+        for h in history:
+            song = h.get("song") or {}
+            key = canonical_artist(song.get("artist", ""))
+            if not key:
+                continue
+            duration = float(song.get("duration") or 0) or 1.0
+            completion = min(1.0, float(h.get("listenDuration") or 0) / duration)
+            artist_affinity[key] = artist_affinity.get(key, 0.0) + completion
+
+        # --- Genre affinity ---
+        # The genres were already computed from history and threaded all the way
+        # to this function, but nothing ever read them — one of the two signals
+        # the module's own architecture diagram promises.
+        top_genre_set = {g for g in self._compute_top_genres(history) if g}
+
+        top_artist_keys = {canonical_artist(a) for a in top_artists if canonical_artist(a)}
 
         mood_keywords = {
             "chill": {"lofi", "chill", "ambient", "calm", "smooth", "slow", "acoustic", "mellow"},
@@ -478,6 +545,14 @@ class RecommendationEngine:
         liked_boost = 1.0 if discovery_boost else 3.0
         history_boost = 0.5 if discovery_boost else 1.0
         artist_boost = 1.0 if discovery_boost else 2.0
+        genre_boost = 0.6 if discovery_boost else 1.2
+        # In discovery mode an already-heard track is subtracted, not added. It
+        # used to get `+history_boost`, which meant the more recently you had
+        # listened, the higher an already-played track scored.
+        heard_penalty = -0.8 if discovery_boost else 0.0
+        affinity_cap = 1.5  # keeps one heavily-repeated artist from owning the mix
+
+        max_affinity = max(artist_affinity.values(), default=0.0) or 1.0
 
         scored = []
         for c in candidates:
@@ -488,26 +563,56 @@ class RecommendationEngine:
             artist_lower = (c.get("artist") or "").lower()
             artist_canonical = canonical_artist(c.get("artist", ""))
 
+            is_heard = vid in history_vids
+
             # Boost for liked songs (lowered in discovery mode)
             if vid in liked_vids:
                 score += liked_boost
 
-            # Small boost if recently played
-            if vid in history_vids:
-                score += history_boost
+            # Boost if recently played — scaled by how much was actually heard
+            duration = float(c.get("duration") or 0) or 1.0
+            completion = min(1.0, heard_seconds.get(vid, 0.0) / duration)
+            if is_heard:
+                score += history_boost * (0.25 + 0.75 * completion)
+                if discovery_boost:
+                    score += heard_penalty
 
             # Boost if artist is in top artists
-            if artist_canonical in [canonical_artist(a) for a in top_artists]:
+            if artist_canonical and artist_canonical in top_artist_keys:
                 score += artist_boost
+
+            # Boost by weighted artist affinity: more listening to that artist
+            # means more of their other songs belong in this user's mix.
+            #
+            # Skipped in discovery mode for a track the user has ALREADY played.
+            # The affinity prior exists to surface an artist's *other* songs; for
+            # the exact song it was derived from the signal is spent, and letting
+            # it fire there let a just-played track outrank an unheard one from
+            # the same artist — the opposite of a "Fresh & Undiscovered" mix.
+            if artist_canonical and not (discovery_boost and is_heard):
+                affinity = artist_affinity.get(artist_canonical, 0.0)
+                if affinity:
+                    score += min(affinity_cap, artist_boost * affinity / max_affinity)
+
+            # Boost if the track's genre is one the user actually listens to
+            if top_genre_set:
+                try:
+                    genre = classify_genre(c.get("artist", ""), c.get("title", ""))
+                except Exception:
+                    genre = ""
+                if genre in top_genre_set:
+                    score += genre_boost
 
             # Mood/title keyword match
             for kw in keywords:
                 if kw in title_lower or kw in artist_lower:
                     score += 0.3
 
-            # Random nudge for diversity — wider range (+/- 1.0) so order
-            # fluctuates between cache rotations
-            score += random.uniform(-1.0, 1.0)
+            # Random nudge for variety, so order still fluctuates between cache
+            # rotations. Deliberately small: the old +/- 1.0 was as large as the
+            # entire artist boost, so the ranking was mostly noise and a
+            # personalised mix was indistinguishable from a random one.
+            score += random.uniform(-0.15, 0.15)
 
             scored.append((c, score))
 
@@ -594,14 +699,20 @@ class RecommendationEngine:
         )
 
     async def _get_recently_recommended(self, database, user_id: str) -> set:
-        """Return videoIds recommended to this user in the last 24 hours."""
+        """Return videoIds recommended to this user in the last 24 hours.
+
+        Sorted newest-first so ``limit(5)`` actually yields the five most recent
+        batches. Without the sort Mongo returns them in whatever order the query
+        plan produces, so the "freshness" exclusion silently skipped recent
+        recommendations and the user kept seeing the same tracks.
+        """
         try:
             from bson import ObjectId
             oid = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
             cursor = database["recommendation_logs"].find(
                 {"userId": str(oid), "createdAt": {"$gt": datetime.utcnow() - timedelta(hours=24)}},
                 {"videoIds": 1, "_id": 0},
-            ).limit(5)
+            ).sort("createdAt", -1).limit(5)
             excluded = set()
             async for doc in cursor:
                 for vid in doc.get("videoIds", []):
@@ -622,9 +733,11 @@ class RecommendationEngine:
                     "videoIds": video_ids,
                     "createdAt": datetime.utcnow(),
                 })
-                # Expire old logs
+                # Expire old logs. Match on the same `str(oid)` the insert wrote,
+                # otherwise this never matches anything and the log collection
+                # grows without bound.
                 await database["recommendation_logs"].delete_many({
-                    "userId": oid,
+                    "userId": str(oid),
                     "createdAt": {"$lt": datetime.utcnow() - timedelta(days=3)},
                 })
         except Exception:

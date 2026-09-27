@@ -15,9 +15,17 @@ import SafePodcastImage from "web/components/SafePodcastImage";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import Link from "next/link";
 
+/** mm:ss, or an em dash when the provider gave no usable duration. */
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+}
+
 export default function SearchPage() {
   const { token, user } = useAuthStore();
-  const { playSong, addToQueue, queue, isRadio, triggerRadio } = usePlayerStore();
+  const { playSong, playSongAndContinue, addToQueue, queue, currentSong, isRadio, triggerRadio } = usePlayerStore();
   const { show } = useNotificationStore();
   
   const [query, setQuery] = useState("");
@@ -527,35 +535,70 @@ export default function SearchPage() {
             {/* Render Song Matches */}
             {(activeFilter === "All" || activeFilter === "Songs") && results.songs.length > 0 && (
               <div className="space-y-4">
-                <h2 className="font-editorial text-xl text-text border-b border-border/20 pb-2">
-                  Song Results
-                </h2>
-                <motion.div 
+                <div className="flex items-baseline justify-between gap-4 border-b border-border/20 pb-2">
+                  <h2 className="font-editorial text-xl text-text">
+                    Song Results
+                  </h2>
+                  <span className="text-[11px] text-muted font-mono flex-shrink-0">
+                    {results.songs.length} {results.songs.length === 1 ? "match" : "matches"}
+                  </span>
+                </div>
+                <motion.div
                   variants={staggerContainerVariants}
                   initial="hidden"
                   animate="show"
-                  className="grid grid-cols-1 md:grid-cols-2 gap-3.5"
+                  className="space-y-1.5"
                 >
-                  {results.songs.map((song) => (
+                  {results.songs.map((song) => {
+                    // Result text arrives from several providers and can carry
+                    // HTML entities (`&amp;`, `&#39;`, `&quot;`). The player
+                    // store decodes them on the way into the queue, so the
+                    // player showed clean titles while this list showed the raw
+                    // entities — the same song rendered two different ways.
+                    const title = cleanText(song.title || "", 200);
+                    const artist = cleanText(song.artist || "", 120);
+                    const album = cleanText(song.metadata?.album || "", 120);
+                    const isCurrent = currentSong?.videoId === song.videoId;
+                    return (
                     <motion.div
                       key={song.videoId}
                       variants={staggerItemVariants}
-                      className="flex items-center gap-4 p-3 bg-surface/40 border border-border/40 rounded-xl hover:bg-surface hover:border-border/80 transition group relative"
+                      className={`flex items-center gap-3.5 p-2.5 rounded-xl border transition group relative ${
+                        isCurrent
+                          ? "bg-primary/10 border-primary/40"
+                          : "bg-surface/40 border-border/40 hover:bg-surface hover:border-border/80"
+                      }`}
                     >
-                      <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 shadow">
+                      <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 shadow">
                          <SongArtwork song={song} className="w-full h-full" quality={ARTWORK_QUALITY_MEDIUM} />
                         <button
-                          onClick={() => playSong(song, results.songs)}
+                          onClick={() => playSongAndContinue(song)}
+                          aria-label={`Play ${title} by ${artist}`}
                           className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer"
                         >
-                          <Play className="w-5 h-5 text-white fill-current" />
+                          <Play className="w-4 h-4 text-white fill-current" />
                         </button>
                       </div>
                       <div className="min-w-0 flex-grow text-left">
-                        <div className="text-sm font-semibold text-text truncate">{song.title}</div>
-                        <div className="text-xs text-muted truncate mt-0.5">{song.artist}</div>
+                        <div className={`text-sm font-semibold truncate ${isCurrent ? "text-primary" : "text-text"}`}>
+                          {title}
+                        </div>
+                        <div className="text-xs text-muted truncate mt-0.5">
+                          {artist}
+                          {album && <span className="text-muted/70"> &middot; {album}</span>}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                      {isCurrent && (
+                        <span className="text-[10px] uppercase tracking-widest text-primary flex-shrink-0 hidden sm:inline">
+                          Playing
+                        </span>
+                      )}
+                      {song.duration > 0 && (
+                        <span className="text-[11px] font-mono text-muted flex-shrink-0 hidden sm:inline">
+                          {formatDuration(song.duration)}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition flex-shrink-0">
                         <button
                           onClick={() => triggerRadio(song.videoId)}
                           className={`p-1.5 rounded-lg transition ${isRadio ? "text-primary text-glow" : "hover:bg-surface-elevated text-muted hover:text-primary"}`}
@@ -591,7 +634,8 @@ export default function SearchPage() {
                         </button>
                       </div>
                     </motion.div>
-                  ))}
+                    );
+                  })}
                 </motion.div>
               </div>
             )}
@@ -904,11 +948,6 @@ export default function SearchPage() {
                   <p className="text-xs text-muted py-12 text-center italic">No songs found in this album.</p>
                 ) : (
                   albumTracks.map((song, idx) => {
-                    const formatDuration = (sec: number) => {
-                      const m = Math.floor(sec / 60);
-                      const s = Math.floor(sec % 60);
-                      return `${m}:${s < 10 ? "0" : ""}${s}`;
-                    };
                     return (
                       <div
                         key={song.videoId}

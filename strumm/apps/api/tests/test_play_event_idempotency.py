@@ -185,19 +185,31 @@ async def test_concurrent_distinct_event_ids_both_preserved(client, fake_db):
     assert len(fake_db.histories.docs) == 3
 
 
-async def test_oversized_listen_duration_rejected_before_any_write(client, fake_db):
-    """Impossible durations (>300s) must be rejected without touching history
-    or the total — the backend cap stays a hard wall."""
+async def test_oversized_listen_duration_clamped_to_the_cap(client, fake_db):
+    """Impossible durations (>300s) are clamped, never added beyond the cap.
+
+    The backend cap stays a hard wall on what a single event can contribute: an
+    absurd value adds at most 300s to the total, exactly as a legitimate 300s
+    event would.
+
+    It is clamped rather than rejected because `success: false` reads as "not
+    acknowledged" to the client, which keeps unacknowledged events in a
+    persisted queue and replays them — so rejecting a value over the cap
+    blocked that event's own queue permanently and logged an ERROR on every
+    retry. (The cap was never an anti-abuse control: a client can send unlimited
+    in-range events regardless.)
+    """
     resp = await _post(client, make_payload(duration=301, event_id="evt-big"))
     body = resp.json()
-    assert body["success"] is False
+    assert body["success"] is True
 
-    assert fake_db.users.increments == []
-    assert fake_db.histories.docs == []
+    # Stored and counted at the cap, never at the requested amount.
+    assert fake_db.users.increments == [300]
+    assert fake_db.histories.docs[0]["listenDuration"] == 300
 
     ok = await _post(client, make_payload(duration=300, event_id="evt-max"))
     assert ok.json()["success"] is True
-    assert fake_db.users.increments == [300]
+    assert fake_db.users.increments == [300, 300]
 
 
 async def test_event_id_is_cleaned_and_kept_short(client, fake_db):

@@ -6,7 +6,8 @@ import {
   evaluateCrossfadeTick,
   backgroundCrossfadeProgress,
   crossfadeFadeInRatio,
-  CROSSFADE_START_SECONDS_BEFORE_END,
+  crossfadeOverlapFadeInRatio,
+  crossfadeVolumeRatio,
   CROSSFADE_FADE_IN_MS,
 } from "web/lib/crossfade";
 import { getCachedDirectAudioUrl, resolveDirectAudioUrl } from "web/lib/direct-audio";
@@ -237,6 +238,88 @@ export default function AudioEngine() {
     }
   };
 
+  // Playback position + duration of whatever surface is CURRENTLY audible.
+  // Volume decisions are always derived from the element's own media time (never
+  // from a timer), so this is the sample every crossfade tick reads. Returns
+  // NaN position when no surface can be sampled, which the ratio helpers treat
+  // as "no ramp".
+  const currentAudibleSample = (): { curr: number; dur: number } => {
+    const audio = htmlAudioRef.current;
+    if (audio && !isSilentAudio(audio) && audio.src) {
+      return { curr: audio.currentTime, dur: audio.duration };
+    }
+    const yt = playerInstanceRef.current;
+    if (yt && typeof yt.getCurrentTime === "function" && typeof yt.getDuration === "function") {
+      try {
+        return { curr: yt.getCurrentTime(), dur: yt.getDuration() };
+      } catch (e) {}
+    }
+    return { curr: NaN, dur: NaN };
+  };
+
+  /**
+   * THE single writer for the audible surface's crossfade volume.
+   *
+   * Every path that changes volume during playback must go through here. The
+   * bug this replaces: the track-change effect activated a newly-promoted
+   * stream at FULL volume, and the position-driven fade-in then computed ~0 for
+   * a track that had only just started — two writers, same element, opposite
+   * answers. Audible as: plays suddenly → fades out → fades back in.
+   *
+   * While a crossfade ramp is armed the ramp wins; otherwise `desired` is
+   * honoured. A ramp converges to exactly 1 when the track reaches
+   * CROSSFADE_FADE_IN_MS of media time, so this can never strand a track quiet.
+   */
+  const applyCrossfadeVolume = (desired: number) => {
+    const { curr, dur } = currentAudibleSample();
+    setPlayerVolume(
+      crossfadeVolumeRatio({
+        fadeInPending: crossfadePendingFadeInRef.current,
+        fadeInTime: curr,
+        fadingOut: bgCrossfadeRef.current,
+        fadeOutTime: curr,
+        duration: dur,
+        desired,
+      })
+    );
+  };
+
+  /**
+   * The volume ratio a freshly-activated stream should start at.
+   *
+   * Activating a stream used to hard-set it to FULL volume, because in
+   * isolation "a track that is starting to play should be at full volume" is
+   * right. It isn't right when the track arrived via a crossfade: the
+   * position-driven fade-in is already armed for it, and it computes ~0 for a
+   * track a fraction of a second old. The two disagreed on the same element,
+   * which is precisely the "plays suddenly, then fades out, then fades back in"
+   * report. While a ramp is armed the ramp decides, and it reaches 1 on its own
+   * once the track has played CROSSFADE_FADE_IN_MS.
+   */
+  const activationRatio = (el?: HTMLAudioElement | null): number => {
+    if (crossfadePendingFadeInRef.current) {
+      return crossfadeFadeInRatio(el?.currentTime ?? 0);
+    }
+    return 1;
+  };
+
+  // Disarm every crossfade timer/latch. Called whenever playback is explicitly
+  // paused: an armed fade-out would otherwise keep stepping (and, once it hit
+  // silence, call next()/handleTrackEnded() — restarting playback seconds after
+  // the user hit pause), and an armed fade-in would keep the volume pinned near
+  // zero on the next resume.
+  const disarmCrossfade = () => {
+    bgCrossfadeRef.current = false;
+    hasTriggeredCrossfadeRef.current = false;
+    crossfadePendingFadeInRef.current = false;
+    crossfadeFadeInStartedAtRef.current = null;
+    if (fadeIntervalRef.current) {
+      clearInterval(fadeIntervalRef.current);
+      fadeIntervalRef.current = null;
+    }
+    isFadingRef.current = false;
+  };
+
   const fadeVolume = (fromRatio: number, toRatio: number, durationMs: number, onComplete?: () => void) => {
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
@@ -320,6 +403,21 @@ export default function AudioEngine() {
   };
 
   const finalizeCrossfadeAdvance = () => {
+    // An explicit pause MUST be sticky. A crossfade fade-out that was already
+    // running when the user hit pause used to reach silence a beat later and
+    // call next() unconditionally — restarting playback seconds after the pause
+    // (the reported "pause, then it autoplays a few seconds later"). A paused
+    // player is never mid-crossfade, so disarm and stand down.
+    if (!usePlayerStore.getState().isPlaying) {
+      bgCrossfadeRef.current = false;
+      hasTriggeredCrossfadeRef.current = false;
+      stopCrossfadeOverlap();
+      const restore = usePlayerStore.getState().volume;
+      if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
+        try { htmlAudioRef.current.volume = restore; } catch (e) {}
+      }
+      return;
+    }
     // The overlap stream was pre-buffered for the predicted next track. If the
     // queue changed mid-fade (edited / repeat-mode toggled / manual skip), that
     // prediction may no longer match what next() actually picks — drop the
@@ -364,6 +462,89 @@ export default function AudioEngine() {
     // branch above (queue at end, same index) we deliberately did NOT strip so
     // the current track keeps playing out instead of going silent.
     silenceFinishedStream();
+  };
+
+  /**
+   * The crossfade, evaluated ONCE per playback tick and from a single place.
+   *
+   * This used to exist as four near-identical copies — a foreground and a
+   * background branch on the host <audio> `timeupdate`, plus the same pair on
+   * the YouTube iframe's progress timer. They had drifted apart, which is why
+   * on-tab and off-tab behaved differently: the foreground copy faded out on a
+   * `setInterval` (stretched to 15–300 real seconds by hidden-tab throttling →
+   * the "huge delay between songs") and only the foreground copy ever started
+   * the overlap (→ off-tab faded to silence instead of crossfading).
+   *
+   * Both surfaces now call this. It is driven purely by media POSITION, which
+   * is the one signal that survives background throttling, so a crossfade looks
+   * identical with the tab focused or hidden.
+   *
+   * @param curr - playback position of the audible surface, in seconds.
+   * @param dur - duration of the audible surface, in seconds.
+   * @param ownerMatches - whether that surface is actually holding the CURRENT
+   *   song. A stale surface must never arm, step, or finish a crossfade.
+   * @returns true when this tick was consumed by a crossfade ramp.
+   */
+  const runCrossfadeTick = (curr: number, dur: number, ownerMatches: boolean): boolean => {
+    // The fade-IN deliberately runs even mid-swap: a hidden tab can take a while
+    // to deliver the fresh `play` event, and the new track must still ramp in
+    // rather than burst at full volume.
+    if (stepCrossfadeFadeIn(curr, ownerMatches)) return true;
+
+    // Don't evaluate the fade-out while tracks are being swapped, or a leaked
+    // "fade triggered" flag from the previous track cancels the new one.
+    if (transitioningRef.current) return false;
+
+    if (bgCrossfadeRef.current) {
+      if (!ownerMatches) {
+        // The queue already moved on — drop the stale fade so it can neither
+        // advance nor mute a fresh track.
+        bgCrossfadeRef.current = false;
+        hasTriggeredCrossfadeRef.current = false;
+        return true;
+      }
+      if (backgroundCrossfadeProgress(curr, dur) >= 1) {
+        // Outgoing track reached silence. Advance exactly once per track; the
+        // flag neutralises the near-end advance, the natural `ended`, and the
+        // background watchdog.
+        bgCrossfadeRef.current = false;
+        hasTriggeredCrossfadeRef.current = false;
+        handledTrackEndRef.current = true;
+        applyCrossfadeVolume(1);
+        pauseStaleIframeSurface();
+        finalizeCrossfadeAdvance();
+      } else {
+        applyCrossfadeVolume(1);
+      }
+      return true;
+    }
+
+    const action = evaluateCrossfadeTick(
+      curr,
+      dur,
+      hasTriggeredCrossfadeRef.current,
+      usePlayerStore.getState().repeatMode,
+    );
+    if (action === "start-fade") {
+      if (!ownerMatches) return false;
+      hasTriggeredCrossfadeRef.current = true;
+      bgCrossfadeRef.current = true;
+      // Start the predicted next track now so the two genuinely overlap. The
+      // outgoing track keeps its full volume until its own position enters the
+      // fade window, so there is no audible dip at the boundary.
+      startCrossfadeOverlap();
+      return true;
+    }
+    if (action === "cancel-fade") {
+      // Seeked backwards out of the window — restore volume and drop the
+      // incoming track rather than letting it play under the wrong song.
+      hasTriggeredCrossfadeRef.current = false;
+      bgCrossfadeRef.current = false;
+      stopCrossfadeOverlap();
+      applyCrossfadeVolume(1);
+      return true;
+    }
+    return false;
   };
 
   const triggerPlay = () => {
@@ -482,13 +663,17 @@ export default function AudioEngine() {
 
   // Start the incoming track (the pre-resolved, pre-buffered prediction) on the
   // staging element as the outgoing track enters its crossfade window. The two
-  // songs genuinely overlap: the incoming ramps 0→1 while the outgoing fades
-  // 1→0, so the boundary is a blend followed by a continuous, already-audible
-  // next track. Skipped (classic fade-to-silence fallback) when the prediction
-  // is nondeterministic (shuffle), repeat-one, data-saver quality, or the stream
-  // isn't staged and buffered.
+  // songs genuinely overlap: the incoming ramps 0→1 across the fade window
+  // while the outgoing fades 1→0, so the boundary is a blend followed by a
+  // continuous, already-audible next track. Skipped (classic fade-to-silence
+  // fallback) when the prediction is nondeterministic (shuffle), repeat-one,
+  // data-saver quality, or the stream isn't staged and buffered.
+  //
+  // Runs for backgrounded playback too. It only touches <audio> elements — the
+  // YouTube iframe is irrelevant here — and those keep playing (and keep firing
+  // `timeupdate`) in a hidden tab, which is exactly why the overlap used to be
+  // gated on foreground and left off-tab playback fading to silence.
   const startCrossfadeOverlap = useCallback(() => {
-    if (backgroundModeRef.current) return;
     const state = usePlayerStore.getState();
     if (state.isShuffle || state.repeatMode === "one" || audioQuality === "data-saver") return;
     const videoId = predictedNextVideoId();
@@ -508,32 +693,27 @@ export default function AudioEngine() {
       el.loop = false;
       overlapVideoIdRef.current = videoId;
       overlapUrlRef.current = url;
-      // Ramp the incoming track up over the fade window, finishing marginally
-      // before the boundary so the handoff is a clean blend into full volume.
-      const steps = 20;
-      const rampMs = Math.max(400, CROSSFADE_START_SECONDS_BEFORE_END * 1000 - 400);
-      let step = 0;
       el.play().catch(() => {});
-      if (overlapRampTimerRef.current) {
-        clearInterval(overlapRampTimerRef.current);
-      }
-      overlapRampTimerRef.current = setInterval(() => {
-        step += 1;
-        if (overlapVideoIdRef.current !== videoId) {
-          if (overlapRampTimerRef.current) {
-            clearInterval(overlapRampTimerRef.current);
-            overlapRampTimerRef.current = null;
-          }
-          return;
-        }
-        el.volume = (step / steps) * usePlayerStore.getState().volume;
-        if (step >= steps && overlapRampTimerRef.current) {
-          clearInterval(overlapRampTimerRef.current);
-          overlapRampTimerRef.current = null;
-        }
-      }, rampMs / steps);
     } catch (e) {}
   }, [predictedNextVideoId, audioQuality]);
+
+  // Step the incoming track's overlap ramp from ITS OWN playback position.
+  // Called from the staging element's `timeupdate`, which keeps firing in a
+  // hidden tab — so the ramp is throttle-proof. A timer-driven ramp (the
+  // previous implementation) was pinned near zero off-tab for tens of seconds
+  // before snapping to full volume, which is the "plays suddenly" part of the
+  // reported off-tab behaviour.
+  const stepOverlapRamp = (el: HTMLAudioElement) => {
+    if (!overlapVideoIdRef.current) return;
+    const ratio = crossfadeOverlapFadeInRatio(el.currentTime);
+    try {
+      el.volume = ratio * usePlayerStore.getState().volume;
+    } catch (e) {}
+    if (ratio >= 1 && overlapRampTimerRef.current) {
+      clearInterval(overlapRampTimerRef.current);
+      overlapRampTimerRef.current = null;
+    }
+  };
 
   // Hand a YouTube song to the host <audio> element, either because the page
   // is backgrounded (lock-screen) or because a resolved direct stream lets the
@@ -609,20 +789,22 @@ export default function AudioEngine() {
         currentBackgroundVideoIdRef.current = videoId;
         // The iframe is idle now; force a future iframe handoff to fresh-load.
         currentVideoIdRef.current = null;
+        // The overlap ramp already blended this song in, so there is no
+        // position-driven fade-in left to run. Clear the latch BEFORE computing
+        // the volume below, so `activationRatio` isn't reading a ramp that no
+        // longer applies.
+        crossfadePendingFadeInRef.current = false;
+        crossfadeFadeInStartedAtRef.current = null;
         try {
           stagedEl.preload = "auto";
           stagedEl.loop = false;
-          stagedEl.volume = usePlayerStore.getState().volume;
+          stagedEl.volume = activationRatio(stagedEl) * usePlayerStore.getState().volume;
           // Preserve the live position instead of the 0:00 the store reset to
           // at the boundary — the stream has been playing for ~5 seconds.
           const livePos = stagedEl.currentTime;
           if (isFinite(livePos)) setCurrentTime(livePos);
           if (isFinite(stagedEl.duration) && stagedEl.duration > 0) setDuration(stagedEl.duration);
         } catch (e) {}
-        // The overlap ramp already blended this song in — no position-driven
-        // fade-in on top of it.
-        crossfadePendingFadeInRef.current = false;
-        crossfadeFadeInStartedAtRef.current = null;
         // The promoted element gives no fresh `play` event (it was already
         // playing), so reset the flags onPlay would normally own — otherwise a
         // leaked crossfade latch would swallow THIS track's natural end (hard
@@ -634,7 +816,17 @@ export default function AudioEngine() {
         consecutiveErrorsRef.current = 0;
         isFadingRef.current = false;
         transitioningRef.current = false;
-        usePlayerStore.getState().setPlaying(true);
+        // Promoting an overlap must never RESUME a paused player. An overlap that
+        // was in flight when the user hit pause used to be promoted here, and
+        // this unconditional setPlaying(true) restarted playback a beat after the
+        // pause — the other half of the "pause, then it autoplays" report. The
+        // overlap is already torn down by onPause, so this only guards a pause
+        // that raced the boundary.
+        if (usePlayerStore.getState().isPlaying) {
+          usePlayerStore.getState().setPlaying(true);
+        } else {
+          try { stagedEl.pause(); } catch (e) {}
+        }
         // Re-register controls against the promoted element so seek/pause act
         // on the (now audible) stream.
         setPlayerRef({
@@ -705,7 +897,9 @@ export default function AudioEngine() {
       try {
         stagedEl.preload = "auto";
         stagedEl.loop = false;
-        stagedEl.volume = usePlayerStore.getState().volume;
+        // Never slam a crossfading track to full volume here — see
+        // activationRatio. A track promoted mid-fade-in must continue the ramp.
+        stagedEl.volume = activationRatio(stagedEl) * usePlayerStore.getState().volume;
         const resumeAt = Math.max(0, state.currentTime);
         if (stagedEl.readyState >= HTMLMediaElement.HAVE_METADATA) {
           stagedEl.currentTime = resumeAt;
@@ -729,6 +923,11 @@ export default function AudioEngine() {
           // once-listeners can survive a swap and would otherwise start the
           // (demoted) staging element during a later preload.
           if (stagedEl !== htmlAudioRef.current) return;
+          // A paused player stays paused. These once-listeners fire on
+          // loadedmetadata/canplay, which can land well after the user paused
+          // (especially off-tab) and would otherwise resume playback on their
+          // own.
+          if (!usePlayerStore.getState().isPlaying) return;
           stagedEl.play().catch(() => {});
         } catch (e) {}
       };
@@ -783,8 +982,10 @@ export default function AudioEngine() {
     transitioningRef.current = true;
     try {
       audio.preload = "auto";
-      // Read volume fresh from the store so the callback stays stable.
-      audio.volume = usePlayerStore.getState().volume;
+      // Read volume fresh from the store so the callback stays stable, but let an
+      // armed crossfade ramp win — activating a stream must never burst a
+      // crossfading track in at full volume (see activationRatio).
+      audio.volume = activationRatio(audio) * usePlayerStore.getState().volume;
       // The host <audio> element normally runs the silent loop track to keep
       // media keys alive. Before handing it the real direct stream, make sure
       // loop is OFF — otherwise the track wraps to 0 at its end (instead of
@@ -1143,10 +1344,29 @@ export default function AudioEngine() {
       if ("mediaSession" in navigator) {
         navigator.mediaSession.playbackState = "paused";
       }
+      // A REAL pause must tear the crossfade down completely. Two things went
+      // wrong without this, both reported as "pause, then it autoplays a few
+      // seconds later":
+      //   1. a fade-out that was already in flight kept stepping, reached
+      //      silence, and called next() — restarting playback;
+      //   2. an in-flight OVERLAP kept the incoming track playing on the staging
+      //      element, and promoting it force-set isPlaying = true.
+      disarmCrossfade();
+      stopCrossfadeOverlap();
     };
     const onTimeUpdate = (e: Event) => {
       const audio = e.currentTarget as HTMLAudioElement;
       if (!audio) return;
+      // The staging element is normally just a silent pre-buffer, but during a
+      // crossfade it is the INCOMING track and is audible. Its own playback
+      // position drives its fade-in — driven by timeupdate, not a timer, so the
+      // ramp behaves the same in a foreground tab and a hidden one. Handled
+      // before the owner bail below because the staging element must still not
+      // drive shared playback state.
+      if (audio === preloadAudioRef.current) {
+        stepOverlapRamp(audio);
+        return;
+      }
       // The staging element pre-buffers the next track and must not drive the
       // progress bar, media-session position, crossfade ramp, or fade-out.
       if (audio !== htmlAudioRef.current) return;
@@ -1170,113 +1390,38 @@ export default function AudioEngine() {
       // A crossfaded-in track ramps from silence via playback position (see
       // stepCrossfadeFadeIn) — works in hidden tabs where timers are
       // throttled. While the ramp is active, skip the fade-out evaluation.
-      if (stepCrossfadeFadeIn(curr, bgOwnerIsCurrent)) return;
+      // (runCrossfadeTick owns the fade-in itself — see below.)
 
       // Skip crossfade evaluation while swapping tracks so the leaked
       // "fade triggered" flag from the previous track can't cancel the fade-in.
-      if (!transitioningRef.current) {
-        // Only sample this element when it is actually serving the CURRENT
-        // song — after an advance its stream can still be firing timeupdate for
-        // the previous (ended) track while the next URL resolves. A null owner
-        // means podcasts/host audio, which is always "current".
+      if (transitioningRef.current) return;
 
-        if (backgroundModeRef.current) {
-          // Backgrounded playback must not rely on the timer-driven crossfade:
-          // hidden tabs throttle setInterval/setTimeout so aggressively that the
-          // fade-out completion — where next() is called — may never run, leaving
-          // the queue stuck on a finished track (playbar at full, no sound, and
-          // the next song never starts). The host <audio> element's timeupdate
-          // keeps firing ~4x/sec while it is playing regardless of throttling,
-          // so the fade-out is stepped from those events here, and the queue
-          // advances once the fade reaches silence — songs no longer hard-cut at
-          // the end in background/lock-screen playback.
+      // The crossfade, evaluated once, identically in the foreground and the
+      // background (see runCrossfadeTick). It consumes the tick while a ramp is
+      // active so the fade-out is never evaluated mid-fade-in.
+      if (runCrossfadeTick(curr, dur, bgOwnerIsCurrent)) return;
 
-          if (bgCrossfadeRef.current) {
-            if (!bgOwnerIsCurrent) {
-              // The queue already moved on — drop the stale fade so it can't
-              // advance (or mute) a fresh track.
-              bgCrossfadeRef.current = false;
-              hasTriggeredCrossfadeRef.current = false;
-              return;
-            }
-            const fadeT = backgroundCrossfadeProgress(curr, dur);
-            if (fadeT >= 1) {
-              // Fade reached silence — advance. The flags set here neutralize
-              // every other advance mechanism (near-end timeupdate, `ended`,
-              // watchdog, stale iframe ENDED) so the queue moves exactly once.
-              bgCrossfadeRef.current = false;
-              hasTriggeredCrossfadeRef.current = false;
-              handledTrackEndRef.current = true;
-              crossfadeAdvancedRef.current = true;
-              // As the next track to fade in via playback position
-              // (stepCrossfadeFadeIn) — hidden tabs can't run the setInterval
-              // ramp, so without this the new song would burst in at full volume.
-              crossfadePendingFadeInRef.current = true;
-              crossfadeFadeInStartedAtRef.current = Date.now();
-              setPlayerVolume(0);
-              silenceFinishedStream();
-              pauseStaleIframeSurface();
-              usePlayerStore.getState().handleTrackEnded();
-            } else {
-              setPlayerVolume(1 - fadeT);
-            }
-            return;
-          }
-
-          const bgCrossfadeAction = evaluateCrossfadeTick(
-            curr,
-            dur,
-            hasTriggeredCrossfadeRef.current,
-            usePlayerStore.getState().repeatMode,
-          );
-          if (bgCrossfadeAction === "start-fade" && bgOwnerIsCurrent) {
-            hasTriggeredCrossfadeRef.current = true;
-            bgCrossfadeRef.current = true;
-          } else if (bgCrossfadeAction === "cancel-fade") {
-            hasTriggeredCrossfadeRef.current = false;
-            bgCrossfadeRef.current = false;
-            setPlayerVolume(1.0);
-          }
-
-          // Last-resort advance for short tracks (no crossfade window) and for
-          // a live stream that reached its very end before the fade completed.
-          // Idempotent per track via handledTrackEndRef. Skipped while a fade is
-          // in flight so it never races the fade's own advance.
-          if (
-            dur > 1 &&
-            curr >= dur - 1 &&
-            !handledTrackEndRef.current &&
-            !hasTriggeredCrossfadeRef.current &&
-            bgOwnerIsCurrent
-          ) {
-            handledTrackEndRef.current = true;
-            silenceFinishedStream();
-            handlePodcastEnded();
-          }
-        } else {
-          const crossfadeAction = evaluateCrossfadeTick(
-            curr,
-            dur,
-            hasTriggeredCrossfadeRef.current,
-            usePlayerStore.getState().repeatMode
-          );
-          if (crossfadeAction === "start-fade") {
-            hasTriggeredCrossfadeRef.current = true;
-            // True-overlap crossfade: kick off the predicted next track on the
-            // staging element so both songs blend instead of gap-to-silence.
-            startCrossfadeOverlap();
-            fadeVolume(1, 0, CROSSFADE_START_SECONDS_BEFORE_END * 1000, finalizeCrossfadeAdvance);
-          } else if (crossfadeAction === "cancel-fade") {
-            hasTriggeredCrossfadeRef.current = false;
-            stopCrossfadeOverlap();
-            if (fadeIntervalRef.current) {
-              clearInterval(fadeIntervalRef.current);
-              fadeIntervalRef.current = null;
-            }
-            isFadingRef.current = false;
-            setPlayerVolume(1.0);
-          }
-        }
+      // Only sample this element when it is actually serving the CURRENT song —
+      // after an advance its stream can still be firing timeupdate for the
+      // previous (ended) track while the next URL resolves. A null owner means
+      // podcasts/host audio, which is always "current".
+      //
+      // Last-resort advance for short tracks (too short to have a crossfade
+      // window) and for a live stream that reached its very end before the fade
+      // completed. Idempotent per track via handledTrackEndRef, and skipped
+      // while a fade is in flight so it never races the fade's own advance.
+      if (
+        dur > 1 &&
+        curr >= dur - 1 &&
+        !handledTrackEndRef.current &&
+        !hasTriggeredCrossfadeRef.current &&
+        !crossfadePendingFadeInRef.current &&
+        bgOwnerIsCurrent
+      ) {
+        handledTrackEndRef.current = true;
+        disarmCrossfade();
+        silenceFinishedStream();
+        handlePodcastEnded();
       }
     };
     const onDurationChange = (e: Event) => {
@@ -2376,7 +2521,13 @@ try {
           console.warn("AudioEngine: Failed to load audio source:", e);
         }
       }
-      htmlAudioRef.current.volume = usePlayerStore.getState().volume;
+      // Route through the single volume authority rather than writing the raw
+      // user volume. This effect re-runs on playback-state and audio-quality
+      // changes, not only on track change — so a raw write here would slam a
+      // podcast to full volume in the middle of an armed fade-in ramp, which is
+      // the same two-writers disagreement that produced the audible
+      // "plays suddenly, then fades out, then fades back in" report.
+      applyCrossfadeVolume(1);
 
       // Sync currentTime when switching mode or starting
       const targetTime = usePlayerStore.getState().currentTime;
@@ -2580,9 +2731,22 @@ try {
         triggerPlay();
         fadeVolume(0, 1, 600); // Smooth play resume fade-in
       } else {
-        fadeVolume(1, 0, 500, () => {
-          triggerPause();
-        });
+        // PAUSE MUST BE IMMEDIATE AND COMPLETE.
+        //
+        // This used to be `fadeVolume(1, 0, 500, triggerPause)` — a setInterval
+        // ramp. Two things broke off-tab, where timers are throttled to ~1
+        // tick/second: the 500ms fade took many seconds, so playback kept
+        // running long after the store said paused; and the completion callback
+        // that actually paused the element fired even later. Meanwhile the
+        // in-flight crossfade was never torn down, so an overlap kept playing
+        // the INCOMING track and promoted it a beat later — which is the
+        // reported "pause, then it autoplays a few seconds later".
+        //
+        // Pause synchronously, and kill the crossfade and any overlap now. A
+        // short cosmetic fade-out is not worth a pause that doesn't take.
+        disarmCrossfade();
+        stopCrossfadeOverlap();
+        triggerPause();
       }
     }
   }, [isPlaying, currentSong?.videoId, podcastMode, currentSong?.metadata?.videoAvailable]);
@@ -2593,7 +2757,11 @@ try {
     if (isPodcastVideo) return;
 
     if (!isFadingRef.current) {
-      setPlayerVolume(1.0);
+      // Ramp-aware: dragging the volume slider mid-crossfade used to write a
+      // hard 1.0 over the top of an active fade, bursting the track in (or
+      // snapping the fade-out back to full). The crossfade ratio wins here for
+      // the same reason it wins everywhere else.
+      applyCrossfadeVolume(1);
     }
   }, [volume, podcastMode, currentSong?.metadata?.videoAvailable]);
 
@@ -2879,102 +3047,28 @@ onError: () => {
           const song = state.currentSong;
           const ownerMatches = !!song && currentVideoIdRef.current === song.videoId;
 
-          // Fade in a crossfaded-in track from playback position (works in
-          // hidden tabs) — only while this iframe holds the CURRENT song.
-          if (stepCrossfadeFadeIn(curr, ownerMatches)) return;
-
-          // Skip crossfade evaluation while swapping tracks so the leaked
-          // "fade triggered" flag from the previous track can't cancel the
-          // new track's fade-in.
+          // The crossfade, evaluated once, identically in the foreground and the
+          // background (see runCrossfadeTick). It also owns the fade-in, so it
+          // replaces the previous four near-identical copies of this logic.
           if (!transitioningRef.current) {
-            if (backgroundModeRef.current) {
-              // Background + iframe surface: mirror the host-audio background
-              // crossfade. Hidden tabs throttle timers, so the fade-out (where
-              // next() is called) is driven from playback POSITION here rather
-              // than setInterval — songs no longer hard-cut at full volume in
-              // background/lock-screen playback, and the queue always advances.
-              // Advance once the fade reaches silence (letting the next track fade in
-              // from position too). Trusted only while this iframe holds the
-              // CURRENT song — a stale iframe keeps polling after the queue
-              // moves on.
-              if (bgCrossfadeRef.current) {
-                if (!ownerMatches) {
-                  // The queue already moved on — drop the stale fade so it
-                  // can't advance (or mute) a fresh track.
-                  bgCrossfadeRef.current = false;
-                  hasTriggeredCrossfadeRef.current = false;
-                  return;
-                }
-                const fadeT = backgroundCrossfadeProgress(curr, dur);
-                if (fadeT >= 1) {
-                  bgCrossfadeRef.current = false;
-                  hasTriggeredCrossfadeRef.current = false;
-                  handledTrackEndRef.current = true;
-                  crossfadeAdvancedRef.current = true;
-                  crossfadePendingFadeInRef.current = true;
-                  crossfadeFadeInStartedAtRef.current = Date.now();
-                  setPlayerVolume(0);
-                  pauseStaleIframeSurface();
-                  state.handleTrackEnded();
-                } else {
-                  setPlayerVolume(1 - fadeT);
-                }
-                return;
-              }
-
-              const bgCrossfadeAction = evaluateCrossfadeTick(
-                curr,
-                dur,
-                hasTriggeredCrossfadeRef.current,
-                state.repeatMode
-              );
-              if (bgCrossfadeAction === "start-fade" && ownerMatches) {
-                hasTriggeredCrossfadeRef.current = true;
-                bgCrossfadeRef.current = true;
-              } else if (bgCrossfadeAction === "cancel-fade") {
-                hasTriggeredCrossfadeRef.current = false;
-                bgCrossfadeRef.current = false;
-                setPlayerVolume(1.0);
-              }
-
+            if (runCrossfadeTick(curr, dur, ownerMatches)) {
+              // consumed by a crossfade ramp
+            } else if (
               // Last-resort advance for short tracks (no crossfade window) and
               // videos that reach their end before the fade completes.
               // Idempotent per track via handledTrackEndRef; skipped while a
               // fade is in flight.
-              if (
-                dur > 1 &&
-                curr >= dur - 1 &&
-                !handledTrackEndRef.current &&
-                !hasTriggeredCrossfadeRef.current &&
-                ownerMatches
-              ) {
-                handledTrackEndRef.current = true;
-                pauseStaleIframeSurface();
-                state.handleTrackEnded();
-              }
-            } else {
-              const crossfadeAction = evaluateCrossfadeTick(
-                curr,
-                dur,
-                hasTriggeredCrossfadeRef.current,
-                usePlayerStore.getState().repeatMode
-              );
-              if (crossfadeAction === "start-fade") {
-                hasTriggeredCrossfadeRef.current = true;
-                // True-overlap crossfade: kick off the predicted next track on the
-                // staging element so both songs blend instead of gap-to-silence.
-                startCrossfadeOverlap();
-                fadeVolume(1, 0, CROSSFADE_START_SECONDS_BEFORE_END * 1000, finalizeCrossfadeAdvance);
-              } else if (crossfadeAction === "cancel-fade") {
-                hasTriggeredCrossfadeRef.current = false;
-                stopCrossfadeOverlap();
-                if (fadeIntervalRef.current) {
-                  clearInterval(fadeIntervalRef.current);
-                  fadeIntervalRef.current = null;
-                }
-                isFadingRef.current = false;
-                setPlayerVolume(1.0);
-              }
+              dur > 1 &&
+              curr >= dur - 1 &&
+              !handledTrackEndRef.current &&
+              !hasTriggeredCrossfadeRef.current &&
+              !crossfadePendingFadeInRef.current &&
+              ownerMatches
+            ) {
+              handledTrackEndRef.current = true;
+              disarmCrossfade();
+              pauseStaleIframeSurface();
+              state.handleTrackEnded();
             }
           }
           

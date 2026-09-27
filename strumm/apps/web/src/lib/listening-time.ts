@@ -178,6 +178,16 @@ export class ListeningTracker {
 
   /** Push any accumulated whole seconds for the active song into the queue. */
   flushPartial(): void {
+    // A media element reports `currentTime === NaN` until its metadata loads,
+    // which is the normal state for a freshly-`src`'d element. If one NaN ever
+    // reaches `accumulated` it poisons it PERMANENTLY — `NaN - NaN` is still
+    // NaN, and `whole < 1` is false for NaN, so the guard below used to let it
+    // straight through. Every subsequent event then serialized `NaN` as JSON
+    // `null`, which the API rejected with a 422 (`listenDuration: int_type`),
+    // and the user's listening time was silently lost for the whole session.
+    if (!Number.isFinite(this.accumulated)) {
+      this.accumulated = 0;
+    }
     const whole = Math.floor(this.accumulated);
     if (whole < 1 || !this.activeSong) {
       return; // keep the sub-second remainder for the next accumulation
@@ -240,6 +250,16 @@ export class ListeningTracker {
       return;
     }
 
+    // A non-finite sample is not a measurement. `currentTime` is NaN until the
+    // media element has metadata (and a player surface can report NaN while
+    // re-initialising), and NaN would otherwise flow straight into
+    // `accumulated` and poison every later event — see flushPartial(). Rebase
+    // on the unusable sample so the next real tick measures a clean delta.
+    if (!Number.isFinite(delta)) {
+      this.baseline = Number.isFinite(snap.currentTime) ? snap.currentTime : 0;
+      return;
+    }
+
     this.accumulated += delta;
     this.baseline = snap.currentTime;
 
@@ -252,10 +272,16 @@ export class ListeningTracker {
   }
 
   private enqueue(seconds: number, song: ListeningSong, createdAt: number): void {
+    // Last line of defence: a queued event is persisted to localStorage and
+    // replayed later, so a single non-finite value here would keep 422-ing (or
+    // permanently poison the replayed queue). `seconds` must be a whole number
+    // of seconds inside the API's accepted range.
+    if (!Number.isFinite(seconds)) return;
+    const whole = Math.min(Math.max(1, Math.floor(seconds)), this.options.maxBatchSeconds);
     const event: ListeningEvent = {
       eventId: this.options.createEventId(),
       song: { ...song },
-      seconds: Math.min(Math.max(1, Math.floor(seconds)), this.options.maxBatchSeconds),
+      seconds: whole,
       createdAt,
     };
     this.queue.push(event);

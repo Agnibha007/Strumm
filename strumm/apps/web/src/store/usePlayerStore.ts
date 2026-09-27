@@ -78,6 +78,7 @@ interface PlayerState {
   setQueue: (queue: Song[]) => void;
   addToQueue: (song: Song) => void;
   playSong: (song: Song, contextQueue?: Song[]) => void;
+  playSongAndContinue: (song: Song) => void;
   togglePlay: () => void;
   setPlaying: (playing: boolean) => void;
   next: () => void;
@@ -202,6 +203,34 @@ export const usePlayerStore = create<PlayerState>()(
         get().updateMediaSession(cleaned);
       },
 
+      // Play ONE song and then keep the mix going with related tracks.
+      //
+      // `playSong(song, contextQueue)` REPLACES the queue with the whole
+      // context list, which is right for a playlist or an album and wrong for
+      // search: picking one result out of thirty meant the other twenty-nine
+      // silently became the up-next queue and played for the next half hour.
+      //
+      // This enqueues ONLY the picked song, then hands the queue to the mix
+      // (radio) machinery seeded with that song. The mix tops the queue up in
+      // the background — so the picked song plays first and the continuation is
+      // already buffered and ready when it ends, with no gap.
+      playSongAndContinue: (song) => {
+        const cleaned = cleanSong(song);
+        set({
+          currentSong: cleaned,
+          queue: [cleaned],
+          currentIndex: 0,
+          isPlaying: true,
+          currentTime: 0,
+          duration: 0,
+          shufflePlayedIds: [],
+        });
+        get().updateMediaSession(cleaned);
+        // Seeding the mix with the picked song means the continuation is
+        // related to what the user actually chose, not to the search query.
+        get().startRadio(cleaned.videoId, [cleaned]);
+      },
+
       togglePlay: () => {
         const { isPlaying, playerRef } = get();
         if (isPlaying) {
@@ -307,7 +336,22 @@ export const usePlayerStore = create<PlayerState>()(
       setPodcastMode: (podcastMode) => set({ podcastMode }),
 
       handleTrackEnded: () => {
-        const { queue, currentIndex, repeatMode, isShuffle, playerRef, currentSong, shufflePlayedIds } = get();
+        const { queue, currentIndex, repeatMode, isShuffle, playerRef, currentSong, shufflePlayedIds, isPlaying } = get();
+
+        // A paused player must never auto-advance.
+        //
+        // `handleTrackEnded` is the "the current track finished" choke point, and
+        // many things can call it late: a crossfade fade-out that was already in
+        // flight when the user hit pause, a `timeupdate` near the end, the
+        // `ended` event, and the background watchdog. Any of those landing after
+        // an explicit pause used to call playTrackAtIndex → isPlaying: true,
+        // which is the reported "I paused it and a few seconds later it started
+        // playing again". Pausing is a hard stop, not a request.
+        //
+        // Deliberate skips (media-key next, error recovery) go through `next()`,
+        // which stays ungated.
+        if (!isPlaying) return;
+
         if (!queue.length) {
           set({ isPlaying: false, currentTime: 0 });
           return;
