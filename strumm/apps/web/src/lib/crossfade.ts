@@ -15,11 +15,27 @@
  */
 
 export const CROSSFADE_MIN_DURATION_SECONDS = 15;
-export const CROSSFADE_START_SECONDS_BEFORE_END = 5;
-// Position-driven crossfade fade-in ramp for the newly started track. Longer
-// than the on-tab 800ms timer fade so a background tab (throttled to ~1 tick
-// per second) still renders a perceptible ramp instead of a full-volume burst.
-export const CROSSFADE_FADE_IN_MS = 2000;
+/**
+ * How long before the end of a track the crossfade begins.
+ *
+ * This is the audible length of the whole transition: it is the outgoing track's
+ * fade-out, the window the incoming track ramps up across, and therefore how long
+ * the two genuinely overlap. It was 5s, which is too short to read as a crossfade
+ * — it lands as "the song dipped and something else started". 8s is long enough
+ * to hear the old track sinking away while the new one rises out from under it,
+ * while still leaving a track that ends promptly (podcasts, edits) intact.
+ */
+export const CROSSFADE_START_SECONDS_BEFORE_END = 8;
+/**
+ * Position-driven crossfade fade-in ramp for the newly started track.
+ *
+ * Only used when there is NO pre-staged overlap to blend in (the incoming
+ * track's direct stream could not be resolved ahead of time), so this is the
+ * fade-in half of a fade-through-silence boundary. It is deliberately a little
+ * shorter than the fade-out half of the window so a track that starts quiet
+ * reaches full volume promptly instead of lingering at half volume.
+ */
+export const CROSSFADE_FADE_IN_MS = 5000;
 /**
  * Length of the crossfade window in milliseconds. The incoming track's overlap
  * ramp is driven by ITS OWN playback position across this window, so it reaches
@@ -80,6 +96,33 @@ export function backgroundCrossfadeProgress(currentTime: number, duration: numbe
   const fadeStart = duration - CROSSFADE_START_SECONDS_BEFORE_END;
   const fadeSeconds = CROSSFADE_START_SECONDS_BEFORE_END;
   return Math.min(1, Math.max(0, (currentTime - fadeStart) / fadeSeconds));
+}
+
+/**
+ * How close to the very end counts as "the crossfade window has run out".
+ *
+ * `backgroundCrossfadeProgress` only reaches exactly 1 at
+ * `currentTime === duration`, and no media pipeline reports that: `<audio>`
+ * stops firing `timeupdate` a fraction of a second early, and the YouTube
+ * player's `getCurrentTime()` never returns the duration at all. So a strict
+ * `progress >= 1` test made the engine's own boundary almost unreachable — the
+ * crossfade only ever completed because some *other* mechanism (the `ended`
+ * event, the near-end advance, the hidden-tab watchdog) happened to fire.
+ *
+ * That matters off-tab, where those other mechanisms are exactly the ones that
+ * get throttled or dropped. With a small tolerance the crossfade boundary is
+ * driven by the crossfade itself, from its own position, identically in a
+ * foreground tab and a locked one.
+ */
+export const CROSSFADE_COMPLETION_TOLERANCE_SECONDS = 0.35;
+
+export function crossfadeWindowComplete(
+  currentTime: number,
+  duration: number,
+  toleranceSeconds = CROSSFADE_COMPLETION_TOLERANCE_SECONDS
+): boolean {
+  if (!isFinite(currentTime) || !isFinite(duration) || duration <= 0) return false;
+  return currentTime >= duration - toleranceSeconds;
 }
 
 /**

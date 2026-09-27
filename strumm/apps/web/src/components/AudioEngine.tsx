@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import {
   evaluateCrossfadeTick,
-  backgroundCrossfadeProgress,
+  crossfadeWindowComplete,
   crossfadeFadeInRatio,
   crossfadeOverlapFadeInRatio,
   crossfadeVolumeRatio,
@@ -318,6 +318,29 @@ export default function AudioEngine() {
       fadeIntervalRef.current = null;
     }
     isFadingRef.current = false;
+    // Retire the committed next-track with the crossfade that made it. A
+    // cancelled or abandoned crossfade must not leave the queue bound to a track
+    // the listener never heard — that would make a later (unrelated) advance
+    // land on the wrong song.
+    usePlayerStore.getState().setPendingNextIndex(null);
+  };
+
+  /**
+   * Stand down from a crossfade that is no longer going to happen: drop the
+   * fade-out state, stop and forget the incoming track, and give back the
+   * committed next-track pick.
+   *
+   * Separate from `disarmCrossfade`, which is about playback stopping — this is
+   * about a transition being called off while playback continues (a seek back
+   * out of the window, a queue advance that already moved on). Both have to
+   * release the commitment, because the commitment is only meaningful while the
+   * crossfade that made it is still the reason the next track was named.
+   */
+  const abandonCrossfade = () => {
+    hasTriggeredCrossfadeRef.current = false;
+    bgCrossfadeRef.current = false;
+    stopCrossfadeOverlap();
+    usePlayerStore.getState().setPendingNextIndex(null);
   };
 
   const fadeVolume = (fromRatio: number, toRatio: number, durationMs: number, onComplete?: () => void) => {
@@ -499,11 +522,30 @@ export default function AudioEngine() {
       if (!ownerMatches) {
         // The queue already moved on — drop the stale fade so it can neither
         // advance nor mute a fresh track.
-        bgCrossfadeRef.current = false;
-        hasTriggeredCrossfadeRef.current = false;
+        abandonCrossfade();
         return true;
       }
-      if (backgroundCrossfadeProgress(curr, dur) >= 1) {
+      // A backwards seek out of the window cancels the transition. This has to
+      // be re-evaluated HERE, not left to `evaluateCrossfadeTick` below: once a
+      // fade is armed this branch owns every subsequent tick, so the cancel
+      // decision was unreachable — the fade-out stayed applied and the overlap
+      // kept playing the incoming track for the rest of a track the listener had
+      // just scrubbed back to the middle of.
+      //
+      // An unknown duration is treated the same way. A position-driven fade needs
+      // a position range to be inside of; without one it can neither step nor
+      // complete, so holding the fade open would mute the track indefinitely.
+      if (!isFinite(dur) || dur <= 0) {
+        abandonCrossfade();
+        applyCrossfadeVolume(1);
+        return true;
+      }
+      if (evaluateCrossfadeTick(curr, dur, true, usePlayerStore.getState().repeatMode) === "cancel-fade") {
+        abandonCrossfade();
+        applyCrossfadeVolume(1);
+        return true;
+      }
+      if (crossfadeWindowComplete(curr, dur)) {
         // Outgoing track reached silence. Advance exactly once per track; the
         // flag neutralises the near-end advance, the natural `ended`, and the
         // background watchdog.
@@ -538,9 +580,10 @@ export default function AudioEngine() {
     if (action === "cancel-fade") {
       // Seeked backwards out of the window — restore volume and drop the
       // incoming track rather than letting it play under the wrong song.
-      hasTriggeredCrossfadeRef.current = false;
-      bgCrossfadeRef.current = false;
-      stopCrossfadeOverlap();
+      // The committed next-track goes with it: it was named for a transition
+      // that is no longer happening, and carrying it forward would make some
+      // later, unrelated advance land on a track the listener never heard.
+      abandonCrossfade();
       applyCrossfadeVolume(1);
       return true;
     }
@@ -593,9 +636,21 @@ export default function AudioEngine() {
     }
   };
 
-  // Predict the videoId that will play when the current song ends. Mirrors the
-  // store's handleTrackEnded rules exactly (shuffle history included) so the
-  // staging element pre-buffers the actual next stream rather than a guess.
+  // Predict the videoId that will play when the current song ends, and COMMIT to
+  // it.
+  //
+  // The prediction used to be a fresh `resolveNextTrackIndex(...)` call on every
+  // question, which is only safe while the answer is deterministic. Under
+  // shuffle every call draws a NEW random track, so the pre-buffer effect staged
+  // one song, `startCrossfadeOverlap` asked for a different one and bailed (its
+  // staged check failed), and the actual advance picked a third. That is why the
+  // crossfade used to be switched off entirely whenever shuffle was on — and
+  // shuffle is persisted, so one tap of the shuffle button disabled crossfading
+  // for good.
+  //
+  // Now the index is decided ONCE per track and written to the store, which both
+  // makes the prediction stable for every reader AND makes the queue's own
+  // advance land on the very track that is fading in (see setPendingNextIndex).
   const predictedNextVideoId = useCallback((): string | null => {
     const state = usePlayerStore.getState();
     const song = state.currentSong;
@@ -605,12 +660,20 @@ export default function AudioEngine() {
     if (song.metadata?.audioUrl) return null; // podcasts are not pre-fetched
     if (!state.isPlaying) return null; // never pre-buffer while paused
     if (state.repeatMode === "one") return song.videoId;
-    let playedIds = state.shufflePlayedIds;
-    if (state.isShuffle && song.videoId) {
-      playedIds = [...state.shufflePlayedIds, song.videoId];
+
+    // Reuse the commitment already made for this track; only draw a new one when
+    // there isn't one. `pendingNextIndex` is cleared by every track change, queue
+    // edit and mode toggle, so it can never outlive the track it was made for.
+    let nextIdx = state.pendingNextIndex;
+    if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) {
+      let playedIds = state.shufflePlayedIds;
+      if (state.isShuffle && song.videoId) {
+        playedIds = [...state.shufflePlayedIds, song.videoId];
+      }
+      nextIdx = resolveNextTrackIndex(queue, idx, state.repeatMode, state.isShuffle, true, playedIds);
+      if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) return null;
+      state.setPendingNextIndex(nextIdx);
     }
-    const nextIdx = resolveNextTrackIndex(queue, idx, state.repeatMode, state.isShuffle, true, playedIds);
-    if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) return null;
     const next = queue[nextIdx];
     if (!next?.videoId || next.metadata?.audioUrl) return null;
     // (repeatMode is known to be "none" | "all" here — the "one" case returned
@@ -665,9 +728,16 @@ export default function AudioEngine() {
   // staging element as the outgoing track enters its crossfade window. The two
   // songs genuinely overlap: the incoming ramps 0→1 across the fade window
   // while the outgoing fades 1→0, so the boundary is a blend followed by a
-  // continuous, already-audible next track. Skipped (classic fade-to-silence
-  // fallback) when the prediction is nondeterministic (shuffle), repeat-one,
-  // data-saver quality, or the stream isn't staged and buffered.
+  // continuous, already-audible next track. Skipped (fade-through-silence
+  // fallback) when repeat-one means there is no different next track, when
+  // data-saver forbids pre-buffering, or when the stream isn't staged and
+  // buffered.
+  //
+  // Shuffle is NOT a reason to skip: the next-track pick is committed to the
+  // store (see predictedNextVideoId), so the pre-buffered stream, the audible
+  // overlap and the queue's own advance all name the same track. It used to bail
+  // on `isShuffle` because the prediction was re-drawn at random on every read,
+  // which meant the staged song and the playing song were never the same one.
   //
   // Runs for backgrounded playback too. It only touches <audio> elements — the
   // YouTube iframe is irrelevant here — and those keep playing (and keep firing
@@ -675,7 +745,7 @@ export default function AudioEngine() {
   // gated on foreground and left off-tab playback fading to silence.
   const startCrossfadeOverlap = useCallback(() => {
     const state = usePlayerStore.getState();
-    if (state.isShuffle || state.repeatMode === "one" || audioQuality === "data-saver") return;
+    if (state.repeatMode === "one" || audioQuality === "data-saver") return;
     const videoId = predictedNextVideoId();
     if (!videoId) return;
     const url = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
@@ -1880,38 +1950,24 @@ export default function AudioEngine() {
       if (!state.isPlaying || !song || song.metadata?.audioUrl) return;
       const videoId = song.videoId;
       if (!videoId) return;
-      // A crossfade fade-out cannot complete reliably in a hidden tab: timers
-      // are throttled, so the fade either takes 3x as long while the track
-      // keeps playing (long silence, then an abrupt next song) or never
-      // completes (next() never runs and the queue stalls). Cancel any
-      // in-flight fade, restore full volume, and let the background near-end
-      // advance take over — the background crossfade is stepped timer-free
-      // from timeupdate in onTimeUpdate. Resetting the crossfade flag also
-      // lets a return to the foreground re-enter the fade window cleanly if
-      // time remains.
-      if (fadeIntervalRef.current) {
-        clearInterval(fadeIntervalRef.current);
-        fadeIntervalRef.current = null;
-        isFadingRef.current = false;
-        hasTriggeredCrossfadeRef.current = false;
-        bgCrossfadeRef.current = false;
-        // A hidden tab throttles timers, so the overlap ramp cannot complete
-        // reliably — stop the incoming track (it would otherwise be the wrong
-        // song or dead weight when the tab is closed).
-        stopCrossfadeOverlap();
-        const vol = usePlayerStore.getState().volume;
-        if (htmlAudioRef.current && !isSilentAudio(htmlAudioRef.current)) {
-          htmlAudioRef.current.volume = vol;
-        }
-        if (
-          playerInstanceRef.current &&
-          typeof playerInstanceRef.current.setVolume === "function"
-        ) {
-          try {
-            playerInstanceRef.current.setVolume(Math.round(vol * 100));
-          } catch (e) {}
-        }
-      }
+      // Backgrounding must NOT disturb an in-flight crossfade.
+      //
+      // This used to cancel and tear down any crossfade that was running when the
+      // tab was hidden, on the theory that a throttled timer fade could not
+      // finish. That is two bugs stacked on one stale assumption:
+      //
+      //  1. the crossfade is driven by MEDIA POSITION, not a timer, and the host
+      //     <audio> element keeps playing (and keeps firing `timeupdate`) in a
+      //     hidden tab — so the fade completes fine off-tab, and cancelling it
+      //     produced a hard cut at the boundary with a song already audible
+      //     underneath;
+      //  2. the teardown was gated on `fadeIntervalRef` — the OLD timer fade.
+      //     That timer is also used by the one-off track-change fade-in, so any
+      //     song that was a second into playback when the screen locked cancelled
+      //     a crossfade that had not even started yet.
+      //
+      // So: nothing to do. Only the timer-based autoplay ramp needs stopping, and
+      // it is torn down by the play/pause effect on the way in and out anyway.
       // Already streaming this song on the host <audio> element (foreground
       // host-audio mode) — nothing to hand over; just mark the page backgrounded
       // so the heartbeat/watchdog keep the stream alive while hidden.
@@ -1953,9 +2009,23 @@ export default function AudioEngine() {
         song &&
         currentBackgroundVideoIdRef.current === song.videoId
       ) {
-        try {
-          audio.play().catch(() => {});
-        } catch (e) {}
+        // ONLY resume if the player is actually supposed to be playing.
+        //
+        // This call used to be unconditional, which made "pause while the tab is
+        // in the background" impossible to keep: the user hit pause on the
+        // lock screen, the store went to paused, the element stopped — and then
+        // they came back to the tab and this branch started the music again. The
+        // UI said paused while sound came out, because playback state is only
+        // believable if returning to the tab never second-guesses it.
+        //
+        // Anything below this point (the catch-up advance, the iframe hand-back)
+        // is already gated on isPlaying; this early return used to slip past
+        // every one of those gates.
+        if (state.isPlaying) {
+          try {
+            audio.play().catch(() => {});
+          } catch (e) {}
+        }
         return;
       }
 
@@ -2291,7 +2361,13 @@ try {
       }
 
       // Media already at/past the end -> auto-advance (idempotent per track).
-      if (curr >= dur - 1 && !handledTrackEndRef.current) {
+      //
+      // An armed crossfade owns the boundary: it completes from its own media
+      // position (see crossfadeWindowComplete) and promotes the incoming track
+      // that is already ramping in. Advancing here first would cut that off with
+      // a second of the outgoing track left to play — audible as a crossfade
+      // that stops halfway and jumps.
+      if (curr >= dur - 1 && !handledTrackEndRef.current && !hasTriggeredCrossfadeRef.current) {
         handledTrackEndRef.current = true;
         bgCrossfadeRef.current = false;
         hasTriggeredCrossfadeRef.current = false;
@@ -2589,8 +2665,10 @@ try {
         (getCachedDirectAudioUrl(currentSong.videoId) || directAudioUrlsRef.current[currentSong.videoId])
       ) {
         stopProgressTimer();
-        activateHostAudio(currentSong.videoId);
-        return;
+        // `return` only when the host element actually took the stream. Bailing
+        // out on a false return left the audible surface on the silent loop with
+        // no iframe loaded behind it — dead air with a "playing" UI.
+        if (activateHostAudio(currentSong.videoId)) return;
       }
       // No resolved direct stream — serve this song from the YouTube iframe
       // (and make sure the host <audio> element stops pretending it holds a

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   evaluateCrossfadeTick,
   backgroundCrossfadeProgress,
+  crossfadeWindowComplete,
   crossfadeFadeInRatio,
   crossfadeFadeOutRatio,
   crossfadeOverlapFadeInRatio,
@@ -10,6 +11,7 @@ import {
   CROSSFADE_START_SECONDS_BEFORE_END,
   CROSSFADE_FADE_IN_MS,
   CROSSFADE_FADE_OUT_MS,
+  CROSSFADE_COMPLETION_TOLERANCE_SECONDS,
 } from "./crossfade";
 
 describe("evaluateCrossfadeTick", () => {
@@ -97,9 +99,10 @@ describe("backgroundCrossfadeProgress", () => {
 
   it("reaches silence exactly at the track end, never earlier", () => {
     // The fade-out window spans the final CROSSFADE_START_SECONDS_BEFORE_END
-    // seconds, so half a second before the end the tail is still audible and
-    // silence (and the queue advance) lands on the track's end.
-    expect(backgroundCrossfadeProgress(199.5, 200)).toBeCloseTo(0.9);
+    // seconds, so just before the end the tail is still audible and silence (and
+    // the queue advance) lands on the track's end. Derived from the constant so
+    // retuning the window does not silently invalidate the assertion.
+    expect(backgroundCrossfadeProgress(200 - 0.5, 200)).toBeCloseTo(1 - 0.5 / FADE_SECONDS);
     expect(backgroundCrossfadeProgress(200, 200)).toBe(1);
   });
 
@@ -139,12 +142,14 @@ describe("crossfadeFadeInRatio", () => {
 });
 
 describe("crossfadeFadeOutRatio", () => {
+  const WINDOW_START = 200 - CROSSFADE_START_SECONDS_BEFORE_END;
+
   it("is the exact inverse of backgroundCrossfadeProgress", () => {
-    // 195 is the first second of the window (progress 0 → still full volume),
-    // 197.5 is halfway (progress 0.5), 200 is silence.
+    // WINDOW_START is the first instant of the window (progress 0 → still full
+    // volume), the midpoint is halfway down, and 200 is silence.
     expect(crossfadeFadeOutRatio(180, 200)).toBe(1);
-    expect(crossfadeFadeOutRatio(195, 200)).toBe(1);
-    expect(crossfadeFadeOutRatio(197.5, 200)).toBeCloseTo(0.5);
+    expect(crossfadeFadeOutRatio(WINDOW_START, 200)).toBe(1);
+    expect(crossfadeFadeOutRatio(WINDOW_START + CROSSFADE_START_SECONDS_BEFORE_END / 2, 200)).toBeCloseTo(0.5);
     expect(crossfadeFadeOutRatio(200, 200)).toBe(0);
     expect(crossfadeFadeOutRatio(999, 200)).toBe(0);
   });
@@ -189,6 +194,43 @@ describe("crossfadeOverlapFadeInRatio", () => {
   });
 });
 
+describe("crossfadeWindowComplete", () => {
+  it("completes slightly before the exact end, because no pipeline reports it", () => {
+    // The bug this guards: `backgroundCrossfadeProgress` only reaches exactly 1
+    // at currentTime === duration. `<audio>` stops firing timeupdate a fraction
+    // of a second early and the YouTube player never reports the duration at
+    // all, so a strict `progress >= 1` boundary almost never fired — the
+    // crossfade only ever completed by accident, via whatever `ended`/watchdog
+    // path happened to run first. Off-tab, where those are throttled or
+    // dropped, the transition never completed at all.
+    expect(crossfadeWindowComplete(200, 200)).toBe(true);
+    expect(crossfadeWindowComplete(199.9, 200)).toBe(true);
+    expect(
+      crossfadeWindowComplete(200 - CROSSFADE_COMPLETION_TOLERANCE_SECONDS, 200)
+    ).toBe(true);
+  });
+
+  it("stays open while there is still real fade-out left to play", () => {
+    // Comfortably inside the window, and just outside the tolerance: both must
+    // report "not done" so the fade is not truncated before it is audible.
+    expect(crossfadeWindowComplete(200 - CROSSFADE_START_SECONDS_BEFORE_END, 200)).toBe(false);
+    expect(
+      crossfadeWindowComplete(200 - CROSSFADE_COMPLETION_TOLERANCE_SECONDS - 0.5, 200)
+    ).toBe(false);
+  });
+
+  it("never completes on unknown or zero durations", () => {
+    expect(crossfadeWindowComplete(100, Number.NaN)).toBe(false);
+    expect(crossfadeWindowComplete(100, 0)).toBe(false);
+    expect(crossfadeWindowComplete(Number.NaN, 200)).toBe(false);
+  });
+
+  it("honours a caller-supplied tolerance", () => {
+    expect(crossfadeWindowComplete(195, 200, 10)).toBe(true);
+    expect(crossfadeWindowComplete(195, 200, 1)).toBe(false);
+  });
+});
+
 describe("crossfadeVolumeRatio", () => {
   const base = {
     fadeInPending: false,
@@ -215,6 +257,7 @@ describe("crossfadeVolumeRatio", () => {
     // while a fade-in was already armed and computing ~0 for a track a fraction
     // of a second old. Two writers, one element, opposite answers — audible as
     // "plays suddenly, then fades out, then fades back in".
+    const fadeInSeconds = CROSSFADE_FADE_IN_MS / 1000;
     expect(
       crossfadeVolumeRatio({
         ...base,
@@ -224,8 +267,13 @@ describe("crossfadeVolumeRatio", () => {
       })
     ).toBe(0);
     expect(
-      crossfadeVolumeRatio({ ...base, fadeInPending: true, fadeInTime: 0.5, desired: 1 })
-    ).toBeCloseTo(0.25);
+      crossfadeVolumeRatio({
+        ...base,
+        fadeInPending: true,
+        fadeInTime: fadeInSeconds / 2,
+        desired: 1,
+      })
+    ).toBeCloseTo(0.5);
   });
 
   it("lets the fade-in win over an active fade-out (the ramp is newer)", () => {
@@ -233,17 +281,23 @@ describe("crossfadeVolumeRatio", () => {
       crossfadeVolumeRatio({
         ...base,
         fadeInPending: true,
-        fadeInTime: 0.25,
+        fadeInTime: CROSSFADE_FADE_IN_MS / 4000,
         fadingOut: true,
         fadeOutTime: 199,
         desired: 1,
       })
-    ).toBeCloseTo(0.125);
+    ).toBeCloseTo(0.25);
   });
 
   it("lets the fade-out ramp win over any desired value", () => {
+    const windowStart = 200 - CROSSFADE_START_SECONDS_BEFORE_END;
     expect(
-      crossfadeVolumeRatio({ ...base, fadingOut: true, fadeOutTime: 197.5, desired: 1 })
+      crossfadeVolumeRatio({
+        ...base,
+        fadingOut: true,
+        fadeOutTime: windowStart + CROSSFADE_START_SECONDS_BEFORE_END / 2,
+        desired: 1,
+      })
     ).toBeCloseTo(0.5);
     expect(
       crossfadeVolumeRatio({ ...base, fadingOut: true, fadeOutTime: 200, desired: 1 })

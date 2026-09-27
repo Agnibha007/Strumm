@@ -39,6 +39,7 @@ function reset() {
     radioSeed: null,
     radioSession: null,
     radioHistory: [],
+    pendingNextIndex: null,
   });
 }
 
@@ -173,5 +174,128 @@ describe("handleTrackEnded pause stickiness", () => {
     usePlayerStore.getState().handleTrackEnded();
 
     expect(usePlayerStore.getState().isPlaying).toBe(false);
+  });
+});
+
+describe("committed next track (crossfade prediction)", () => {
+  beforeEach(reset);
+
+  const seedQueue = () => {
+    usePlayerStore.setState({
+      queue: [PICKED, OTHER_1, OTHER_2],
+      currentIndex: 0,
+      currentSong: PICKED,
+      isPlaying: true,
+    });
+  };
+
+  it("lands the advance on the committed track, not a fresh pick", () => {
+    // A real crossfade has to name the incoming track before it plays it, so it
+    // can pre-buffer and ramp that exact stream. If the queue then re-resolved
+    // instead of honouring that name, the track the listener heard fading in
+    // would not be the track that plays — which is why the crossfade used to be
+    // disabled outright under shuffle.
+    seedQueue();
+    usePlayerStore.setState({ isShuffle: true, shufflePlayedIds: ["picked"] });
+    // Whatever shuffle decides, the engine writes the decision down first.
+    usePlayerStore.getState().setPendingNextIndex(2);
+
+    usePlayerStore.getState().handleTrackEnded();
+
+    expect(usePlayerStore.getState().currentIndex).toBe(2);
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("other2");
+  });
+
+  it("is consumed exactly once — the next advance resolves normally", () => {
+    // A four-track queue so the plain sequential step is visible after the
+    // committed (non-sequential) jump.
+    const fourth = song("other3", "Other Three");
+    usePlayerStore.setState({
+      queue: [PICKED, OTHER_1, OTHER_2, fourth],
+      currentIndex: 0,
+      currentSong: PICKED,
+      isPlaying: true,
+    });
+
+    usePlayerStore.getState().setPendingNextIndex(2);
+    usePlayerStore.getState().next();
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("other2");
+    // Consumed: a second advance must not bounce back to the same slot.
+    expect(usePlayerStore.getState().pendingNextIndex).toBeNull();
+
+    usePlayerStore.getState().next();
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("other3");
+  });
+
+  it("is honoured by a deliberate skip too, so the two can never disagree", () => {
+    // Both advance paths must read the same commitment, or a media-key skip at
+    // the crossfade boundary would land somewhere the pre-buffer never fetched.
+    seedQueue();
+    usePlayerStore.getState().setPendingNextIndex(2);
+
+    usePlayerStore.getState().next();
+
+    expect(usePlayerStore.getState().currentIndex).toBe(2);
+  });
+
+  it("refuses a commitment that is out of range, or the current slot", () => {
+    // A stale or nonsense commitment would otherwise be silently ignored here
+    // and then hijack an unrelated advance.
+    seedQueue();
+    const store = usePlayerStore.getState();
+
+    store.setPendingNextIndex(99);
+    expect(usePlayerStore.getState().pendingNextIndex).toBeNull();
+
+    store.setPendingNextIndex(-1);
+    expect(usePlayerStore.getState().pendingNextIndex).toBeNull();
+
+    store.setPendingNextIndex(1.5);
+    expect(usePlayerStore.getState().pendingNextIndex).toBeNull();
+
+    store.setPendingNextIndex(0);
+    expect(usePlayerStore.getState().pendingNextIndex).toBeNull();
+
+    store.setPendingNextIndex(2);
+    expect(usePlayerStore.getState().pendingNextIndex).toBe(2);
+  });
+
+  it("is retired by anything that changes which track plays next", () => {
+    // The commitment is only meaningful for the transition that made it. If it
+    // outlived that, some later advance would land on a track the listener never
+    // heard coming.
+    const retired: Array<[string, () => void]> = [
+      ["shuffle on", () => usePlayerStore.getState().setShuffle(true)],
+      ["shuffle off", () => usePlayerStore.getState().setShuffle(false)],
+      ["repeat mode", () => usePlayerStore.getState().setRepeatMode("all")],
+      ["queue rewrite", () => usePlayerStore.getState().setQueue([PICKED, OTHER_1])],
+      ["playing a song", () => usePlayerStore.getState().playSong(OTHER_2)],
+      [
+        "play-and-continue",
+        () => usePlayerStore.getState().playSongAndContinue(OTHER_2),
+      ],
+    ];
+
+    for (const [label, mutate] of retired) {
+      seedQueue();
+      usePlayerStore.getState().setPendingNextIndex(2);
+      expect(usePlayerStore.getState().pendingNextIndex).toBe(2);
+
+      mutate();
+
+      expect(usePlayerStore.getState().pendingNextIndex, label).toBeNull();
+    }
+  });
+
+  it("survives adding to the queue, because the committed slot still exists", () => {
+    // Appending never renumbers existing slots, so a valid commitment stays
+    // valid — clearing it here would needlessly break the crossfade every time
+    // the radio mix tops the queue up behind the current track.
+    seedQueue();
+    usePlayerStore.getState().setPendingNextIndex(2);
+
+    usePlayerStore.getState().addToQueue(song("added"));
+
+    expect(usePlayerStore.getState().pendingNextIndex).toBe(2);
   });
 });

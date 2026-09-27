@@ -35,6 +35,9 @@ function playTrackAtIndex(
     isPlaying: true,
     currentTime: 0,
     duration: 0,
+    // Any track change retires the crossfade's next-track commitment: it was
+    // made for the song that just finished and must never hijack this advance.
+    pendingNextIndex: null,
   });
   get().updateMediaSession(song);
 }
@@ -119,6 +122,25 @@ interface PlayerState {
   // Shuffle history — tracks videoIds played during the current shuffle round
   shufflePlayedIds: string[];
 
+  /**
+   * The queue index the crossfade has committed to playing next, or null.
+   *
+   * A real crossfade has to name the incoming track *before* it starts playing
+   * it, so the engine can pre-buffer and ramp that exact stream. Under shuffle
+   * the next index is a fresh random pick, so asking the queue resolver twice
+   * (once to pre-buffer, once to advance) yields two DIFFERENT tracks — the
+   * overlap then plays a song the queue never reaches, and the boundary lands
+   * somewhere else entirely. That is why the crossfade was disabled whenever
+   * shuffle was on.
+   *
+   * Committing the choice here makes staging, the audible overlap, and the
+   * advance all agree on one track, and it is what makes the crossfade work
+   * under shuffle. Transient by design: cleared by every track change, queue
+   * edit, mode toggle and pause, and deliberately NOT persisted.
+   */
+  pendingNextIndex: number | null;
+  setPendingNextIndex: (index: number | null) => void;
+
   // Sleep Timer Actions
   setSleepTimer: (duration: SleepTimerDuration) => void;
   clearSleepTimer: () => void;
@@ -139,6 +161,7 @@ export const usePlayerStore = create<PlayerState>()(
       repeatMode: "none",
       reducedAnimation: false,
       shufflePlayedIds: [],
+      pendingNextIndex: null,
       playbackRate: 1.0,
       podcastMode: "audio",
 
@@ -168,13 +191,17 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       setQueue: (queue) => {
-        set({ queue: queue.map(cleanSong) });
+        // Rewriting the queue retires the crossfade's next-track commitment —
+        // the index it named may no longer be the track that plays next.
+        set({ queue: queue.map(cleanSong), pendingNextIndex: null });
       },
 
       addToQueue: (song) => {
         const { queue } = get();
         const cleaned = cleanSong(song);
         if (!queue.some((s) => s.videoId === cleaned.videoId)) {
+          // Appending never invalidates a committed index (it points at an
+          // existing slot), so the commitment is deliberately kept.
           set({ queue: [...queue, cleaned] });
         }
       },
@@ -198,6 +225,7 @@ export const usePlayerStore = create<PlayerState>()(
           isPlaying: true,
           currentTime: 0,
           shufflePlayedIds: [], // Reset shuffle history when playing a new song
+          pendingNextIndex: null,
         });
 
         get().updateMediaSession(cleaned);
@@ -224,6 +252,7 @@ export const usePlayerStore = create<PlayerState>()(
           currentTime: 0,
           duration: 0,
           shufflePlayedIds: [],
+          pendingNextIndex: null,
         });
         get().updateMediaSession(cleaned);
         // Seeding the mix with the picked song means the continuation is
@@ -256,7 +285,17 @@ export const usePlayerStore = create<PlayerState>()(
           set({ shufflePlayedIds: updatedPlayedIds });
         }
 
-        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, false, updatedPlayedIds);
+        // A crossfade names the track it is fading into before it plays it (it
+        // has to, to pre-buffer and ramp that exact stream). Honour that
+        // commitment so the advance lands on the song the listener is already
+        // hearing fade in. Under shuffle, re-resolving instead would pick a
+        // DIFFERENT random track and cut the crossfade off mid-blend.
+        const committed = get().pendingNextIndex;
+        set({ pendingNextIndex: null });
+        const nextIdx =
+          committed !== null && committed >= 0 && committed < queue.length
+            ? committed
+            : resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, false, updatedPlayedIds);
         if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) return;
         playTrackAtIndex(queue, nextIdx, set, get);
       },
@@ -317,17 +356,20 @@ export const usePlayerStore = create<PlayerState>()(
             // Repeat-one repeats the current track, which is incompatible
             // with shuffle picking random tracks — turn it off.
             repeatMode: repeatMode === "one" ? "none" : repeatMode,
+            // Toggling the play order changes which track plays next, so any
+            // committed next-track is stale.
+            pendingNextIndex: null,
           });
         } else {
-          set({ isShuffle: false, shufflePlayedIds: [] });
+          set({ isShuffle: false, shufflePlayedIds: [], pendingNextIndex: null });
         }
       },
 
       setRepeatMode: (repeatMode) => {
         if (repeatMode === "one" && get().isShuffle) {
-          set({ repeatMode, isShuffle: false, shufflePlayedIds: [] });
+          set({ repeatMode, isShuffle: false, shufflePlayedIds: [], pendingNextIndex: null });
         } else {
-          set({ repeatMode });
+          set({ repeatMode, pendingNextIndex: null });
         }
       },
 
@@ -371,13 +413,37 @@ export const usePlayerStore = create<PlayerState>()(
           set({ shufflePlayedIds: updatedPlayedIds });
         }
 
-        const nextIdx = resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, true, updatedPlayedIds);
+        // Honour the crossfade's committed next track (see setPendingNextIndex).
+        // Without this, `ended` would re-resolve and land on a different random
+        // track than the one already fading in.
+        const committed = get().pendingNextIndex;
+        set({ pendingNextIndex: null });
+        const nextIdx =
+          committed !== null && committed >= 0 && committed < queue.length
+            ? committed
+            : resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, true, updatedPlayedIds);
         if (nextIdx === null) {
           set({ isPlaying: false, currentTime: 0 });
           return;
         }
 
         playTrackAtIndex(queue, nextIdx, set, get);
+      },
+
+      setPendingNextIndex: (index) => {
+        const { queue, currentIndex } = get();
+        // Only ever commit a real, in-range slot. A stale or out-of-range
+        // commitment would either be ignored here or hijack an unrelated
+        // advance, so it is dropped rather than stored.
+        if (index === null) {
+          set({ pendingNextIndex: null });
+          return;
+        }
+        if (!Number.isInteger(index) || index < 0 || index >= queue.length || index === currentIndex) {
+          set({ pendingNextIndex: null });
+          return;
+        }
+        set({ pendingNextIndex: index });
       },
 
       restorePlayerState: (state) => {
@@ -397,6 +463,7 @@ export const usePlayerStore = create<PlayerState>()(
           repeatMode: isShuffle && repeatMode === "one" ? "none" : repeatMode,
           playbackRate: state.playbackRate ?? 1,
           audioQuality: state.audioQuality ?? get().audioQuality,
+          pendingNextIndex: null,
         });
         if (currentSong) {
           get().updateMediaSession(currentSong);
@@ -433,6 +500,7 @@ export const usePlayerStore = create<PlayerState>()(
                 ? "none"
                 : (state.repeatMode ?? current.repeatMode),
             playbackRate: state.playbackRate ?? current.playbackRate,
+            pendingNextIndex: null,
           });
           get().updateMediaSession(remoteSong);
           return;

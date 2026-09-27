@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, act } from "@testing-library/react";
 import AudioEngine from "./AudioEngine";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { CROSSFADE_FADE_IN_MS } from "web/lib/crossfade";
 import { Song } from "@strumm/types";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
@@ -128,6 +129,7 @@ function makeSong(id: string, title: string): Song {
 
 const songA = makeSong("AAAA", "A");
 const songB = makeSong("BBBB", "B");
+const CROSSFADE_FADE_IN_SECONDS = CROSSFADE_FADE_IN_MS / 1000;
 
 async function seedAndMount(fake: Fake) {
   act(() => {
@@ -259,23 +261,123 @@ async function driveStaging(el: HTMLAudioElement, seconds: number) {
   await flush(50);
 }
 
+/**
+ * Give jsdom's `<audio>` a working media surface.
+ *
+ * jsdom's element is a non-functional stub: `currentTime` is inert, `volume`
+ * writes go nowhere, `paused` is a constant and `readyState` never advances.
+ * Without these the position-driven crossfade ramps would freeze at 0 forever
+ * and every overlap assertion would pass vacuously. The engine creates exactly
+ * two elements — the audible one first, then the staging one — and every created
+ * element is pushed into `created` so a test can hold a handle on it.
+ *
+ * `created` is emptied per test and the wrapper is always installed over the
+ * PRISTINE constructor. Wrapping over the previous wrapper instead would nest
+ * one layer per test, and a single `new Audio()` would then push the same
+ * element once per layer — which silently destroys the createdAudios[0] /
+ * createdAudios[1] indices the overlap tests depend on. The array must also be
+ * cleared per test: elements from a previous test's engine survive its unmount,
+ * so without this the indices point at the previous test's media surface and the
+ * assertions quietly pass against a component that is no longer mounted.
+ */
+const PRISTINE_AUDIO = window.Audio;
+
+function installAudioStubs(created: HTMLAudioElement[]) {
+  created.length = 0;
+  (window as unknown as { Audio: typeof Audio }).Audio = function (
+    this: unknown,
+  ) {
+    const el = new PRISTINE_AUDIO();
+    (el as unknown as Record<string, unknown>)._volume = 0;
+    (el as unknown as Record<string, unknown>)._volumeLog = [];
+    (el as unknown as Record<string, unknown>)._readyState = 2; // HAVE_CURRENT_DATA
+    created.push(el);
+    return el;
+  } as unknown as typeof Audio;
+
+  Object.defineProperty(HTMLMediaElement.prototype, "volume", {
+    configurable: true,
+    get() {
+      return (this as unknown as Record<string, unknown>)._volume ?? 1.0;
+    },
+    set(v: number) {
+      (this as unknown as Record<string, unknown>)._volume = v;
+      const log = (this as unknown as Record<string, unknown>)._volumeLog;
+      if (Array.isArray(log)) (log as number[]).push(Math.round(v * 100));
+    },
+  });
+  Object.defineProperty(HTMLMediaElement.prototype, "paused", {
+    configurable: true,
+    get() {
+      return !(this as unknown as Record<string, unknown>)._playing;
+    },
+  });
+  Object.defineProperty(HTMLMediaElement.prototype, "readyState", {
+    configurable: true,
+    get() {
+      return (this as unknown as Record<string, unknown>)._readyState ?? 0;
+    },
+  });
+  Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+    configurable: true,
+    get() {
+      return (this as unknown as Record<string, unknown>)._currentTime ?? 0;
+    },
+    set(v: number) {
+      (this as unknown as Record<string, unknown>)._currentTime = v;
+    },
+  });
+  HTMLMediaElement.prototype.play = function (this: unknown): Promise<void> {
+    const self = this as unknown as Record<string, unknown>;
+    self._playing = true;
+    // A real element's play() call count is how "did anything try to start
+    // this?" is observable from outside the engine.
+    self._playCalls = ((self._playCalls as number | undefined) ?? 0) + 1;
+    return Promise.resolve();
+  };
+  HTMLMediaElement.prototype.pause = function (this: unknown): void {
+    (this as unknown as Record<string, unknown>)._playing = false;
+  };
+}
+
+const playCalls = (el: HTMLAudioElement) =>
+  ((el as unknown as Record<string, unknown>)._playCalls as number | undefined) ?? 0;
+
+/** Report the page as hidden (or visible) the way a real browser would. */
+function setDocumentHidden(hidden: boolean) {
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => hidden,
+  });
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => (hidden ? "hidden" : "visible"),
+  });
+}
+
+/** Reset the store to a clean, idle player between tests. */
+function resetStore() {
+  act(() => {
+    usePlayerStore.setState({
+      currentSong: null,
+      queue: [],
+      currentIndex: -1,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      shufflePlayedIds: [],
+      pendingNextIndex: null,
+    });
+  });
+}
+
 describe("AudioEngine foreground iframe crossfade", () => {
   let yt: ReturnType<typeof makeFakeYT>;
 
   beforeEach(() => {
     yt = makeFakeYT();
     yt.install();
-    act(() => {
-      usePlayerStore.setState({
-        currentSong: null,
-        queue: [],
-        currentIndex: -1,
-        isPlaying: false,
-        currentTime: 0,
-        duration: 0,
-        shufflePlayedIds: [],
-      });
-    });
+    resetStore();
   });
 
   it(
@@ -356,15 +458,18 @@ describe("AudioEngine foreground iframe crossfade", () => {
       ).toBe(true);
 
       // As B's playback position advances, the ramp must bring volume back up.
+      // Positions are derived from the ramp length so retuning the crossfade
+      // doesn't silently change what "reached full volume" means here.
       const atStart = yt.fake.setVolumeCalls.at(-1) ?? -1;
-      await seekTo(yt.fake, 1);
-      const atOneSecond = yt.fake.setVolumeCalls.at(-1) ?? -1;
-      expect(atOneSecond).toBeGreaterThan(atStart);
-      await seekTo(yt.fake, 2.5);
+      await seekTo(yt.fake, CROSSFADE_FADE_IN_SECONDS / 4);
+      const atQuarter = yt.fake.setVolumeCalls.at(-1) ?? -1;
+      expect(atQuarter).toBeGreaterThan(atStart);
+      await seekTo(yt.fake, CROSSFADE_FADE_IN_SECONDS / 2);
       const ramped = yt.fake.setVolumeCalls.at(-1) ?? -1;
-      expect(ramped).toBeGreaterThan(atOneSecond);
+      expect(ramped).toBeGreaterThan(atQuarter);
       // Converges on the user's level rather than overshooting it.
-      expect(ramped).toBe(80);
+      await seekTo(yt.fake, CROSSFADE_FADE_IN_SECONDS);
+      expect(yt.fake.setVolumeCalls.at(-1)).toBe(80);
     },
   );
 
@@ -441,17 +546,7 @@ describe("AudioEngine true-overlap crossfade", () => {
   beforeEach(() => {
     yt = makeFakeYT();
     yt.install();
-    act(() => {
-      usePlayerStore.setState({
-        currentSong: null,
-        queue: [],
-        currentIndex: -1,
-        isPlaying: false,
-        currentTime: 0,
-        duration: 0,
-        shufflePlayedIds: [],
-      });
-    });
+    resetStore();
 
     // Point the next track (BBBB) at a fake direct stream; the current track
     // (AAAA) stays on the iframe, mirroring "stream not yet extracted".
@@ -462,65 +557,7 @@ describe("AudioEngine true-overlap crossfade", () => {
       id === "BBBB" ? "https://direct.example/bbbb.mp3" : null,
     );
 
-    // jsdom's <audio> is a non-functional stub: give play/pause/paused/volume/
-    // readyState spec-shaped behavior and track every element created, so the
-    // overlap (staging element audible while A fades) can be asserted. The
-    // engine creates exactly two elements: htmlAudioRef then preloadAudioRef.
-    createdAudios.length = 0;
-    const OriginalAudio = window.Audio;
-    (window as unknown as { Audio: typeof Audio }).Audio = function (
-      this: unknown,
-    ) {
-      const el = new OriginalAudio();
-      (el as unknown as Record<string, unknown>)._volume = 0;
-      (el as unknown as Record<string, unknown>)._volumeLog = [];
-      (el as unknown as Record<string, unknown>)._readyState = 2; // HAVE_CURRENT_DATA
-      createdAudios.push(el);
-      return el;
-    } as unknown as typeof Audio;
-
-    Object.defineProperty(HTMLMediaElement.prototype, "volume", {
-      configurable: true,
-      get() {
-        return (this as unknown as Record<string, unknown>)._volume ?? 1.0;
-      },
-      set(v: number) {
-        (this as unknown as Record<string, unknown>)._volume = v;
-        const log = (this as unknown as Record<string, unknown>)._volumeLog;
-        if (Array.isArray(log)) (log as number[]).push(Math.round(v * 100));
-      },
-    });
-    Object.defineProperty(HTMLMediaElement.prototype, "paused", {
-      configurable: true,
-      get() {
-        return !(this as unknown as Record<string, unknown>)._playing;
-      },
-    });
-    Object.defineProperty(HTMLMediaElement.prototype, "readyState", {
-      configurable: true,
-      get() {
-        return (this as unknown as Record<string, unknown>)._readyState ?? 0;
-      },
-    });
-    // jsdom's `currentTime` is inert, which would freeze the position-driven
-    // crossfade ramps at 0 forever. Back it with a plain field so tests can
-    // advance the position the way real playback does.
-    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
-      configurable: true,
-      get() {
-        return (this as unknown as Record<string, unknown>)._currentTime ?? 0;
-      },
-      set(v: number) {
-        (this as unknown as Record<string, unknown>)._currentTime = v;
-      },
-    });
-    HTMLMediaElement.prototype.play = function (this: unknown): Promise<void> {
-      (this as unknown as Record<string, unknown>)._playing = true;
-      return Promise.resolve();
-    };
-    HTMLMediaElement.prototype.pause = function (this: unknown): void {
-      (this as unknown as Record<string, unknown>)._playing = false;
-    };
+    installAudioStubs(createdAudios);
   });
 
   afterEach(() => {
@@ -589,6 +626,251 @@ describe("AudioEngine true-overlap crossfade", () => {
   );
 });
 
+describe("AudioEngine crossfade under shuffle", () => {
+  const songC = makeSong("CCCC", "C");
+  let yt: ReturnType<typeof makeFakeYT>;
+  const createdAudios: HTMLAudioElement[] = [];
+
+  beforeEach(() => {
+    yt = makeFakeYT();
+    yt.install();
+    resetStore();
+
+    // BOTH remaining tracks have a resolvable direct stream, so shuffle has a
+    // genuine choice to make. A resolves nothing, so the outgoing track stays on
+    // the iframe and the overlap is what carries the transition.
+    mockGetCachedDirectAudioUrl.mockImplementation((id: string) => {
+      if (id === "BBBB") return "https://direct.example/bbbb.mp3";
+      if (id === "CCCC") return "https://direct.example/cccc.mp3";
+      return null;
+    });
+    mockResolveDirectAudioUrl.mockImplementation(async (id: string) => {
+      if (id === "BBBB") return "https://direct.example/bbbb.mp3";
+      if (id === "CCCC") return "https://direct.example/cccc.mp3";
+      return null;
+    });
+
+    installAudioStubs(createdAudios);
+  });
+
+  afterEach(() => {
+    mockGetCachedDirectAudioUrl.mockReset().mockImplementation(() => null);
+    mockResolveDirectAudioUrl.mockReset().mockImplementation(async () => null);
+  });
+
+  async function seedShuffled() {
+    act(() => {
+      usePlayerStore.getState().playSong(songA, [songA, songB, songC]);
+      usePlayerStore.getState().setShuffle(true);
+    });
+    render(createElement(AudioEngine));
+    await act(async () => {
+      yt.fake.events.onReady?.({ target: yt.fake });
+    });
+    await act(async () => {
+      yt.fake.events.onStateChange?.({ target: yt.fake, data: 1 });
+    });
+  }
+
+  it(
+    "crossfades and advances to the very track it staged, even though shuffle picks at random",
+    { timeout: 25_000 },
+    async () => {
+      // The bug this pins down. Shuffle used to disable the crossfade outright,
+      // and rightly so: the next-track prediction was re-drawn from
+      // `Math.random` on every question, so the track that got pre-buffered, the
+      // track that got played as the overlap, and the track the queue advanced
+      // to were three independent random draws. Shuffle is persisted, so one tap
+      // of the shuffle button disabled crossfading for the whole session.
+      //
+      // The contract is now that the pick is committed ONCE per track, so
+      // whichever one shuffle chose, the staging, the audible overlap and the
+      // advance all name it.
+      await seedShuffled();
+
+      const preload = createdAudios[1];
+      await waitFor(
+        () => /bbbb|cccc/.test(preload?.src ?? ""),
+        "shuffle's chosen next track to be staged on the preload element",
+      );
+      const stagedVideoId = preload.src.includes("cccc") ? "CCCC" : "BBBB";
+      expect(usePlayerStore.getState().isShuffle).toBe(true);
+
+      await settle(yt.fake);
+
+      // Enter the crossfade window: the staged track must actually START, i.e.
+      // a real overlap rather than a fade to silence and back.
+      await seekTo(yt.fake, 196);
+      expect(preload.paused).toBe(false);
+      await driveStaging(preload, 2);
+      expect(preload.volume).toBeGreaterThan(0);
+
+      // The boundary must land on the track that was fading in — not on a fresh
+      // random pick, which is what made the crossfade inaudible under shuffle.
+      await driveStaging(preload, 5);
+      await seekTo(yt.fake, 200);
+      expect(usePlayerStore.getState().currentSong?.videoId).toBe(stagedVideoId);
+      expect(yt.fake.loadVideoIds).not.toContain(stagedVideoId);
+    },
+  );
+
+  it(
+    "gives up the committed pick when the crossfade is abandoned",
+    { timeout: 25_000 },
+    async () => {
+      // A seek back out of the window cancels the crossfade. The commitment was
+      // made for a transition that is no longer happening, so it must be
+      // retired — otherwise a later, unrelated advance would land on a track
+      // the listener never heard.
+      await seedShuffled();
+      const preload = createdAudios[1];
+      await waitFor(
+        () => /bbbb|cccc/.test(preload?.src ?? ""),
+        "shuffle's chosen next track to be staged on the preload element",
+      );
+
+      await seekTo(yt.fake, 196);
+      expect(usePlayerStore.getState().pendingNextIndex).not.toBeNull();
+      expect(preload.paused).toBe(false);
+
+      // Seek back to the middle of the track: well outside the window.
+      await seekTo(yt.fake, 100);
+      expect(usePlayerStore.getState().pendingNextIndex).toBeNull();
+      expect(preload.paused).toBe(true);
+      // The fade-out that had already been applied is undone — a listener who
+      // scrubs back must not be left listening to a half-muted track with
+      // another song still playing underneath it.
+      expect(yt.fake.setVolumeCalls.at(-1)).toBe(80);
+
+      // The queue itself is untouched: an abandoned crossfade advances nothing.
+      expect(usePlayerStore.getState().currentSong?.videoId).toBe("AAAA");
+      expect(usePlayerStore.getState().currentIndex).toBe(0);
+    },
+  );
+});
+
+describe("AudioEngine play state survives a background round trip", () => {
+  let yt: ReturnType<typeof makeFakeYT>;
+  const createdAudios: HTMLAudioElement[] = [];
+
+  beforeEach(() => {
+    yt = makeFakeYT();
+    yt.install();
+    resetStore();
+    setDocumentHidden(false);
+
+    // The CURRENT track has a direct stream, so the audible surface is the host
+    // <audio> element in the foreground — the surface the return-to-tab path
+    // touches. The next track resolves nothing, which is irrelevant here.
+    mockGetCachedDirectAudioUrl.mockImplementation((id: string) =>
+      id === "AAAA" ? "https://direct.example/aaaa.mp3" : null,
+    );
+    mockResolveDirectAudioUrl.mockImplementation(async (id: string) =>
+      id === "AAAA" ? "https://direct.example/aaaa.mp3" : null,
+    );
+
+    installAudioStubs(createdAudios);
+  });
+
+  afterEach(() => {
+    setDocumentHidden(false);
+    mockGetCachedDirectAudioUrl.mockReset().mockImplementation(() => null);
+    mockResolveDirectAudioUrl.mockReset().mockImplementation(async () => null);
+  });
+
+  /** Mount with the host <audio> element as the audible, playing surface. */
+  async function seedHostAudio() {
+    act(() => {
+      usePlayerStore.getState().playSong(songA, [songA, songB]);
+    });
+    render(createElement(AudioEngine));
+    await act(async () => {
+      yt.fake.events.onReady?.({ target: yt.fake });
+    });
+    const host = createdAudios[0];
+    await waitFor(
+      () => host.src.includes("aaaa.mp3"),
+      "the host <audio> element to take the direct stream",
+    );
+    act(() => {
+      host.play();
+    });
+    await waitFor(
+      () => usePlayerStore.getState().isPlaying,
+      "the host-audio surface to report playing",
+    );
+    return host;
+  }
+
+  const backgroundThePage = () =>
+    act(() => {
+      setDocumentHidden(true);
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+  const foregroundThePage = () =>
+    act(() => {
+      setDocumentHidden(false);
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+  it(
+    "resumes a still-playing track when the user comes back to the tab",
+    { timeout: 20_000 },
+    async () => {
+      // The control case. Without it the pause test below could pass simply
+      // because the return-to-tab path never resumes anything at all — which
+      // would be a different bug, not a fixed one.
+      const host = await seedHostAudio();
+      backgroundThePage();
+      expect(host.paused).toBe(false);
+
+      const before = playCalls(host);
+      foregroundThePage();
+      await flush(1000);
+      expect(playCalls(host)).toBeGreaterThan(before);
+      expect(host.paused).toBe(false);
+      expect(usePlayerStore.getState().isPlaying).toBe(true);
+    },
+  );
+
+  it(
+    "keeps a track paused across the round trip when the user paused it off-tab",
+    { timeout: 20_000 },
+    async () => {
+      // The reported bug: pause while the tab is in the background, come back,
+      // and the music starts again. The return-to-tab handler used to call
+      // play() on the host element unconditionally — before, not after, every
+      // isPlaying gate further down that function — so playback state was
+      // decided by the fact that the user came back, not by what they asked for.
+      const host = await seedHostAudio();
+      backgroundThePage();
+      expect(host.paused).toBe(false);
+
+      // Pause from the lock screen while the page is hidden.
+      act(() => {
+        usePlayerStore.getState().setPlaying(false);
+      });
+      expect(usePlayerStore.getState().isPlaying).toBe(false);
+      // The pause is applied by a React effect, so wait for the element to
+      // actually stop rather than assuming the flush already ran.
+      await waitFor(
+        () => host.paused,
+        "the host element to stop when the store goes to paused",
+      );
+
+      // Now the user comes back to the tab.
+      const before = playCalls(host);
+      foregroundThePage();
+      await flush(1500);
+
+      expect(playCalls(host)).toBe(before);
+      expect(host.paused).toBe(true);
+      expect(usePlayerStore.getState().isPlaying).toBe(false);
+    },
+  );
+});
+
 describe("AudioEngine background crossfade (iframe surface)", () => {
   let yt: ReturnType<typeof makeFakeYT>;
   let pendingB: Promise<string | null>;
@@ -597,17 +879,7 @@ describe("AudioEngine background crossfade (iframe surface)", () => {
   beforeEach(() => {
     yt = makeFakeYT();
     yt.install();
-    act(() => {
-      usePlayerStore.setState({
-        currentSong: null,
-        queue: [],
-        currentIndex: -1,
-        isPlaying: false,
-        currentTime: 0,
-        duration: 0,
-        shufflePlayedIds: [],
-      });
-    });
+    resetStore();
 
     // Nothing resolves for A, so after the page is backgrounded it stays on the
     // iframe surface (the direct-stream failure fallback). B's URL is left
