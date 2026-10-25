@@ -36,7 +36,7 @@ export default function CookiesPage() {
 
         <section className="space-y-3">
           <h2 className="font-editorial text-xl text-text font-bold">What Are Cookies?</h2>
-          <p className="text-sm text-muted leading-relaxed">Cookies are small text files stored on your device by your web browser. Strumm uses only strictly necessary cookies for authentication and security purposes. We do not use tracking cookies, advertising cookies, or third-party analytics cookies.</p>
+          <p className="text-sm text-muted leading-relaxed">Cookies are small text files stored on your device by your web browser. Strumm sets essential authentication cookies. It does not set advertising cookies, but its Sentry SDK can send diagnostic events and sampled, masked session replay when configured. YouTube embeds may use their own cookies and browser storage; see our Privacy Policy for details.</p>
         </section>
 
         <section className="space-y-3">
@@ -44,18 +44,18 @@ export default function CookiesPage() {
           <div className="space-y-4">
             <div className="bg-surface/40 border border-border/60 rounded-xl p-5">
               <h3 className="text-sm font-bold text-text mb-1">access_token</h3>
-              <p className="text-xs text-muted leading-relaxed"><strong>Purpose:</strong> JWT access token for authenticating API requests. <strong>Type:</strong> httpOnly, Secure, SameSite=None. <strong>Duration:</strong> 15 minutes (auto-refreshed). <strong>Essential:</strong> Yes — the service cannot function without it.</p>
+              <p className="text-xs text-muted leading-relaxed"><strong>Purpose:</strong> JWT access token for authenticating API requests. <strong>Type:</strong> httpOnly, Secure, SameSite=None. <strong>Duration:</strong> 1 hour (auto-refreshed). <strong>Essential:</strong> Yes — the service cannot function without it.</p>
             </div>
             <div className="bg-surface/40 border border-border/60 rounded-xl p-5">
               <h3 className="text-sm font-bold text-text mb-1">refresh_token</h3>
-              <p className="text-xs text-muted leading-relaxed"><strong>Purpose:</strong> JWT refresh token for obtaining new access tokens without re-login. <strong>Type:</strong> httpOnly, Secure, SameSite=None. <strong>Duration:</strong> 30 days. <strong>Essential:</strong> Yes.</p>
+              <p className="text-xs text-muted leading-relaxed"><strong>Purpose:</strong> JWT refresh token for obtaining new access tokens without re-login. <strong>Type:</strong> httpOnly, Secure, SameSite=None. <strong>Duration:</strong> 7 days (sliding session). <strong>Essential:</strong> Yes.</p>
             </div>
           </div>
         </section>
 
         <section className="space-y-3">
           <h2 className="font-editorial text-xl text-text font-bold">Local Storage</h2>
-          <p className="text-sm text-muted leading-relaxed mb-4">In addition to cookies, Strumm uses browser localStorage for:</p>
+          <p className="text-sm text-muted leading-relaxed mb-4">In addition to cookies, Strumm uses browser localStorage for application preferences and session resilience. Sentry may also use browser-side state to support its diagnostic/session-replay SDK. Strumm uses localStorage for:</p>
           <div className="space-y-4">
             <div className="bg-surface/40 border border-border/60 rounded-xl p-5">
               <h3 className="text-sm font-bold text-text mb-1">strumm-auth-cache</h3>

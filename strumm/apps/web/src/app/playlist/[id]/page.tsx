@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
   return {
     title: `Playlist | Strumm`,
-    description: "Discover curated playlists on Strumm — your premium music ecosystem.",
+    description: "Discover curated playlists on Strumm — a free-to-use music discovery app.",
     alternates: { canonical: canonicalUrl },
   };
 }

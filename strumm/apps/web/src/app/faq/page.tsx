@@ -5,7 +5,7 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export const metadata: Metadata = {
   title: "FAQ",
-  description: "Frequently asked questions about Strumm — the ad-free, AI-powered music ecosystem with playlists, podcasts, and listening analytics.",
+  description: "Frequently asked questions about Strumm — free music discovery with AI-assisted curation, playlists, podcasts, and listening analytics.",
   openGraph: {
     title: "FAQ | Strumm",
     description: "Find answers to common questions about Strumm — how playback works, privacy, account features, and more.",
@@ -23,15 +23,15 @@ export const metadata: Metadata = {
 const faqs = [
   {
     q: "What is Strumm?",
-    a: "Strumm is a premium, handcrafted music ecosystem. It combines a powerful music player with YouTube streaming, AI-powered recommendations, podcast support, social features, and deep listening analytics — all in a beautifully designed, ad-free environment.",
+    a: "Strumm is a free-to-use music discovery app with YouTube-powered playback, AI-assisted recommendations, podcasts, social features, and listening analytics. Strumm does not insert its own ads, but embedded providers may serve ads.",
   },
   {
     q: "Is Strumm free?",
-    a: "Yes, Strumm is currently free to use. There are no subscription fees, no advertisements, and no tracking. Your listening data stays yours.",
+    a: "Yes, Strumm is currently free to use with no subscription fee. Strumm does not insert its own ad placements or sell listening data. We use Sentry for application error/performance diagnostics and sampled, masked session replay; YouTube embeds may also use provider cookies/storage or show provider-served ads. Details are in our Privacy Policy.",
   },
   {
     q: "How does music playback work?",
-    a: "Strumm streams music through YouTube's iframe API. When you search for and play a song, Strumm resolves the YouTube video ID and plays it through the embedded YouTube player. No audio files are hosted or stored on our servers.",
+    a: "Strumm resolves track metadata and usually plays through YouTube's embedded player. A backend audio-streaming fallback may be used for supported background-playback or network cases. Strumm does not maintain a downloadable music library or offer song-to-MP3 downloads; playback depends on the third-party source and internet access.",
   },
   {
     q: "What is Strumm Replay?",
@@ -55,11 +55,11 @@ const faqs = [
   },
   {
     q: "How do I delete my account?",
-    a: "Go to Profile → Account Control → Delete Account. Type 'DELETE' to confirm. This permanently removes your account, playlists, history, likes, and all associated data.",
+    a: "Go to Profile → Account Control → Delete Account and confirm the prompt. Strumm removes the account and associated application records, social references, sessions, and owned media from active app storage. If storage is unavailable or cleanup fails, the request reports failure so you can retry. The storage bucket is versioned, so older uploaded-object versions may remain until the storage provider's version-retention/lifecycle policy purges them; third-party provider records follow their own policies.",
   },
   {
     q: "What data does Strumm collect?",
-    a: "Strumm collects your email, username, listening history (songs played, duration, timestamps), playlists, and player state for core functionality. We do not sell your data or serve ads. See our Privacy Policy for full details.",
+    a: "Strumm stores account details, playlists, listening history, player state, and related social data for core functionality. It does not sell listening data or insert its own ads. Sentry receives limited diagnostics, including sampled session replay, when configured; YouTube processes activity associated with its embedded player. See the Privacy Policy.",
   },
   {
     q: "Does Strumm work offline?",

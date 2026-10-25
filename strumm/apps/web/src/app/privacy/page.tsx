@@ -62,9 +62,9 @@ const sections = [
       <>
         <p className="mb-4">We use the following storage mechanisms:</p>
         <ul className="list-disc pl-6 space-y-2 mb-4 text-sm text-muted leading-relaxed">
-          <li><strong className="text-text">MongoDB (Primary Database):</strong> All user accounts, playlists, listening history, sessions, and social data are stored in a MongoDB database. We retain your listening history indefinitely to provide Strumm Replay and Sound DNA. You can delete your full account (including all associated data) at any time via Profile → Account Control.</li>
+          <li><strong className="text-text">MongoDB (Primary Database):</strong> User accounts, playlists, listening history, sessions, and social data are stored in MongoDB. We retain listening history while your account is active to provide Strumm Replay and Sound DNA. Account deletion removes associated application records and access to owned uploaded media via Profile → Account Control. Older versions of uploaded objects may remain in the versioned object-storage bucket until its provider-side version-retention/lifecycle policy purges them.</li>
           <li><strong className="text-text">Local Storage (Browser):</strong> Your player queue, volume, theme preference, and auth token are cached in your browser&apos;s localStorage for offline resilience and faster load times.</li>
-          <li><strong className="text-text">Cookies:</strong> We use httpOnly, secure, SameSite=None cookies for JWT access tokens and refresh tokens. These are essential for authentication and cannot be disabled while using the service. We do not use third-party tracking cookies.</li>
+          <li><strong className="text-text">Cookies:</strong> We use httpOnly, Secure authentication cookies for access and refresh tokens. The access token is configured for a one-hour lifetime; the refresh session uses a sliding seven-day lifetime. Strumm does not set advertising cookies itself. Sentry diagnostics may transmit technical error/performance data and sampled session replay when configured; YouTube embeds may use their own cookies and browser storage.</li>
           <li><strong className="text-text">Service Worker Cache:</strong> Our PWA service worker caches the app shell (static assets) for offline access. Media streams and API responses are explicitly excluded from caching.</li>
         </ul>
         <p className="text-sm text-muted leading-relaxed">Data is retained for as long as your account is active. You may request data deletion at any time (see &ldquo;Your Rights&rdquo; below).</p>
@@ -81,8 +81,9 @@ const sections = [
           <li><strong className="text-text">YouTube / Google:</strong> Music streaming and metadata resolution via the YouTube iframe API and YouTube Data API. Google&apos;s privacy policy applies to content loaded from YouTube. <Link href="https://policies.google.com/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Google Privacy Policy</Link></li>
           <li><strong className="text-text">Google OAuth:</strong> Optional social login. When used, Google shares your name, email, and profile picture with Strumm. <Link href="https://policies.google.com/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Google Privacy Policy</Link></li>
           <li><strong className="text-text">Resend:</strong> Transactional email delivery (verification codes, password resets). <Link href="https://resend.com/legal/privacy-policy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Resend Privacy Policy</Link></li>
-          <li><strong className="text-text">Groq (AI):</strong> Optional AI-powered recommendations and music curation via the Groq API. Only anonymized song metadata (titles, genres) is sent; no personal identifiers are shared. <Link href="https://groq.com/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Groq Privacy Policy</Link></li>
-          <li><strong className="text-text">LRCLIB:</strong> Public API used for fetching synced lyrics. No personal data is shared.</li>
+          <li><strong className="text-text">Groq (AI):</strong> When Flow or Explore Chat uses the Groq API, Strumm sends the current prompt and up to 10 recent chat messages, up to 15 liked songs, up to 15 recent plays, up to 30 playlist names with request-scoped aliases, and candidate track titles/artists. This context can reveal music preferences, and text you choose to enter may contain personal information. Stable Strumm user IDs, playlist database IDs, and account email are not intentionally included in the AI prompt. Avoid entering sensitive personal information into music-curation prompts. Groq is a third-party processor and its privacy policy applies. <Link href="https://groq.com/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Groq Privacy Policy</Link></li>
+          <li><strong className="text-text">LRCLIB:</strong> Public API used for fetching lyrics. Strumm sends song lookup metadata such as title and artist.</li>
+          <li><strong className="text-text">Sentry (Diagnostics):</strong> When the Sentry DSN is configured, Strumm uses Sentry for application error reports and performance tracing. The browser SDK also enables session replay: 10% session sampling and 100% sampling for sessions with recorded errors. Replay is configured to mask all text and input values and block media elements. Diagnostic data may include timestamps, route/technical metadata, stack traces, and a masked representation of interface activity. Server-side local-variable capture is disabled. <Link href="https://sentry.io/privacy/" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Sentry Privacy Policy</Link></li>
         </ul>
       </>
     ),
@@ -96,7 +97,7 @@ const sections = [
           <li><strong className="text-text">Access:</strong> View your profile, statistics, and listening history at any time via the app.</li>
           <li><strong className="text-text">Correction:</strong> Update your display name, username, and avatar in Settings.</li>
           <li><strong className="text-text">Deletion:</strong> Delete your entire account (including all associated data) from Profile → Account Control.</li>
-          <li><strong className="text-text">Portability:</strong> Currently, data export is available upon request. Contact us at the email below.</li>
+          <li><strong className="text-text">Portability:</strong> Use Settings → Export Data → Download My Data to download a CSV export containing your profile, playlists, liked songs, listening history, and song memories. Exported history is not intentionally capped by the application.</li>
           <li><strong className="text-text">Withdraw Consent:</strong> Disable social listening activity sharing in Profile → Privacy Controls at any time.</li>
         </ul>
       </>
@@ -121,7 +122,7 @@ const sections = [
         <p className="mb-4">We implement industry-standard security measures:</p>
         <ul className="list-disc pl-6 space-y-2 mb-4 text-sm text-muted leading-relaxed">
           <li>Passwords are hashed using bcrypt (via passlib) before storage. We never store plaintext passwords.</li>
-          <li>JWT access tokens (15-minute default expiry) and refresh tokens (30-day expiry) are used for session management.</li>
+          <li>JWT access tokens (one-hour expiry) and refresh sessions (sliding seven-day expiry) are used for session management.</li>
           <li>All API traffic is served over HTTPS.</li>
           <li>Cookies are httpOnly, Secure, and SameSite=None.</li>
           <li>Rate limiting is enforced on authentication and API endpoints.</li>

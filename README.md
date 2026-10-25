@@ -1,43 +1,44 @@
 # Strumm
 
-> "Because music is priceless. 100% Free. Zero Ads. Forever."
+> "Because music is priceless. Free to use. No Strumm-served ads."
 
-Strumm is an ultra-premium, handcrafted music ecosystem designed to bring you the ultimate audio experience without the paywalls, interruptions, or subscriptions. Built with stunning editorial magazine aesthetics, Strumm proves that you don't need to compromise on design or features to enjoy unlimited music.
+Strumm is a free-to-use music discovery and listening app with playlists, lyrics, podcasts, listening stats, and social listening. It pairs an editorial interface with AI-assisted curation and a persistent player. Music playback is provided by third-party sources, so track availability, playback behavior, and any provider-served ads depend on those services.
 
-We believe music is a fundamental human right. It shouldn't be gated behind costly monthly subscriptions or interrupted by unskippable ads. Strumm is a passion project dedicated to delivering a flawless, high-fidelity listening experience that respects you and your music.
+Strumm does not sell users' listening data or insert its own advertising placements. It does use Sentry for application diagnostics, including sampled session replay, and embedded YouTube content may process activity under Google's own policies.
 
 ---
 
 ## ❖ Why Strumm?
 
-- **100% Free**: No premium tiers, no hidden costs. Every feature is unlocked for everyone.
-- **Zero Ads**: Pure, uninterrupted playback. No audio ads, no banner ads, ever.
-- **Premium Aesthetics**: A UI that feels like flipping through a high-end magazine, proving that free software can be beautiful.
+- **Free to use**: No subscription tier is required for the features currently available.
+- **No Strumm-served ads**: Strumm does not insert its own ad placements. The embedded playback provider may still serve ads.
+- **Privacy-conscious**: Listening history powers requested features such as Replay and recommendations. Sentry is used for limited error/performance diagnostics and sampled, masked session replay; see the Privacy Policy.
+- **Premium aesthetics**: An editorial interface with themes, motion, and customizable backgrounds.
 
 ---
 
 ## ✦ Features
 
 ### ⊳ Persistent Background Playback
-A globally persistent music player that follows you across the app without ever dropping a beat. Fully integrated with your device's lock-screen controls via the Media Session API.
+A persistent player designed to survive in-app navigation, with browser Media Session integration for supported lock screens and media controls. Background playback behavior still depends on the browser, device, and availability of the playback source.
 
 ### ⊳ Fullscreen Karaoke Theatre
-Immerse yourself in the music with a beautiful fullscreen theatre mode. Features real-time, dynamically synced lyrics that highlight exactly as the artist sings them.
+A fullscreen lyrics view highlights lines in time when synchronized lyrics and timestamps are available. If a track only has plain lyrics—or no matching lyrics—the interface reports that limitation rather than promising synchronization for every track.
 
-### ⊳ Unrestricted MP3 Downloads
-Loved a track? Download it directly as a high-quality MP3 file to your local device. Never lose your music when you go offline, completely free of DRM and restrictions.
+### ⊳ Streaming and Offline Limitations
+Strumm plays music from third-party sources and does not currently provide song-to-MP3 downloads or an offline music library. The PWA caches parts of the application shell, but music playback requires an internet connection. Download and offline support would require a separately designed feature compatible with the content provider’s permissions and licensing.
 
 ### ⊳ Stunning Editorial Themes
 A handcrafted UI featuring dynamic gradients, micro-animations, and glassmorphism. Choose from curated themes like **Obsidian**, **Black Cherry**, **Vinyl Classic**, **Ocean Drive**, **Monochrome**, and **Aurora**. You can even upload your own custom backgrounds!
 
 ### ⊳ Smart LLM-Powered Curation
-Not sure what to listen to? Let Strumm's intelligent **Flow** and **Discovery** modes (powered by the GROQ LLM API) instantly build custom playlists tailored to your exact mood and listening history.
+Not sure what to listen to? **Flow** and **Discovery** can generate mood-based curation and recommendations using the Groq API when the service is configured and available. Results depend on the prompt, available metadata, provider responses, and the user data used by each flow.
 
-### ⊳ Universal Playlist Importer
-Don't start from scratch. Easily import your existing library by uploading CSV files or directly pasting links from **Spotify** and **YouTube Music**. Strumm automatically searches and reconstructs your library!
+### ⊳ Multi-Source Playlist Importer
+Import track lists from CSV, public Spotify playlist/album links, and YouTube Music playlists. Track matching is best-effort and depends on the source being publicly accessible and the external providers responding; private Spotify libraries are not imported via account authorization.
 
 ### ⊳ Responsive Mobile Experience
-A seamless, native-feeling app experience on mobile devices. Features intuitive swipe-to-open navigation menus, an elegant mini-player, and touch-optimized controls.
+A responsive web/PWA experience with touch-friendly navigation, a mini-player, and mobile layouts. A native React Native companion is a roadmap item; this repository contains the web app and API, not a shipped native mobile app.
 
 ---
 
@@ -62,9 +63,9 @@ strumm/
 
 * **Respect Artists**: While Strumm is free, we encourage supporting your favorite artists directly through merch or live shows whenever possible.
 * **Open Source Spirit**: Strumm is built by the community, for the community. If you love the app, consider contributing to its development.
-* **Privacy First**: Strumm does not track you or sell your data. Your listening habits remain yours.
+* **Privacy**: Strumm does not sell listening data or insert its own ads. The service stores listening history for product features and sends limited diagnostics (including masked session replay) to Sentry when configured. YouTube embeds may use their own cookies/storage and may show provider-served ads; see the in-app Privacy and Cookie Policies.
 * **No Commercial Use**: Strumm is strictly designed for personal, non-commercial listening.
 
 ---
 
-**Enjoy the music, completely free and ad-free!**
+**Explore and listen with Strumm, free to use. Provider behavior and availability apply to embedded playback.**
