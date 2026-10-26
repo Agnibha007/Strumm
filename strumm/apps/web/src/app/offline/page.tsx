@@ -3,7 +3,7 @@ import ReloadButton from "./ReloadButton";
 
 export const metadata: Metadata = {
   title: "Offline",
-  description: "You're offline. Strumm can't reach its servers.",
+  description: "You're offline. Saved podcast episodes remain available in Downloads.",
   robots: { index: false, follow: false },
 };
 
@@ -18,8 +18,14 @@ export default function OfflinePage() {
         </div>
         <h1 className="text-3xl font-editorial font-bold text-text">You&apos;re Offline</h1>
         <p className="text-sm text-muted leading-relaxed">
-          It looks like you&apos;ve lost your internet connection. Strumm needs an active connection to stream music and access your library.
+          Streaming music and episodes you haven&apos;t saved need an internet connection. Podcast episodes downloaded to this device can still be played offline.
         </p>
+        <a
+          href="/downloads"
+          className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover"
+        >
+          Open Downloads
+        </a>
         <div className="flex items-center justify-center gap-2 text-xs text-muted bg-surface-elevated border border-border/40 rounded-lg px-4 py-3">
           <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse" />
           Waiting for connection...

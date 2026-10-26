@@ -1,4 +1,4 @@
-const CACHE_NAME = "strumm-shell-v8";
+const CACHE_NAME = "strumm-shell-v9";
 const SHELL_ASSETS = [
   "/",
   "/login",
@@ -10,13 +10,12 @@ const SHELL_ASSETS = [
 ];
 
 const OFFLINE_URL = "/offline";
+const OFFLINE_MEDIA_URL = "/downloads";
 
-// Exclude copyrighted media, dynamic stream endpoints, and image proxies from SW cache
 const EXCLUDED_PATTERNS = [
   /\.(mp3|m4a|wav|mp4|webm|ogg|aac)$/i,
   /\/api\/stream/i,
   /\/stream/i,
-  /\/podcast/i,
   /\/episodes\/media/i,
   /\/image-proxy/i,
   /googlevideo\.com/i,
@@ -26,23 +25,20 @@ const EXCLUDED_PATTERNS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
-      .catch(() => undefined),
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.allSettled(SHELL_ASSETS.map((asset) => cache.add(asset))),
+    ),
   );
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)),
-        ),
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)),
       ),
+    ),
   );
   self.clients.claim();
 });
@@ -53,55 +49,52 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  const isExcluded = EXCLUDED_PATTERNS.some((pattern) => pattern.test(url.href));
 
-  if (isExcluded) {
+  if (url.pathname.startsWith("/proxy/") || url.pathname.startsWith("/api/")) {
     return;
   }
 
-  // Never intercept Next.js RSC (flight) fetches: client-side navigation must
-  // always hit the network so the router receives a live payload. Serving a
-  // stale cached flight response makes the router error and fall back to a
-  // full page reload on every nav click.
   const isRscFlight =
     url.searchParams.has("_rsc") ||
     url.searchParams.has("flight") ||
     request.headers.get("rsc") === "1" ||
     (request.headers.get("accept") || "").includes("text/x-component");
-  if (isRscFlight) {
-    return;
-  }
 
-  // Never intercept API traffic (the browser reaches the backend via /proxy);
-  // API responses are live data and must not be served from cache.
-  if (url.pathname.startsWith("/proxy/")) {
-    return;
-  }
+  if (isRscFlight) return;
 
-  // Network-only for navigation requests (never cache HTML — prevents stale RSC payload errors)
-  // Falls back to the offline page when the network is unavailable.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() =>
-        caches.match(request).then((cached) =>
-          cached || caches.match(OFFLINE_URL)
-        )
-      ),
+      fetch(request).catch(async () => {
+        const cachedPage = await caches.match(request, { ignoreSearch: true });
+        if (cachedPage) return cachedPage;
+
+        const downloadsPage = await caches.match(OFFLINE_MEDIA_URL);
+        if (downloadsPage) return downloadsPage;
+
+        const offlinePage = await caches.match(OFFLINE_URL);
+        if (offlinePage) return offlinePage;
+
+        return new Response("You are offline. Reconnect to the internet and try again.", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }),
     );
     return;
   }
 
-  // Cache-first for static assets
+  if (EXCLUDED_PATTERNS.some((pattern) => pattern.test(url.href))) return;
+
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
       return fetch(request)
         .then((response) => {
           const copy = response.clone();
-          if (response.ok && new URL(request.url).origin === self.location.origin) {
-            if (!url.pathname.startsWith("/api/")) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => undefined);
-            }
+          if (response.ok && url.origin === self.location.origin) {
+            caches.open(CACHE_NAME)
+              .then((cache) => cache.put(request, copy))
+              .catch(() => undefined);
           }
           return response;
         })
@@ -109,19 +102,12 @@ self.addEventListener("fetch", (event) => {
           if (request.headers.get("accept")?.includes("text/html")) {
             return caches.match(OFFLINE_URL);
           }
-          // Non-HTML subresource failed and isn't cached (e.g. a route prefetch
-          // or an uncached asset). Return an empty success instead of a 503 so
-          // the console isn't spammed with "503 (Offline)" for an optional
-          // asset; a fetch of this shape is never critical to render. A 2xx
-          // "no content" status must NOT carry a body (spec throws if we pass
-          // one), so pass null.
           return new Response(null, { status: 204, statusText: "No Content" });
         });
     }),
   );
 });
 
-// Listen for update messages from the client
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
