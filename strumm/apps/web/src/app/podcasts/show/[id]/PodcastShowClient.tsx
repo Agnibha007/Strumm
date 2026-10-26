@@ -11,6 +11,8 @@ import { apiUrl, stripHtml } from "web/lib/api";
 import { apiFetch } from "web/lib/api-client";
 import { formatTime } from "web/lib/format";
 import SafePodcastImage from "web/components/SafePodcastImage";
+import PodcastDownloadAction from "web/components/PodcastDownloadAction";
+import { loginUrlFor } from "web/lib/routes";
 
 interface PodcastShowPageProps {
   params: Promise<{ id: string }>;
@@ -295,6 +297,22 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
                         <Play className="w-3.5 h-3.5 fill-current" />
                         Stream Episode
                       </button>
+
+                      {user ? (
+                        <PodcastDownloadAction
+                          episode={episode}
+                          showTitle={show.title}
+                          thumbnail={show.image}
+                          compact
+                        />
+                      ) : (
+                        <button
+                          onClick={() => router.push(loginUrlFor("/podcasts/show/" + encodeURIComponent(id)))}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border/70 px-2.5 py-2 text-[11px] font-semibold text-muted hover:text-text hover:bg-surface-elevated transition"
+                        >
+                          Download
+                        </button>
+                      )}
 
                       {episode.videoAvailable && (
                         <button

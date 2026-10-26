@@ -1,6 +1,10 @@
 import feedparser
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body
+import os
+import re
+from urllib.parse import quote, urljoin, urlparse
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, Request
+from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from datetime import datetime
@@ -14,7 +18,7 @@ from app.services.podcast_index import (
     search_podcasts,
     trending_podcasts,
 )
-from app.services.security import assert_public_http_url, parse_object_id, sanitize_text
+from app.services.security import assert_public_http_url, create_pinned_client, parse_object_id, sanitize_text
 from httpx import Timeout as HttpxTimeout
 from pydantic import BaseModel, Field, HttpUrl
 import logging
@@ -103,6 +107,7 @@ async def import_podcast_rss(
             
             # Find enclosure
             audio_url = ""
+            audio_mime_type = ""
             video_url = ""
             video_available = False
             media_type = "audio"
@@ -113,8 +118,9 @@ async def import_podcast_rss(
                     enc_type = enc.get("type", "")
                     enc_url = enc.get("href", "")
                     if enc_type.startswith("audio/"):
-                        if not audio_url:
+                        if not audio_mime_type:
                             audio_url = enc_url
+                            audio_mime_type = enc_type
                         if enc_url:
                             bitrate = str(enc.get("bitrate") or enc.get("bit_rate") or "")
                             variant_key = "high"
@@ -158,6 +164,7 @@ async def import_podcast_rss(
                 "showId": show_id,
                 "title": sanitize_text(entry.get("title", "Untitled Episode"), max_length=240),
                 "audioUrl": audio_url,
+                "mimeType": audio_mime_type,
                 "audioVariants": audio_variants,
                 "duration": duration,
                 "description": sanitize_text(entry.get("description", entry.get("summary", "")), max_length=5000),
@@ -376,6 +383,281 @@ async def get_episode_details(id: str = Path(...)):
     except Exception as e:
         logger.error(f"Error fetching episode details: {str(e)}")
         return {"success": False, "error": "An internal error occurred."}
+
+
+
+PODCAST_DOWNLOAD_MAX_BYTES = 500 * 1024 * 1024
+PODCAST_DOWNLOAD_MAX_REDIRECTS = 4
+PODCAST_AUDIO_EXTENSIONS = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".aac": "audio/aac",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".weba": "audio/webm",
+    ".webm": "audio/webm",
+}
+
+
+def _podcast_audio_mime(upstream_type: str, source_url: str, declared_type: str = "") -> str:
+    actual = (upstream_type or "").split(";", 1)[0].strip().lower()
+    declared = (declared_type or "").split(";", 1)[0].strip().lower()
+    if actual.startswith("audio/"):
+        return actual
+    if actual in {"text/html", "application/xhtml+xml", "text/plain"}:
+        raise HTTPException(status_code=415, detail="The podcast source did not return an audio file.")
+    extension = os.path.splitext(urlparse(source_url).path)[1].lower()
+    inferred = PODCAST_AUDIO_EXTENSIONS.get(extension)
+    if actual in {"", "application/octet-stream", "binary/octet-stream"}:
+        if declared.startswith("audio/"):
+            return declared
+        if inferred:
+            return inferred
+    if actual == "application/ogg" and extension in {".ogg", ".opus", ".oga"}:
+        return "audio/ogg"
+    raise HTTPException(status_code=415, detail="This episode's media format is not supported for downloads.")
+
+
+def _podcast_download_filename(title: str, mime_type: str) -> tuple[str, str]:
+    clean_title = re.sub(r"[\x00-\x1f\x7f]", "", str(title or "Podcast episode"))
+    clean_title = re.sub(r'[<>:"/\\|?*]', "", clean_title).strip(" .")[:120]
+    if not clean_title:
+        clean_title = "Podcast episode"
+    extension_by_mime = {
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/mp4": ".m4a",
+        "audio/aac": ".aac",
+        "audio/ogg": ".ogg",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/flac": ".flac",
+        "audio/webm": ".webm",
+    }
+    extension = extension_by_mime.get(mime_type, ".audio")
+    ascii_title = clean_title.encode("ascii", "ignore").decode("ascii")
+    ascii_title = re.sub(r"[^A-Za-z0-9._ -]", "", ascii_title).strip(" .")[:100] or "podcast-episode"
+    ascii_name = f"{ascii_title}{extension}"
+    encoded_name = quote(f"{clean_title}{extension}", safe="")
+    return ascii_name, encoded_name
+
+
+async def _resolve_podcast_episode_for_download(episode_id: str) -> dict:
+    cleaned_id = sanitize_text(episode_id, max_length=64)
+    if not cleaned_id:
+        raise HTTPException(status_code=400, detail="Invalid episode identifier.")
+
+    if cleaned_id.isdigit():
+        try:
+            from app.services.podcast_index import get_episode_by_id as get_index_episode
+            episode = await get_index_episode(cleaned_id)
+            if episode:
+                show = None
+                try:
+                    show = await get_podcast_index_show(str(episode.get("showId") or ""))
+                except Exception:
+                    show = None
+                episode["showTitle"] = (show or {}).get("title") or "Podcast"
+                episode["mimeType"] = episode.get("mimeType") or episode.get("enclosureType") or ""
+                episode["videoUrl"] = episode.get("videoUrl") or ""
+                return episode
+        except PodcastIndexNotConfigured:
+            pass
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("PodcastIndex download resolution failed for episode %s: %s", cleaned_id, type(exc).__name__)
+        raise HTTPException(status_code=404, detail="Podcast episode was not found.")
+
+    try:
+        object_id = parse_object_id(cleaned_id)
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="Podcast episode was not found.")
+
+    database = db.get_db()
+    episode = await database[db.PODCAST_EPISODES].find_one({"_id": object_id})
+    if not episode:
+        raise HTTPException(status_code=404, detail="Podcast episode was not found.")
+
+    show_id = str(episode.get("showId") or "")
+    show = None
+    if show_id:
+        try:
+            show_object_id = parse_object_id(show_id)
+            show = await database[db.PODCAST_SHOWS].find_one({"_id": show_object_id})
+        except HTTPException:
+            show = None
+
+    return {
+        "id": cleaned_id,
+        "title": episode.get("title") or "Podcast episode",
+        "audioUrl": episode.get("audioUrl") or "",
+        "mimeType": episode.get("mimeType") or episode.get("audioMimeType") or "",
+        "showTitle": (show or {}).get("title") or "Podcast",
+        "mediaType": episode.get("mediaType") or "audio",
+        "videoUrl": episode.get("videoUrl") or "",
+    }
+
+
+@router.get("/episode/{id}/download")
+async def download_podcast_episode(
+    request: Request,
+    id: str = Path(..., min_length=1, max_length=64),
+    current_user: dict = Depends(get_current_user),
+):
+    episode = await _resolve_podcast_episode_for_download(id)
+    if (
+        str(episode.get("mediaType") or "audio").lower() == "video"
+        and str(episode.get("videoUrl") or "") == str(episode.get("audioUrl") or "")
+    ):
+        raise HTTPException(status_code=415, detail="Video-only podcast episodes are not available for audio downloads.")
+
+    source_url = str(episode.get("audioUrl") or "").strip()
+    if not source_url:
+        raise HTTPException(status_code=404, detail="No audio source is available for this episode.")
+
+    try:
+        source_url = assert_public_http_url(source_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="The episode audio source URL is invalid.") from exc
+
+    range_header = request.headers.get("range") if request is not None else None
+    upstream_headers = {"Accept": "audio/*, application/octet-stream;q=0.9"}
+    if range_header:
+        upstream_headers["Range"] = range_header
+
+    client = None
+    response = None
+    current_url = source_url
+    visited = set()
+    timeout = HttpxTimeout(connect=6.0, read=30.0, write=10.0, pool=5.0)
+
+    try:
+        for _ in range(PODCAST_DOWNLOAD_MAX_REDIRECTS + 1):
+            if current_url in visited:
+                raise HTTPException(status_code=502, detail="The podcast source returned a redirect loop.")
+            visited.add(current_url)
+            try:
+                current_url = assert_public_http_url(current_url)
+                parsed_target = urlparse(current_url)
+                if parsed_target.username or parsed_target.password:
+                    raise ValueError("URL credentials are not permitted.")
+                client = create_pinned_client(current_url, timeout=timeout)
+                upstream_request = client.build_request("GET", current_url, headers=upstream_headers)
+                response = await client.send(upstream_request, stream=True)
+            except ValueError as exc:
+                if client:
+                    await client.aclose()
+                    client = None
+                raise HTTPException(status_code=400, detail="The episode audio source URL is invalid.") from exc
+            except Exception as exc:
+                if client:
+                    await client.aclose()
+                    client = None
+                logger.warning("Podcast audio fetch failed for episode %s: %s", id, type(exc).__name__)
+                raise HTTPException(status_code=502, detail="Unable to retrieve the podcast audio source.") from exc
+
+            if response.status_code in {301, 302, 303, 307, 308}:
+                location = response.headers.get("location")
+                await response.aclose()
+                await client.aclose()
+                response = None
+                client = None
+                if not location:
+                    raise HTTPException(status_code=502, detail="The podcast source returned an invalid redirect.")
+                current_url = urljoin(current_url, location)
+                try:
+                    assert_public_http_url(current_url)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail="The podcast source redirected to an invalid URL.") from exc
+                continue
+            break
+        else:
+            raise HTTPException(status_code=502, detail="The podcast source redirected too many times.")
+
+        if response is None or client is None:
+            raise HTTPException(status_code=502, detail="Unable to open the podcast audio source.")
+
+        if response.status_code not in {200, 206}:
+            upstream_status = response.status_code
+            await response.aclose()
+            await client.aclose()
+            response = None
+            client = None
+            if upstream_status == 404 or upstream_status == 410:
+                raise HTTPException(status_code=404, detail="This podcast episode is no longer available.")
+            raise HTTPException(status_code=502, detail="The podcast source could not provide the audio file.")
+
+        mime_type = _podcast_audio_mime(
+            response.headers.get("content-type", ""),
+            current_url,
+            str(episode.get("mimeType") or ""),
+        )
+        raw_length = response.headers.get("content-length")
+        content_length = None
+        if raw_length:
+            try:
+                content_length = int(raw_length)
+            except ValueError:
+                content_length = None
+            if content_length is not None and content_length < 0:
+                content_length = None
+        content_range = response.headers.get("content-range", "")
+        total_match = re.search(r"/(\d+)$", content_range)
+        if total_match and int(total_match.group(1)) > PODCAST_DOWNLOAD_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="This episode exceeds the 500 MiB download limit.")
+        if content_length is not None and content_length > PODCAST_DOWNLOAD_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="This episode exceeds the 500 MiB download limit.")
+
+        filename, encoded_filename = _podcast_download_filename(
+            str(episode.get("title") or "Podcast episode"),
+            mime_type,
+        )
+
+        async def stream_bytes():
+            sent = 0
+            try:
+                async for chunk in response.aiter_raw():
+                    sent += len(chunk)
+                    if sent > PODCAST_DOWNLOAD_MAX_BYTES:
+                        raise RuntimeError("Podcast episode exceeded the download size limit.")
+                    if chunk:
+                        yield chunk
+            finally:
+                await response.aclose()
+                await client.aclose()
+
+        outgoing_headers = {
+            "Content-Type": mime_type,
+            "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{encoded_filename}",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Access-Control-Expose-Headers": "Content-Length, Content-Disposition, Content-Range, Accept-Ranges, Content-Type",
+        }
+        for header in ("content-length", "content-range", "accept-ranges", "etag", "last-modified"):
+            value = response.headers.get(header)
+            if value:
+                outgoing_headers[header.title()] = value
+
+        status_code = response.status_code
+        return StreamingResponse(stream_bytes(), status_code=status_code, headers=outgoing_headers, media_type=mime_type)
+    except HTTPException:
+        if response is not None:
+            await response.aclose()
+        if client is not None:
+            await client.aclose()
+        raise
+    except Exception as exc:
+        if response is not None:
+            await response.aclose()
+        if client is not None:
+            await client.aclose()
+        logger.warning("Podcast download setup failed for episode %s: %s", id, type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Unable to prepare the podcast download.") from exc
 
 
 # ─── Podcast resume progress ───

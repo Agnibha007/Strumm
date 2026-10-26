@@ -1,8 +1,9 @@
-const CACHE_NAME = "strumm-shell-v7";
+const CACHE_NAME = "strumm-shell-v8";
 const SHELL_ASSETS = [
   "/",
   "/login",
   "/offline",
+  "/downloads",
   "/strumm-icon.png",
   "/strumm-logo.png",
   "/manifest.webmanifest",

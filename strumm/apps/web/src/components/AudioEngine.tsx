@@ -19,6 +19,7 @@ import {
   savePodcastProgress,
   clearPodcastProgress,
 } from "web/lib/podcast-progress";
+import { getPodcastDownload } from "web/lib/podcast-downloads";
 
 // A real (digitally silent) audio track. Unlike a muted, sub-second
 // data: URI, an element playing this qualifies as a valid Media Session —
@@ -105,6 +106,8 @@ export default function AudioEngine() {
   const progressTimerRef = useRef<any>(null);
   const currentVideoIdRef = useRef<string | null>(null);
   const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
+  const offlinePodcastObjectUrlRef = useRef<{ episodeId: string; url: string } | null>(null);
+  const podcastSourceGenerationRef = useRef(0);
   // Second hidden <audio> element that pre-buffers the predicted next track's
   // stream ahead of the crossfade boundary. Never played while staged, so the
   // next song can not leak audio early; at the advance it is promoted into
@@ -2522,6 +2525,10 @@ try {
   useEffect(() => {
     return () => {
       stopProgressTimer();
+      if (offlinePodcastObjectUrlRef.current) {
+        URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+        offlinePodcastObjectUrlRef.current = null;
+      }
       if (playerInstanceRef.current && typeof playerInstanceRef.current.destroy === "function") {
         try {
           playerInstanceRef.current.destroy();
@@ -2539,8 +2546,19 @@ try {
   useEffect(() => {
     if (!htmlAudioRef.current) return;
 
+    podcastSourceGenerationRef.current += 1;
+    const sourceGeneration = podcastSourceGenerationRef.current;
+    if (offlinePodcastObjectUrlRef.current && offlinePodcastObjectUrlRef.current.episodeId !== currentSong?.videoId) {
+      URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+      offlinePodcastObjectUrlRef.current = null;
+    }
+
     const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
     if (isPodcastVideo) {
+      if (offlinePodcastObjectUrlRef.current) {
+        URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+        offlinePodcastObjectUrlRef.current = null;
+      }
       // Pause YouTube player
       if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
         try {
@@ -2557,9 +2575,7 @@ try {
       return;
     }
 
-    if (currentSong?.metadata?.audioUrl) {
-      // A. Podcast / HTML audio file
-      // Pause YouTube player
+    if (currentSong?.metadata?.audioUrl || currentSong?.videoId?.startsWith("podcast-")) {
       if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
         try {
           playerInstanceRef.current.pauseVideo();
@@ -2567,72 +2583,131 @@ try {
       }
       stopProgressTimer();
 
-      const audioUrl =
-        currentSong.metadata.audioVariants?.[audioQuality] ||
-        currentSong.metadata.audioVariants?.high ||
-        currentSong.metadata.audioUrl ||
+      const audioElement = htmlAudioRef.current;
+      const remoteAudioUrl =
+        currentSong.metadata?.audioVariants?.[audioQuality] ||
+        currentSong.metadata?.audioVariants?.high ||
+        currentSong.metadata?.audioUrl ||
         "";
+      const activeSourceGeneration = sourceGeneration;
+      let effectCancelled = false;
 
-      // Guard: skip if audio URL is empty to prevent NotSupportedError
-      if (!audioUrl) {
-        console.warn("AudioEngine: Cannot play podcast episode — no audio URL available.");
-        setPlayerRef({
-          playVideo: () => {},
-          pauseVideo: () => {},
-          seekTo: () => {},
-          setVolume: () => {},
-          setPlaybackRate: () => {},
-        });
-        return;
-      }
+      const loadPodcastAudio = async () => {
+        let playbackUrl = remoteAudioUrl;
+        let fromOfflineDownload = false;
+        const episodeId = currentSong.videoId;
 
-      const isSrcChanged = htmlAudioRef.current.src !== audioUrl;
-      htmlAudioRef.current.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
-      htmlAudioRef.current.loop = false;
-      if (isSrcChanged) {
-        try {
-          htmlAudioRef.current.src = audioUrl;
-          htmlAudioRef.current.load();
-        } catch (e) {
-          console.warn("AudioEngine: Failed to load audio source:", e);
+        if (episodeId.startsWith("podcast-")) {
+          try {
+            const savedDownload = await getPodcastDownload(episodeId);
+            if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+            if (savedDownload?.blob) {
+              if (offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
+                playbackUrl = offlinePodcastObjectUrlRef.current.url;
+              } else {
+                if (offlinePodcastObjectUrlRef.current) {
+                  URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+                }
+                playbackUrl = URL.createObjectURL(savedDownload.blob);
+                offlinePodcastObjectUrlRef.current = { episodeId, url: playbackUrl };
+              }
+              fromOfflineDownload = true;
+            }
+          } catch (error) {
+            console.warn("AudioEngine: Unable to read the offline podcast library.", error);
+          }
         }
-      }
-      // Route through the single volume authority rather than writing the raw
-      // user volume. This effect re-runs on playback-state and audio-quality
-      // changes, not only on track change — so a raw write here would slam a
-      // podcast to full volume in the middle of an armed fade-in ramp, which is
-      // the same two-writers disagreement that produced the audible
-      // "plays suddenly, then fades out, then fades back in" report.
-      applyCrossfadeVolume(1);
 
-      // Sync currentTime when switching mode or starting
-      const targetTime = usePlayerStore.getState().currentTime;
-      if (targetTime > 0 && isFinite(targetTime)) {
-        htmlAudioRef.current.currentTime = targetTime;
-      }
+        if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current || audioElement !== htmlAudioRef.current) {
+          return;
+        }
 
-      if (isPlaying) {
-        htmlAudioRef.current.play().catch(() => {
-          // Silently ignore autoplay policy restrictions
+        const isOnline = typeof navigator === "undefined" || navigator.onLine;
+        if (!fromOfflineDownload && !isOnline) {
+          audioElement.pause();
+          audioElement.removeAttribute("src");
+          audioElement.load();
+          usePlayerStore.getState().setPlayerError("This podcast episode is not downloaded for offline playback. Connect to the internet and download it first.");
+          usePlayerStore.getState().setPlaying(false);
+          setPlayerRef({
+            playVideo: () => {},
+            pauseVideo: () => {},
+            seekTo: () => {},
+            setVolume: () => {},
+            setPlaybackRate: () => {},
+          });
+          return;
+        }
+
+        if (!fromOfflineDownload && !playbackUrl) {
+          usePlayerStore.getState().setPlayerError("This podcast episode has no playable audio source.");
+          usePlayerStore.getState().setPlaying(false);
+          setPlayerRef({
+            playVideo: () => {},
+            pauseVideo: () => {},
+            seekTo: () => {},
+            setVolume: () => {},
+            setPlaybackRate: () => {},
+          });
+          return;
+        }
+
+        if (!fromOfflineDownload && offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
+          URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+          offlinePodcastObjectUrlRef.current = null;
+        }
+
+        usePlayerStore.getState().setPlayerError(null);
+        audioElement.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
+        audioElement.loop = false;
+
+        if (audioElement.src !== playbackUrl) {
+          try {
+            audioElement.src = playbackUrl;
+            audioElement.load();
+          } catch (error) {
+            console.warn("AudioEngine: Failed to load audio source:", error);
+            usePlayerStore.getState().setPlayerError("Unable to load this podcast episode.");
+            return;
+          }
+        }
+
+        applyCrossfadeVolume(1);
+
+        const targetTime = usePlayerStore.getState().currentTime;
+        if (targetTime > 0 && isFinite(targetTime)) {
+          try {
+            audioElement.currentTime = targetTime;
+          } catch (error) {}
+        }
+
+        if (usePlayerStore.getState().isPlaying) {
+          audioElement.play().catch(() => {
+            usePlayerStore.getState().setPlayerError("Unable to start this episode. Try playing it again.");
+          });
+        } else {
+          audioElement.pause();
+        }
+
+        setPlayerRef({
+          playVideo: () => htmlAudioRef.current?.play(),
+          pauseVideo: () => htmlAudioRef.current?.pause(),
+          seekTo: (sec: number) => {
+            if (htmlAudioRef.current) htmlAudioRef.current.currentTime = sec;
+          },
+          setVolume: (vol: number) => {
+            if (htmlAudioRef.current) htmlAudioRef.current.volume = vol / 100;
+          },
+          setPlaybackRate: (rate: number) => {
+            if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
+          },
         });
-      } else {
-        htmlAudioRef.current.pause();
-      }
+      };
 
-      // Set delegate to control HTML Audio
-      setPlayerRef({
-        playVideo: () => htmlAudioRef.current?.play(),
-        pauseVideo: () => htmlAudioRef.current?.pause(),
-        seekTo: (sec: number) => {
-          if (htmlAudioRef.current) htmlAudioRef.current.currentTime = sec;
-        },
-        setVolume: (vol: number) => {
-          if (htmlAudioRef.current) htmlAudioRef.current.volume = vol / 100;
-        },
-        setPlaybackRate: (rate: number) => {
-          if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
-        },
-      });
+      void loadPodcastAudio();
+      return () => {
+        effectCancelled = true;
+      };
     } else {
       // B. YouTube song
       // If the page is backgrounded (screen locked), keep playing through the
