@@ -31,6 +31,7 @@ const PUBLIC_EXACT_ROUTES = new Set([
   // Standalone operational pages, reachable from error boundaries and redirects.
   "/maintenance",
   "/offline",
+  "/downloads",
 ]);
 
 /**

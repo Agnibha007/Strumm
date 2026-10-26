@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr
 from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
-from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password, ACCESS_TOKEN_EXPIRE
+from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password, ACCESS_TOKEN_EXPIRE, SESSION_IDLE_TIMEOUT
 from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_email, send_password_changed_email, send_welcome_email, send_email_changed_email
 from app.services.security import sanitize_text, sanitize_username, parse_object_id, validate_password_strength, normalize_email
 from app.services.user_serializer import serialize_user
@@ -24,46 +24,37 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 async def create_device_session(user_id: str, email: str, username: str, request: Request, database) -> tuple[str, str]:
-    # Access token: 1 hour (see ACCESS_TOKEN_EXPIRE). Sessions themselves are
-    # governed by the sliding 7-day refresh token, so a longer access token just
-    # means fewer refreshes and more tolerance for API cold starts.
+    session_id = ObjectId()
+    now = datetime.utcnow()
     access_token_payload = {
         "sub": user_id,
+        "sid": str(session_id),
         "email": email,
         "username": username,
         "type": "access"
     }
     access_token = create_access_token(access_token_payload, expires_delta=ACCESS_TOKEN_EXPIRE)
-    
-    # Sliding session: valid for 7 days from last activity
     refresh_token = secrets.token_hex(32)
     refresh_token_hash = hash_refresh_token(refresh_token)
-    
-    # Extract device info
     device = request.headers.get("user-agent", "Unknown Device")
-    
-    # Save session
     session_doc = {
+        "_id": session_id,
         "userId": user_id,
         "refreshTokenHash": refresh_token_hash,
         "device": device,
-        "createdAt": datetime.utcnow(),
-        "lastActiveAt": datetime.utcnow(),
-        "expiresAt": datetime.utcnow() + timedelta(days=7)
+        "createdAt": now,
+        "lastActiveAt": now,
+        "expiresAt": now + SESSION_IDLE_TIMEOUT,
     }
     await database[db.SESSIONS].insert_one(session_doc)
-    
     return access_token, refresh_token
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     # Use 'lax' for development (HTTP) and 'none' for production (HTTPS)
     is_secure = os.getenv("ENVIRONMENT", "development").lower() != "development" or os.getenv("FORCE_SECURE_COOKIES") == "true"
     same_site = "none" if is_secure else "lax"
 
-    # Cookie lifetime must mirror the token lifetime so the browser's expiry and
-    # the server's JWT never disagree (SEC-05). The real session boundary is the
-    # sliding 7-day refresh session in Mongo; the access cookie just mirrors the
-    # 1-hour access JWT (ACCESS_TOKEN_EXPIRE), and the refresh cookie mirrors the
-    # session document's sliding 7-day expiry.
+    # The access cookie mirrors the short-lived JWT. The refresh cookie mirrors
+    # the server-side idle timeout and is renewed whenever the session is used.
     response.set_cookie(
         key="access_token",
         value=access_token,
@@ -79,7 +70,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         httponly=True,
         secure=is_secure,
         samesite=same_site,
-        max_age=7 * 24 * 60 * 60,  # 7 days (sliding)
+        max_age=int(SESSION_IDLE_TIMEOUT.total_seconds()),
         path="/"
     )
 
@@ -756,17 +747,18 @@ async def refresh_session(
     refresh_token: Optional[str] = Cookie(None)
 ):
     try:
-        token = refresh_token
+        token = None
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.lower().startswith("bearer "):
+            token = auth_header[7:]
         if not token:
-            auth_header = request.headers.get("authorization")
-            if auth_header and auth_header.lower().startswith("bearer "):
-                token = auth_header[7:]
-            else:
-                try:
-                    body = await request.json()
-                    token = body.get("refreshToken") or body.get("refresh_token")
-                except Exception:
-                    pass
+            try:
+                body = await request.json()
+                token = body.get("refreshToken") or body.get("refresh_token")
+            except Exception:
+                pass
+        if not token:
+            token = refresh_token
 
         if not token:
             raise HTTPException(status_code=401, detail="Refresh token missing")
@@ -774,18 +766,16 @@ async def refresh_session(
         token_hash = hash_refresh_token(token)
         database = db.get_db()
 
-        # Reuse detection: a session only ever has ONE current refresh token.
-        # A rotated token that is presented again (old hash no longer matches
-        # refreshTokenHash) means the session family is compromised, so the
-        # entire session is revoked to stop a stolen token granting access.
+        # Old deployments rotated refresh tokens and recorded the previous hash.
+        # Reject a stale token without revoking the active session: parallel tabs
+        # and delayed responses could otherwise sign the user out unexpectedly.
         reused = await database[db.SESSIONS].find_one({"previousTokenHash": token_hash})
         if reused:
-            logger.warning(
-                "Refresh-token reuse detected — revoking session family (user=%s, session=%s)",
+            logger.info(
+                "Rejected a stale refresh token without revoking the active session (user=%s, session=%s)",
                 reused.get("userId"), reused.get("_id"),
             )
-            await database[db.SESSIONS].delete_one({"_id": reused["_id"]})
-            raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
+            raise HTTPException(status_code=401, detail="Stale refresh token; retry with the current session cookie")
 
         session = await database[db.SESSIONS].find_one({"refreshTokenHash": token_hash})
 
@@ -802,49 +792,28 @@ async def refresh_session(
 
         new_access_token_payload = {
             "sub": user_id,
+            "sid": str(session["_id"]),
             "email": user.get("email"),
             "username": user.get("username"),
             "type": "access"
         }
         new_access_token = create_access_token(new_access_token_payload, expires_delta=ACCESS_TOKEN_EXPIRE)
-        
-        new_refresh_token = secrets.token_hex(32)
-        new_refresh_token_hash = hash_refresh_token(new_refresh_token)
-
-        # Sliding session: extend expiry to 7 days from now. The rotation is a
-        # compare-and-swap on the presented hash so that two concurrent requests
-        # reusing the same token can never both win; the loser's token is then
-        # a "previous" token and is handled by the reuse path above.
-        rotated = await database[db.SESSIONS].update_one(
+        now = datetime.utcnow()
+        updated = await database[db.SESSIONS].update_one(
             {"_id": session["_id"], "refreshTokenHash": token_hash},
             {
                 "$set": {
-                    "refreshTokenHash": new_refresh_token_hash,
-                    "previousTokenHash": token_hash,
-                    "lastActiveAt": datetime.utcnow(),
-                    "expiresAt": datetime.utcnow() + timedelta(days=7),
-                    "device": request.headers.get("user-agent", "Unknown Device")
+                    "lastActiveAt": now,
+                    "expiresAt": now + SESSION_IDLE_TIMEOUT,
+                    "device": request.headers.get("user-agent", "Unknown Device"),
                 }
-            }
+            },
         )
-
-        if rotated.modified_count == 0:
-            # The token was rotated between our lookup and our update, so the
-            # presented hash is now a previous (reused) token. Same treatment
-            # as the primary reuse path: revoke the family.
-            reused = await database[db.SESSIONS].find_one(
-                {"_id": session["_id"], "previousTokenHash": token_hash}
-            )
-            if reused:
-                logger.warning(
-                    "Refresh-token reuse detected (rotation race) — revoking session family (user=%s)",
-                    reused.get("userId"),
-                )
-                await database[db.SESSIONS].delete_one({"_id": reused["_id"]})
+        if updated.modified_count == 0:
             raise HTTPException(status_code=401, detail="Session expired or invalid refresh token")
-        
-        set_auth_cookies(response, new_access_token, new_refresh_token)
-        
+
+        set_auth_cookies(response, new_access_token, token)
+
         user["id"] = user_id
         if "_id" in user:
             del user["_id"]
@@ -856,13 +825,13 @@ async def refresh_session(
             "data": {
                 "user": serialize_user(user, has_object_id=True),
                 "token": new_access_token,
-                "refreshToken": new_refresh_token
+                "refreshToken": token
             }
         }
     except HTTPException as he:
         raise he
     except Exception as e:
-        logger.error(f"Error rotating refresh token: {str(e)}")
+        logger.error(f"Error refreshing session: {str(e)}")
         return {"success": False, "error": "An internal error occurred."}
 
 @router.post("/logout")

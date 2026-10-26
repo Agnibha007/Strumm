@@ -1,14 +1,15 @@
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
 from bson import ObjectId
-from fastapi import BackgroundTasks, Cookie, Depends, Header, HTTPException, status
+from fastapi import BackgroundTasks, Cookie, Depends, Header, HTTPException, Response, status
 from pymongo.errors import PyMongoError
 
 from app.database import mongodb as db
 from app.services import cache_user, get_cached_user
-from app.services.auth_utils import decode_access_token
+from app.services.auth_utils import decode_access_token, SESSION_IDLE_TIMEOUT
 from app.services.security import parse_object_id
 from app.services.user_serializer import NEVER_FIELDS
 
@@ -21,17 +22,36 @@ def _strip_credentials(user: dict) -> dict:
         user.pop(field, None)
     return user
 
-async def update_last_active(user_id: str):
+
+def _renew_refresh_cookie(response: Optional[Response], refresh_token: Optional[str]) -> None:
+    if response is None or not refresh_token:
+        return
+    is_secure = os.getenv("ENVIRONMENT", "development").lower() != "development" or os.getenv("FORCE_SECURE_COOKIES") == "true"
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="none" if is_secure else "lax",
+        max_age=int(SESSION_IDLE_TIMEOUT.total_seconds()),
+        path="/",
+    )
+
+
+async def update_last_active(user_id: str, session_id: Optional[str] = None):
     database = db.get_db()
+    now = datetime.utcnow()
     try:
         await database[db.USERS].update_one(
             {"_id": parse_object_id(user_id)},
-            {"$set": {"lastActive": datetime.utcnow()}}
+            {"$set": {"lastActive": now}},
         )
+        if session_id and ObjectId.is_valid(session_id):
+            await database[db.SESSIONS].update_one(
+                {"_id": ObjectId(session_id), "userId": user_id},
+                {"$set": {"lastActiveAt": now, "expiresAt": now + SESSION_IDLE_TIMEOUT}},
+            )
     except Exception as e:
-        # Non-fatal: this background bookkeeping must never break the request.
-        # Log the failure so DB outages / schema issues are visible instead of
-        # silently swallowed.
         logger.warning(
             "Failed to update lastActive for user %s: %s: %s",
             user_id,
@@ -39,10 +59,13 @@ async def update_last_active(user_id: str):
             e,
         )
 
+
 async def get_current_user(
     background_tasks: BackgroundTasks,
     authorization: str = Header(None),
-    access_token: Optional[str] = Cookie(None)
+    access_token: Optional[str] = Cookie(None),
+    refresh_token: Optional[str] = Cookie(None),
+    response: Response = None,
 ):
     token = None
     if authorization:
@@ -76,7 +99,9 @@ async def get_current_user(
             detail="Invalid session token content"
         )
         
-    background_tasks.add_task(update_last_active, user_id)
+    background_tasks.add_task(update_last_active, user_id, payload.get("sid"))
+    if payload.get("sid"):
+        _renew_refresh_cookie(response, refresh_token)
     
     # Check cache first
     cache_key = f"user:{user_id}"
@@ -123,7 +148,9 @@ async def get_current_user(
 async def get_optional_user(
     background_tasks: BackgroundTasks,
     authorization: str = Header(None),
-    access_token: Optional[str] = Cookie(None)
+    access_token: Optional[str] = Cookie(None),
+    refresh_token: Optional[str] = Cookie(None),
+    response: Response = None,
 ):
     """Like get_current_user, but returns None instead of raising on missing/invalid token.
     Useful for endpoints where auth is optional (e.g., feedback submission).
@@ -149,6 +176,10 @@ async def get_optional_user(
     user_id = payload.get("sub")
     if not user_id:
         return None
+
+    background_tasks.add_task(update_last_active, user_id, payload.get("sid"))
+    if payload.get("sid"):
+        _renew_refresh_cookie(response, refresh_token)
 
     # Check cache first
     cache_key = f"user:{user_id}"

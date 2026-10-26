@@ -1,14 +1,4 @@
-"""SEC-02 regression tests: refresh-token rotation and reuse detection.
-
-A session has exactly ONE current refresh token. Presenting a rotated-away
-(previous) token is treated as reuse and revokes the whole session family so a
-stolen token cannot grant further access. The rotation itself is a compare-and-
-swap on the presented hash so concurrent double-spends cannot both win.
-
-These tests drive the real ``/auth/refresh`` route through a stateful fake
-sessions collection (token hashes are deterministic sha256, so test tokens map
-1:1 to stored hashes).
-"""
+"""Refresh-session idle-expiry and legacy token-reuse regression tests."""
 
 from __future__ import annotations
 
@@ -161,7 +151,7 @@ def _client(db):
 
 
 @pytest.mark.asyncio
-async def test_refresh_rotates_token_and_keeps_previous_hash():
+async def test_refresh_keeps_token_stable_and_extends_idle_expiry():
     token_a = "a" * 64
     sessions = FakeCollection([_session_doc(hash_refresh_token(token_a))])
     db = _make_db(sessions, FakeCollection([_user_doc()]))
@@ -172,37 +162,33 @@ async def test_refresh_rotates_token_and_keeps_previous_hash():
     assert resp.status_code == 200
     data = resp.json()["data"]
     body_new = data["refreshToken"]
-    assert body_new != token_a
-    assert "refresh_token" in resp.cookies
+    assert body_new == token_a
+    assert resp.cookies["refresh_token"] == token_a
 
     stored = sessions.docs[0]
-    assert stored["refreshTokenHash"] == hash_refresh_token(body_new)
-    assert stored["previousTokenHash"] == hash_refresh_token(token_a)
+    assert stored["refreshTokenHash"] == hash_refresh_token(token_a)
+    assert stored.get("previousTokenHash") is None
+    assert (stored["expiresAt"] - datetime.utcnow()).total_seconds() > 29 * 24 * 60 * 60
 
 
 @pytest.mark.asyncio
-async def test_reusing_rotated_token_revokes_session_family():
-    token_a = "a" * 64
-    token_b = "b" * 64
-    sessions = FakeCollection([
-        _session_doc(
-            hash_refresh_token(token_b),
-            previous_token_hash=hash_refresh_token(token_a),
-        )
-    ])
+async def test_authenticated_activity_slides_session_idle_expiry():
+    from app.database import mongodb
+    from app.routes.dependencies import update_last_active
+
+    session = _session_doc(hash_refresh_token("active-token"))
+    session["expiresAt"] = datetime.utcnow() + timedelta(days=1)
+    sessions = FakeCollection([session])
     db = _make_db(sessions, FakeCollection([_user_doc()]))
+    mongodb.get_db = lambda: db
 
-    # Presenting the rotated-away A must be treated as reuse: 401 AND the whole
-    # session family is deleted so B (and any further rotations) are dead too.
-    async with _client(db) as c:
-        resp = await c.post("/auth/refresh", json={"refreshToken": token_a})
+    await update_last_active(str(_uid()), str(session["_id"]))
 
-    assert resp.status_code == 401
-    assert sessions.docs == []
+    assert (sessions.docs[0]["expiresAt"] - datetime.utcnow()).total_seconds() > 29 * 24 * 60 * 60
 
 
 @pytest.mark.asyncio
-async def test_reusing_rotated_token_does_not_hand_out_new_token():
+async def test_stale_legacy_refresh_token_does_not_revoke_active_session():
     token_a = "a" * 64
     token_b = "b" * 64
     sessions = FakeCollection([
@@ -214,22 +200,46 @@ async def test_reusing_rotated_token_does_not_hand_out_new_token():
     db = _make_db(sessions, FakeCollection([_user_doc()]))
 
     async with _client(db) as c:
-        for body_token in (token_a, token_b):
-            resp = await c.post("/auth/refresh", json={"refreshToken": body_token})
-            if body_token == token_a:
-                assert resp.status_code == 401  # reuse
-            # after family revocation even the current token must be dead
-            assert resp.status_code == 401
+        stale = await c.post("/auth/refresh", json={"refreshToken": token_a})
+        current = await c.post("/auth/refresh", json={"refreshToken": token_b})
+
+    assert stale.status_code == 401
+    assert current.status_code == 200
+    assert len(sessions.docs) == 1
+    assert sessions.docs[0]["refreshTokenHash"] == hash_refresh_token(token_b)
 
 
 @pytest.mark.asyncio
-async def test_concurrent_rotation_race_revokes_family():
+async def test_current_body_refresh_token_wins_over_stale_cookie():
+    token_a = "a" * 64
+    token_b = "b" * 64
+    sessions = FakeCollection([
+        _session_doc(
+            hash_refresh_token(token_b),
+            previous_token_hash=hash_refresh_token(token_a),
+        )
+    ])
+    db = _make_db(sessions, FakeCollection([_user_doc()]))
+
+    async with _client(db) as c:
+        resp = await c.post(
+            "/auth/refresh",
+            json={"refreshToken": token_b},
+            cookies={"refresh_token": token_a},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["refreshToken"] == token_b
+    assert resp.cookies["refresh_token"] == token_b
+    assert len(sessions.docs) == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_race_rejects_without_revoking_session_family():
     token_a = "a" * 64  # presented AND current
     sessions = FakeCollection(
         [_session_doc(hash_refresh_token(token_a))],
-        # Between the route's find_one(has A) and its CAS update, another
-        # request rotates A -> B. The CAS filter ({refreshTokenHash: A}) then
-        # fails and A is now a previous token -> reuse -> family revoked.
+        # Simulate a concurrent legacy refresh changing the stored token hash.
         on_update_pre=lambda docs: docs[0].update(
             {"refreshTokenHash": hash_refresh_token("b" * 64),
              "previousTokenHash": hash_refresh_token(token_a)}
@@ -241,7 +251,7 @@ async def test_concurrent_rotation_race_revokes_family():
         resp = await c.post("/auth/refresh", json={"refreshToken": token_a})
 
     assert resp.status_code == 401
-    assert sessions.docs == []
+    assert len(sessions.docs) == 1
 
 
 @pytest.mark.asyncio
@@ -249,8 +259,7 @@ async def test_rotation_race_without_previous_match_just_rejects():
     token_a = "a" * 64  # presented AND current
     sessions = FakeCollection(
         [_session_doc(hash_refresh_token(token_a))],
-        # The concurrent rotation moved the token on twice before our CAS, so
-        # A is neither current nor previous anymore -> plain 401, no revoke.
+        # Another legacy request advanced the stored token hash twice.
         on_update_pre=lambda docs: docs[0].update(
             {"refreshTokenHash": hash_refresh_token("c" * 64),
              "previousTokenHash": hash_refresh_token("b" * 64)}

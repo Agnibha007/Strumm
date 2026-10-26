@@ -87,6 +87,17 @@ describe("podcast progress persistence", () => {
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
 
+  it("does not wait for the network when resuming a downloaded episode", async () => {
+    setOnline(true);
+    apiFetchMock.mockImplementation(() => new Promise(() => undefined));
+
+    await expect(fetchPodcastProgress("downloaded-episode", { localOnly: true })).resolves.toMatchObject({
+      positionSeconds: 0,
+      durationSeconds: 0,
+    });
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
   it("persists completion locally so a cleared episode does not resume old progress", async () => {
     setOnline(false);
     await savePodcastProgress("episode-4", 720, 2400);

@@ -25,9 +25,8 @@ describe("isPublicRoute", () => {
     "/content-removal",
     "/maintenance",
     "/offline",
-  ])("lets a signed-out visitor load the footer/legal page %s", (path) => {
-    // These are all linked from the public footer. Requiring a session to read
-    // the privacy policy is a broken promise and a compliance problem.
+    "/downloads",
+  ])("allows a signed-out visitor to load public route %s", (path) => {
     expect(isPublicRoute(path)).toBe(true);
   });
 

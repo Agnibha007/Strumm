@@ -58,7 +58,7 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
 
   let response = await attempt();
 
-  if (response.status !== 401 && response.status !== 403) return response;
+  if (response.status !== 401) return response;
 
   // Nothing to recover if we don't believe there is a session at all (e.g. a
   // public endpoint like a share link or the reset-password flow).
@@ -70,7 +70,7 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
   if (refreshed) {
     headers.set("Authorization", `Bearer ${useAuthStore.getState().token}`);
     response = await attempt();
-    if (response.status !== 401 && response.status !== 403) return response;
+    if (response.status !== 401) return response;
   }
 
   // Confirmed-dead session: the server rejected the refresh (401) and the access

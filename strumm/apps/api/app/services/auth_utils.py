@@ -14,11 +14,8 @@ JWT_ISSUER = "strumm-api"
 JWT_AUDIENCE = "strumm"
 ACCESS_TOKEN_TYPE = "access"
 
-# Access tokens are deliberately long-lived enough to survive page reloads and
-# API cold starts (the HF Spaces gateway sleeps when idle, so the first request
-# after a pause can 503 for a while). The sliding 7-day refresh token is what
-# really gates the session, so a 1-hour access token is safe.
 ACCESS_TOKEN_EXPIRE = timedelta(hours=1)
+SESSION_IDLE_TIMEOUT = timedelta(days=30)
 
 def get_jwt_secret() -> str:
     if not JWT_SECRET or len(JWT_SECRET) < 32:

@@ -72,7 +72,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   // Reactive retry: if the access token expired mid-session (e.g. timers were
   // throttled while the tab was backgrounded), refresh once and retry.
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     const store = await import("web/store/useAuthStore");
     const refreshed = await store.useAuthStore.getState().silentRefresh();
     if (refreshed) {

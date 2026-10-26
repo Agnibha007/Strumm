@@ -10,8 +10,6 @@ import { consumeSessionExpiredNotice } from "web/lib/session-expiry";
 // ---------------------------------------------------------------------------
 declare global {
   interface Window {
-    __strummRefreshTimer?: ReturnType<typeof setTimeout> | null;
-    __strummActivityTimer?: ReturnType<typeof setTimeout> | null;
     __strummVisibilityHandler?: (() => Promise<void>) | null;
   }
 }
@@ -35,19 +33,9 @@ interface RefreshResult {
   status: number | null;
 }
 
-// The API rotates the refresh token on every use. If two refreshes run
-// concurrently with the same token (page-load restore + fetchProfile + activity
-// timer + visibility handler + proactive apiFetch refresh can all overlap), the
-// rotation races: the database ends up holding one token while the browser
-// holds another. The next refresh then 401s and would otherwise force a
-// re-login after any transient hiccup. Fixes:
-//  1. Single-flight: concurrent callers share one in-flight refresh promise.
-//  2. Web Locks API: serialize refreshes across browser tabs too.
-//  3. Failed refreshes are non-destructive: we only ever drop the local session
-//     when the access token is genuinely unusable (absent or expired) AND the
-//     refresh was rejected with 401. A stale refresh token from a rotation
-//     race, a network blip, or an API cold start must not log the user out
-//     while the current access token still works.
+// Refresh calls share one in-flight request and Web Locks serialize them across
+// tabs. The opaque refresh token remains stable while the server extends its
+// expiry on use, avoiding concurrent rotation races that could revoke active sessions.
 let _refreshPromise: Promise<RefreshResult> | null = null;
 
 export const useAuthStore = create<AuthState>()(
@@ -111,7 +99,7 @@ export const useAuthStore = create<AuthState>()(
             // server session or wipe the cookies. Only drop local state when
             // the access token is truly unusable AND the refresh was rejected
             // with 401 (the session is genuinely gone). Anything else (network
-            // error, cold start, rotation race) keeps the session so the
+            // error or cold start keeps the session so the
             // background retry in initializeAuth can recover it.
             if (isAccessTokenExpiredOrAbsent(get().token) && result.status === 401) {
               get().clearLocalSession();
@@ -126,8 +114,8 @@ export const useAuthStore = create<AuthState>()(
           set({ user: data });
           return true;
         } catch (e) {
-          // If 401/403, try silent refresh first
-          if (e instanceof ApiError && e.status && [401, 403].includes(e.status)) {
+          // If 401, try silent refresh first
+          if (e instanceof ApiError && e.status === 401) {
             const result = await refreshSession();
             if (result.ok) {
               // Retry fetchProfile with new token
@@ -141,8 +129,7 @@ export const useAuthStore = create<AuthState>()(
                 // confirmed dead access token may.
                 if (
                   err instanceof ApiError &&
-                  err.status &&
-                  [401, 403].includes(err.status) &&
+                  err.status === 401 &&
                   isAccessTokenExpiredOrAbsent(get().token)
                 ) {
                   get().clearLocalSession();
@@ -190,18 +177,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-// True when the current in-memory access token can still authenticate requests.
-// A stale refresh token from a multi-tab rotation race must not log the user
-// out while this token remains valid — only once it has expired (and refresh
-// keeps failing) is the session considered gone.
-// True only when the access token is genuinely gone or already past its expiry.
-// Used for the destructive "session is really dead" decision. Unlike the older
-// proactive-refresh predicate this does NOT treat a <60s-from-expiry token as
-// unusable: a multi-tab refresh-token rotation race can leave a tab with an
-// expired refresh token but a still-valid access token — that is a recoverable
-// condition, not a reason to wipe the local session. Only once the access token
-// itself is truly expired AND refresh keeps 401ing does the background retry
-// conclude the session is gone.
+// Returns true only when the access token is absent or expired.
 function isAccessTokenExpiredOrAbsent(token: string | null): boolean {
   if (!token) return true;
   const payload = decodeJwtPayload(token);
@@ -211,34 +187,12 @@ function isAccessTokenExpiredOrAbsent(token: string | null): boolean {
 }
 export { isAccessTokenExpiredOrAbsent };
 
-// Access token lifetime in ms (1 hour — matches ACCESS_TOKEN_EXPIRE on the API)
-const ACCESS_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
-const REFRESH_BUFFER_MS = 10 * 60 * 1000; // refresh 10 minutes before expiry for reliability
-// Periodic activity refresh: every 10 minutes to slide the session window during active use
-const ACTIVITY_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
-// Retry interval for failed refreshes (with exponential backoff)
-const REFRESH_RETRY_INTERVAL_MS = 30 * 1000; // 30 seconds
-const REFRESH_RETRY_MAX_INTERVAL_MS = 5 * 60 * 1000; // cap at 5 minutes
-
-/**
- * Schedule the next access token refresh, with retry on failure.
- * Uses exponential backoff up to a cap.
- */
-/** Guard to prevent concurrent refreshes (e.g., timer + visibility firing at the same time). */
+const REFRESH_BUFFER_MS = 10 * 60 * 1000;
 let _refreshing = false;
 
-// Clears refresh/activity timers and the visibility listener. Does not touch the
-// server session or the cookies.
+// Clears the visibility listener without touching the server session or cookies.
 function teardownSessionListeners() {
   if (typeof window === "undefined") return;
-  if (window.__strummRefreshTimer) {
-    clearTimeout(window.__strummRefreshTimer);
-    window.__strummRefreshTimer = null;
-  }
-  if (window.__strummActivityTimer) {
-    clearTimeout(window.__strummActivityTimer);
-    window.__strummActivityTimer = null;
-  }
   if (window.__strummVisibilityHandler) {
     document.removeEventListener("visibilitychange", window.__strummVisibilityHandler);
     window.__strummVisibilityHandler = null;
@@ -259,9 +213,7 @@ function acquireRefreshLock<T>(task: () => Promise<T>): Promise<T> {
   return task();
 }
 
-// Single-flight wrapper around performRefresh. Every caller (page-load restore,
-// fetchProfile, apiFetch proactive refresh, activity timer, visibility handler)
-// shares one in-flight request so the refresh-token rotation can't race itself.
+// Single-flight wrapper around performRefresh. Every caller shares one in-flight request.
 function refreshSession(): Promise<RefreshResult> {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = acquireRefreshLock(performRefresh).finally(() => {
@@ -271,9 +223,8 @@ function refreshSession(): Promise<RefreshResult> {
 }
 export { refreshSession };
 
-// Single refresh attempt. Rotates the refresh token server-side and, on success,
-// updates local state and schedules the next refresh. Returns the HTTP status so
-// callers can distinguish "session truly dead" (401) from transient failures.
+// Single refresh attempt. The server keeps the opaque refresh token stable and
+// moves the session's idle deadline forward. Returns the status for error handling.
 async function performRefresh(): Promise<RefreshResult> {
   const { refreshToken } = useAuthStore.getState();
 
@@ -297,12 +248,8 @@ async function performRefresh(): Promise<RefreshResult> {
       // Non-JSON body (e.g. a gateway error page) — treat as a failed refresh.
     }
 
-    // A body-driven refresh that returns 401 usually means the in-memory token
-    // is stale (another tab already rotated it, so the server overwrote the
-    // matching hash). The current httpOnly cookie is authoritative. Retry once
-    // with the pure cookie, and if that succeeds, drop the stale token so every
-    // later refresh uses the cookie again. Preserves the post-Google-sign-in
-    // first refresh (no cookie yet → this retry also 401s → same outcome).
+    // The httpOnly cookie is authoritative if an explicit refresh token was
+    // supplied by an older session or an OAuth initialization path.
     if (!res.ok && res.status === 401 && refreshToken) {
       useAuthStore.setState({ refreshToken: null });
       await new Promise((r) => setTimeout(r, 250));
@@ -315,7 +262,6 @@ async function performRefresh(): Promise<RefreshResult> {
         user: json.data.user ?? useAuthStore.getState().user,
         refreshToken: json.data.refreshToken || refreshToken,
       });
-      scheduleRefresh();
       return { ok: true, status: res.status };
     }
     return { ok: false, status: res.status };
@@ -334,10 +280,7 @@ async function retryRefreshInBackground() {
 
     if (useAuthStore.getState().token) return; // recovered elsewhere
     const result = await refreshSession();
-    if (result.ok) {
-      scheduleActivityRefresh();
-      return;
-    }
+    if (result.ok) return;
     if (
       result.status === 401 &&
       isAccessTokenExpiredOrAbsent(useAuthStore.getState().token)
@@ -346,68 +289,6 @@ async function retryRefreshInBackground() {
       return;
     }
   }
-}
-
-function scheduleRefresh(attempt = 0) {
-  if (typeof window === "undefined") return;
-
-  // Clear existing timer
-  if (window.__strummRefreshTimer) {
-    clearTimeout(window.__strummRefreshTimer);
-  }
-
-  // Compute delay: normal schedule on first attempt, backoff on retries
-  const normalDelay = ACCESS_TOKEN_LIFETIME_MS - REFRESH_BUFFER_MS;
-  const retryDelay = Math.min(
-    REFRESH_RETRY_INTERVAL_MS * Math.pow(2, attempt - 1),
-    REFRESH_RETRY_MAX_INTERVAL_MS
-  );
-  const delay = attempt === 0 ? normalDelay : retryDelay;
-
-  window.__strummRefreshTimer = setTimeout(async () => {
-    if (_refreshing) return; // skip if already refreshing
-
-    const { token } = useAuthStore.getState();
-    if (!token) return;
-
-    _refreshing = true;
-    const result = await refreshSession();
-    _refreshing = false;
-    if (result.ok) {
-      // On success, performRefresh() already called scheduleRefresh(0) internally.
-      return;
-    }
-    // A confirmed dead session stops being retried; transient failures get
-    // another attempt with backoff.
-    if (result.status === 401 && isAccessTokenExpiredOrAbsent(useAuthStore.getState().token)) {
-      useAuthStore.getState().clearLocalSession();
-      return;
-    }
-    scheduleRefresh(attempt + 1);
-  }, delay);
-}
-
-// Periodic activity-based refresh to slide the session window
-function scheduleActivityRefresh() {
-  if (typeof window === "undefined") return;
-
-  // Clear existing timer
-  if (window.__strummActivityTimer) {
-    clearTimeout(window.__strummActivityTimer);
-  }
-
-  // Refresh every hour to keep the session sliding
-  window.__strummActivityTimer = setTimeout(async () => {
-    const { token, silentRefresh } = useAuthStore.getState();
-    if (token) {
-      const refreshed = await silentRefresh();
-      if (refreshed) {
-        // Reschedule for another hour
-        scheduleActivityRefresh();
-      }
-      // If refresh fails here, scheduleRefresh's retry mechanism handles it
-    }
-  }, ACTIVITY_REFRESH_INTERVAL_MS);
 }
 
 /**
@@ -445,13 +326,11 @@ function setupVisibilityRefresh() {
   window.__strummVisibilityHandler = handler;
 }
 
-// Attempt immediate silent refresh on page load to slide the session window,
-// then schedule the refresh cycle. Crucially, this never destroys the session
-// itself: a transient failure (deploy restart, network blip, token-rotation
-// race, or a Google login whose cookies are still being established) must not
-// force a re-login, and a live NextAuth session still has a chance to restore
-// the store before any redirect happens. AuthWrapper's fetchProfile is what
-// makes the final "session is really gone" call.
+// Restore the session on page load. Subsequent refreshes happen when an
+// authenticated request needs them or the user returns to an expired access token.
+// This lets the server's idle timeout reflect actual use rather than a timer.
+// A transient failure or incomplete OAuth cookie setup must not force a re-login.
+// AuthWrapper's profile restoration handles the final session-state decision.
 async function initializeAuth() {
   if (typeof window === "undefined") return;
 
@@ -465,14 +344,10 @@ async function initializeAuth() {
   setupVisibilityRefresh();
 
   const result = await refreshSession();
-  if (result.ok) {
-    // If refresh succeeded, schedule the periodic activity refresh for sliding window
-    scheduleActivityRefresh();
-    return;
-  }
+  if (result.ok) return;
 
-  // Transient failure, rotation race, or a session that needs restoring from the
-  // NextAuth cookie: keep the rehydrated user visible and retry in the background
+  // Transient failure or a session that needs restoring from the NextAuth cookie:
+  // keep the rehydrated user visible and retry in the background
   // with backoff. When the API comes back (or the session sync lands), the
   // session slides back in.
   retryRefreshInBackground();

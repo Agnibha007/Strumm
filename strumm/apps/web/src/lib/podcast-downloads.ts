@@ -27,6 +27,23 @@ const DATABASE_VERSION = 1;
 const STORE_NAME = "episodes";
 
 let databasePromise: Promise<IDBDatabase> | null = null;
+const preparedPlaybackUrls = new Map<string, string>();
+
+export function preparePodcastDownloadPlayback(episodeId: string, blob: Blob): string {
+  const id = recordId(episodeId);
+  const existing = preparedPlaybackUrls.get(id);
+  if (existing) return existing;
+  const url = URL.createObjectURL(blob);
+  preparedPlaybackUrls.set(id, url);
+  return url;
+}
+
+export function takePreparedPodcastPlaybackUrl(episodeId: string): string | null {
+  const id = recordId(episodeId);
+  const url = preparedPlaybackUrls.get(id) || null;
+  if (url) preparedPlaybackUrls.delete(id);
+  return url;
+}
 
 function recordId(episodeId: string): string {
   return episodeId.startsWith("podcast-") ? episodeId : "podcast-" + episodeId;

@@ -196,14 +196,17 @@ if (typeof window !== "undefined") {
   if (isOnline()) void syncPendingPodcastProgress();
 }
 
-export async function fetchPodcastProgress(episodeId: string): Promise<PodcastProgress> {
+export async function fetchPodcastProgress(
+  episodeId: string,
+  options: { localOnly?: boolean } = {},
+): Promise<PodcastProgress> {
   const local = getStoredProgress(episodeId);
   if (local) {
-    if (isOnline() && local.syncedAt < local.updatedAt) void syncRecord(local);
+    if (!options.localOnly && isOnline() && local.syncedAt < local.updatedAt) void syncRecord(local);
     return toProgress(local);
   }
 
-  if (!isOnline()) return { positionSeconds: 0, durationSeconds: 0 };
+  if (options.localOnly || !isOnline()) return { positionSeconds: 0, durationSeconds: 0 };
 
   try {
     const remote = await apiFetch<PodcastProgress>(`/podcasts/progress/${encodeURIComponent(episodeId)}`);

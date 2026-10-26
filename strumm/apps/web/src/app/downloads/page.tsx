@@ -18,10 +18,12 @@ import {
 import { Song } from "@strumm/types";
 import SafePodcastImage from "web/components/SafePodcastImage";
 import { usePlayerStore } from "web/store/usePlayerStore";
+import { playHostAudioUrl } from "web/lib/host-audio";
 import {
   formatDownloadSize,
   listPodcastDownloads,
   removePodcastDownload,
+  preparePodcastDownloadPlayback,
   type PodcastDownloadRecord,
 } from "web/lib/podcast-downloads";
 
@@ -46,7 +48,7 @@ function collectionFor(record: PodcastDownloadRecord) {
 }
 
 export default function DownloadsPage() {
-  const { playSong, setPodcastMode } = usePlayerStore();
+  const { playSong, setPodcastMode, setPlayerError } = usePlayerStore();
   const [downloads, setDownloads] = useState<PodcastDownloadRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +127,7 @@ export default function DownloadsPage() {
   }, [filteredDownloads]);
 
   const handlePlay = (record: PodcastDownloadRecord) => {
+    const playbackUrl = preparePodcastDownloadPlayback(record.id, record.blob);
     const song: Song = {
       videoId: record.id,
       title: record.title,
@@ -138,7 +141,11 @@ export default function DownloadsPage() {
       },
     };
     setPodcastMode("audio");
+    setPlayerError(null);
     playSong(song, [song]);
+    void playHostAudioUrl(playbackUrl).catch(() => {
+      setPlayerError("Unable to start this downloaded episode. Tap Play in the player to retry.");
+    });
   };
 
   const handleRemove = async (record: PodcastDownloadRecord) => {

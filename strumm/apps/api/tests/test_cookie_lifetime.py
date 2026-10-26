@@ -1,7 +1,7 @@
 """SEC-05: cookie/JWT lifetime coherence regression tests.
 
 The access-token cookie's Max-Age must equal the access JWT's lifetime and the
-refresh cookie's Max-Age must equal the sliding session's 7-day expiry.  A
+refresh cookie's Max-Age must equal the sliding session's 30-day idle expiry.  A
 browser should never drop a cookie before the matching token is invalid, or
 keep a cookie after the token/session it mirrors has ended.
 """
@@ -21,7 +21,7 @@ from app.services import auth_utils
 
 auth_utils.JWT_SECRET = os.environ["JWT_SECRET"]
 
-from app.services.auth_utils import ACCESS_TOKEN_EXPIRE, decode_access_token, hash_password
+from app.services.auth_utils import ACCESS_TOKEN_EXPIRE, SESSION_IDLE_TIMEOUT, decode_access_token, hash_password
 from tests.test_auth_flow import (
     PASSWORD,
     _client,
@@ -31,7 +31,7 @@ from tests.test_auth_flow import (
 )
 
 ACCESS_COOKIE_MAX_AGE = int(ACCESS_TOKEN_EXPIRE.total_seconds())
-REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60
+REFRESH_COOKIE_MAX_AGE = int(SESSION_IDLE_TIMEOUT.total_seconds())
 USER_ID = "507f1f77bcf86cd799439011"
 
 
@@ -79,7 +79,7 @@ async def test_login_cookies_match_token_lifetimes():
     assert int(access["max-age"]) == ACCESS_COOKIE_MAX_AGE == 3600
     assert "httponly" in access
 
-    # Refresh cookie mirrors the sliding 7-day session.
+    # Refresh cookie mirrors the sliding 30-day idle session.
     assert int(refresh["max-age"]) == REFRESH_COOKIE_MAX_AGE
     assert "httponly" in refresh
 
@@ -87,6 +87,7 @@ async def test_login_cookies_match_token_lifetimes():
     token = resp.json()["data"]["token"]
     payload = decode_access_token(token)
     assert payload is not None
+    assert payload["sid"] == str(db["sessions"].docs[0]["_id"])
     import time
     ttl = payload["exp"] - time.time()
     assert 0 < ttl <= ACCESS_COOKIE_MAX_AGE + 60
@@ -114,7 +115,6 @@ async def test_refresh_reissues_coherent_access_cookie():
     access = _cookies_by_name(resp)["access_token"]
     assert int(access["max-age"]) == ACCESS_COOKIE_MAX_AGE
 
-    # The rotated session was extended by a full sliding window (7 days).
     session = db["sessions"].docs[0]
     ttl_seconds = (session["expiresAt"] - datetime.utcnow()).total_seconds()
-    assert ttl_seconds > 6 * 24 * 60 * 60  # ~7 days forward, not shrinking
+    assert ttl_seconds > 29 * 24 * 60 * 60

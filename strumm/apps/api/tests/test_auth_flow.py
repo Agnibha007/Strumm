@@ -523,7 +523,7 @@ async def test_password_login_google_only_account_rejected():
 
 
 @pytest.mark.asyncio
-async def test_refresh_with_login_cookie_rotates_tokens():
+async def test_refresh_keeps_refresh_token_stable_and_slides_session():
     db = _make_db(users=FakeCollection([_user_doc(password=hash_password(PASSWORD))]))
     async with _client(db) as c:
         login = await c.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
@@ -532,8 +532,10 @@ async def test_refresh_with_login_cookie_rotates_tokens():
         ok = await c.post("/auth/refresh", json={"refreshToken": refresh_cookie})
     assert ok.status_code == 200
     data = ok.json()["data"]
-    assert data["refreshToken"] != refresh_cookie  # rotated
-    assert ok.cookies["refresh_token"] != refresh_cookie
+    assert data["refreshToken"] == refresh_cookie
+    assert ok.cookies["refresh_token"] == refresh_cookie
+    session = db["sessions"].docs[0]
+    assert (session["expiresAt"] - datetime.utcnow()).total_seconds() > 29 * 24 * 60 * 60
 
 
 @pytest.mark.asyncio
@@ -816,14 +818,29 @@ async def test_profile_rejects_expired_token():
 
 
 @pytest.mark.asyncio
-async def test_profile_accepts_valid_token():
-    db = _make_db(users=FakeCollection([_user_doc()]))
-    headers = {"Authorization": f"Bearer {_access_token()}"}
+async def test_profile_accepts_valid_token_and_slides_refresh_cookie():
+    import hashlib
+
+    session_id = "507f1f77bcf86cd799439022"
+    refresh_token = "active-refresh-token"
+    session = _session_doc(sid=session_id)
+    session["refreshTokenHash"] = hashlib.sha256(refresh_token.encode()).hexdigest()
+    db = _make_db(users=FakeCollection([_user_doc()]), sessions=FakeCollection([session]))
+    token = create_access_token({
+        "sub": USER_ID,
+        "sid": session_id,
+        "email": EMAIL,
+        "username": USERNAME,
+        "type": "access",
+    })
+    headers = {"Authorization": f"Bearer {token}"}
     async with _client(db) as c:
-        resp = await c.get("/profile", headers=headers)
+        resp = await c.get("/profile", headers=headers, cookies={"refresh_token": refresh_token})
     assert resp.status_code == 200
     assert resp.json()["success"] is True
     assert "password" not in resp.text.lower()
+    cookie = next(value for value in resp.headers.get_list("set-cookie") if value.startswith("refresh_token="))
+    assert "Max-Age=2592000" in cookie
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,8 @@ import {
   savePodcastProgress,
   clearPodcastProgress,
 } from "web/lib/podcast-progress";
-import { getPodcastDownload } from "web/lib/podcast-downloads";
+import { getPodcastDownload, takePreparedPodcastPlaybackUrl } from "web/lib/podcast-downloads";
+import { registerHostAudioElement } from "web/lib/host-audio";
 
 // A real (digitally silent) audio track. Unlike a muted, sub-second
 // data: URI, an element playing this qualifies as a valid Media Session —
@@ -1321,8 +1322,10 @@ export default function AudioEngine() {
 
   // 1. Setup HTML Audio elements and events
   useEffect(() => {
-    htmlAudioRef.current = new Audio();
+    const activeAudio = new Audio();
+    htmlAudioRef.current = activeAudio;
     preloadAudioRef.current = new Audio();
+    const releaseHostAudio = registerHostAudioElement(activeAudio);
 
     const handleAudioError = (e: Event) => {
       const audio = e.currentTarget as HTMLAudioElement;
@@ -1576,6 +1579,7 @@ export default function AudioEngine() {
       };
       detach(htmlAudioRef.current);
       detach(preloadAudioRef.current);
+      releaseHostAudio();
       htmlAudioRef.current = null;
       preloadAudioRef.current = null;
     };
@@ -2602,23 +2606,33 @@ try {
         const episodeId = currentSong.videoId;
 
         if (episodeId.startsWith("podcast-")) {
-          try {
-            const savedDownload = await getPodcastDownload(episodeId);
-            if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
-            if (savedDownload?.blob) {
-              if (offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
-                playbackUrl = offlinePodcastObjectUrlRef.current.url;
-              } else {
-                if (offlinePodcastObjectUrlRef.current) {
-                  URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
-                }
-                playbackUrl = URL.createObjectURL(savedDownload.blob);
-                offlinePodcastObjectUrlRef.current = { episodeId, url: playbackUrl };
-              }
-              fromOfflineDownload = true;
+          const preparedUrl = takePreparedPodcastPlaybackUrl(episodeId);
+          if (preparedUrl) {
+            if (offlinePodcastObjectUrlRef.current && offlinePodcastObjectUrlRef.current.url !== preparedUrl) {
+              URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
             }
-          } catch (error) {
-            console.warn("AudioEngine: Unable to read the offline podcast library.", error);
+            playbackUrl = preparedUrl;
+            offlinePodcastObjectUrlRef.current = { episodeId, url: preparedUrl };
+            fromOfflineDownload = true;
+          } else {
+            try {
+              const savedDownload = await getPodcastDownload(episodeId);
+              if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+              if (savedDownload?.blob) {
+                if (offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
+                  playbackUrl = offlinePodcastObjectUrlRef.current.url;
+                } else {
+                  if (offlinePodcastObjectUrlRef.current) {
+                    URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+                  }
+                  playbackUrl = URL.createObjectURL(savedDownload.blob);
+                  offlinePodcastObjectUrlRef.current = { episodeId, url: playbackUrl };
+                }
+                fromOfflineDownload = true;
+              }
+            } catch (error) {
+              console.warn("AudioEngine: Unable to read the offline podcast library.", error);
+            }
           }
         }
 
@@ -2684,7 +2698,9 @@ try {
           episodeId.startsWith("podcast-") && restoredPodcastEpisodeRef.current !== episodeId;
         if (shouldRestoreProgress) {
           try {
-            const progress = await fetchPodcastProgress(episodeId.slice("podcast-".length));
+            const progress = await fetchPodcastProgress(episodeId.slice("podcast-".length), {
+              localOnly: fromOfflineDownload,
+            });
             if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
             targetTime = progress.positionSeconds || 0;
           } catch {
@@ -2736,7 +2752,8 @@ try {
 
         if (usePlayerStore.getState().isPlaying) {
           audioElement.play().catch(() => {
-            usePlayerStore.getState().setPlayerError("Unable to start this episode. Try playing it again.");
+            usePlayerStore.getState().setPlayerError("Unable to start this episode. Tap Play to try again.");
+            usePlayerStore.getState().setPlaying(false);
           });
         } else {
           audioElement.pause();
