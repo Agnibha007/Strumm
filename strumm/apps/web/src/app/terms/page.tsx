@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   description: "Strumm Terms of Service — the rules, guidelines, and terms for using the Strumm music platform.",
   openGraph: {
     title: "Terms of Service | Strumm",
-    description: "Please read these terms carefully before using Strumm — a free, ad-free music ecosystem.",
+    description: "Please read these terms carefully before using Strumm — a free-to-use music discovery and streaming app.",
     url: "/terms",
   },
   alternates: {
@@ -79,7 +79,7 @@ const sections = [
     content: (
       <>
         <p className="mb-4 text-sm text-muted leading-relaxed">The Strumm name, logo, brand, and interface design are proprietary. The software is licensed under the MIT License.</p>
-        <p className="mb-4 text-sm text-muted leading-relaxed">Music content streamed through Strumm is provided by YouTube and is subject to YouTube&apos;s Terms of Service. Strumm does not host, store, or distribute copyrighted audio files. We act as a metadata aggregator and streaming interface.</p>
+        <p className="mb-4 text-sm text-muted leading-relaxed">Music playback in Strumm is provided by third-party sources, principally YouTube, and is subject to the relevant provider terms and availability. Strumm does not maintain a downloadable music catalog or offer song-to-MP3 exports. Playback may use an embedded player or a short-lived streaming fallback; media is not persistently stored by Strumm as a music library. User-uploaded account media is stored separately and is removed from active app storage during account deletion when storage is available. Because the object-storage bucket is versioned, previous uploaded-object versions may remain until the provider-side version-retention/lifecycle policy purges them.</p>
         <p className="text-sm text-muted leading-relaxed">Report alleged copyright infringements via our <Link href="/dmca" className="text-primary hover:underline">DMCA Policy</Link>.</p>
       </>
     ),

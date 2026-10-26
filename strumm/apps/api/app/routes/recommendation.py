@@ -483,9 +483,21 @@ async def explore_chat(
         history = [h async for h in history_cursor]
         history_summary = ", ".join([f"'{s['song']['title']}' by {s['song']['artist']}" for s in history])
         
-        playlists_cursor = database[db.PLAYLISTS].find({"userId": userId})
+        # Give the model request-scoped aliases instead of exposing stable MongoDB
+        # playlist IDs to the external AI provider. The backend maps a selected
+        # alias back to the real ID after the model responds.
+        playlists_cursor = database[db.PLAYLISTS].find(
+            {"userId": userId}
+        ).sort("createdAt", -1).limit(30)
         playlists = [p async for p in playlists_cursor]
-        playlist_summary = ", ".join([f"'{p['name']}' (ID: {str(p['_id'])})" for p in playlists])
+        playlist_aliases = {
+            f"playlist_{index}": str(playlist["_id"])
+            for index, playlist in enumerate(playlists, start=1)
+        }
+        playlist_summary = ", ".join(
+            f"'{sanitize_text(playlist.get('name', ''), max_length=120)}' (reference: playlist_{index})"
+            for index, playlist in enumerate(playlists, start=1)
+        )
         
         # 2. Extract mood from user prompt and generate context-aware engine candidates
         prompt_mood = extract_mood_from_prompt(user_prompt)
@@ -525,7 +537,7 @@ async def explore_chat(
             "\nHere is what you know about the user:\n"
             f"• Liked songs: {likes_summary}\n"
             f"• Listening history: {history_summary}\n"
-            f"• Their playlists (with DB IDs): {playlist_summary}\n"
+            f"• Their recent playlists (use only the request-scoped references shown): {playlist_summary}\n"
             f"• Pre-generated candidates: {engine_songs_summary}\n"
             "\nCRITICAL: You must respond with ONLY a valid JSON object. No other text.\n"
             "\nJSON keys:\n"
@@ -539,7 +551,7 @@ async def explore_chat(
             "- playlist_name (string|null): Creative name if create_playlist=true.\n"
             "- playlist_description (string|null): Short description if create_playlist=true.\n"
             "- edit_playlist (boolean): true ONLY if user asked to modify an existing playlist.\n"
-            "- playlist_id (string|null): Exact playlist DB ID to edit.\n"
+            "- playlist_id (string|null): Exact request-scoped playlist reference from the list above (for example, 'playlist_1'), never a database ID.\n"
             "- songs_to_add (array of {title:string, artist:string}): Songs to add when editing.\n"
             "- songs_to_remove (array of {title:string, artist:string}): Songs to remove when editing.\n"
             "- requires_confirmation (boolean): true if editing pre-made content. false otherwise.\n"
@@ -563,8 +575,15 @@ async def explore_chat(
             }
 
         messages_payload = [{"role": "system", "content": system_prompt}]
-        for hist_msg in payload.history or []:
-            messages_payload.append({"role": hist_msg.role, "content": hist_msg.content})
+        # Bound context size and ignore client-supplied system/developer roles;
+        # only the current user's prompt and recent user/assistant dialogue go
+        # to the model. Text is capped before being sent to the provider.
+        for hist_msg in (payload.history or [])[-10:]:
+            if hist_msg.role not in {"user", "assistant"}:
+                continue
+            history_content = sanitize_text(hist_msg.content, max_length=1000)
+            if history_content:
+                messages_payload.append({"role": hist_msg.role, "content": history_content})
         messages_payload.append({"role": "user", "content": user_prompt})
 
         result_data = await ai.extract_json(messages_payload, temperature=0.7, timeout=10.0)
@@ -589,7 +608,8 @@ async def explore_chat(
         playlist_description = result_data.get("playlist_description", "Generated dynamically by Strumm Flow.")
         
         edit_playlist = result_data.get("edit_playlist", False)
-        playlist_id = result_data.get("playlist_id", None)
+        playlist_reference = result_data.get("playlist_id", None)
+        playlist_id = playlist_aliases.get(str(playlist_reference)) if playlist_reference else None
         songs_to_add = result_data.get("songs_to_add", [])
         songs_to_remove = result_data.get("songs_to_remove", [])
         requires_confirmation = result_data.get("requires_confirmation", False)

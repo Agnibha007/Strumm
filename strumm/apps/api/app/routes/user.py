@@ -1044,48 +1044,168 @@ async def save_player_state(
 
 @router.delete("/profile")
 async def delete_user_account(current_user: dict = Depends(get_current_user)):
-    user_id = current_user["id"]
+    user_id = str(current_user["id"])
+    user_email = str(current_user.get("email") or "").strip().lower()
     try:
         database = db.get_db()
-        oid = parse_object_id(user_id)
-        
-        # Delete User document
-        await database[db.USERS].delete_one({"_id": oid})
-        
-        possible_ids = [user_id, oid]
-        
-        # Delete user playlists
-        await database[db.PLAYLISTS].delete_many({"userId": {"$in": possible_ids}})
-        
-        # Delete user liked songs
-        await database[db.LIKED_SONGS].delete_many({"userId": {"$in": possible_ids}})
-        
-        # Delete user history
-        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": {"$in": possible_ids}})
-        
-        # Delete user player state
-        await database[db.PLAYER_STATES].delete_many({"userId": {"$in": possible_ids}})
-        
-        # Delete user share tokens
-        await database[db.SHARES].delete_many({"userId": {"$in": possible_ids}})
-        
-        # Delete user follows
-        await database["follows"].delete_many({"userId": user_id})
-        
-        # Delete user memories
-        await database["songMemories"].delete_many({"userId": user_id})
-        
-        # Notify via email in background before returning
-        asyncio.create_task(send_account_deleted_email(current_user.get("email", "")))
+        user_oid = parse_object_id(user_id)
+        possible_ids = [user_id, user_oid]
+        possible_id_strings = {user_id, str(user_oid)}
 
-        logger.info(f"User account {user_id} and all associated collections deleted successfully.")
+        # Remove owned objects from B2 before deleting their MongoDB records.
+        # If object storage is unavailable, keep the account intact so a retry
+        # can finish erasure instead of claiming that all data was removed.
+        from app.services import storage
+        media_records = await database[db.MEDIA].find({
+            "ownerId": {"$in": possible_ids},
+        }).to_list(length=None)
+        active_media_records = [record for record in media_records if not record.get("deletedAt")]
+        media_objects_to_remove = [record for record in active_media_records if record.get("objectKey")]
+        if media_objects_to_remove and not storage.storage_enabled():
+            logger.error("Account deletion blocked: media storage is not configured for user %s", user_id)
+            return {
+                "success": False,
+                "error": "Uploaded media could not be removed from active storage because storage is unavailable. Your account has not been deleted; please retry later.",
+            }
+
+        # B2 DELETE is safe to retry. Do not remove MongoDB ownership records
+        # until every active owned object has been processed successfully.
+        for record in media_objects_to_remove:
+            try:
+                storage.delete_object(record["objectKey"])
+            except Exception as exc:
+                logger.error(
+                    "Account deletion blocked: failed to remove owned media user=%s media=%s: %s",
+                    user_id,
+                    record.get("_id"),
+                    str(exc)[:200],
+                )
+                return {
+                    "success": False,
+                    "error": "Uploaded media could not be removed from active storage. Your account has not been deleted; please retry.",
+                }
+
+        # Remove all media metadata, including already-soft-deleted records.
+        # B2 Keep-all-versions behavior is disclosed in the privacy/terms pages;
+        # old physical versions are governed by the bucket's lifecycle policy.
+        await database[db.MEDIA].delete_many({"ownerId": {"$in": possible_ids}})
+
+        # Capture owned playlist IDs before deleting playlists so their shared
+        # activity history can be removed even when another collaborator wrote it.
+        owned_playlists = await database[db.PLAYLISTS].find(
+            {"userId": {"$in": possible_ids}}
+        ).to_list(length=None)
+        owned_playlist_ids = [str(item["_id"]) for item in owned_playlists if item.get("_id") is not None]
+
+        # Delete records owned by this account. Include both legacy string and
+        # ObjectId representations where a collection has used both formats.
+        await database[db.SESSIONS].delete_many({"userId": {"$in": possible_ids}})
+        await database[db.PLAYLISTS].delete_many({"userId": {"$in": possible_ids}})
+        await database[db.LIKED_SONGS].delete_many({"userId": {"$in": possible_ids}})
+        await database[db.PLAYBACK_HISTORIES].delete_many({"userId": {"$in": possible_ids}})
+        await database[db.PLAYER_STATES].delete_many({"userId": {"$in": possible_ids}})
+        await database[db.SHARES].delete_many({"userId": {"$in": possible_ids}})
+        await database[db.PODCAST_PROGRESS].delete_many({"userId": {"$in": possible_ids}})
+        await database[db.RECENTLY_PLAYED].delete_many({"userId": {"$in": possible_ids}})
+        await database["songMemories"].delete_many({"userId": {"$in": possible_ids}})
+        await database["follows"].delete_many({
+            "$or": [
+                {"userId": {"$in": possible_ids}},
+                {"contentType": "user", "contentId": {"$in": possible_ids}},
+            ]
+        })
+        await database["activities"].delete_many({"userId": {"$in": possible_ids}})
+        playlist_activity_query = [{"userId": {"$in": possible_ids}}]
+        if owned_playlist_ids:
+            playlist_activity_query.append({"playlistId": {"$in": owned_playlist_ids}})
+        await database["playlist_activity"].delete_many({"$or": playlist_activity_query})
+        await database["radio_logs"].delete_many({"userId": {"$in": possible_ids}})
+        await database["recommendation_logs"].delete_many({"userId": {"$in": possible_ids}})
+        await database["feedback"].delete_many({"userId": {"$in": possible_ids}})
+        if user_email:
+            await database["otps"].delete_many({"email": user_email})
+            await database["password_resets"].delete_many({"email": user_email})
+            await database["login_attempts"].delete_many({"email": user_email})
+
+        # Remove the account from other people's social records. Notifications
+        # are cleaned after hosted rooms are removed so room invites cannot be
+        # left pointing at a deleted room.
+        await database[db.CONNECTIONS].delete_many({
+            "$or": [
+                {"requesterId": {"$in": possible_ids}},
+                {"receiverId": {"$in": possible_ids}},
+            ]
+        })
+
+        room_ids_to_remove = []
+        affected_rooms = database[db.ROOMS].find({
+            "$or": [
+                {"hostId": {"$in": possible_ids}},
+                {"members": {"$in": possible_ids}},
+                {"controllers": {"$in": possible_ids}},
+                {"invited": {"$in": possible_ids}},
+            ]
+        })
+        async for room in affected_rooms:
+            room_id = room.get("_id")
+            if str(room.get("hostId", "")) in possible_id_strings:
+                if room_id is not None:
+                    await database[db.ROOMS].delete_one({"_id": room_id})
+                    room_ids_to_remove.append(str(room_id))
+                continue
+
+            # Keep rooms owned by other people, but erase the deleted user's
+            # membership, controller and invitation references from them.
+            room_patch = {}
+            for field in ("members", "controllers", "invited"):
+                values = room.get(field)
+                if isinstance(values, list):
+                    remaining = [value for value in values if str(value) not in possible_id_strings]
+                    if remaining != values:
+                        room_patch[field] = remaining
+            if room_patch and room_id is not None:
+                await database[db.ROOMS].update_one({"_id": room_id}, {"$set": room_patch})
+
+        notification_conditions = [
+            {"userId": {"$in": possible_ids}},
+            {"senderId": {"$in": possible_ids}},
+        ]
+        if room_ids_to_remove:
+            notification_conditions.append({"roomId": {"$in": room_ids_to_remove}})
+        await database[db.NOTIFICATIONS].delete_many({"$or": notification_conditions})
+
+        # A Blend playlist owned by another user is theirs to keep, but remove
+        # the deleted account from its collaborator list to avoid a dead link.
+        async for playlist in database[db.PLAYLISTS].find({}):
+            blend_users = playlist.get("blendUsers")
+            if not isinstance(blend_users, list) or not any(
+                str(value) in possible_id_strings for value in blend_users
+            ):
+                continue
+            remaining_users = [
+                value for value in blend_users if str(value) not in possible_id_strings
+            ]
+            patch = {"blendUsers": remaining_users}
+            if playlist.get("isBlend") and len({str(value) for value in remaining_users}) < 2:
+                patch["isBlend"] = False
+            await database[db.PLAYLISTS].update_one(
+                {"_id": playlist["_id"]},
+                {"$set": patch},
+            )
+
+        # Delete the account document last. This leaves it available for a
+        # retry if any required cleanup operation above fails.
+        await database[db.USERS].delete_one({"_id": user_oid})
+        asyncio.create_task(send_account_deleted_email(user_email))
+
+        logger.info("User account %s and associated application data deleted successfully.", user_id)
         return {
             "success": True,
-            "data": {"message": "Account and all associated collections successfully deleted."}
+            "data": {"message": "Account and associated application data deleted successfully."},
         }
     except Exception as e:
-        logger.error(f"Error deleting user account {user_id}: {str(e)}")
-        return {"success": False, "error": "An internal error occurred."}
+        logger.error("Error deleting user account %s: %s", user_id, str(e)[:200])
+        return {"success": False, "error": "Account deletion did not complete. Please retry."}
 
 class MemoryCreateRequest(BaseModel):
     song: SongSchema
@@ -1239,7 +1359,7 @@ async def export_user_data(current_user: dict = Depends(get_current_user)):
         
         # History
         history = []
-        async for h in database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).sort("playedAt", -1).limit(1000):
+        async for h in database[db.PLAYBACK_HISTORIES].find({"userId": {"$in": possible_ids}}).sort("playedAt", -1):
             h_serial = serialize_mongo_doc(h)
             h_serial["id"] = h_serial.pop("_id", None)
             history.append(h_serial)

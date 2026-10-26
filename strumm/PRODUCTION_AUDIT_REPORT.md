@@ -3,6 +3,8 @@
 **Generated:** July 3, 2026  
 **Scope:** 15-phase production readiness transformation
 
+> **Historical snapshot, not current status:** This report describes the repository as audited on July 3, 2026. Subsequent commits implemented several items marked incomplete below. For the October 25, 2026 code review, the following formerly-open items are present in the current code: backend password-strength validation, HSTS and Permissions-Policy headers, per-endpoint rate limiting, request IDs, and an offline PWA fallback page. Keep the phase-by-phase notes below as historical context, not as a current production-readiness verdict. The current follow-up audit still identified product-claim and data-erasure issues that need their own verification.
+
 ---
 
 ## Files Created

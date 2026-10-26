@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
       return {
         title: `${title} — ${artist} | Strumm`,
-        description: `Listen to "${title}" by ${artist} on Strumm — your premium music ecosystem.`,
+        description: `Listen to "${title}" by ${artist} on Strumm — a free-to-use music discovery app.`,
         alternates: { canonical: canonicalUrl },
         openGraph: {
           title: `${title} — ${artist} | Strumm`,
@@ -44,7 +44,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
   return {
     title: `Song | Strumm`,
-    description: "Listen to music on Strumm — your premium music ecosystem.",
+    description: "Listen to music on Strumm — a free-to-use music discovery app.",
     alternates: { canonical: canonicalUrl },
   };
 }

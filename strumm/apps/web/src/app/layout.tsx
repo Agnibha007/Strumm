@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     template: "%s | Strumm",
   },
   description:
-    "Strumm is a premium, handcrafted music ecosystem with custom playlists, AI-powered recommendations, podcasts, lyrics, and listening analytics — ad-free and private.",
+    "Strumm is a free-to-use music discovery app with playlists, AI-assisted recommendations, podcasts, lyrics, and listening analytics. Strumm does not insert its own ads; playback providers may show ads, and limited diagnostics are disclosed in the Privacy Policy.",
   applicationName: "Strumm",
   manifest: "/manifest.webmanifest",
   keywords: [
@@ -77,7 +77,7 @@ export const metadata: Metadata = {
     siteName: "Strumm",
     title: "Strumm — Where your music lives.",
     description:
-      "Premium, handcrafted music ecosystem with AI-powered playlists, podcast support, smart listening analytics, and dynamic themes — all ad-free.",
+      "Free-to-use music discovery with AI-assisted playlists, podcast support, listening analytics, and dynamic themes. Strumm does not insert its own ads; embedded providers may show ads.",
     url: appUrl,
     images: [
       {
@@ -100,7 +100,7 @@ export const metadata: Metadata = {
     creator: "@strumm",
     title: "Strumm — Where your music lives.",
     description:
-      "Premium music ecosystem with AI playlists, podcasts, listening analytics, and dynamic themes — ad-free and private.",
+      "Free-to-use music discovery with AI-assisted playlists, podcasts, listening analytics, and dynamic themes; limited diagnostics are disclosed in the Privacy Policy.",
     images: ["/strumm-og.png"],
   },
   appleWebApp: {
@@ -165,7 +165,7 @@ export default async function RootLayout({
               logo: logoUrl,
               image: logoUrl,
               description:
-                "Strumm is a premium, handcrafted music ecosystem with AI-powered recommendations, custom playlists, podcast support, and listening analytics.",
+                "Strumm is a free-to-use music discovery app with AI-assisted recommendations, playlists, podcast support, and listening analytics.",
               email: "hello@strumm.me",
               foundingDate: "2024",
               founder: {
@@ -173,7 +173,7 @@ export default async function RootLayout({
                 name: "Strumm Team",
               },
               sameAs: [
-                "https://github.com/strumm/strumm",
+                "https://github.com/Agnibha007/Strumm",
               ],
             }),
           }}
@@ -190,7 +190,7 @@ export default async function RootLayout({
               name: "Strumm",
               url: appUrl,
               description:
-                "Strumm is a premium music ecosystem — playlists, podcasts, AI curation, and listening analytics.",
+                "Strumm is a free-to-use music discovery app — playlists, podcasts, AI-assisted curation, and listening analytics.",
               inLanguage: "en-US",
               publisher: {
                 "@type": "Organization",
@@ -222,7 +222,7 @@ export default async function RootLayout({
               operatingSystem: "Web",
               browserRequirements: "Requires a modern browser with JavaScript enabled. Supports Chrome, Firefox, Safari, Edge.",
               description:
-                "Strumm is a premium music ecosystem with AI-powered playlist curation, YouTube music streaming, podcast support, synced lyrics, and detailed listening analytics.",
+                "Strumm is a free-to-use music discovery app with AI-assisted curation, YouTube-powered playback, podcasts, synchronized lyrics when available, and listening analytics.",
               offers: {
                 "@type": "Offer",
                 price: "0",
@@ -232,13 +232,13 @@ export default async function RootLayout({
                 "AI-powered music recommendations and playlist curation (Strumm Flow)",
                 "YouTube music streaming with search",
                 "Podcast subscriptions and playback",
-                "Synced lyrics display",
+                "Synchronized lyrics display when timed lyrics are available",
                 "Listening statistics and Sound DNA analysis",
                 "Customizable dynamic theme engine",
                 "Social Circle with friend activity and shared listening",
                 "Cross-device player state sync",
                 "PWA support with offline app shell",
-                "Privacy-first: no ads, no tracking, no data selling",
+                "No Strumm-inserted ad placements or sale of listening data; Sentry diagnostics and YouTube provider behavior are disclosed in the Privacy Policy",
               ],
               screenshot: `${appUrl}/strumm-og.png`,
             }),
