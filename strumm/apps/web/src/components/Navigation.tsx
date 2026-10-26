@@ -21,6 +21,7 @@ import {
 import BrandLogo from "web/components/BrandLogo";
 import MobileBottomNav from "web/components/MobileBottomNav";
 import { useUserAvatar } from "web/lib/useUserAvatar";
+import { isNavActive } from "web/lib/routes";
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -69,7 +70,7 @@ export default function Navigation() {
         <nav className="space-y-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href;
+            const isActive = isNavActive(pathname, item.href);
             return (
               <Link key={item.href} href={item.href}>
                 <motion.span

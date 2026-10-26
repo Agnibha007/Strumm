@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
@@ -15,6 +15,7 @@ import {
   Plus,
   Radio,
   Search,
+  ShieldAlert,
   Signal,
   Users,
   X,
@@ -68,7 +69,11 @@ export default function RoomsPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [suggestions, setSuggestions] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
-  const [, setError] = useState<string | null>(null);
+  // Loading failures used to be written to a state slot that was never read, so
+  // a backend outage rendered identically to "there are no rooms". The two are
+  // completely different messages to a user, so the error is surfaced and the
+  // lobby can be retried without a full reload.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Search
   const [searchQuery, setSearchQuery] = useState("");
@@ -80,6 +85,9 @@ export default function RoomsPage() {
   const [roomName, setRoomName] = useState("");
   const [roomVisibility, setRoomVisibility] = useState<"public" | "circle">("public");
   const [creating, setCreating] = useState(false);
+  // Shown inside the sheet. A failed create used to close and clear the form, so
+  // the room name the user just typed was lost along with any explanation.
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Enter-with-code sheet
   const [codeOpen, setCodeOpen] = useState(false);
@@ -95,19 +103,29 @@ export default function RoomsPage() {
 
   const fetchRooms = async () => {
     if (!user) return;
+    setLoadError(null);
     try {
       const response = await authFetch(apiUrl("/social/rooms"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
-      const json = await response.json();
-      if (json.success) {
+      const json = await response.json().catch(() => null);
+      if (json?.success) {
         setRooms(json.data || []);
+      } else if (!json) {
+        setLoadError("The room server sent a response we could not read.");
+      } else {
+        setLoadError(json.error || json.detail || "Could not load rooms.");
       }
     } catch (e) {
-      setError("Failed to connect to Room server.");
+      setLoadError("Failed to connect to the Room server.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const retryRooms = () => {
+    setLoading(true);
+    void fetchRooms();
   };
 
   const fetchSuggestions = async () => {
@@ -127,25 +145,35 @@ export default function RoomsPage() {
 
   // Stale-guard: ignore responses from searches that were superseded (slow
   // network could otherwise flash outdated results into the results list).
+  const searchRequestRef = useRef(0);
+
   const handleSearch = async (query: string) => {
     const q = query.trim();
+    const requestId = ++searchRequestRef.current;
+
     if (!q) {
       setSearchResults([]);
+      setSearching(false);
       return;
     }
+
     setSearching(true);
     try {
       const response = await authFetch(apiUrl(`/social/rooms/search?q=${encodeURIComponent(q)}`), {
         headers: { "Authorization": `Bearer ${token}` }
       });
-      const json = await response.json();
-      if (json.success) {
+      const json = await response.json().catch(() => null);
+      if (searchRequestRef.current !== requestId) return;
+      if (json?.success) {
         setSearchResults(json.data || []);
+      } else {
+        setSearchResults([]);
       }
     } catch (e) {
+      if (searchRequestRef.current !== requestId) return;
       setSearchResults([]);
     } finally {
-      setSearching(false);
+      if (searchRequestRef.current === requestId) setSearching(false);
     }
   };
 
@@ -156,7 +184,22 @@ export default function RoomsPage() {
     }
   }, [user]);
 
+  // Escape closes whichever bottom sheet is open. Both are full-screen overlays
+  // with a backdrop, so a keyboard user had no way out of them before this.
+  useEffect(() => {
+    if (!startOpen && !codeOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (creating || resolving) return;
+      setStartOpen(false);
+      setCodeOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [startOpen, codeOpen, creating, resolving]);
+
   const openStartSheet = () => {
+    setCreateError(null);
     setStartOpen(true);
   };
 
@@ -165,6 +208,7 @@ export default function RoomsPage() {
     if (!roomName.trim() || !user) return;
 
     setCreating(true);
+    setCreateError(null);
     try {
       const response = await authFetch(apiUrl("/social/rooms"), {
         method: "POST",
@@ -173,20 +217,24 @@ export default function RoomsPage() {
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-          name: roomName,
+          name: roomName.trim(),
           visibility: roomVisibility
         })
       });
-      const json = await response.json();
-      if (json.success && json.data?.id) {
+      const json = await response.json().catch(() => null);
+      if (json?.success && json.data?.id) {
         router.push(`/rooms/${json.data.id}`);
+        return;
       }
+      // Keep the sheet open and the typed name intact so the user can fix and
+      // resubmit instead of retyping everything.
+      setCreateError(
+        json?.error || json?.detail || "The room could not be created. Please try again."
+      );
     } catch (e) {
-      console.error(e);
+      setCreateError("Failed to connect to the Room server. Please try again.");
     } finally {
       setCreating(false);
-      setStartOpen(false);
-      setRoomName("");
     }
   };
 
@@ -414,7 +462,7 @@ export default function RoomsPage() {
           </div>
         )}
 
-        {!searchQuery.trim() && rooms.length === 0 && (
+        {!loading && !searchQuery.trim() && !loadError && rooms.length === 0 && (
           <div className="p-16 border border-dashed border-border/60 rounded-2xl text-center bg-surface/20 space-y-3">
             <Radio className="w-8 h-8 text-muted mx-auto opacity-70 animate-pulse" />
             <h4 className="font-editorial text-base text-text font-bold">No live rooms right now</h4>
@@ -426,6 +474,26 @@ export default function RoomsPage() {
               className="px-4 py-2 bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg transition mt-3"
             >
               Start the first Room
+            </button>
+          </div>
+        )}
+
+        {/* A failed load is not an empty lobby. Say so, and offer a retry. */}
+        {!loading && !searchQuery.trim() && loadError && rooms.length === 0 && (
+          <div
+            role="alert"
+            className="p-12 border border-red-500/30 rounded-2xl text-center bg-red-500/5 space-y-3"
+          >
+            <ShieldAlert className="w-8 h-8 text-red-400 mx-auto" />
+            <h4 className="font-editorial text-base text-text font-bold">
+              Couldn&apos;t load rooms
+            </h4>
+            <p className="text-xs text-muted max-w-sm mx-auto">{loadError}</p>
+            <button
+              onClick={retryRooms}
+              className="px-4 py-2 bg-surface-elevated hover:bg-surface border border-border text-text text-xs font-semibold rounded-lg transition cursor-pointer mt-2"
+            >
+              Try again
             </button>
           </div>
         )}
@@ -521,6 +589,14 @@ export default function RoomsPage() {
                   </button>
                 </div>
               </div>
+              {createError && (
+                <p
+                  role="alert"
+                  className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2"
+                >
+                  {createError}
+                </p>
+              )}
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"

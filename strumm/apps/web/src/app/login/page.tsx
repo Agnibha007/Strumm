@@ -30,8 +30,14 @@ export default function LoginPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Micro-Animations disabled → skip the rAF loop entirely (battery saver)
-    if (!useThemeStore.getState().isAnimated) return;
+    // Micro-Animations disabled → skip the rAF loop entirely (battery saver).
+    // Also honour the OS `prefers-reduced-motion` setting: a full-screen
+    // requestAnimationFrame loop is exactly the kind of motion that setting
+    // exists to suppress, and the app preference must not override it.
+    const prefersReducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!useThemeStore.getState().isAnimated || prefersReducedMotion) return;
 
     let animationFrameId: number;
     let width = (canvas.width = window.innerWidth);

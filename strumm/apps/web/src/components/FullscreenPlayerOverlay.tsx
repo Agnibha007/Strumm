@@ -522,6 +522,8 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                   max={duration || 100}
                   step="1"
                   value={currentTime}
+                  aria-label="Playback position"
+                  aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
                   onChange={(e) => {
                     const newTime = parseFloat(e.target.value);
                     playerRef?.seekTo(newTime);
@@ -672,6 +674,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
                 max="1"
                 step="0.05"
                 value={volume}
+                aria-label="Volume"
                 onChange={(e) => setVolume(parseFloat(e.target.value))}
                 className="w-full h-1 bg-border/40 rounded-full appearance-none cursor-pointer accent-primary focus:outline-none"
                 style={{

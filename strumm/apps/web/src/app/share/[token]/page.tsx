@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Play, FolderHeart, Eye, Loader2, ArrowRight, ShieldAlert } from "lucide-react";
+import { Play, FolderHeart, Eye, Loader2, ArrowRight, ShieldAlert, LogIn } from "lucide-react";
 import { Song, Playlist } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { authFetch } from "web/lib/auth-client";
@@ -10,6 +10,8 @@ import { apiUrl } from "web/lib/api";
 import BrandLogo from "web/components/BrandLogo";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_HIGH } from "web/lib/media";
+import { useAuthStore } from "web/store/useAuthStore";
+import { loginUrlFor } from "web/lib/routes";
 
 interface SharePageProps {
   params: Promise<{ token: string }>;
@@ -19,6 +21,7 @@ export default function SharePage({ params }: SharePageProps) {
   const { token } = use(params);
   const router = useRouter();
   const { playSong } = usePlayerStore();
+  const { user } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,24 +57,36 @@ export default function SharePage({ params }: SharePageProps) {
 
   const handlePlayContent = () => {
     if (!shareData) return;
+
+    // A guest has no player to play into: PersistentPlayerWrapper is gated on a
+    // session, so pushing home used to drop the selection on the floor. Send
+    // them through login with this share as the destination instead — the
+    // return trip lands back on this page and the auto-play effect takes over.
+    if (!user) {
+      router.push(loginUrlFor(`/share/${encodeURIComponent(token)}`));
+      return;
+    }
+
     if (shareData.contentType === "song") {
       const song = shareData.content as Song;
       playSong(song, [song]);
     } else if (shareData.contentType === "playlist") {
       const playlist = shareData.content as Playlist;
-      if (playlist.songs.length > 0) {
-        playSong(playlist.songs[0], playlist.songs);
+      const songs = Array.isArray(playlist.songs) ? playlist.songs : [];
+      if (songs.length > 0) {
+        playSong(songs[0], songs);
       }
     }
     // Take user to home to see play experience
     router.push("/");
   };
 
+  // Auto-play only makes sense once there is a player to play into.
   useEffect(() => {
-    if (shareData && !error) {
+    if (user && shareData && !error) {
       handlePlayContent();
     }
-  }, [shareData]);
+  }, [shareData, user]);
 
   if (loading) {
     return (
@@ -192,9 +207,14 @@ export default function SharePage({ params }: SharePageProps) {
           onClick={handlePlayContent}
           className="w-full py-3 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition select-none shadow-lg"
         >
-          <Play className="w-4 h-4 fill-current" />
-          Play in Strumm App
+          {user ? <Play className="w-4 h-4 fill-current" /> : <LogIn className="w-4 h-4" />}
+          {user ? "Play in Strumm App" : "Sign in to play"}
         </button>
+        {!user && (
+          <p className="text-[10px] text-muted/70 leading-relaxed -mt-3">
+            Playback needs a Strumm account. You&apos;ll come straight back to this share.
+          </p>
+        )}
 
         {/* Action button redirection to home */}
         <div className="border-t border-border/40 pt-4 text-center">

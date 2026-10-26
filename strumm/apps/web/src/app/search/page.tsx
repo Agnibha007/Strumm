@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus, Shuffle, Check } from "lucide-react";
+import { Search, Play, Plus, Heart, Radio, FolderHeart, User, HelpCircle, X, Loader2, FolderPlus, Shuffle, Check, ShieldAlert } from "lucide-react";
 import { Song, Playlist, PodcastShow } from "@strumm/types";
 import { motion, AnimatePresence } from "framer-motion";
 import { authFetch } from "web/lib/auth-client";
@@ -13,7 +13,29 @@ import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SafePodcastImage from "web/components/SafePodcastImage";
 import { useNotificationStore } from "web/store/useNotificationStore";
+import {
+  pushRecentSearch,
+  readRecentSearches,
+  writeRecentSearches,
+} from "web/lib/recent-searches";
 import Link from "next/link";
+
+interface SearchResults {
+  songs: Song[];
+  playlists: Playlist[];
+  podcasts: PodcastShow[];
+  users: any[];
+  artists: any[];
+  albums: any[];
+}
+
+/**
+ * A failed search must not be rendered next to the previous query's results —
+ * that reads as "here is what we found" instead of "this did not run".
+ */
+function emptySearchResults(): SearchResults {
+  return { songs: [], playlists: [], podcasts: [], users: [], artists: [], albums: [] };
+}
 
 /** mm:ss, or an em dash when the provider gave no usable duration. */
 function formatDuration(seconds: number): string {
@@ -30,6 +52,10 @@ export default function SearchPage() {
   
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  // A failed search and an empty result set are different messages. Without
+  // this, an outage rendered as "No records found".
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchRetry, setSearchRetry] = useState(0);
   const [trending] = useState<string[]>(["Lofi Beats", "Indian Classical", "Rain Ambient", "Electronic Focus", "Jazz Cafe"]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<"All" | "Songs" | "Artists" | "Albums" | "Podcasts" | "Playlists" | "Profiles">("All");
@@ -154,19 +180,16 @@ export default function SearchPage() {
 
   // 2. Load recent searches from localStorage
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("strumm-recent-searches");
-      if (cached) {
-        setRecentSearches(JSON.parse(cached));
-      }
-    }
+    setRecentSearches(readRecentSearches());
   }, []);
 
   // 3. Search query debounce and execution with local cache
   // Uses Invidious API directly from the browser — no backend hop.
   useEffect(() => {
     if (!query.trim()) {
-      setResults({ songs: [], playlists: [], podcasts: [], users: [], artists: [], albums: [] });
+      setResults(emptySearchResults());
+      setSearchError(null);
+      setLoading(false);
       return;
     }
 
@@ -175,31 +198,45 @@ export default function SearchPage() {
 
     if (searchCacheRef.current[cacheKey]) {
       setResults(searchCacheRef.current[cacheKey]);
+      setSearchError(null);
+      setLoading(false);
       return;
     }
 
+    // `cancelled` is the race guard. The debounce timer is cleared on every
+    // query/filter change, but a request that has already left the browser
+    // cannot be aborted through this path — so a slow "ab" search could land
+    // after a fast "abc" search and overwrite the newer results with stale
+    // ones. Every write below is gated on this effect still being current.
+    let cancelled = false;
+
     const timer = setTimeout(async () => {
       setLoading(true);
+      setSearchError(null);
       try {
         const q = cleanText(query, 120);
 
         if (activeFilter === "Profiles") {
           // User search still goes through backend (local MongoDB)
-          try {
-            const response = await authFetch(apiUrl(`/users/search?q=${encodeURIComponent(q)}`));
-            const json = await response.json();
-            if (json.success) {
-              const fetchedResults = {
-                songs: [], playlists: [], podcasts: [], users: json.data || [], artists: [], albums: []
-              };
-              setResults(fetchedResults);
-              searchCacheRef.current[cacheKey] = fetchedResults;
-            }
-          } catch { /* user search failed */ }
+          const response = await authFetch(apiUrl(`/users/search?q=${encodeURIComponent(q)}`));
+          const json = await response.json().catch(() => null);
+          if (cancelled) return;
+          if (json?.success) {
+            const fetchedResults = {
+              songs: [], playlists: [], podcasts: [], users: json.data || [], artists: [], albums: []
+            };
+            setResults(fetchedResults);
+            searchCacheRef.current[cacheKey] = fetchedResults;
+          } else {
+            // Previously swallowed, which rendered as "No records found".
+            setResults(emptySearchResults());
+            setSearchError(json?.error || "Profile search failed. Please try again.");
+          }
         } else {
           // Client-side search via Invidious API
           const type = getInvidiousTypeParam(activeFilter);
           const youtubeResults = await searchYouTube({ query: q, type });
+          if (cancelled) return;
 
           // Fetch podcasts from backend (separate route, not /search)
           let podcasts: PodcastShow[] = [];
@@ -260,14 +297,22 @@ export default function SearchPage() {
           }
         }
       } catch (err) {
-        console.warn("Search request failed.");
+        if (cancelled) return;
+        console.warn("Search request failed.", err);
+        setResults(emptySearchResults());
+        setSearchError(
+          "Search is unavailable right now. Check your connection and try again.",
+        );
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }, 450);
 
-    return () => clearTimeout(timer);
-  }, [query, activeFilter]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, activeFilter, searchRetry]);
 
   function getInvidiousTypeParam(filter: string): "video" | "playlist" | "channel" | "all" {
     switch (filter) {
@@ -281,13 +326,9 @@ export default function SearchPage() {
 
   // 4. Save recent searches
   const saveRecentSearch = (term: string) => {
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("strumm-recent-searches");
-      const current = cached ? JSON.parse(cached) : [];
-      const updated = [term, ...current.filter((t: string) => t !== term)].slice(0, 10);
-      localStorage.setItem("strumm-recent-searches", JSON.stringify(updated));
-      setRecentSearches(updated);
-    }
+    const updated = pushRecentSearch(readRecentSearches(), term);
+    writeRecentSearches(updated);
+    setRecentSearches(updated);
   };
 
   const handleSelectSearchTerm = (term: string) => {
@@ -299,9 +340,7 @@ export default function SearchPage() {
     e.stopPropagation();
     const updated = recentSearches.filter((t) => t !== term);
     setRecentSearches(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("strumm-recent-searches", JSON.stringify(updated));
-    }
+    writeRecentSearches(updated);
   };
 
   const handleLikeSong = async (song: Song) => {
@@ -467,12 +506,21 @@ export default function SearchPage() {
                   {recentSearches.map((term) => (
                     <div
                       key={term}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleSelectSearchTerm(term)}
-                      className="flex items-center justify-between p-3 rounded-lg bg-surface/30 hover:bg-surface border border-border/20 hover:border-border/60 text-sm text-text cursor-pointer transition select-none"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSelectSearchTerm(term);
+                        }
+                      }}
+                      className="flex items-center justify-between p-3 rounded-lg bg-surface/30 hover:bg-surface border border-border/20 hover:border-border/60 text-sm text-text cursor-pointer transition select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                     >
                       <span className="font-medium">{term}</span>
                       <button
                         onClick={(e) => clearRecentSearch(term, e)}
+                        aria-label={`Remove "${term}" from recent searches`}
                         className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded transition"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -516,7 +564,28 @@ export default function SearchPage() {
               </div>
             )}
 
+            {!loading && searchError && (
+              <div
+                role="alert"
+                className="text-center py-16 space-y-2 border border-red-500/30 rounded-xl bg-red-500/5"
+              >
+                <ShieldAlert className="w-8 h-8 text-red-400 mx-auto" />
+                <p className="font-editorial text-lg text-text">Search didn&apos;t complete</p>
+                <p className="text-xs text-muted max-w-sm mx-auto">{searchError}</p>
+                <button
+                  onClick={() => {
+                    // Re-run the effect for the same query, bypassing the cache.
+                    setSearchRetry((n) => n + 1);
+                  }}
+                  className="mt-3 px-4 py-2 bg-surface-elevated hover:bg-surface border border-border text-text text-xs font-semibold rounded-lg transition cursor-pointer"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
             {!loading &&
+              !searchError &&
               (results.songs || []).length === 0 &&
               (results.playlists || []).length === 0 &&
               (results.podcasts || []).length === 0 &&

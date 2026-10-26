@@ -7,7 +7,7 @@ import { useThemeStore } from "web/store/useThemeStore";
 import { usePathname, useRouter } from "next/navigation";
 import BrandLogo from "web/components/BrandLogo";
 import dynamic from "next/dynamic";
-import { isPublicRoute } from "web/lib/routes";
+import { isPublicRoute, loginUrlFor, safeRedirectPath } from "web/lib/routes";
 
 const Navigation = dynamic(() => import("web/components/Navigation"), {
   ssr: false,
@@ -87,11 +87,13 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     const isPublic = isPublicRoute(pathname);
     if (!isAuthenticated && pathname !== "/login" && pathname !== "/" && !isPublic) {
       const currentSearch = window.location.search;
-      router.replace(`/login?redirect=${encodeURIComponent(pathname + currentSearch)}`);
+      router.replace(loginUrlFor(pathname + currentSearch));
     } else if (isAuthenticated && pathname === "/login") {
+      // `?redirect=` is attacker-controllable (it is just a query string on a
+      // public page). Navigating to it unchecked turned the login screen into
+      // an open redirect, so it has to pass the same-origin allowlist first.
       const searchParams = new URLSearchParams(window.location.search);
-      const redirectUrl = searchParams.get("redirect") || "/";
-      router.replace(redirectUrl);
+      router.replace(safeRedirectPath(searchParams.get("redirect")));
     }
   }, [user?.id, loading, pathname, router, sessionStatus, session, sessionResolved]);
 

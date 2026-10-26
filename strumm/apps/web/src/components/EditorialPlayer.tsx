@@ -15,6 +15,7 @@ import { useLikeSong } from "web/hooks/useLikeSong";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
+import SeekBar from "./player/SeekBar";
 
 const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"), {
   loading: () => (
@@ -284,30 +285,26 @@ export default function EditorialPlayer() {
     usePlayerStore.setState({ queue: newQueue, currentIndex: newIndex });
   };
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!playerRef || duration === 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    const clickRatio = clickX / width;
-    const seekTime = clickRatio * duration;
-    playerRef.seekTo(seekTime);
-    setCurrentTime(seekTime);
+  const handleSeek = (seconds: number) => {
+    if (!playerRef) return;
+    playerRef.seekTo(seconds);
+    setCurrentTime(seconds);
   };
 
   return (
     <>
       <div className="fixed bottom-[64px] md:bottom-0 left-0 md:left-64 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
-        {/* Mobile thin top playbar */}
-        <div 
-          onClick={handleProgressClick}
-          className="absolute top-0 left-0 right-0 h-[3px] bg-border/25 cursor-pointer md:hidden"
-        >
-          <div 
-            style={{ width: `${progressPercent}%` }} 
-            className="h-full bg-primary" 
+        {/* Mobile thin top playbar. The absolute wrapper keeps SeekBar itself
+            `relative`, so its fill can be positioned without fighting the
+            position utility. */}
+        <div className="absolute top-0 left-0 right-0 h-[3px] md:hidden">
+          <SeekBar
+            currentTime={currentTime}
+            duration={duration}
+            onSeek={handleSeek}
+            label="Playback position"
+            className="h-full w-full bg-border/25"
+            fillClassName="bg-primary"
           />
         </div>
         
@@ -356,6 +353,8 @@ export default function EditorialPlayer() {
                 whileTap={{ scale: 0.9 }}
                 onClick={() => setShuffle(!isShuffle)}
                 disabled={repeatMode === "one"}
+                aria-label={isShuffle ? "Disable shuffle" : "Enable shuffle"}
+                aria-pressed={isShuffle}
                 title={repeatMode === "one" ? "Turn off Repeat One to use Shuffle" : isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
                 className={`hidden md:block p-1.5 rounded-lg cursor-pointer transition ${repeatMode === "one" ? "opacity-40 cursor-not-allowed text-muted" : isShuffle ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
               >
@@ -366,6 +365,7 @@ export default function EditorialPlayer() {
                 whileHover={{ scale: 1.15 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={prev} 
+                aria-label="Previous track"
                 title="Previous Track"
                 className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition"
               >
@@ -376,6 +376,7 @@ export default function EditorialPlayer() {
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={togglePlay} 
+                aria-label={isPlaying ? "Pause" : "Play"}
                 title={isPlaying ? "Pause" : "Play"}
                 className="p-3 bg-text text-background rounded-full cursor-pointer transition shadow-md"
               >
@@ -385,6 +386,7 @@ export default function EditorialPlayer() {
               <button
                 onClick={(e) => { e.stopPropagation(); setShowQueue(!showQueue); }}
                 className="md:hidden p-2 text-muted hover:text-text cursor-pointer transition"
+                aria-label="Open queue"
                 title="Queue"
               >
                 <ListMusic className="w-4.5 h-4.5" />
@@ -394,6 +396,7 @@ export default function EditorialPlayer() {
                 whileHover={{ scale: 1.15 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={next} 
+                aria-label="Next track"
                 title="Next Track"
                 className="hidden md:block p-1.5 text-muted hover:text-text cursor-pointer transition"
               >
@@ -403,6 +406,8 @@ export default function EditorialPlayer() {
               <button
                 onClick={() => setRepeatMode(repeatMode === "none" ? "all" : repeatMode === "all" ? "one" : "none")}
                 title={`Repeat Mode: ${repeatMode === "none" ? "Off" : repeatMode === "all" ? "Repeat All" : "Repeat One"}`}
+                aria-label={`Repeat mode: ${repeatMode === "none" ? "off" : repeatMode === "all" ? "all" : "one"}`}
+                aria-pressed={repeatMode !== "none"}
                 className={`hidden md:block p-1.5 rounded-lg cursor-pointer transition relative ${repeatMode !== "none" ? "bg-primary/25 text-primary-hover border border-primary/30 text-glow" : "text-muted hover:text-text border border-transparent"}`}
               >
                 <Repeat className="w-3.5 h-3.5" />
@@ -413,15 +418,14 @@ export default function EditorialPlayer() {
             {/* Progress scrubber */}
             <div className="hidden md:flex items-center gap-2 w-full text-[10px] text-muted font-semibold">
               <span>{formatTime(currentTime)}</span>
-              <div 
-                onClick={handleProgressClick}
-                className="flex-1 h-1 bg-border/80 hover:h-1.5 rounded-full cursor-pointer relative transition-all"
-              >
-                <div 
-                  style={{ width: `${progressPercent}%` }} 
-                  className="absolute top-0 bottom-0 left-0 bg-primary rounded-full box-glow" 
-                />
-              </div>
+              <SeekBar
+                currentTime={currentTime}
+                duration={duration}
+                onSeek={handleSeek}
+                label="Playback position"
+                className="flex-1 h-1 hover:h-1.5 bg-border/80 rounded-full transition-all"
+                fillClassName="bg-primary box-glow"
+              />
               <span>{formatTime(duration)}</span>
             </div>
           </div>
@@ -437,6 +441,7 @@ export default function EditorialPlayer() {
                 step="0.05"
                 value={volume}
                 onChange={(e) => setVolume(parseFloat(e.target.value))}
+                aria-label="Volume"
                 className="w-20 h-1 bg-border/80 rounded-full appearance-none cursor-pointer accent-primary focus:outline-none"
               />
             </div>
@@ -447,6 +452,8 @@ export default function EditorialPlayer() {
                 if (currentSong) toggleLike(currentSong).catch(console.error);
               }}
               className={`p-2 rounded hover:bg-surface-elevated cursor-pointer transition ${isLiked ? "text-primary text-glow" : "text-muted hover:text-text"}`}
+              aria-label={isLiked ? "Unlike this track" : "Like this track"}
+              aria-pressed={isLiked}
               title={isLiked ? "Unlike" : "Like"}
             >
               <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
@@ -473,6 +480,7 @@ export default function EditorialPlayer() {
             <button
               onClick={() => openFullscreenPlayer()}
               className="p-2 rounded hover:bg-surface-elevated cursor-pointer transition text-muted hover:text-text"
+              aria-label="Open fullscreen player"
               title="Fullscreen Mode"
             >
               <Maximize className="w-4 h-4" />
@@ -481,6 +489,8 @@ export default function EditorialPlayer() {
             <button
               onClick={() => setShowQueue(!showQueue)}
               title={showQueue ? "Hide Queue" : "Show Queue"}
+              aria-label={showQueue ? "Hide queue" : "Show queue"}
+              aria-expanded={showQueue}
               className={`p-2 rounded hover:bg-surface-elevated cursor-pointer transition ${showQueue ? "text-primary" : "text-muted hover:text-text"}`}
             >
               <ListMusic className="w-4 h-4" />

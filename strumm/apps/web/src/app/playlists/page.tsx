@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import dynamic from "next/dynamic";
-import { Plus, BookOpen, FilePlus2, Upload, X, Search } from "lucide-react";
+import { Plus, BookOpen, FilePlus2, Upload, X, Search, ShieldAlert } from "lucide-react";
 import { Playlist } from "@strumm/types";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -31,6 +31,8 @@ export default function PlaylistsPage() {
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // Distinguishes "your collection is empty" from "we could not load it".
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const filteredPlaylists = userPlaylists.filter(
     (p) =>
@@ -39,19 +41,31 @@ export default function PlaylistsPage() {
   );
 
   const loadPlaylists = async () => {
+    setLoadError(null);
     try {
       const response = await authFetch(apiUrl("/playlists"), {
         headers: { "Authorization": `Bearer ${token}` }
       });
-      const json = await response.json();
-      if (json.success && json.data) {
+      const json = await response.json().catch(() => null);
+      if (json?.success && Array.isArray(json.data)) {
         setUserPlaylists(json.data);
+      } else if (!json) {
+        setLoadError("The playlist server sent a response we could not read.");
+      } else {
+        setLoadError(json.error || json.detail || "Could not load your playlists.");
       }
     } catch (e) {
-      console.warn("Unable to fetch playlists offline.");
+      // A failed load used to look identical to "you have no playlists", which
+      // could make someone think their collection had been deleted.
+      setLoadError("Could not reach the playlist server. Check your connection.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const retryPlaylists = () => {
+    setLoading(true);
+    void loadPlaylists();
   };
 
   useEffect(() => {
@@ -209,6 +223,23 @@ export default function PlaylistsPage() {
 
           {loading ? (
             <PlaylistSkeleton />
+          ) : loadError ? (
+            <div
+              role="alert"
+              className="text-center py-10 border border-red-500/30 rounded-xl bg-red-500/5 space-y-2"
+            >
+              <ShieldAlert className="w-8 h-8 text-red-400 mx-auto" />
+              <p className="font-editorial text-base text-text">
+                Couldn&apos;t load your playlists
+              </p>
+              <p className="text-[11px] text-muted max-w-xs mx-auto">{loadError}</p>
+              <button
+                onClick={retryPlaylists}
+                className="mt-2 px-4 py-2 bg-surface-elevated hover:bg-surface border border-border text-text text-xs font-semibold rounded-lg transition cursor-pointer"
+              >
+                Try again
+              </button>
+            </div>
           ) : userPlaylists.length === 0 ? (
             <p className="text-xs text-muted italic py-6">No playlists found. Build a custom record folder.</p>
           ) : (

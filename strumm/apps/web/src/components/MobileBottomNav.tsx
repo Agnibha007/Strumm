@@ -23,6 +23,7 @@ import {
 import BrandLogo from "web/components/BrandLogo";
 import { signOut } from "next-auth/react";
 import { useUserAvatar } from "web/lib/useUserAvatar";
+import { isNavActive } from "web/lib/routes";
 
 const bottomNavItems = [
   { label: "Home", href: "/", icon: Home },
@@ -48,10 +49,7 @@ export default function MobileBottomNav() {
   const avatarUrl = useUserAvatar(user);
   const [showMore, setShowMore] = useState(false);
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
-  };
+  const isActive = (href: string) => isNavActive(pathname, href);
 
   const handleLogout = () => {
     logout();

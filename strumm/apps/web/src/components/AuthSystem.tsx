@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText, cleanUsername } from "web/lib/api";
 import { consumeSessionExpiredNotice } from "web/lib/session-expiry";
+import { loginUrlFor, safeRedirectPath } from "web/lib/routes";
 import BrandLogo from "web/components/BrandLogo";
 
 type AuthMode = "login" | "signup" | "otp";
@@ -186,9 +187,12 @@ export default function AuthSystem() {
     try {
       // Preserve the redirect target (set by AuthWrapper when an unauthenticated
       // user hits a protected route) so OAuth returns them where they were headed.
+      // Validate it here as well as in AuthWrapper: the callback URL is handed to
+      // a third party (Google), so it must never carry an off-site destination.
       const redirect = new URLSearchParams(window.location.search).get("redirect");
+      const target = safeRedirectPath(redirect);
       await signIn("google", {
-        callbackUrl: redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : "/",
+        callbackUrl: target === "/" ? "/" : loginUrlFor(target),
       });
     } catch (err) {
       setError("Google OAuth connection error.");
