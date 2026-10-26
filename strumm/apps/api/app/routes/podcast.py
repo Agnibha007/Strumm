@@ -701,12 +701,14 @@ async def get_podcast_episode_progress(
         )
         if not doc:
             return {"success": True, "data": {"positionSeconds": 0}}
+        updated_at = doc.get("updatedAt")
         return {
             "success": True,
             "data": {
                 "episodeId": doc["episodeId"],
                 "positionSeconds": doc.get("positionSeconds", 0),
                 "durationSeconds": doc.get("durationSeconds", 0),
+                "updatedAt": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
             }
         }
     except Exception as e:

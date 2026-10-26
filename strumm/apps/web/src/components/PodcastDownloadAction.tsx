@@ -19,6 +19,11 @@ interface PodcastDownloadActionProps {
   showTitle: string;
   thumbnail?: string;
   compact?: boolean;
+  sourceCollection?: {
+    type: "podcast" | "playlist";
+    id: string;
+    name: string;
+  };
   onChange?: () => void;
 }
 
@@ -37,6 +42,7 @@ export default function PodcastDownloadAction({
   showTitle,
   thumbnail = "",
   compact = false,
+  sourceCollection,
   onChange,
 }: PodcastDownloadActionProps) {
   const [saved, setSaved] = useState<PodcastDownloadRecord | null>(null);
@@ -145,6 +151,11 @@ export default function PodcastDownloadAction({
         duration: episode.duration,
         audioUrl: episode.audioUrl,
         mimeType,
+        collectionType: sourceCollection?.type || "podcast",
+        collectionId: sourceCollection?.id || episode.showId,
+        collectionName: sourceCollection?.name || showTitle,
+        sourcePlaylistId: sourceCollection?.type === "playlist" ? sourceCollection.id : undefined,
+        sourcePlaylistName: sourceCollection?.type === "playlist" ? sourceCollection.name : undefined,
         blob,
       });
       setSaved(record);

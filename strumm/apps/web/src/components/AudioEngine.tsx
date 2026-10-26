@@ -108,6 +108,8 @@ export default function AudioEngine() {
   const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
   const offlinePodcastObjectUrlRef = useRef<{ episodeId: string; url: string } | null>(null);
   const podcastSourceGenerationRef = useRef(0);
+  const restoredPodcastEpisodeRef = useRef<string | null>(null);
+  const activePodcastAudioEpisodeRef = useRef<string | null>(null);
   // Second hidden <audio> element that pre-buffers the predicted next track's
   // stream ahead of the crossfade boundary. Never played while staged, so the
   // next song can not leak audio early; at the advance it is promoted into
@@ -2555,6 +2557,8 @@ try {
 
     const isPodcastVideo = podcastMode === "video" && currentSong?.metadata?.videoAvailable;
     if (isPodcastVideo) {
+      restoredPodcastEpisodeRef.current = null;
+      activePodcastAudioEpisodeRef.current = null;
       if (offlinePodcastObjectUrlRef.current) {
         URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
         offlinePodcastObjectUrlRef.current = null;
@@ -2673,13 +2677,62 @@ try {
         }
 
         applyCrossfadeVolume(1);
+        activePodcastAudioEpisodeRef.current = episodeId;
 
-        const targetTime = usePlayerStore.getState().currentTime;
-        if (targetTime > 0 && isFinite(targetTime)) {
+        let targetTime = usePlayerStore.getState().currentTime;
+        const shouldRestoreProgress =
+          episodeId.startsWith("podcast-") && restoredPodcastEpisodeRef.current !== episodeId;
+        if (shouldRestoreProgress) {
           try {
-            audioElement.currentTime = targetTime;
-          } catch (error) {}
+            const progress = await fetchPodcastProgress(episodeId.slice("podcast-".length));
+            if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+            targetTime = progress.positionSeconds || 0;
+          } catch {
+            targetTime = 0;
+          }
+          usePlayerStore.getState().setCurrentTime(targetTime);
         }
+
+        if (targetTime > 0 && isFinite(targetTime)) {
+          await new Promise<void>((resolve) => {
+            let finished = false;
+            let timeout: ReturnType<typeof setTimeout> | null = null;
+            const finish = () => {
+              if (finished) return;
+              finished = true;
+              if (timeout) clearTimeout(timeout);
+              audioElement.removeEventListener("loadedmetadata", trySeek);
+              audioElement.removeEventListener("canplay", trySeek);
+              resolve();
+            };
+            const trySeek = () => {
+              if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) {
+                finish();
+                return;
+              }
+              if (audioElement.readyState < HTMLMediaElement.HAVE_METADATA) return;
+              try {
+                const safeTime =
+                  Number.isFinite(audioElement.duration) && audioElement.duration > 0
+                    ? Math.min(targetTime, Math.max(0, audioElement.duration - 1))
+                    : targetTime;
+                audioElement.currentTime = safeTime;
+                usePlayerStore.getState().setCurrentTime(safeTime);
+              } catch {}
+              finish();
+            };
+            audioElement.addEventListener("loadedmetadata", trySeek);
+            audioElement.addEventListener("canplay", trySeek);
+            timeout = setTimeout(() => {
+              trySeek();
+              finish();
+            }, 5000);
+            trySeek();
+          });
+          if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+        }
+
+        if (shouldRestoreProgress) restoredPodcastEpisodeRef.current = episodeId;
 
         if (usePlayerStore.getState().isPlaying) {
           audioElement.play().catch(() => {
@@ -2709,6 +2762,8 @@ try {
         effectCancelled = true;
       };
     } else {
+      restoredPodcastEpisodeRef.current = null;
+      activePodcastAudioEpisodeRef.current = null;
       // B. YouTube song
       // If the page is backgrounded (screen locked), keep playing through the
       // host <audio> element on its resolved direct stream instead of the
@@ -2760,79 +2815,51 @@ try {
     // syncs keep the same currentSong object, so they don't re-trigger.
   }, [currentSong, currentSong?.videoId, currentSong?.metadata?.audioUrl, podcastMode, audioQuality, switchToIframeSurface]);
 
-  // Podcast resume: auto-seek to the saved position and persist progress
-  // periodically (and when leaving the episode). Only meaningful for HTML
-  // audio playback, which is how podcast episodes actually play.
+  // Persist podcast progress locally first, then sync it to the server when online.
+  // Resume is applied by the audio-source effect so it cannot seek the previous
+  // episode before a newly selected source is ready.
   useEffect(() => {
     const episodeId = getPodcastEpisodeId(currentSong);
     if (!episodeId) return;
 
-    let cancelled = false;
     let saveTimer: ReturnType<typeof setInterval> | null = null;
 
     const saveNow = () => {
       const state = usePlayerStore.getState();
-      const pos = state.currentTime;
-      const dur = state.duration || currentSong?.duration || 0;
-      if (pos > 3) savePodcastProgress(episodeId, pos, dur);
+      const audio = htmlAudioRef.current;
+      const ownsAudio = activePodcastAudioEpisodeRef.current === currentSong?.videoId;
+      const pos =
+        ownsAudio && audio && Number.isFinite(audio.currentTime)
+          ? Math.max(0, audio.currentTime)
+          : state.currentTime;
+      const dur =
+        ownsAudio && audio && Number.isFinite(audio.duration) && audio.duration > 0
+          ? audio.duration
+          : state.duration || currentSong?.duration || 0;
+
+      if (dur > 0 && pos >= dur - 10) {
+        void clearPodcastProgress(episodeId);
+      } else if (pos > 3) {
+        void savePodcastProgress(episodeId, pos, dur);
+      }
     };
 
-    // 1. Auto-resume: fetch the saved position and seek once the audio for
-    // this episode has metadata loaded.
-    (async () => {
-      const { positionSeconds } = await fetchPodcastProgress(episodeId);
-      if (cancelled || !positionSeconds || positionSeconds <= 0) return;
-
-      setCurrentTime(positionSeconds);
-
-      const audio = htmlAudioRef.current;
-      if (!audio) return;
-
-      let applied = false;
-      const applySeek = () => {
-        if (cancelled || applied) return;
-        // Don't yank playback backwards if the user already got past the
-        // saved position (e.g. a slow fetch while the episode was playing).
-        if (audio.currentTime > positionSeconds + 2) {
-          applied = true;
-          return;
-        }
-        try {
-          audio.currentTime = positionSeconds;
-          applied = true;
-        } catch {
-          // Seek may fail before metadata is available; retries will re-apply.
-        }
-      };
-
-      if (audio.readyState >= 1) {
-        applySeek();
-      } else {
-        audio.addEventListener("loadedmetadata", applySeek);
-        audio.addEventListener("canplay", applySeek);
-        const retry = setInterval(applySeek, 500);
-        setTimeout(() => {
-          clearInterval(retry);
-          audio.removeEventListener("loadedmetadata", applySeek);
-          audio.removeEventListener("canplay", applySeek);
-        }, 6000);
-      }
-    })();
-
-    // 2. Periodic save while the episode is active.
     saveTimer = setInterval(saveNow, 12000);
 
-    // 3. Save when the tab is hidden (closing / switching away mid-episode).
     const saveOnHidden = () => {
       if (document.visibilityState === "hidden") saveNow();
     };
+    const audio = htmlAudioRef.current;
+    const saveOnPause = () => saveNow();
+    audio?.addEventListener("pause", saveOnPause);
     document.addEventListener("visibilitychange", saveOnHidden);
+    window.addEventListener("pagehide", saveNow);
 
     return () => {
-      cancelled = true;
       if (saveTimer) clearInterval(saveTimer);
+      audio?.removeEventListener("pause", saveOnPause);
       document.removeEventListener("visibilitychange", saveOnHidden);
-      // Final save of the position when the user switches episodes.
+      window.removeEventListener("pagehide", saveNow);
       saveNow();
     };
   }, [currentSong?.videoId, setCurrentTime]);

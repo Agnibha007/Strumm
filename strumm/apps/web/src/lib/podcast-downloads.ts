@@ -7,6 +7,11 @@ export type PodcastDownloadRecord = {
   duration: number;
   audioUrl: string;
   mimeType: string;
+  collectionType: "podcast" | "playlist";
+  collectionId: string;
+  collectionName: string;
+  sourcePlaylistId?: string;
+  sourcePlaylistName?: string;
   size: number;
   savedAt: number;
   blob: Blob;
@@ -90,13 +95,23 @@ export async function listPodcastDownloads(): Promise<PodcastDownloadRecord[]> {
   const records = await requestResult<PodcastDownloadRecord[]>(
     transaction.objectStore(STORE_NAME).getAll(),
   );
-  return records.sort((a, b) => b.savedAt - a.savedAt);
+  return records
+    .map((record) => ({
+      ...record,
+      collectionType: record.collectionType || "podcast",
+      collectionId: record.collectionId || record.episodeId,
+      collectionName: record.collectionName || record.showTitle || "Podcasts",
+    }))
+    .sort((a, b) => b.savedAt - a.savedAt);
 }
 
 export async function savePodcastDownload(input: PodcastDownloadInput): Promise<PodcastDownloadRecord> {
   const database = await openDatabase();
   const record: PodcastDownloadRecord = {
     ...input,
+    collectionType: input.collectionType || "podcast",
+    collectionId: input.collectionId || input.episodeId,
+    collectionName: input.collectionName || input.showTitle || "Podcasts",
     id: recordId(input.episodeId),
     size: input.blob.size,
     savedAt: input.savedAt || Date.now(),
