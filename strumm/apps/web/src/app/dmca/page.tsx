@@ -36,7 +36,7 @@ export default function DMCAPage() {
 
         <section className="space-y-3">
           <h2 className="font-editorial text-xl text-text font-bold">How Strumm Handles Copyrighted Content</h2>
-          <p className="text-sm text-muted leading-relaxed">Strumm does not host, store, or distribute audio or video files. All music content is streamed via YouTube&apos;s iframe API. If a song violates your copyright on YouTube, please submit a takedown notice directly to YouTube via their <Link href="https://support.google.com/youtube/answer/2807622" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Copyright Center</Link>.</p>
+          <p className="text-sm text-muted leading-relaxed">Strumm does not host or distribute audio files for its YouTube-backed music catalog. Music is normally streamed through YouTube&apos;s embedded player, and Strumm does not extract or convert YouTube streams into downloadable songs. A source-provided download is offered only when the source explicitly authorizes offline use and is stored in the user&apos;s browser on their device, not in Strumm&apos;s hosted catalog. If a song violates your copyright on YouTube, please submit a takedown notice directly to YouTube via their <Link href="https://support.google.com/youtube/answer/2807622" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Copyright Center</Link>.</p>
           <p className="text-sm text-muted leading-relaxed">However, if you believe that your copyrighted work is being infringed upon through the Strumm platform itself (e.g., playlist descriptions, user-generated content, or podcast metadata), please submit a DMCA notice to our designated agent.</p>
         </section>
 

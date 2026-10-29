@@ -9,6 +9,7 @@ import {
   Download,
   HardDrive,
   ListMusic,
+  Music,
   Play,
   Radio,
   Search,
@@ -21,9 +22,11 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { playHostAudioUrl } from "web/lib/host-audio";
 import {
   formatDownloadSize,
-  listPodcastDownloads,
+  listAllDownloads,
   removePodcastDownload,
+  removeSongDownload,
   preparePodcastDownloadPlayback,
+  prepareSongDownloadPlayback,
   type PodcastDownloadRecord,
 } from "web/lib/podcast-downloads";
 
@@ -35,13 +38,14 @@ type StorageEstimate = {
 type DownloadGroup = {
   key: string;
   name: string;
-  type: "podcast" | "playlist";
+  type: "podcast" | "playlist" | "song";
   thumbnail: string;
   records: PodcastDownloadRecord[];
 };
 
 function collectionFor(record: PodcastDownloadRecord) {
   const type = record.collectionType || "podcast";
+  if (type === "song") return { type, name: "Songs", id: "songs", key: "song:songs" };
   const name = record.collectionName || record.showTitle || "Podcasts";
   const id = record.collectionId || record.episodeId;
   return { type, name, id, key: type + ":" + id + ":" + name };
@@ -62,7 +66,7 @@ export default function DownloadsPage() {
     setLoading(true);
     setError(null);
     try {
-      const records = await listPodcastDownloads();
+      const records = await listAllDownloads();
       setDownloads(records);
       if (typeof navigator !== "undefined" && navigator.storage?.estimate) {
         const estimate = await navigator.storage.estimate().catch(() => null);
@@ -81,9 +85,11 @@ export default function DownloadsPage() {
     updateOnline();
     window.addEventListener("online", updateOnline);
     window.addEventListener("offline", updateOnline);
+    window.addEventListener("strumm:downloads-changed", refreshDownloads);
     return () => {
       window.removeEventListener("online", updateOnline);
       window.removeEventListener("offline", updateOnline);
+      window.removeEventListener("strumm:downloads-changed", refreshDownloads);
     };
   }, [refreshDownloads]);
 
@@ -127,16 +133,21 @@ export default function DownloadsPage() {
   }, [filteredDownloads]);
 
   const handlePlay = (record: PodcastDownloadRecord) => {
-    const playbackUrl = preparePodcastDownloadPlayback(record.id, record.blob);
+    const isSong = record.collectionType === "song";
+    const sourceId = isSong ? record.videoId || record.episodeId : record.id;
+    const playbackUrl = isSong
+      ? prepareSongDownloadPlayback(sourceId, record.blob)
+      : preparePodcastDownloadPlayback(record.id, record.blob);
     const song: Song = {
-      videoId: record.id,
+      videoId: isSong ? sourceId : record.id,
       title: record.title,
-      artist: record.showTitle || "Podcast",
+      artist: record.showTitle || (isSong ? "Unknown Artist" : "Podcast"),
       thumbnail: record.thumbnail,
       duration: record.duration,
       metadata: {
-        album: record.showTitle || "Podcasts",
+        album: isSong ? "Songs" : record.showTitle || "Podcasts",
         audioUrl: record.audioUrl,
+        offlineDownload: isSong || undefined,
         mediaType: "audio",
       },
     };
@@ -144,7 +155,9 @@ export default function DownloadsPage() {
     setPlayerError(null);
     playSong(song, [song]);
     void playHostAudioUrl(playbackUrl).catch(() => {
-      setPlayerError("Unable to start this downloaded episode. Tap Play in the player to retry.");
+      setPlayerError(isSong
+        ? "Unable to start this downloaded song. Tap Play in the player to retry."
+        : "Unable to start this downloaded episode. Tap Play in the player to retry.");
     });
   };
 
@@ -152,16 +165,21 @@ export default function DownloadsPage() {
     setRemovingId(record.id);
     setError(null);
     try {
-      await removePodcastDownload(record.id);
+      if (record.collectionType === "song") {
+        await removeSongDownload(record.videoId || record.episodeId);
+      } else {
+        await removePodcastDownload(record.id);
+      }
       setDownloads((current) => current.filter((item) => item.id !== record.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to remove this episode.");
+      setError(err instanceof Error ? err.message : "Unable to remove this download.");
     } finally {
       setRemovingId(null);
     }
   };
 
   const totalSize = downloads.reduce((total, record) => total + record.size, 0);
+  const songCount = downloads.filter((record) => record.collectionType === "song").length;
   const podcastCount = downloads.filter((record) => (record.collectionType || "podcast") === "podcast").length;
   const playlistCount = downloads.filter((record) => record.collectionType === "playlist").length;
 
@@ -181,7 +199,7 @@ export default function DownloadsPage() {
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">Your device library</p>
             <h1 className="font-editorial text-4xl font-bold tracking-tight text-text md:text-5xl">Downloads</h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-              Everything saved for offline listening, organised by podcast or playlist. Downloads stay on this browser and device.
+              Songs and podcast episodes saved for offline listening stay on this browser and device.
             </p>
           </div>
         </div>
@@ -193,14 +211,14 @@ export default function DownloadsPage() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-border/60 bg-surface/40 p-4">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Episodes saved</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Items saved</p>
           <p className="mt-2 text-2xl font-bold text-text">{downloads.length}</p>
         </div>
         <div className="rounded-xl border border-border/60 bg-surface/40 p-4">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Download size</p>
           <p className="mt-2 text-2xl font-bold text-text">{formatDownloadSize(totalSize)}</p>
           <p className="mt-1 text-[10px] text-muted">
-            {podcastCount} podcast episode{podcastCount === 1 ? "" : "s"}{playlistCount ? " · " + playlistCount + " playlist item" + (playlistCount === 1 ? "" : "s") : ""}
+            {songCount} song{songCount === 1 ? "" : "s"} · {podcastCount} podcast episode{podcastCount === 1 ? "" : "s"}{playlistCount ? " · " + playlistCount + " playlist item" + (playlistCount === 1 ? "" : "s") : ""}
           </p>
         </div>
         <div className="rounded-xl border border-border/60 bg-surface/40 p-4">
@@ -217,7 +235,7 @@ export default function DownloadsPage() {
       {!online && (
         <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-text">
           <WifiOff className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <p className="leading-relaxed">You&apos;re offline. Saved episodes can play now; episodes that haven&apos;t been downloaded need an internet connection.</p>
+          <p className="leading-relaxed">You&apos;re offline. Saved songs and episodes can play now; other tracks need an internet connection.</p>
         </div>
       )}
 
@@ -232,7 +250,7 @@ export default function DownloadsPage() {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search downloaded episodes, podcasts, or playlists"
+            placeholder="Search downloaded songs, episodes, podcasts, or playlists"
             aria-label="Search downloads"
             className="w-full rounded-xl border border-border/60 bg-surface/40 py-3 pl-10 pr-4 text-sm text-text outline-none transition placeholder:text-muted focus:border-primary/60"
           />
@@ -248,7 +266,7 @@ export default function DownloadsPage() {
           </div>
           <h2 className="font-editorial text-2xl font-bold text-text">Nothing saved yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-            Open a podcast series and download an episode to keep it ready for flights, commutes, or spotty connections.
+            Download podcast episodes or tracks whose source explicitly supports offline copies to keep them ready for flights, commutes, or spotty connections.
           </p>
           <Link href="/podcasts" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-primary-hover">
             <Radio className="h-4 w-4" />
@@ -259,7 +277,7 @@ export default function DownloadsPage() {
         <div className="rounded-2xl border border-dashed border-border/70 bg-surface/20 px-6 py-12 text-center">
           <Search className="mx-auto mb-3 h-6 w-6 text-muted" />
           <h2 className="font-editorial text-xl font-bold text-text">No matching downloads</h2>
-          <p className="mt-2 text-sm text-muted">Try a different podcast, playlist, or episode title.</p>
+          <p className="mt-2 text-sm text-muted">Try a different song, podcast, playlist, or episode title.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -280,17 +298,17 @@ export default function DownloadsPage() {
                       <SafePodcastImage src={group.thumbnail} alt={group.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
-                        {group.type === "playlist" ? <ListMusic className="h-6 w-6 text-muted" /> : <Radio className="h-6 w-6 text-muted" />}
+                        {group.type === "song" ? <Music className="h-6 w-6 text-muted" /> : group.type === "playlist" ? <ListMusic className="h-6 w-6 text-muted" /> : <Radio className="h-6 w-6 text-muted" />}
                       </div>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
-                      {group.type === "playlist" ? "Downloaded from playlist" : "Podcast"}
+                      {group.type === "song" ? "Songs" : group.type === "playlist" ? "Downloaded from playlist" : "Podcast"}
                     </span>
                     <h2 className="truncate font-editorial text-lg font-bold text-text sm:text-xl">{group.name}</h2>
                     <p className="mt-1 text-xs text-muted">
-                      {group.records.length} episode{group.records.length === 1 ? "" : "s"} · {formatDownloadSize(groupSize)}
+                      {group.records.length} {group.type === "song" ? "track" : "episode"}{group.records.length === 1 ? "" : "s"} · {formatDownloadSize(groupSize)}
                     </p>
                   </div>
                 </button>

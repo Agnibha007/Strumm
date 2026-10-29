@@ -125,6 +125,8 @@ export interface SongMetadata {
   lyricsUrl?: string;
   syncedLyrics?: string;
   audioUrl?: string;
+  downloadUrl?: string;
+  offlineDownload?: boolean;
   audioVariants?: Partial<Record<'data-saver' | 'balanced' | 'high', string>>;
   videoAvailable?: boolean;
   videoUrl?: string | null;
