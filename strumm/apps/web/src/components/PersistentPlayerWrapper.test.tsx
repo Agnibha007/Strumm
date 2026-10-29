@@ -3,9 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PersistentPlayerWrapper from "./PersistentPlayerWrapper";
 import { useAuthStore } from "web/store/useAuthStore";
 
-const { playerState, routeState } = vi.hoisted(() => ({
+const { playerState } = vi.hoisted(() => ({
   playerState: { currentSong: null as any },
-  routeState: { pathname: "/search" },
 }));
 
 vi.mock("web/store/useAuthStore", () => ({
@@ -14,10 +13,6 @@ vi.mock("web/store/useAuthStore", () => ({
 
 vi.mock("web/store/usePlayerStore", () => ({
   usePlayerStore: (selector: (state: typeof playerState) => unknown) => selector(playerState),
-}));
-
-vi.mock("next/navigation", () => ({
-  usePathname: () => routeState.pathname,
 }));
 
 vi.mock("next/dynamic", () => ({
@@ -44,7 +39,6 @@ describe("PersistentPlayerWrapper offline access", () => {
   beforeEach(() => {
     Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
     playerState.currentSong = null;
-    routeState.pathname = "/search";
     mockedAuthStore.mockReturnValue({
       user: { id: "user-1" } as any,
       token: null,
@@ -53,36 +47,28 @@ describe("PersistentPlayerWrapper offline access", () => {
 
   afterEach(() => {
     cleanup();
-    routeState.pathname = "/search";
     Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnline });
     vi.clearAllMocks();
   });
 
-  it("mounts the offline player when a cached user has no in-memory token", () => {
-    render(<PersistentPlayerWrapper />);
-
-    expect(screen.getByTestId("audio-engine")).toBeTruthy();
-    expect(screen.getByTestId("editorial-player")).toBeTruthy();
-  });
-
-
-  it("pre-mounts the audio engine on Downloads without a signed-in session", () => {
-    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
-    routeState.pathname = "/downloads";
+  it("keeps the player mounted without auth when the network is offline", () => {
     mockedAuthStore.mockReturnValue({ user: null, token: null } as any);
 
     render(<PersistentPlayerWrapper />);
 
     expect(screen.getByTestId("audio-engine")).toBeTruthy();
-    expect(screen.queryByTestId("editorial-player")).toBeNull();
+    expect(screen.getByTestId("editorial-player")).toBeTruthy();
+    expect(screen.queryByTestId("player-state-sync")).toBeNull();
   });
 
-  it("mounts the player for a selected downloaded episode even without a session", () => {
+  it("keeps the player mounted without auth while a downloaded podcast is selected", () => {
     playerState.currentSong = { videoId: "podcast-episode-1" };
     mockedAuthStore.mockReturnValue({ user: null, token: null } as any);
 
     render(<PersistentPlayerWrapper />);
 
     expect(screen.getByTestId("audio-engine")).toBeTruthy();
+    expect(screen.getByTestId("editorial-player")).toBeTruthy();
+    expect(screen.queryByTestId("player-state-sync")).toBeNull();
   });
 });
