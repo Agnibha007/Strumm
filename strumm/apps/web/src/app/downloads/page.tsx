@@ -12,6 +12,7 @@ import {
   Music,
   Play,
   Radio,
+  RefreshCw,
   Search,
   Trash2,
   WifiOff,
@@ -241,6 +242,19 @@ export default function DownloadsPage() {
 
       {error && (
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-relaxed text-primary" role="alert">{error}</div>
+      )}
+
+      {error && (
+        <div className="flex justify-start">
+          <button
+            type="button"
+            onClick={() => void refreshDownloads()}
+            className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-4 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </button>
+        </div>
       )}
 
       {!loading && downloads.length > 0 && (
