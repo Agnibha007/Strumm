@@ -8,12 +8,23 @@ const store = vi.hoisted(() => ({
   removeSongDownload: vi.fn(),
 }));
 
+const authFetchMock = vi.hoisted(() => vi.fn());
+const apiUrlMock = vi.hoisted(() => vi.fn((path: string) => path));
+
 vi.mock("web/lib/podcast-downloads", () => ({
   formatDownloadSize: (size: number) => size + " B",
   getAuthorizedSongDownloadUrl: (url?: string) => url || null,
   getSongDownload: store.getSongDownload,
   saveSongDownload: store.saveSongDownload,
   removeSongDownload: store.removeSongDownload,
+}));
+
+vi.mock("web/lib/auth-client", () => ({
+  authFetch: (...args: unknown[]) => authFetchMock(...args),
+}));
+
+vi.mock("web/lib/api", () => ({
+  apiUrl: (path: string) => apiUrlMock(path),
 }));
 
 const song = {
@@ -27,6 +38,17 @@ const song = {
   },
 };
 
+function okResponse() {
+  return {
+    ok: true,
+    headers: {
+      get: (name: string) => name.toLowerCase() === "content-type" ? "audio/mpeg" : null,
+    },
+    body: null,
+    blob: async () => new Blob(["audio bytes"], { type: "audio/mpeg" }),
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -34,15 +56,40 @@ afterEach(() => {
 });
 
 describe("SongDownloadAction", () => {
-  it("shows a disabled state when the source does not offer an authorized download", async () => {
+  it("downloads via the backend endpoint when no authorized source URL is present", async () => {
     store.getSongDownload.mockResolvedValue(null);
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    store.saveSongDownload.mockImplementation(async (record) => ({
+      ...record,
+      id: "song-video-123",
+      episodeId: "video-123",
+      showTitle: "Test Artist",
+      collectionType: "song",
+      collectionId: "songs",
+      collectionName: "Songs",
+      contentType: "song",
+      size: record.blob.size,
+      savedAt: Date.now(),
+    }));
+    authFetchMock.mockResolvedValue(okResponse());
+
     render(<SongDownloadAction song={{ ...song, metadata: {} }} compact />);
 
-    const button = screen.getByRole("button", { name: "Offline download unavailable for this track" });
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+    await waitFor(() => expect(authFetchMock).toHaveBeenCalledWith(
+      "/download/video-123",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
+    await waitFor(() => expect(store.saveSongDownload).toHaveBeenCalledOnce());
+    expect(store.saveSongDownload).toHaveBeenCalledWith(expect.objectContaining({
+      videoId: song.videoId,
+      title: song.title,
+      artist: song.artist,
+      audioUrl: "/download/video-123",
+      mimeType: "audio/mpeg",
+      blob: expect.any(Blob),
+    }));
+    await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
   });
 
   it("downloads and saves a source-provided audio file", async () => {
@@ -59,14 +106,7 @@ describe("SongDownloadAction", () => {
       size: record.blob.size,
       savedAt: Date.now(),
     }));
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: {
-        get: (name: string) => name.toLowerCase() === "content-type" ? "audio/mpeg" : null,
-      },
-      body: null,
-      blob: async () => new Blob(["audio bytes"], { type: "audio/mpeg" }),
-    });
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SongDownloadAction song={song as any} compact />);
@@ -74,6 +114,7 @@ describe("SongDownloadAction", () => {
 
     await waitFor(() => expect(store.saveSongDownload).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith(song.metadata.downloadUrl, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(authFetchMock).not.toHaveBeenCalled();
     expect(store.saveSongDownload).toHaveBeenCalledWith(expect.objectContaining({
       videoId: song.videoId,
       title: song.title,

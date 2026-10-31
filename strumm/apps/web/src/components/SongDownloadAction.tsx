@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Download, Loader2, Trash2, X } from "lucide-react";
+import { authFetch } from "web/lib/auth-client";
+import { apiUrl } from "web/lib/api";
 import type { Song } from "@strumm/types";
 import {
   formatDownloadSize,
@@ -44,7 +46,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
   }, [song.videoId]);
 
   const startDownload = async () => {
-    if (!downloadUrl || downloading) return;
+    if (downloading) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setDownloading(true);
@@ -55,12 +57,26 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
       const storage = typeof navigator !== "undefined" && navigator.storage?.estimate
         ? await navigator.storage.estimate().catch(() => null)
         : null;
-      const response = await fetch(downloadUrl, { signal: controller.signal });
+      // Songs with an explicitly licensed / permitted source download straight
+      // from that origin; every other song resolves its MP3 through the backend
+      // (`/download/{videoId}` runs the server-side source fetch + transcode).
+      const response = downloadUrl
+        ? await fetch(downloadUrl, { signal: controller.signal })
+        : await authFetch(apiUrl(`/download/${song.videoId}`), { signal: controller.signal });
 
       if (!response.ok) {
-        throw new Error(response.status === 404
+        let message = response.status === 404
           ? "The source no longer offers this download."
-          : "Unable to download this track from its source.");
+          : "Unable to download this track.";
+        const body = await response.text().catch(() => "");
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed?.detail) message = parsed.detail;
+          else if (parsed?.error) message = parsed.error;
+        } catch {
+          // Keep the status-based fallback message.
+        }
+        throw new Error(message);
       }
 
       const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
@@ -124,7 +140,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         artist: song.artist,
         thumbnail: song.thumbnail,
         duration: song.duration,
-        audioUrl: downloadUrl,
+        audioUrl: downloadUrl || apiUrl(`/download/${song.videoId}`),
         mimeType,
         blob,
       });
@@ -164,21 +180,6 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
     : "inline-flex items-center gap-2 rounded-lg border border-border/70 px-3.5 py-2.5 text-xs font-semibold text-muted hover:text-text hover:bg-surface-elevated transition disabled:opacity-50";
 
   if (song.videoId.startsWith("podcast-")) return null;
-
-  if (!downloadUrl && !saved) {
-    return (
-      <button
-        type="button"
-        disabled
-        className={buttonClass}
-        aria-label="Offline download unavailable for this track"
-        title="Offline downloads are available only when the track source explicitly permits them."
-      >
-        <Download className="h-3.5 w-3.5" />
-        {!compact && "Unavailable"}
-      </button>
-    );
-  }
 
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">

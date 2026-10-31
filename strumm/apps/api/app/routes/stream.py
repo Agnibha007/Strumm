@@ -13,16 +13,18 @@ a forwardable stream URL.
 
 import logging
 import os
+import shutil
 import threading
 import time
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Path, Query, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 import asyncio
 
 from app.database import mongodb as db
+from app.routes.dependencies import get_current_user
 from app.services.security import sanitize_youtube_id
 
 logger = logging.getLogger("strumm-stream")
@@ -441,6 +443,112 @@ async def get_direct_audio(video_id: str) -> Optional[dict]:
         return fallback
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Song download — server-side source fetch + MP3 transcode
+# ---------------------------------------------------------------------------
+# Offline downloads for YouTube-hosted songs resolve their audio through the
+# backend: yt-dlp performs the actual source fetch and audio extraction server
+# side, transcodes the audio to MP3, and the resulting file is streamed to the
+# client (which stores it in IndexedDB for offline playback). The client never
+# receives raw YouTube stream URLs for download purposes, and no media is
+# persisted on the server.
+
+SONG_DOWNLOAD_MAX_BYTES = 500 * 1024 * 1024
+
+
+def _run_ytdlp_download(video_id: str) -> tuple:
+    """Download the best audio for ``video_id`` via yt-dlp and transcode to MP3.
+
+    Returns ``(mp3_path, tmp_dir)``. The caller is responsible for removing
+    ``tmp_dir`` once the streamed file has been consumed.
+    """
+    import yt_dlp
+    import tempfile
+
+    tmp_dir = tempfile.mkdtemp(prefix=f"strumm-dl-{video_id}-")
+    mp3_path = os.path.join(tmp_dir, "audio.mp3")
+    try:
+        opts = {
+            "format": "bestaudio/best",
+            "outtmpl": os.path.join(tmp_dir, "audio.%(ext)s"),
+            "postprocessor": {"preferredcodec": "mp3", "preferredquality": "192"},
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "skip_download": False,
+            "socket_timeout": 30,
+            "retries": 2,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        if not os.path.exists(mp3_path):
+            candidates = sorted(
+                os.path.join(root, name)
+                for root, _dirs, files in os.walk(tmp_dir)
+                for name in files
+                if name.lower().endswith(".mp3")
+            )
+            if not candidates:
+                raise RuntimeError(f"yt-dlp did not produce an MP3 for {video_id}")
+            mp3_path = candidates[0]
+        return mp3_path, tmp_dir
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+
+
+@router.get("/download/{id}")
+async def download_song_audio(
+    id: str = Path(..., max_length=64, description="The YouTube videoId to download as MP3."),
+    current_user: dict = Depends(get_current_user),
+):
+    """Download a song as an MP3 via a server-side source fetch and transcode."""
+    tmp_dir: Optional[str] = None
+    mp3_path: Optional[str] = None
+    try:
+        try:
+            video_id = sanitize_youtube_id(id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        mp3_path, tmp_dir = await asyncio.to_thread(_run_ytdlp_download, video_id)
+        size = os.path.getsize(mp3_path) if mp3_path else 0
+        if size > SONG_DOWNLOAD_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="This track exceeds the 500 MiB download limit.")
+
+        async def stream_bytes():
+            try:
+                with open(mp3_path, "rb") as handle:  # type: ignore[arg-type]
+                    while True:
+                        chunk = handle.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        yield chunk
+            finally:
+                if tmp_dir:
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return StreamingResponse(
+            stream_bytes(),
+            status_code=200,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": f'attachment; filename="strumm-{video_id}.mp3"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    except HTTPException:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        logger.warning(f"Song download setup failed for {id}: {exc!s:.160}")
+        raise HTTPException(status_code=502, detail="Unable to prepare the song download.") from exc
 
 
 @router.get("/play/{id}")
