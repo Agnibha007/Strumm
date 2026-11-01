@@ -5,9 +5,10 @@ import { useAuthStore } from "web/store/useAuthStore";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import { apiFetch } from "web/lib/api-client";
 import SongArtwork from "web/components/SongArtwork";
+import { PageSkeleton } from "web/components/PageSkeleton";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import Link from "next/link";
-import { BarChart3, Clock, Music, Headphones, TrendingUp, Loader2 } from "lucide-react";
+import { BarChart3, Clock, Music, Headphones, TrendingUp } from "lucide-react";
 
 interface ListeningStats {
   period_days: number;
@@ -130,9 +131,8 @@ export default function StatsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-muted gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <span className="text-xs uppercase tracking-widest">Loading statistics...</span>
+        <div className="max-w-7xl px-4 sm:px-6 py-8">
+          <PageSkeleton rows={10} />
         </div>
       ) : data ? (
         <div className="space-y-8">

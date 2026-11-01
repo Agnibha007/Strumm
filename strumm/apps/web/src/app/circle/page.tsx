@@ -6,7 +6,8 @@ import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_LOW } from "web/lib/media";
-import { Users, Sparkles, UserMinus, Check, X, Bell, Play, Send, Trash2, RefreshCw, Loader2 } from "lucide-react";
+import { SocialSkeleton } from "web/components/PageSkeleton";
+import { Users, Sparkles, UserMinus, Check, X, Bell, Play, Send, Trash2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import {
@@ -413,9 +414,8 @@ export default function CirclePage() {
 
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="text-xs uppercase tracking-widest">Opening Circle Gates...</span>
+      <div className="max-w-6xl px-4 md:px-0 py-8">
+        <SocialSkeleton />
       </div>
     );
   }

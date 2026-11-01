@@ -24,7 +24,6 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
   const recordPlayed = useLastPlayedPlaylistStore((s) => s.recordPlayed);
 
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Edit states
@@ -42,7 +41,6 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
   const [searchQuery, setSearchQuery] = useState("");
 
   const loadPlaylist = async () => {
-    setLoading(true);
     setError(null);
     try {
       const response = await authFetch(apiUrl(`/playlists/${encodeURIComponent(id)}`), {
@@ -60,7 +58,6 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
     } catch (e) {
       setError("Unable to connect to backend server.");
     } finally {
-      setLoading(false);
     }
   };
 
@@ -237,40 +234,6 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
     }
     return `${minutes} min ${seconds} sec`;
   };
-
-  if (loading) {
-    return (
-      <div className="space-y-10 max-w-5xl">
-        <div className="h-4 w-32 rounded bg-border/50 animate-pulse" />
-        <div className="flex flex-col md:flex-row items-center md:items-end gap-8 pb-4">
-          <div className="w-48 h-48 md:w-56 md:h-56 rounded-xl bg-border/40 animate-pulse flex-shrink-0" />
-          <div className="flex-grow space-y-4 w-full">
-            <div className="h-3 w-28 rounded bg-border/50 animate-pulse mx-auto md:mx-0" />
-            <div className="h-12 w-full max-w-md rounded bg-border/50 animate-pulse mx-auto md:mx-0" />
-            <div className="h-4 w-full max-w-lg rounded bg-border/40 animate-pulse mx-auto md:mx-0" />
-            <div className="h-3 w-64 rounded bg-border/40 animate-pulse mx-auto md:mx-0" />
-          </div>
-        </div>
-        <div className="border-y border-border/20 py-4 flex gap-3">
-          <div className="h-10 w-28 rounded-lg bg-border/50 animate-pulse" />
-          <div className="h-10 w-28 rounded-lg bg-border/40 animate-pulse" />
-        </div>
-        <div className="overflow-hidden rounded-xl border border-border/60 bg-surface/20">
-          {Array.from({ length: 7 }).map((_, idx) => (
-            <div key={idx} className="flex items-center gap-4 p-4 border-b border-border/20 last:border-0">
-              <div className="h-3 w-5 rounded bg-border/40 animate-pulse" />
-              <div className="w-8 h-8 rounded bg-border/50 animate-pulse" />
-              <div className="space-y-2 flex-1">
-                <div className="h-3 w-1/2 rounded bg-border/50 animate-pulse" />
-                <div className="h-2.5 w-1/4 rounded bg-border/40 animate-pulse" />
-              </div>
-              <div className="h-3 w-10 rounded bg-border/40 animate-pulse" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   if (error || !playlist) {
     return (

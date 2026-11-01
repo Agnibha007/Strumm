@@ -7,6 +7,7 @@ import { PodcastShow } from "@strumm/types";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import SafePodcastImage from "web/components/SafePodcastImage";
+import { CardGridSkeleton } from "web/components/PageSkeleton";
 
 export default function PodcastHomePage() {
   const { token, user } = useAuthStore();
@@ -130,7 +131,7 @@ export default function PodcastHomePage() {
               Followed Chronicles
             </h3>
             {loading ? (
-              <p className="text-xs text-muted">Syncing followed feeds...</p>
+              <CardGridSkeleton count={2} />
             ) : followedShows.length === 0 ? (
               <p className="text-xs text-muted italic">No followed podcast feeds. Import or explore the catalog below.</p>
             ) : (
@@ -180,9 +181,8 @@ export default function PodcastHomePage() {
               </div>
             </div>
             {loading ? (
-              <div className="flex items-center gap-2 text-xs text-muted py-6">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span>{podcastQuery.trim() ? "Searching podcast catalog..." : "Reading podcast catalog..."}</span>
+              <div className="py-6">
+                <CardGridSkeleton count={8} />
               </div>
             ) : loadError ? (
               <p className="text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg leading-relaxed">

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CardGridSkeleton } from "web/components/PageSkeleton";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_LOW } from "web/lib/media";
 
@@ -286,9 +287,12 @@ export default function RoomsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="text-xs uppercase tracking-widest">Opening Rooms Lobby...</span>
+      <div className="max-w-6xl px-4 md:px-0 py-8 space-y-6">
+        <div className="space-y-2 animate-pulse">
+          <div className="h-3 w-20 bg-border/40 rounded" />
+          <div className="h-8 w-48 bg-border/40 rounded" />
+        </div>
+        <CardGridSkeleton count={6} />
       </div>
     );
   }

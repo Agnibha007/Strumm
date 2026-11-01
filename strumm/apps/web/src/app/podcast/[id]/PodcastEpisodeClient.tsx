@@ -4,11 +4,12 @@ import { useEffect, useState, use } from "react";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useRouter } from "next/navigation";
-import { Loader2, ShieldAlert, LogIn } from "lucide-react";
+import { ShieldAlert, LogIn } from "lucide-react";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { Song, PodcastEpisode, PodcastShow } from "@strumm/types";
 import SafePodcastImage from "web/components/SafePodcastImage";
+import { PageSkeleton, PlayerPageSkeleton } from "web/components/PageSkeleton";
 import { loginUrlFor } from "web/lib/routes";
 
 interface PodcastEpisodeClientProps {
@@ -108,9 +109,8 @@ export default function PodcastEpisodeClient({ params }: PodcastEpisodeClientPro
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-xs uppercase tracking-widest">Resolving Podcast Episode...</p>
+      <div className="max-w-4xl px-4 py-8">
+        <PageSkeleton rows={5} />
       </div>
     );
   }
@@ -135,9 +135,8 @@ export default function PodcastEpisodeClient({ params }: PodcastEpisodeClientPro
 
   if (user) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-xs uppercase tracking-widest">Opening Episode...</p>
+      <div className="max-w-6xl px-4 md:px-0 py-8">
+        <PlayerPageSkeleton />
       </div>
     );
   }

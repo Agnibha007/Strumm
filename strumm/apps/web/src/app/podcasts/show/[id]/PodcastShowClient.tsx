@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { Radio, Plus, Check, Play, Clock, ArrowLeft, Loader2, History } from "lucide-react";
+import { Radio, Plus, Check, Play, Clock, ArrowLeft, History } from "lucide-react";
 import { PodcastShow, PodcastEpisode, Song } from "@strumm/types";
 import { useRouter } from "next/navigation";
 import { authFetch } from "web/lib/auth-client";
@@ -11,6 +11,7 @@ import { apiUrl, stripHtml } from "web/lib/api";
 import { apiFetch } from "web/lib/api-client";
 import { formatTime } from "web/lib/format";
 import SafePodcastImage from "web/components/SafePodcastImage";
+import { CardGridSkeleton } from "web/components/PageSkeleton";
 import PodcastDownloadAction from "web/components/PodcastDownloadAction";
 import { loginUrlFor } from "web/lib/routes";
 
@@ -148,9 +149,12 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-32 text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-xs uppercase tracking-widest">Opening Podcast Log...</p>
+      <div className="max-w-5xl px-4 py-8 space-y-6">
+        <div className="space-y-2 animate-pulse">
+          <div className="h-3 w-24 bg-border/40 rounded" />
+          <div className="h-8 w-48 bg-border/40 rounded" />
+        </div>
+        <CardGridSkeleton count={6} />
       </div>
     );
   }

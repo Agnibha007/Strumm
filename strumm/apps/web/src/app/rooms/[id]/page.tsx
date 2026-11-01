@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import SongArtwork from "web/components/SongArtwork";
+import { PlayerPageSkeleton } from "web/components/PageSkeleton";
 import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { useRouter } from "next/navigation";
 import { useNotificationStore } from "web/store/useNotificationStore";
@@ -1012,9 +1013,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
 
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="text-xs uppercase tracking-widest">Entering Strumm Room...</span>
+      <div className="max-w-6xl px-4 md:px-0 py-8">
+        <PlayerPageSkeleton />
       </div>
     );
   }

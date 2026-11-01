@@ -9,6 +9,7 @@ import type { Song } from "@strumm/types";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_HIGH } from "web/lib/media";
 import { loginUrlFor } from "web/lib/routes";
+import { recordPrefetch } from "web/lib/api";
 
 interface SongPageProps {
   params: Promise<{ id: string }>;
@@ -28,7 +29,6 @@ export default function SongDetailClient({ params }: SongPageProps) {
   const { playSong } = usePlayerStore();
   const { user } = useAuthStore();
 
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [song, setSong] = useState<Song | null>(null);
 
@@ -36,9 +36,14 @@ export default function SongDetailClient({ params }: SongPageProps) {
     let cancelled = false;
 
     const loadSong = async () => {
-      setLoading(true);
       setError(null);
       try {
+        // Record the visit in prefetch history so the next load can warm the
+        // cache with this song's metadata.
+        if (user) {
+          recordPrefetch(id, 200);
+        }
+
         // Search for the video by ID via the search API to get full metadata
         const res = await fetch(
           `/api/search?q=${encodeURIComponent(id)}&type=video`,
@@ -64,8 +69,6 @@ export default function SongDetailClient({ params }: SongPageProps) {
         );
       } catch {
         if (!cancelled) setError("Failed to resolve song.");
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     };
 
@@ -73,7 +76,7 @@ export default function SongDetailClient({ params }: SongPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, user]);
 
   // Only a signed-in visitor has a mounted player to play into.
   useEffect(() => {
@@ -87,15 +90,6 @@ export default function SongDetailClient({ params }: SongPageProps) {
     // effect above plays the track and hands over to the app.
     router.push(loginUrlFor(`/song/${encodeURIComponent(id)}`));
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-xs uppercase tracking-widest">Resolving Track...</p>
-      </div>
-    );
-  }
 
   if (error || !song) {
     return (

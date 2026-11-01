@@ -11,6 +11,7 @@ import { apiUrl } from "web/lib/api";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import SongArtwork from "web/components/SongArtwork";
+import { PageSkeleton } from "web/components/PageSkeleton";
 import { ARTWORK_QUALITY_THUMBNAIL, ARTWORK_QUALITY_LOW } from "web/lib/media";
 
 const SoundDNAChart = dynamic(() => import("web/components/SoundDNAChart"), {
@@ -367,9 +368,8 @@ function ProfilePageContent() {
 
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="text-xs uppercase tracking-widest">Resolving user passport...</span>
+      <div className="max-w-5xl px-4 py-8">
+        <PageSkeleton rows={6} />
       </div>
     );
   }

@@ -6,9 +6,10 @@ import { apiUrl } from "web/lib/api";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { useAuthStore } from "web/store/useAuthStore";
 import SongArtwork from "web/components/SongArtwork";
+import { PageSkeleton } from "web/components/PageSkeleton";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SoundDNAChart from "web/components/SoundDNAChart";
-import { Loader2, Music, Sparkles, ShieldAlert, Play, ArrowRight, Award } from "lucide-react";
+import { Music, Sparkles, ShieldAlert, Play, ArrowRight, Award } from "lucide-react";
 import Link from "next/link";
 
 interface PublicProfileData {
@@ -253,9 +254,8 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
 
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="text-xs uppercase tracking-widest">Resolving user passport...</span>
+      <div className="max-w-5xl px-4 py-8">
+        <PageSkeleton rows={6} />
       </div>
     );
   }

@@ -6,6 +6,7 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
+import { PageSkeleton } from "web/components/PageSkeleton";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SoundDNAChart from "web/components/SoundDNAChart";
@@ -164,9 +165,8 @@ export default function ReplayPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-muted gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <span className="text-xs uppercase tracking-widest">Compiling your musical passport...</span>
+      <div className="max-w-5xl px-4 py-8">
+        <PageSkeleton rows={8} />
       </div>
     );
   }
