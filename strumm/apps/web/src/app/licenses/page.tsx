@@ -41,7 +41,7 @@ const licenses = [
   { name: "Turborepo", license: "MIT", author: "Vercel" },
 ];
 
-export default function LicensesPage() {
+export default async function LicensesPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[

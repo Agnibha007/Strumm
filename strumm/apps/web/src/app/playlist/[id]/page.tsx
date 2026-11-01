@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PlaylistDetailClient from "./PlaylistDetailClient";
+import JsonLd from "web/components/JsonLd";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -69,29 +70,26 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   return (
     <>
       {playlist && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "MusicPlaylist",
-              "@id": canonicalUrl,
-              name,
-              url: canonicalUrl,
-              description: `Listen to "${name}" — ${songCount} tracks curated on Strumm.`,
-              numTracks: songCount,
-              ...(playlist.description
-                ? { abstract: playlist.description }
-                : {}),
-              ...(playlist.owner
-                ? {
-                    author: {
-                      "@type": "Person",
-                      name: playlist.owner.displayName || playlist.owner.username || "Strumm User",
-                    },
-                  }
-                : {}),
-            }),
+        <JsonLd
+          schema={{
+            "@context": "https://schema.org",
+            "@type": "MusicPlaylist",
+            "@id": canonicalUrl,
+            name,
+            url: canonicalUrl,
+            description: `Listen to "${name}" — ${songCount} tracks curated on Strumm.`,
+            numTracks: songCount,
+            ...(playlist.description
+              ? { abstract: playlist.description }
+              : {}),
+            ...(playlist.owner
+              ? {
+                  author: {
+                    "@type": "Person",
+                    name: playlist.owner.displayName || playlist.owner.username || "Strumm User",
+                  },
+                }
+              : {}),
           }}
         />
       )}

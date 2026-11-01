@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function FeatureRequestPage() {
+export default async function FeatureRequestPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[

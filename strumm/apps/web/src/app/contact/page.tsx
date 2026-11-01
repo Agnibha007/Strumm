@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function ContactPage() {
+export default async function ContactPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -28,28 +29,25 @@ export default function ContactPage() {
         { name: "Contact", href: "/contact" },
       ]} />
       {/* ContactPage structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "ContactPage",
-            "@id": `${appUrl}/contact#contact`,
-            name: "Contact Strumm",
-            description: "Get in touch with the Strumm team for support, feedback, or inquiries.",
-            url: `${appUrl}/contact`,
-            mainEntity: {
-              "@type": "Organization",
-              name: "Strumm",
-              email: "hello@strumm.me",
-              contactPoint: [
-                { "@type": "ContactPoint", contactType: "customer support", email: "support@strumm.me" },
-                { "@type": "ContactPoint", contactType: "privacy", email: "privacy@strumm.me" },
-                { "@type": "ContactPoint", contactType: "copyright", email: "dmca@strumm.me" },
-                { "@type": "ContactPoint", contactType: "security", email: "security@strumm.me" },
-              ],
-            },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "ContactPage",
+          "@id": `${appUrl}/contact#contact`,
+          name: "Contact Strumm",
+          description: "Get in touch with the Strumm team for support, feedback, or inquiries.",
+          url: `${appUrl}/contact`,
+          mainEntity: {
+            "@type": "Organization",
+            name: "Strumm",
+            email: "hello@strumm.me",
+            contactPoint: [
+              { "@type": "ContactPoint", contactType: "customer support", email: "support@strumm.me" },
+              { "@type": "ContactPoint", contactType: "privacy", email: "privacy@strumm.me" },
+              { "@type": "ContactPoint", contactType: "copyright", email: "dmca@strumm.me" },
+              { "@type": "ContactPoint", contactType: "security", email: "security@strumm.me" },
+            ],
+          },
         }}
       />
       <article className="max-w-3xl py-12 px-4 md:px-0 soft-enter">

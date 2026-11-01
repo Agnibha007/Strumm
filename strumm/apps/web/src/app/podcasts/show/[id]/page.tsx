@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PodcastShowClient from "./PodcastShowClient";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -88,31 +89,28 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         { name: data?.show?.title || "Podcast Show", href: `/podcasts/show/${id}` },
       ]} />
       {data && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "PodcastSeries",
-              "@id": canonicalUrl,
-              name: data.show.title,
-              url: canonicalUrl,
-              description: data.show.description
-                ? data.show.description.replace(/<[^>]*>/g, "").slice(0, 500)
-                : `Listen to "${data.show.title}" on Strumm.`,
-              image: data.show.image
-                ? { "@type": "ImageObject", url: data.show.image }
-                : undefined,
-              author: {
-                "@type": "Person",
-                name: data.show.author,
-              },
-              ...(data.episodes?.length > 0
-                ? {
-                    numberOfEpisodes: data.episodes.length,
-                  }
-                : {}),
-            }),
+        <JsonLd
+          schema={{
+            "@context": "https://schema.org",
+            "@type": "PodcastSeries",
+            "@id": canonicalUrl,
+            name: data.show.title,
+            url: canonicalUrl,
+            description: data.show.description
+              ? data.show.description.replace(/<[^>]*>/g, "").slice(0, 500)
+              : `Listen to "${data.show.title}" on Strumm.`,
+            image: data.show.image
+              ? { "@type": "ImageObject", url: data.show.image }
+              : undefined,
+            author: {
+              "@type": "Person",
+              name: data.show.author,
+            },
+            ...(data.episodes?.length > 0
+              ? {
+                  numberOfEpisodes: data.episodes.length,
+                }
+              : {}),
           }}
         />
       )}

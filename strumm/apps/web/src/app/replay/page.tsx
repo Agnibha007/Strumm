@@ -10,6 +10,7 @@ import { PageSkeleton } from "web/components/PageSkeleton";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SoundDNAChart from "web/components/SoundDNAChart";
+import JsonLdList from "web/components/JsonLdList";
 import { Loader2, Music, Sparkles, Trophy, Compass, User, Play, Clock, Globe } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -223,13 +224,7 @@ export default function ReplayPage() {
   return (
     <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden">
       {/* Individual JSON-LD script tags for each top artist */}
-      {artistSchemas.map((schema, i) => (
-        <script
-          key={`top-artist-ld-${i}`}
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-        />
-      ))}
+      <JsonLdList schemas={artistSchemas} />
 
       {/* Editorial Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 min-w-0">

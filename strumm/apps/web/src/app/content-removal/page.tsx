@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function ContentRemovalPage() {
+export default async function ContentRemovalPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -29,19 +30,16 @@ export default function ContentRemovalPage() {
         { name: "Content Removal Policy", href: "/content-removal" },
       ]} />
       {/* WebPage structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "WebPage",
-            "@id": `${appUrl}/content-removal#webpage`,
-            name: "Strumm Content Removal Policy",
-            description:
-              "Request removal of inappropriate, abusive, or copyright-infringing content from Strumm.",
-            url: `${appUrl}/content-removal`,
-            isPartOf: { "@id": `${appUrl}#website` },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "@id": `${appUrl}/content-removal#webpage`,
+          name: "Strumm Content Removal Policy",
+          description:
+            "Request removal of inappropriate, abusive, or copyright-infringing content from Strumm.",
+          url: `${appUrl}/content-removal`,
+          isPartOf: { "@id": `${appUrl}#website` },
         }}
       />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">

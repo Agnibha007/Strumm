@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
 import StatusClient from "./StatusClient";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -23,7 +24,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function StatusPage() {
+export default async function StatusPage() {
   return (
     <>
       <BreadcrumbJsonLd
@@ -34,19 +35,16 @@ export default function StatusPage() {
       />
 
       {/* WebPage structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "WebPage",
-            "@id": `${appUrl}/status#webpage`,
-            name: "Strumm Service Status",
-            description:
-              "Live health checks for the Strumm API and database, with clearly labelled coverage for third-party integrations.",
-            url: `${appUrl}/status`,
-            isPartOf: { "@id": `${appUrl}#website` },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "@id": `${appUrl}/status#webpage`,
+          name: "Strumm Service Status",
+          description:
+            "Live health checks for the Strumm API and database, with clearly labelled coverage for third-party integrations.",
+          url: `${appUrl}/status`,
+          isPartOf: { "@id": `${appUrl}#website` },
         }}
       />
 

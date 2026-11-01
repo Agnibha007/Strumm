@@ -12,6 +12,7 @@ import { searchYouTube, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SafePodcastImage from "web/components/SafePodcastImage";
+import JsonLdList from "web/components/JsonLdList";
 import { useNotificationStore } from "web/store/useNotificationStore";
 import {
   pushRecentSearch,
@@ -417,21 +418,9 @@ export default function SearchPage() {
   return (
     <div className="space-y-10 max-w-6xl soft-enter">
       {/* Individual JSON-LD script tags for each artist */}
-      {artistSchemas.map((schema: any, i: number) => (
-        <script
-          key={`artist-ld-${i}`}
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-        />
-      ))}
+      <JsonLdList schemas={artistSchemas} />
       {/* Individual JSON-LD script tags for each album */}
-      {albumSchemas.map((schema: any, i: number) => (
-        <script
-          key={`album-ld-${i}`}
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-        />
-      ))}
+      <JsonLdList schemas={albumSchemas} />
 
       <div>
         <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">

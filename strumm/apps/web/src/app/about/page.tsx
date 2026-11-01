@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function AboutPage() {
+export default async function AboutPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -29,28 +30,25 @@ export default function AboutPage() {
       ]} />
 
       {/* AboutPage structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "AboutPage",
-            "@id": `${appUrl}/about#about`,
-            name: "About Strumm",
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "AboutPage",
+          "@id": `${appUrl}/about#about`,
+          name: "About Strumm",
+          description:
+            "About Strumm — free music discovery with AI-assisted curation, playlists, podcasts, and listening analytics.",
+          url: `${appUrl}/about`,
+          isPartOf: { "@id": `${appUrl}#website` },
+          mainEntity: {
+            "@type": "Organization",
+            name: "Strumm",
             description:
-              "About Strumm — free music discovery with AI-assisted curation, playlists, podcasts, and listening analytics.",
-            url: `${appUrl}/about`,
-            isPartOf: { "@id": `${appUrl}#website` },
-            mainEntity: {
-              "@type": "Organization",
-              name: "Strumm",
-              description:
-                "A free-to-use music discovery app with playlists, podcasts, AI-assisted curation, and listening analytics.",
-              foundingDate: "2024",
-              email: "hello@strumm.me",
-              url: appUrl,
-            },
-          }),
+              "A free-to-use music discovery app with AI-assisted curation, playlists, podcasts, and listening analytics.",
+            foundingDate: "2024",
+            email: "hello@strumm.me",
+            url: appUrl,
+          },
         }}
       />
 

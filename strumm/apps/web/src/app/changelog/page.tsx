@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -131,7 +132,7 @@ const entries = [
   },
 ];
 
-export default function ChangelogPage() {
+export default async function ChangelogPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -140,32 +141,29 @@ export default function ChangelogPage() {
       ]} />
 
       {/* Article structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Article",
-            "@id": `${appUrl}/changelog#article`,
-            name: "Strumm Changelog",
-            headline: "Strumm Release History — Every Version Documented",
-            description:
-              "Complete release history and changelog for Strumm music ecosystem, from v1.0.0 through v2.0.0, including AI features, podcast support, social features, and more.",
-            url: `${appUrl}/changelog`,
-            dateModified: "2026-08-15",
-            datePublished: "2026-03-01",
-            author: {
-              "@type": "Organization",
-              name: "Strumm",
-              url: appUrl,
-            },
-            publisher: {
-              "@type": "Organization",
-              name: "Strumm",
-              url: appUrl,
-            },
-            isPartOf: { "@id": `${appUrl}#website` },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "Article",
+          "@id": `${appUrl}/changelog#article`,
+          name: "Strumm Changelog",
+          headline: "Strumm Release History — Every Version Documented",
+          description:
+            "Complete release history and changelog for Strumm music ecosystem, from v1.0.0 through v2.0.0, including AI features, podcast support, social features, and more.",
+          url: `${appUrl}/changelog`,
+          dateModified: "2026-08-15",
+          datePublished: "2026-03-01",
+          author: {
+            "@type": "Organization",
+            name: "Strumm",
+            url: appUrl,
+          },
+          publisher: {
+            "@type": "Organization",
+            name: "Strumm",
+            url: appUrl,
+          },
+          isPartOf: { "@id": `${appUrl}#website` },
         }}
       />
 

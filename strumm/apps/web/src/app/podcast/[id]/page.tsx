@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import PodcastEpisodeClient from "./PodcastEpisodeClient";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -86,33 +87,30 @@ export default async function PodcastEpisodePage({ params }: PodcastEpisodePageP
 
       {/* PodcastEpisode structured data */}
       {data && data.episode && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "PodcastEpisode",
-              name: data.episode.title || episodeTitle,
-              url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/podcast/${id}`,
-              description: data.episode.description
-                ? data.episode.description.replace(/<[^>]*>/g, "").slice(0, 500)
-                : `Listen to ${episodeTitle} from ${showTitle} on Strumm.`,
-              ...(data.show?.image
-                ? { image: { "@type": "ImageObject", url: data.show.image } }
-                : {}),
-              partOfSeries: {
-                "@type": "PodcastSeries",
-                name: showTitle,
-              },
-              ...(data.show?.author
-                ? {
-                    author: {
-                      "@type": "Person",
-                      name: data.show.author,
-                    },
-                  }
-                : {}),
-            }),
+        <JsonLd
+          schema={{
+            "@context": "https://schema.org",
+            "@type": "PodcastEpisode",
+            name: data.episode.title || episodeTitle,
+            url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/podcast/${id}`,
+            description: data.episode.description
+              ? data.episode.description.replace(/<[^>]*>/g, "").slice(0, 500)
+              : `Listen to ${episodeTitle} from ${showTitle} on Strumm.`,
+            ...(data.show?.image
+              ? { image: { "@type": "ImageObject", url: data.show.image } }
+              : {}),
+            partOfSeries: {
+              "@type": "PodcastSeries",
+              name: showTitle,
+            },
+            ...(data.show?.author
+              ? {
+                  author: {
+                    "@type": "Person",
+                    name: data.show.author,
+                  },
+                }
+              : {}),
           }}
         />
       )}

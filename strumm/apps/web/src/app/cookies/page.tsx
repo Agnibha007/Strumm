@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function CookiesPage() {
+export default async function CookiesPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[

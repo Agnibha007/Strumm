@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -145,7 +146,7 @@ const sections = [
   },
 ];
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -153,24 +154,21 @@ export default function PrivacyPage() {
         { name: "Privacy Policy", href: "/privacy" },
       ]} />
       {/* PrivacyPolicy structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "PrivacyPolicy",
-            "@id": `${appUrl}/privacy#policy`,
-            name: "Strumm Privacy Policy",
-            description:
-              "How Strumm collects, uses, and protects your personal data and listening history.",
-            publisher: {
-              "@type": "Organization",
-              name: "Strumm",
-              url: appUrl,
-            },
-            url: `${appUrl}/privacy`,
-            isPartOf: { "@id": `${appUrl}#website` },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "PrivacyPolicy",
+          "@id": `${appUrl}/privacy#policy`,
+          name: "Strumm Privacy Policy",
+          description:
+            "How Strumm collects, uses, and protects your personal data and listening history.",
+          publisher: {
+            "@type": "Organization",
+            name: "Strumm",
+            url: appUrl,
+          },
+          url: `${appUrl}/privacy`,
+          isPartOf: { "@id": `${appUrl}#website` },
         }}
       />
       <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">

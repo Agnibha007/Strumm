@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -31,7 +32,7 @@ const items = [
   { status: "planned" as const, title: "Smart Sleep Timer", desc: "AI-powered sleep timer that fades out based on your sleep patterns." },
 ];
 
-export default function RoadmapPage() {
+export default async function RoadmapPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -40,19 +41,16 @@ export default function RoadmapPage() {
       ]} />
 
       {/* WebPage structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "WebPage",
-            "@id": `${appUrl}/roadmap#webpage`,
-            name: "Strumm Product Roadmap",
-            description:
-              "Upcoming features and product direction for Strumm music ecosystem — mobile apps, offline mode, collaborative playlists, and more.",
-            url: `${appUrl}/roadmap`,
-            isPartOf: { "@id": `${appUrl}#website` },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "@id": `${appUrl}/roadmap#webpage`,
+          name: "Strumm Product Roadmap",
+          description:
+            "Upcoming features and product direction for Strumm music ecosystem — mobile apps, offline mode, collaborative playlists, and more.",
+          url: `${appUrl}/roadmap`,
+          isPartOf: { "@id": `${appUrl}#website` },
         }}
       />
 

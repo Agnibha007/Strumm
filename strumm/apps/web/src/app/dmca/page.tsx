@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function DMCAPage() {
+export default async function DMCAPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[

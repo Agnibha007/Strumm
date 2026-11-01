@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import SongDetailClient from "./SongDetailClient";
+import JsonLd from "web/components/JsonLd";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -70,31 +71,28 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   return (
     <>
       {song && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "MusicRecording",
-              "@id": canonicalUrl,
-              name: song.title || "Unknown Track",
-              url: canonicalUrl,
-              description: `Listen to "${song.title || "Unknown Track"}" by ${song.artist || "Unknown Artist"} on Strumm.`,
-              byArtist: {
-                "@type": "MusicGroup",
-                name: song.artist || "Unknown Artist",
-              },
-              ...(song.thumbnail
-                ? { image: { "@type": "ImageObject", url: song.thumbnail } }
-                : {}),
-              ...(song.duration
-                ? { duration: `PT${Math.floor(song.duration)}S` }
-                : {}),
-              isPartOf: {
-                "@type": "MusicAlbum",
-                name: `${song.title || "Song"} — Single`,
-              },
-            }),
+        <JsonLd
+          schema={{
+            "@context": "https://schema.org",
+            "@type": "MusicRecording",
+            "@id": canonicalUrl,
+            name: song.title || "Unknown Track",
+            url: canonicalUrl,
+            description: `Listen to "${song.title || "Unknown Track"}" by ${song.artist || "Unknown Artist"} on Strumm.`,
+            byArtist: {
+              "@type": "MusicGroup",
+              name: song.artist || "Unknown Artist",
+            },
+            ...(song.thumbnail
+              ? { image: { "@type": "ImageObject", url: song.thumbnail } }
+              : {}),
+            ...(song.duration
+              ? { duration: `PT${Math.floor(song.duration)}S` }
+              : {}),
+            isPartOf: {
+              "@type": "MusicAlbum",
+              name: `${song.title || "Song"} — Single`,
+            },
           }}
         />
       )}

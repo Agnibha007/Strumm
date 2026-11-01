@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import PublicProfileClient from "./PublicProfileClient";
+import JsonLd from "web/components/JsonLd";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -68,24 +69,21 @@ export default async function Page({ params }: { params: Promise<{ username: str
   return (
     <>
       {/* Person/Profile structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Person",
-            "@id": canonicalUrl,
-            name: displayName,
-            url: canonicalUrl,
-            ...(profile?.avatar
-              ? { image: { "@type": "ImageObject", url: profile.avatar } }
-              : {}),
-            description: `${displayName}'s Strumm music passport — ${profile?.totalMinutes || 0} minutes listened, curated playlists, and Sound DNA.`,
-            memberOf: {
-              "@type": "Organization",
-              name: "Strumm",
-            },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "Person",
+          "@id": canonicalUrl,
+          name: displayName,
+          url: canonicalUrl,
+          ...(profile?.avatar
+            ? { image: { "@type": "ImageObject", url: profile.avatar } }
+            : {}),
+          description: `${displayName}'s Strumm music passport — ${profile?.totalMinutes || 0} minutes listened, curated playlists, and Sound DNA.`,
+          memberOf: {
+            "@type": "Organization",
+            name: "Strumm",
+          },
         }}
       />
       <PublicProfileClient params={params} />

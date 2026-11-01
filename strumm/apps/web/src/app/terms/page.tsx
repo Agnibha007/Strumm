@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -125,7 +126,7 @@ const sections = [
   },
 ];
 
-export default function TermsPage() {
+export default async function TermsPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -133,24 +134,21 @@ export default function TermsPage() {
         { name: "Terms of Service", href: "/terms" },
       ]} />
       {/* TermsOfService structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "TermsOfService",
-            "@id": `${appUrl}/terms#terms`,
-            name: "Strumm Terms of Service",
-            description:
-              "The rules, guidelines, and terms for using the Strumm music platform.",
-            publisher: {
-              "@type": "Organization",
-              name: "Strumm",
-              url: appUrl,
-            },
-            url: `${appUrl}/terms`,
-            isPartOf: { "@id": `${appUrl}#website` },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "TermsOfService",
+          "@id": `${appUrl}/terms#terms`,
+          name: "Strumm Terms of Service",
+          description:
+            "The rules, guidelines, and terms for using the Strumm music platform.",
+          publisher: {
+            "@type": "Organization",
+            name: "Strumm",
+            url: appUrl,
+          },
+          url: `${appUrl}/terms`,
+          isPartOf: { "@id": `${appUrl}#website` },
         }}
       />
       <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">

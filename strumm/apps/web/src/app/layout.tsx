@@ -2,11 +2,13 @@ import type { Metadata, Viewport } from "next";
 import { Outfit, Playfair_Display } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
+import JsonLd from "web/components/JsonLd";
 import Providers from "web/components/Providers";
 import AuthWrapper from "web/components/AuthWrapper";
 import PersistentPlayerWrapper from "web/components/PersistentPlayerWrapper";
 import NotificationToast from "web/components/NotificationToast";
 import { RealTimeProvider } from "web/services/realtime";
+import { StrummNonceProvider } from "web/components/StrummNonceContext";
 import ConditionalFooter from "web/components/ConditionalFooter";
 
 const outfit = Outfit({
@@ -153,95 +155,86 @@ export default async function RootLayout({
         />
 
         {/* Organization schema — homepage Knowledge Graph */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "Organization",
-              name: "Strumm",
-              legalName: "Strumm Music Ecosystem",
-              url: appUrl,
-              logo: logoUrl,
-              image: logoUrl,
-              description:
-                "Strumm is a free-to-use music discovery app with AI-assisted recommendations, playlists, podcast support, and listening analytics.",
-              email: "hello@strumm.me",
-              foundingDate: "2024",
-              founder: {
-                "@type": "Person",
-                name: "Strumm Team",
-              },
-              sameAs: [
-                "https://github.com/Agnibha007/Strumm",
-              ],
-            }),
+        <JsonLd
+          schema={{
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            name: "Strumm",
+            legalName: "Strumm Music Ecosystem",
+            url: appUrl,
+            logo: logoUrl,
+            image: logoUrl,
+            description:
+              "Strumm is a free-to-use music discovery app with AI-assisted recommendations, playlists, podcast support, and listening analytics.",
+            email: "hello@strumm.me",
+            foundingDate: "2024",
+            founder: {
+              "@type": "Person",
+              name: "Strumm Team",
+            },
+            sameAs: [
+              "https://github.com/Agnibha007/Strumm",
+            ],
           }}
         />
 
         {/* Website schema + SearchAction */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "WebSite",
-              "@id": `${appUrl}#website`,
+        <JsonLd
+          schema={{
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "@id": `${appUrl}#website`,
+            name: "Strumm",
+            url: appUrl,
+            description:
+              "Strumm is a free-to-use music discovery app — playlists, podcasts, AI-assisted curation, and listening analytics.",
+            inLanguage: "en-US",
+            publisher: {
+              "@type": "Organization",
               name: "Strumm",
-              url: appUrl,
-              description:
-                "Strumm is a free-to-use music discovery app — playlists, podcasts, AI-assisted curation, and listening analytics.",
-              inLanguage: "en-US",
-              publisher: {
-                "@type": "Organization",
-                name: "Strumm",
-                logo: logoUrl,
+              logo: logoUrl,
+            },
+            potentialAction: {
+              "@type": "SearchAction",
+              target: {
+                "@type": "EntryPoint",
+                urlTemplate: `${appUrl}/search?q={search_term_string}`,
               },
-              potentialAction: {
-                "@type": "SearchAction",
-                target: {
-                  "@type": "EntryPoint",
-                  urlTemplate: `${appUrl}/search?q={search_term_string}`,
-                },
-                "query-input": "required name=search_term_string",
-              },
-            }),
+              "query-input": "required name=search_term_string",
+            },
           }}
         />
 
         {/* WebApplication schema */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": ["WebApplication", "SoftwareApplication"],
-              name: "Strumm",
-              url: appUrl,
-              applicationCategory: "MusicApplication",
-              operatingSystem: "Web",
-              browserRequirements: "Requires a modern browser with JavaScript enabled. Supports Chrome, Firefox, Safari, Edge.",
-              description:
-                "Strumm is a free-to-use music discovery app with AI-assisted curation, YouTube-powered playback, podcasts, synchronized lyrics when available, and listening analytics.",
-              offers: {
-                "@type": "Offer",
-                price: "0",
-                priceCurrency: "USD",
-              },
-              featureList: [
-                "AI-powered music recommendations and playlist curation",
-                "YouTube music streaming with search",
-                "Podcast subscriptions and playback",
-                "Synchronized lyrics display when timed lyrics are available",
-                "Listening statistics and Sound DNA analysis",
-                "Customizable dynamic theme engine",
-                "Social Circle with friend activity and shared listening",
-                "Cross-device player state sync",
-                "PWA support with offline app shell",
-                "No Strumm-inserted ad placements or sale of listening data; Sentry diagnostics and YouTube provider behavior are disclosed in the Privacy Policy",
-              ],
-              screenshot: `${appUrl}/strumm-og.png`,
-            }),
+        <JsonLd
+          schema={{
+            "@context": "https://schema.org",
+            "@type": ["WebApplication", "SoftwareApplication"],
+            name: "Strumm",
+            url: appUrl,
+            applicationCategory: "MusicApplication",
+            operatingSystem: "Web",
+            browserRequirements: "Requires a modern browser with JavaScript enabled. Supports Chrome, Firefox, Safari, Edge.",
+            description:
+              "Strumm is a free-to-use music discovery app with AI-assisted curation, YouTube-powered playback, podcasts, synchronized lyrics when available, and listening analytics.",
+            offers: {
+              "@type": "Offer",
+              price: "0",
+              priceCurrency: "USD",
+            },
+            featureList: [
+              "AI-powered music recommendations and playlist curation",
+              "YouTube music streaming with search",
+              "Podcast subscriptions and playback",
+              "Synchronized lyrics display when timed lyrics are available",
+              "Listening statistics and Sound DNA analysis",
+              "Customizable dynamic theme engine",
+              "Social Circle with friend activity and shared listening",
+              "Cross-device player state sync",
+              "PWA support with offline app shell",
+              "No Strumm-inserted ad placements or sale of listening data; Sentry diagnostics and YouTube provider behavior are disclosed in the Privacy Policy",
+            ],
+            screenshot: `${appUrl}/strumm-og.png`,
           }}
         />
 
@@ -256,7 +249,7 @@ export default async function RootLayout({
         <Providers>
           <AuthWrapper>
             <RealTimeProvider>
-              {children}
+              <StrummNonceProvider nonce={nonce}>{children}</StrummNonceProvider>
             </RealTimeProvider>
           </AuthWrapper>
           <PersistentPlayerWrapper />

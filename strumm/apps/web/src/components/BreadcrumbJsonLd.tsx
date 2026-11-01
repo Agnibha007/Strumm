@@ -8,8 +8,11 @@
  *   ]} />
  *
  * The component is a server component with zero runtime overhead —
- * it renders a static <script> tag during SSR.
+ * it renders a static <script> tag during SSR and carries the per-request
+ * CSP nonce required by the strict nonce-based Content Security Policy.
  */
+import JsonLd from "./JsonLd";
+
 interface BreadcrumbItem {
   name: string;
   href: string;
@@ -18,7 +21,7 @@ interface BreadcrumbItem {
 const baseUrl =
   process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-export default function BreadcrumbJsonLd({
+export default async function BreadcrumbJsonLd({
   items,
 }: {
   items: BreadcrumbItem[];
@@ -33,14 +36,11 @@ export default function BreadcrumbJsonLd({
   }));
 
   return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{
-        __html: JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "BreadcrumbList",
-          itemListElement,
-        }),
+    <JsonLd
+      schema={{
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement,
       }}
     />
   );

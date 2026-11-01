@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function ReportBugPage() {
+export default async function ReportBugPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[

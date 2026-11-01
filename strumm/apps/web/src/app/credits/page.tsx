@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function CreditsPage() {
+export default async function CreditsPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[

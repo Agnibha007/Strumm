@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -31,7 +32,7 @@ const practices = [
   { title: "Security Headers", desc: "X-Frame-Options (DENY), X-Content-Type-Options (nosniff), Referrer-Policy (strict-origin-when-cross-origin), and X-XSS-Protection are set on all responses." },
 ];
 
-export default function SecurityPage() {
+export default async function SecurityPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -40,19 +41,16 @@ export default function SecurityPage() {
       ]} />
 
       {/* WebPage structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "WebPage",
-            "@id": `${appUrl}/security#webpage`,
-            name: "Strumm Security Practices",
-            description:
-              "Security practices, data protection measures, and vulnerability disclosure policy for Strumm music ecosystem.",
-            url: `${appUrl}/security`,
-            isPartOf: { "@id": `${appUrl}#website` },
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "@id": `${appUrl}/security#webpage`,
+          name: "Strumm Security Practices",
+          description:
+            "Security practices, data protection measures, and vulnerability disclosure policy for Strumm music ecosystem.",
+          url: `${appUrl}/security`,
+          isPartOf: { "@id": `${appUrl}#website` },
         }}
       />
 

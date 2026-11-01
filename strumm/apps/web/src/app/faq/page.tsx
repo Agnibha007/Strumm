@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import BreadcrumbJsonLd from "web/components/BreadcrumbJsonLd";
+import JsonLd from "web/components/JsonLd";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -71,7 +72,7 @@ const faqs = [
   },
 ];
 
-export default function FAQPage() {
+export default async function FAQPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[
@@ -79,24 +80,21 @@ export default function FAQPage() {
         { name: "FAQ", href: "/faq" },
       ]} />
       {/* FAQPage structured data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "FAQPage",
-            "@id": `${appUrl}/faq#faq`,
-            name: "Strumm FAQ",
-            description: "Frequently asked questions about Strumm music ecosystem.",
-            mainEntity: faqs.map((faq) => ({
-              "@type": "Question",
-              name: faq.q,
-              acceptedAnswer: {
-                "@type": "Answer",
-                text: faq.a,
-              },
-            })),
-          }),
+      <JsonLd
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          "@id": `${appUrl}/faq#faq`,
+          name: "Strumm FAQ",
+          description: "Frequently asked questions about Strumm music ecosystem.",
+          mainEntity: faqs.map((faq) => ({
+            "@type": "Question",
+            name: faq.q,
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: faq.a,
+            },
+          })),
         }}
       />
       <section aria-label="Frequently asked questions" className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
