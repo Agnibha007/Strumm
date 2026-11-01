@@ -8,6 +8,7 @@ import traceback
 from io import StringIO
 from dataclasses import dataclass, field
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body
+from fastapi.responses import Response
 from typing import List, Optional, Dict, Any
 from bson import ObjectId
 from datetime import datetime
@@ -17,6 +18,7 @@ from app.services.avatar import decorate_user_avatar
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, is_valid_youtube_id, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from app.services.cache import cache_search, get_cached_search
+from app.services.download_quota import try_consume_playlist_export
 from app.services.normalizer import (
     canonical_song_key,
     normalize_title_for_match,
@@ -163,6 +165,51 @@ async def get_playlists(
         import traceback
         logger.error(f"Error fetching user playlists: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": "An internal error occurred."}
+
+
+@router.get("/{id}/export")
+async def export_playlist_csv(
+    id: str = Path(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Export a playlist to a Spotify-/YTMusic-compatible CSV file.
+
+    The CSV uses a ``title,artist,album`` header row so downstream tools that
+    accept Spotify or YouTube Music playlist exports can consume it directly.
+    """
+    database = db.get_db()
+    playlist = await database[db.PLAYLISTS].find_one({"_id": parse_object_id(id)})
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    user_id = current_user["id"]
+    if playlist.get("visibility") == "private" and (
+        str(playlist.get("userId") or "") != user_id and not is_owner_or_collaborator(playlist, user_id)
+    ):
+        raise HTTPException(status_code=403, detail="Access denied to private playlist")
+
+    # One playlist export per user per day.
+    if not await try_consume_playlist_export(user_id):
+        raise HTTPException(status_code=429, detail="Daily playlist export limit reached. Please try again tomorrow.")
+
+    songs = playlist.get("songs") or []
+    buffer = StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(["title", "artist", "album"])
+    for song in songs:
+        metadata = song.get("metadata") or {}
+        writer.writerow([
+            sanitize_text(str(song.get("title") or "")),
+            sanitize_text(str(song.get("artist") or "")),
+            sanitize_text(str(metadata.get("album") or "")),
+        ])
+
+    filename = f"strumm-playlist-{id}.csv"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{id}")

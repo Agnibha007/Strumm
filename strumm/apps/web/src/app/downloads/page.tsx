@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { Song } from "@strumm/types";
 import SafePodcastImage from "web/components/SafePodcastImage";
+import { authFetch } from "web/lib/auth-client";
+import { apiUrl } from "web/lib/api";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { playHostAudioUrl } from "web/lib/host-audio";
 import {
@@ -177,6 +179,56 @@ export default function DownloadsPage() {
     } finally {
       setRemovingId(null);
     }
+  };
+
+  // Export the playlist the record belongs to as a Spotify-/YTM-compatible CSV.
+  // The backend emits a header row of ``title,artist,album`` which both
+  // Spotify and YouTube Music accept when importing a CSV. A single export is
+  // allowed per user per day; the backend enforces that quota.
+  const handlePlaylistExport = async (record: PodcastDownloadRecord) => {
+    const playlistId = record.sourcePlaylistId || (record.collectionType === "playlist" ? record.collectionId : undefined);
+    if (!playlistId) return;
+
+    try {
+      const res = await authFetch(apiUrl(`/playlists/${encodeURIComponent(playlistId)}/export`));
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        if (json?.detail?.includes("Daily playlist export limit")) {
+          alert("You have already exported a playlist today. Daily limit reached.");
+          return;
+        }
+        throw new Error(json?.error || json?.detail || "Could not export this playlist.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `strumm-playlist-${playlistId}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      alert("Could not export this playlist. Try again when you're back online.");
+    }
+  };
+
+  const handleSongDirectDownload = (record: PodcastDownloadRecord) => {
+    // Download the MP3 straight to the device without leaving the PWA.
+    // The blob is served as an attachment so the browser treats it as a
+    // download rather than attempting playback.
+    const url = URL.createObjectURL(record.blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    const base = (record.title || record.showTitle || "strumm").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "track";
+    const ext = (record.mimeType || "audio/mpeg").split(";")[0].split("/")[1]?.toLowerCase() || "mp3";
+    const allowedExts = ["mp3", "m4a", "mp4", "webm", "ogg", "opus", "aac", "wav", "flac"];
+    const safeExt = allowedExts.includes(ext) ? ext : "mp3";
+    anchor.download = `${base}-${record.videoId || record.id}.${safeExt}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const totalSize = downloads.reduce((total, record) => total + record.size, 0);
@@ -348,7 +400,34 @@ export default function DownloadsPage() {
                             <Play className="h-3.5 w-3.5 fill-current" />
                             Play
                           </button>
-                          <button type="button" onClick={() => void handleRemove(record)} disabled={removingId === record.id} className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text disabled:opacity-50" aria-label={"Remove " + record.title}>
+                          {record.collectionType === "playlist" ? (
+                            <button
+                              type="button"
+                              onClick={() => handlePlaylistExport(record)}
+                              className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text"
+                              aria-label={"Export " + record.title + " as CSV"}
+                            >
+                              <ListMusic className="h-3.5 w-3.5" />
+                              Export CSV
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSongDirectDownload(record)}
+                              className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text"
+                              aria-label={"Download MP3 for " + record.title}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Save MP3
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void handleRemove(record)}
+                            disabled={removingId === record.id}
+                            className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text disabled:opacity-50"
+                            aria-label={"Remove " + record.title}
+                          >
                             <Trash2 className="h-3.5 w-3.5" />
                             {removingId === record.id ? "Removing…" : "Remove"}
                           </button>

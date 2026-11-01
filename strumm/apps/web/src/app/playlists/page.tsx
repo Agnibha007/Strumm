@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import dynamic from "next/dynamic";
-import { Plus, BookOpen, FilePlus2, Upload, X, Search, ShieldAlert } from "lucide-react";
+import { Plus, BookOpen, FilePlus2, Upload, X, Search, ShieldAlert, FileDown } from "lucide-react";
 import { Playlist } from "@strumm/types";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
@@ -25,14 +25,16 @@ export default function PlaylistsPage() {
   const { token, user } = useAuthStore();
   const router = useRouter();
   const [userPlaylists, setUserPlaylists] = useState<Playlist[]>([]);
-  const [loading, setLoading] = useState(true);
   const [createMode, setCreateMode] = useState<null | "choose" | "empty" | "import">(null);
+  const [loading, setLoading] = useState(true);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [newPlaylistDescription, setNewPlaylistDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   // Distinguishes "your collection is empty" from "we could not load it".
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const filteredPlaylists = userPlaylists.filter(
     (p) =>
@@ -41,6 +43,7 @@ export default function PlaylistsPage() {
   );
 
   const loadPlaylists = async () => {
+    setLoading(true);
     setLoadError(null);
     try {
       const response = await authFetch(apiUrl("/playlists"), {
@@ -66,6 +69,33 @@ export default function PlaylistsPage() {
   const retryPlaylists = () => {
     setLoading(true);
     void loadPlaylists();
+  };
+
+  const handleExportCsv = async (playlist: Playlist) => {
+    setExportingId(playlist.id);
+    setExportError(null);
+    try {
+      const response = await authFetch(apiUrl(`/playlists/${playlist.id}/export`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const json = await response.json().catch(() => null);
+        throw new Error(json?.error || json?.detail || "Could not export this playlist.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `strumm-playlist-${playlist.id}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setExportError("Could not export this playlist. Try again when you're back online.");
+    } finally {
+      setExportingId(null);
+    }
   };
 
   useEffect(() => {
@@ -240,6 +270,15 @@ export default function PlaylistsPage() {
                 Try again
               </button>
             </div>
+          ) : exportError ? (
+            <div
+              role="alert"
+              className="text-center py-10 border border-amber-500/30 rounded-xl bg-amber-500/5 space-y-2"
+            >
+              <ShieldAlert className="w-8 h-8 text-amber-400 mx-auto" />
+              <p className="font-editorial text-base text-text">Couldn&apos;t export this playlist</p>
+              <p className="text-[11px] text-muted max-w-xs mx-auto">{exportError}</p>
+            </div>
           ) : userPlaylists.length === 0 ? (
             <p className="text-xs text-muted italic py-6">No playlists found. Build a custom record folder.</p>
           ) : (
@@ -277,7 +316,7 @@ export default function PlaylistsPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filteredPlaylists.map((p) => (
-                    <button
+                    <div
                       key={p.id}
                       onClick={() => router.push(`/playlist/${p.id}`)}
                       className="p-4 rounded-lg bg-background/40 border border-border/40 hover:border-primary/40 hover:bg-surface-elevated/40 text-left cursor-pointer transition group soft-enter hover:-translate-y-0.5"
@@ -319,9 +358,23 @@ export default function PlaylistsPage() {
                           <div className="font-editorial text-lg text-text font-bold leading-tight truncate group-hover:text-primary transition">{p.name}</div>
                           <div className="text-xs text-muted mt-1">{p.songs.length} songs</div>
                         </div>
-                        <BookOpen className="w-4 h-4 text-muted group-hover:text-primary transition flex-shrink-0 mt-1" />
+                        <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleExportCsv(p);
+                            }}
+                            disabled={exportingId === p.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-elevated hover:bg-surface border border-border/60 hover:border-primary/40 text-text text-[11px] font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer"
+                          >
+                            <FileDown className="w-3.5 h-3.5" />
+                            {exportingId === p.id ? "Exporting…" : "Export CSV"}
+                          </button>
+                          <BookOpen className="w-4 h-4 text-muted group-hover:text-primary transition flex-shrink-0 mt-1" />
+                        </div>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
