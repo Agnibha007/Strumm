@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import uuid
@@ -245,6 +246,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+def _is_allowed_origin(origin: str | None) -> bool:
+    """Reverse of the CORS allowlist: True only for the Strumm domain and its
+    subdomains. Anything else (random stage/preview origins, other services,
+    empty origin) is denied, so no request can slip through on a misconfigured
+    allowlist. The regex is applied regardless of environment to make the
+    production-only CORS regex fail-safe.
+
+    ``origin`` is the value of the ``Origin`` request header, which browsers
+    always send on cross-origin navigations/calls; a missing header means the
+    request is same-origin and is allowed.
+    """
+    if not origin:
+        return True
+    # Must be https (or http on a localhost origin, which any dev tool uses).
+    if not origin.startswith("http://localhost") and not origin.startswith("https://"):
+        return False
+    return PRODUCTION_CORS_ORIGIN_REGEX.match(origin) is not None
+
+
 def get_allowed_origins():
     is_development = os.getenv("ENVIRONMENT", "development").lower() == "development"
     origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
@@ -289,13 +309,24 @@ def get_allowed_origins():
         if bare_origin not in origins:
             origins.append(bare_origin)
 
+    # SEC: drop any origin that is not strumm.me or a subdomain. This makes the
+    # CORS allowlist authoritative even when the deployer mistypes or advertises a
+    # stray origin in the env var.
+    origins = [o for o in origins if _is_allowed_origin(o)]
+
     logger.debug("Allowed CORS origins: %s", origins)
     return origins
+
+# Production CORS: only the Strumm domain and its subdomains may call the API.
+# Anything else (other origins / staging / random previews) is blocked at the
+# CORS layer so the music backend is never reachable from unapproved origins.
+PRODUCTION_CORS_ORIGIN_REGEX = re.compile(r"https://([a-z0-9-]+\.)*strumm\.me", re.IGNORECASE)
 
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
+    allow_origin_regex=PRODUCTION_CORS_ORIGIN_REGEX if os.getenv("ENVIRONMENT", "development").lower() != "development" else None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Admin-API-Key"],
