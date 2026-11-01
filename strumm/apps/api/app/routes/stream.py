@@ -25,6 +25,7 @@ import asyncio
 
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
+from app.services.download_quota import try_consume_song_download
 from app.services.security import sanitize_youtube_id
 
 logger = logging.getLogger("strumm-stream")
@@ -512,6 +513,10 @@ async def download_song_audio(
             video_id = sanitize_youtube_id(id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Daily per-user cap on server-side song downloads (MP3 exports).
+        if not await try_consume_song_download(current_user["id"]):
+            raise HTTPException(status_code=429, detail="Daily download limit reached. Please try again tomorrow.")
 
         mp3_path, tmp_dir = await asyncio.to_thread(_run_ytdlp_download, video_id)
         size = os.path.getsize(mp3_path) if mp3_path else 0

@@ -51,9 +51,18 @@ def _fake_ytdlp_download_factory(file_bytes: bytes):
     return fake_download
 
 
+async def _quota_ok(user_id: str) -> bool:
+    return True
+
+
+async def _quota_exceeded(user_id: str) -> bool:
+    return False
+
+
 @pytest.mark.asyncio
 async def test_song_download_streams_mp3(client, monkeypatch):
     monkeypatch.setattr(stream, "_run_ytdlp_download", _fake_ytdlp_download_factory(b"mp3-bytes"))
+    monkeypatch.setattr(stream, "try_consume_song_download", _quota_ok)
 
     async with client:
         response = await client.get("/download/abcdefghijk")
@@ -68,6 +77,7 @@ async def test_song_download_streams_mp3(client, monkeypatch):
 async def test_song_download_rejects_oversized_track(client, monkeypatch):
     monkeypatch.setattr(stream, "_run_ytdlp_download", _fake_ytdlp_download_factory(b"x" * 32))
     monkeypatch.setattr(stream, "SONG_DOWNLOAD_MAX_BYTES", 10)
+    monkeypatch.setattr(stream, "try_consume_song_download", _quota_ok)
 
     async with client:
         response = await client.get("/download/abcdefghijk")
@@ -82,6 +92,7 @@ async def test_song_download_returns_502_when_source_unavailable(client, monkeyp
         raise RuntimeError("No audio URL could be extracted for " + video_id)
 
     monkeypatch.setattr(stream, "_run_ytdlp_download", failing_download)
+    monkeypatch.setattr(stream, "try_consume_song_download", _quota_ok)
 
     async with client:
         response = await client.get("/download/abcdefghijk")
@@ -97,3 +108,15 @@ async def test_song_download_rejects_invalid_video_id(client, monkeypatch):
 
     assert response.status_code == 400
     assert "Invalid YouTube video ID" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_song_download_rejects_when_daily_quota_exceeded(client, monkeypatch):
+    monkeypatch.setattr(stream, "_run_ytdlp_download", _fake_ytdlp_download_factory(b"mp3-bytes"))
+    monkeypatch.setattr(stream, "try_consume_song_download", _quota_exceeded)
+
+    async with client:
+        response = await client.get("/download/abcdefghijk")
+
+    assert response.status_code == 429
+    assert "Daily download limit" in response.json()["detail"]

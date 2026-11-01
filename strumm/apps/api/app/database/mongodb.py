@@ -87,3 +87,6 @@ SESSIONS = "sessions"
 
 # Object-storage (B2) media records
 MEDIA = "media"
+
+# Daily download / export quotas (per user)
+DOWNLOAD_QUOTA = "downloadquotas"
