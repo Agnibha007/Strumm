@@ -4,7 +4,6 @@
 
 ## Key Features
 
-- **Strumm Flow**: AI-powered music curation and smart playlist builder
 - **Strumm Replay**: Personalized listening dashboard with Sound DNA (Energy, Discovery, Nostalgia, Variety, Repeat Rate)
 - **Sound DNA**: Five-dimensional analysis of listening patterns
 - **Playlists**: Create, curate, and import playlists from YouTube
@@ -22,7 +21,6 @@
 
 - Home: https://strumm.me
 - Search: https://strumm.me/search
-- Flow (AI Curation): https://strumm.me/flow
 - Podcasts: https://strumm.me/podcasts
 - Playlists: https://strumm.me/playlists
 - Replay (Analytics): https://strumm.me/replay

@@ -19,11 +19,10 @@ Strumm is a full-stack web application using a monorepo structure with Turborepo
 Streams music through YouTube's iframe API. Users search for songs, Strumm resolves YouTube video IDs and plays through the embedded YouTube player. No audio files are hosted or stored on Strumm servers.
 
 ### Playlists
-Users can create, edit, and delete playlists. Playlists can be curated manually or via Strumm Flow AI. Users can also import playlists from YouTube. Playlists support privacy settings (public, private, circle-only).
+Users can create, edit, and delete playlists. Playlists can be curated manually or by adding tracks from search/import. Playlists support privacy settings (public, private, circle-only).
 
 ### AI-Powered Features
 Two distinct AI features, both optional via Groq:
-- **Strumm Flow**: Chat-based AI assistant that builds smart playlists from natural language prompts
 - **Discovery Mix**: AI-curated music discovery recommendations based on listening history
 
 ### Podcasts
@@ -71,7 +70,6 @@ Progressive Web App with:
 |-------|-------------|
 | / | Home with search and discovery section |
 | /search | Universal search (songs, artists, albums, playlists, podcasts, profiles) |
-| /flow | Strumm Flow AI curator |
 | /podcasts | Podcast directory |
 | /playlists | User's playlist collection |
 | /replay | Listening analytics dashboard |
@@ -132,7 +130,6 @@ Major API routes (FastAPI backend at `/api/...`):
 - `GET /stats/dashboard` - Listening statistics dashboard
 - `GET /replay` - Strumm Replay data
 - `GET /recommendations` - AI recommendations
-- `GET /flow/generate` - Generate AI playlist
 - `GET/POST /circle` - Social circle management
 - `GET /rooms` - Collaborative rooms
 - `GET/POST /feedback` - Feedback submissions

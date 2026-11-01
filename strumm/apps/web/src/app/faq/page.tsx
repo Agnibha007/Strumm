@@ -43,7 +43,7 @@ const faqs = [
   },
   {
     q: "How do I create a playlist?",
-    a: "You can create playlists via the Playlists page or by using Strumm Flow — our AI-powered playlist curator. You can also import playlists from YouTube or other sources using the Import feature.",
+    a: "You can create playlists via the Playlists page or by adding tracks from search. You can also import playlists from YouTube or other sources using the Import feature.",
   },
   {
     q: "Can I listen with friends?",

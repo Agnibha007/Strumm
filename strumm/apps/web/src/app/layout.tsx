@@ -229,7 +229,7 @@ export default async function RootLayout({
                 priceCurrency: "USD",
               },
               featureList: [
-                "AI-powered music recommendations and playlist curation (Strumm Flow)",
+                "AI-powered music recommendations and playlist curation",
                 "YouTube music streaming with search",
                 "Podcast subscriptions and playback",
                 "Synchronized lyrics display when timed lyrics are available",

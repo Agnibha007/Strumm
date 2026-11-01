@@ -39,7 +39,6 @@ const moreItems = [
   { label: "Feedback", href: "/feedback", icon: MessageSquareText },
   { label: "Playlists", href: "/playlists", icon: ListMusic },
   { label: "Downloads", href: "/downloads", icon: Download },
-  { label: "Strumm Flow", href: "/flow", icon: Sparkles },
   { label: "Circle", href: "/circle", icon: Users },
   { label: "Rooms", href: "/rooms", icon: Tv },
   { label: "Replay", href: "/replay", icon: Sparkles },
