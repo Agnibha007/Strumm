@@ -22,8 +22,8 @@ import {
 import {
   getPodcastDownload,
   getSongDownload,
+  prepareSongDownloadPlayback,
   takePreparedPodcastPlaybackUrl,
-  takePreparedSongDownloadPlaybackUrl,
 } from "web/lib/podcast-downloads";
 import { registerHostAudioElement } from "web/lib/host-audio";
 
@@ -2611,7 +2611,7 @@ try {
         const episodeId = currentSong.videoId;
 
         if (currentSong.metadata?.offlineDownload) {
-          const preparedUrl = takePreparedSongDownloadPlaybackUrl(episodeId);
+          const preparedUrl = takePreparedPodcastPlaybackUrl(episodeId);
           if (preparedUrl) {
             if (offlinePodcastObjectUrlRef.current && offlinePodcastObjectUrlRef.current.url !== preparedUrl) {
               URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
@@ -2620,30 +2620,59 @@ try {
             offlinePodcastObjectUrlRef.current = { episodeId, url: preparedUrl };
             fromOfflineDownload = true;
           } else {
-            try {
-              const savedDownload = await getSongDownload(episodeId);
-              if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
-              if (savedDownload?.blob) {
-                if (offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
-                  playbackUrl = offlinePodcastObjectUrlRef.current.url;
-                } else {
-                  if (offlinePodcastObjectUrlRef.current) {
-                    URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+            // Play locally downloaded podcast episode (offline)
+            if (episodeId.startsWith("podcast-")) {
+              try {
+                const savedDownload = await getPodcastDownload(episodeId);
+                if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+                if (savedDownload?.blob) {
+                  if (offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
+                    playbackUrl = offlinePodcastObjectUrlRef.current.url;
+                  } else {
+                    if (offlinePodcastObjectUrlRef.current) {
+                      URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+                    }
+                    playbackUrl = URL.createObjectURL(savedDownload.blob);
+                    offlinePodcastObjectUrlRef.current = { episodeId, url: playbackUrl };
                   }
-                  playbackUrl = URL.createObjectURL(savedDownload.blob);
-                  offlinePodcastObjectUrlRef.current = { episodeId, url: playbackUrl };
+                  fromOfflineDownload = true;
+                } else {
+                  usePlayerStore.getState().setPlayerError("This episode is not downloaded on this device. Download it while online first.");
+                  usePlayerStore.getState().setPlaying(false);
+                  return;
                 }
-                fromOfflineDownload = true;
-              } else {
-                usePlayerStore.getState().setPlayerError("This song is not downloaded on this device. Download it while online first.");
+              } catch (error) {
+                console.warn("AudioEngine: Unable to read the offline podcast library.", error);
+                usePlayerStore.getState().setPlayerError("Unable to read this downloaded episode from device storage.");
                 usePlayerStore.getState().setPlaying(false);
                 return;
               }
-            } catch (error) {
-              console.warn("AudioEngine: Unable to read the offline song library.", error);
-              usePlayerStore.getState().setPlayerError("Unable to read this downloaded song from device storage.");
-              usePlayerStore.getState().setPlaying(false);
-              return;
+            } else {
+              try {
+                const savedDownload = await getSongDownload(episodeId);
+                if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+                if (savedDownload?.blob) {
+                  if (offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
+                    playbackUrl = offlinePodcastObjectUrlRef.current.url;
+                  } else {
+                    if (offlinePodcastObjectUrlRef.current) {
+                      URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+                    }
+                    playbackUrl = URL.createObjectURL(savedDownload.blob);
+                    offlinePodcastObjectUrlRef.current = { episodeId, url: playbackUrl };
+                  }
+                  fromOfflineDownload = true;
+                } else {
+                  usePlayerStore.getState().setPlayerError("This song is not downloaded on this device. Download it while online first.");
+                  usePlayerStore.getState().setPlaying(false);
+                  return;
+                }
+              } catch (error) {
+                console.warn("AudioEngine: Unable to read the offline song library.", error);
+                usePlayerStore.getState().setPlayerError("Unable to read this downloaded song from device storage.");
+                usePlayerStore.getState().setPlaying(false);
+                return;
+              }
             }
           }
         } else if (episodeId.startsWith("podcast-")) {
@@ -2682,11 +2711,150 @@ try {
         }
 
         const isOnline = typeof navigator === "undefined" || navigator.onLine;
+
+        // If the song was downloaded for offline playback, use the local blob
+        // regardless of network state. This is the primary offline path: the
+        // downloaded record already carries a prepared playback URL and blob,
+        // so no backend call is required.
+        if (fromOfflineDownload) {
+          // Nothing to do — the preparedPlaybackUrl already points at the
+          // locally cached blob and we skip all network-dependent resolution
+          // below.
+        } else if (currentSong?.metadata?.offlineDownload) {
+          // The song carries the offlineDownload flag (set by the downloads
+          // flow) but no prepared local URL yet. Try the IndexedDB offline
+          // library first; this must succeed offline since the blob is
+          // stored locally.
+          try {
+            const savedDownload = await getSongDownload(episodeId);
+            if (savedDownload?.blob) {
+              const preparedOfflineUrl = prepareSongDownloadPlayback(episodeId, savedDownload.blob);
+              if (offlinePodcastObjectUrlRef.current?.episodeId === episodeId) {
+                URL.revokeObjectURL(offlinePodcastObjectUrlRef.current.url);
+              }
+              offlinePodcastObjectUrlRef.current = { episodeId, url: preparedOfflineUrl };
+              playbackUrl = preparedOfflineUrl;
+              fromOfflineDownload = true;
+            }
+          } catch (error) {
+            console.warn("AudioEngine: Unable to read the offline song library.", error);
+            // Storage may be unavailable (private mode etc.). Proceed with the
+            // normal online path below; it will fail gracefully.
+          }
+        }
+
+        // The subsequent URL resolution (direct audio URL via /play, podcast
+        // index, etc.) is skipped entirely when offline — there is nothing to
+        // fetch. We only fall through to online resolution if the song is not
+        // an offline download.
+        if (fromOfflineDownload) {
+          // Already resolved a local URL. Skip the rest of the online resolution
+          // and jump straight to applying the audio source.
+          const audioElement = htmlAudioRef.current;
+          if (!audioElement) return;
+
+          usePlayerStore.getState().setPlayerError(null);
+          audioElement.preload = audioQuality === "data-saver" ? "none" : audioQuality === "balanced" ? "metadata" : "auto";
+          audioElement.loop = false;
+
+          if (audioElement.src !== playbackUrl) {
+            try {
+              audioElement.src = playbackUrl;
+              audioElement.load();
+            } catch (error) {
+              console.warn("AudioEngine: Failed to load offline audio source:", error);
+              usePlayerStore.getState().setPlayerError("Unable to load this downloaded track.");
+              return;
+            }
+          }
+
+          applyCrossfadeVolume(1);
+          activePodcastAudioEpisodeRef.current = episodeId;
+
+          // Restore the last position if one exists for downloaded songs.
+          // Songs are stored with episodeId = "song-{videoId}" and podcast
+          // episodes with episodeId = "podcast-{episodeId}". The saved
+          // position is looked up in the podcast progress store, which is
+          // shared by both download types.
+          let targetTime = usePlayerStore.getState().currentTime;
+          try {
+            const progress = await fetchPodcastProgress(episodeId, { localOnly: true });
+            if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+            if (progress.positionSeconds >= 0) targetTime = progress.positionSeconds;
+          } catch {
+            targetTime = 0;
+          }
+          usePlayerStore.getState().setCurrentTime(targetTime);
+
+          if (targetTime > 0 && isFinite(targetTime)) {
+            await new Promise<void>((resolve) => {
+              let finished = false;
+              let timeout: ReturnType<typeof setTimeout> | null = null;
+              const finish = () => {
+                if (finished) return;
+                finished = true;
+                if (timeout) clearTimeout(timeout);
+                audioElement.removeEventListener("loadedmetadata", trySeek);
+                audioElement.removeEventListener("canplay", trySeek);
+                resolve();
+              };
+              const trySeek = () => {
+                if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) {
+                  finish();
+                  return;
+                }
+                if (audioElement.readyState < HTMLMediaElement.HAVE_METADATA) return;
+                try {
+                  const safeTime =
+                    Number.isFinite(audioElement.duration) && audioElement.duration > 0
+                      ? Math.min(targetTime, Math.max(0, audioElement.duration - 1))
+                      : targetTime;
+                  audioElement.currentTime = safeTime;
+                  usePlayerStore.getState().setCurrentTime(safeTime);
+                } catch {}
+                finish();
+              };
+              audioElement.addEventListener("loadedmetadata", trySeek);
+              audioElement.addEventListener("canplay", trySeek);
+              timeout = setTimeout(() => {
+                trySeek();
+                finish();
+              }, 5000);
+              trySeek();
+            });
+            if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
+          }
+
+          if (usePlayerStore.getState().isPlaying) {
+            audioElement.play().catch(() => {
+              usePlayerStore.getState().setPlayerError("Unable to start this track. Tap Play to try again.");
+              usePlayerStore.getState().setPlaying(false);
+            });
+          } else {
+            audioElement.pause();
+          }
+
+          setPlayerRef({
+            playVideo: () => htmlAudioRef.current?.play(),
+            pauseVideo: () => htmlAudioRef.current?.pause(),
+            seekTo: (sec: number) => {
+              if (htmlAudioRef.current) htmlAudioRef.current.currentTime = sec;
+            },
+            setVolume: (vol: number) => {
+              if (htmlAudioRef.current) htmlAudioRef.current.volume = vol / 100;
+            },
+            setPlaybackRate: (rate: number) => {
+              if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
+            },
+          });
+          return;
+        }
+
         if (!fromOfflineDownload && !isOnline) {
           audioElement.pause();
           audioElement.removeAttribute("src");
           audioElement.load();
-          usePlayerStore.getState().setPlayerError("This podcast episode is not downloaded for offline playback. Connect to the internet and download it first.");
+          usePlayerStore.getState().setPlayerError("You are offline. Download this song or episode to play it without an internet connection.");
           usePlayerStore.getState().setPlaying(false);
           setPlayerRef({
             playVideo: () => {},
@@ -2699,7 +2867,7 @@ try {
         }
 
         if (!fromOfflineDownload && !playbackUrl) {
-          usePlayerStore.getState().setPlayerError("This podcast episode has no playable audio source.");
+          usePlayerStore.getState().setPlayerError("This song has no playable audio source.");
           usePlayerStore.getState().setPlaying(false);
           setPlayerRef({
             playVideo: () => {},

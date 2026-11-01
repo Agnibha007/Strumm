@@ -19,9 +19,14 @@ const EXCLUDED_PATTERNS = [
   /\/episodes\/media/i,
   /\/image-proxy/i,
   /googlevideo\.com/i,
-  /ytimg\.com/i,
-  /youtube\.com/i,
 ];
+
+const THUMBNAIL_HOST_PATTERN = /(^|\.)((www\.)?ytimg|ytimg|i\.ytimg)\.com$/i;
+
+function isThumbnailRequest(url, destination) {
+  if (destination === "image") return true;
+  return THUMBNAIL_HOST_PATTERN.test(url.hostname) && /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(url.pathname);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -84,6 +89,24 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (EXCLUDED_PATTERNS.some((pattern) => pattern.test(url.href))) return;
+
+  // Thumbnail artwork: cache-first so downloaded/offline playback can still
+  // render cover art without a network round-trip.
+  if (isThumbnailRequest(url, request.destination || "")) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => undefined);
+          }
+          return response;
+        });
+      }),
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(request).then((cached) => {
