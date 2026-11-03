@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import mongodb as db
-from app.routes import auth, stream, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media, rooms
+from app.routes import audius, auth, stream, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media, rooms
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 from app.services.normalizer import clean_song_text_fields
@@ -575,6 +575,7 @@ rate_limiter = PerEndpointRateLimiter()
 
 # Register Routers
 app.include_router(auth.router)
+app.include_router(audius.router)
 app.include_router(stream.router)
 app.include_router(youtube.router)
 app.include_router(lyrics.router)

@@ -7,7 +7,6 @@ import { apiUrl } from "web/lib/api";
 import type { Song } from "@strumm/types";
 import {
   formatDownloadSize,
-  getAuthorizedSongDownloadUrl,
   getSongDownload,
   removeSongDownload,
   saveSongDownload,
@@ -21,8 +20,18 @@ interface SongDownloadActionProps {
   compact?: boolean;
 }
 
+function decodeHeaderValue(value: string | null) {
+  if (!value) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export default function SongDownloadAction({ song, compact = false }: SongDownloadActionProps) {
-  const downloadUrl = getAuthorizedSongDownloadUrl(song.metadata?.downloadUrl);
+  const downloadUrl = apiUrl("/audius/download");
+  const canDownload = !song.videoId.startsWith("podcast-");
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -46,7 +55,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
   }, [song.videoId]);
 
   const startDownload = async () => {
-    if (downloading) return;
+    if (downloading || !canDownload) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setDownloading(true);
@@ -57,31 +66,31 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
       const storage = typeof navigator !== "undefined" && navigator.storage?.estimate
         ? await navigator.storage.estimate().catch(() => null)
         : null;
-      // Songs with an explicitly licensed / permitted source download straight
-      // from that origin; every other song resolves its MP3 through the backend
-      // (`/download/{videoId}` runs the server-side source fetch + transcode).
-      const response = downloadUrl
-        ? await fetch(downloadUrl, { signal: controller.signal })
-        : await authFetch(apiUrl(`/download/${song.videoId}`), { signal: controller.signal });
+      const response = await authFetch(downloadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: song.title,
+          artist: song.artist,
+        }),
+        signal: controller.signal,
+      });
 
       if (!response.ok) {
         let message = response.status === 404
-          ? "The source no longer offers this download."
-          : "Unable to download this track.";
-        const body = await response.text().catch(() => "");
-        try {
-          const parsed = JSON.parse(body);
-          if (parsed?.detail) message = parsed.detail;
-          else if (parsed?.error) message = parsed.error;
-        } catch {
-          // Keep the status-based fallback message.
-        }
+          ? "No matching publicly downloadable Audius track was found."
+          : response.status === 403
+            ? "Audius does not allow this track to be downloaded."
+            : "Unable to download this track.";
+        const parsed = await response.json().catch(() => null);
+        if (parsed?.detail) message = parsed.detail;
+        else if (parsed?.error) message = parsed.error;
         throw new Error(message);
       }
 
       const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-      if (!mimeType.startsWith("audio/")) {
-        throw new Error("The track source did not return an audio file.");
+      if (mimeType !== "audio/mpeg" && mimeType !== "audio/mp3") {
+        throw new Error("Audius did not return an MP3 file.");
       }
 
       const rawLength = response.headers.get("content-length");
@@ -129,7 +138,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         blob = await response.blob();
       }
 
-      if (!blob.size) throw new Error("The source returned an empty audio file.");
+      if (!blob.size) throw new Error("Audius returned an empty audio file.");
       if (blob.size > MAX_DOWNLOAD_BYTES) {
         throw new Error("This track is larger than the 500 MiB download limit.");
       }
@@ -140,9 +149,14 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         artist: song.artist,
         thumbnail: song.thumbnail,
         duration: song.duration,
-        audioUrl: downloadUrl || apiUrl(`/download/${song.videoId}`),
+        audioUrl: downloadUrl,
         mimeType,
         blob,
+        sourceProvider: "audius",
+        sourceUrl: response.headers.get("X-Audius-Source-Url") || undefined,
+        license: decodeHeaderValue(response.headers.get("X-Audius-License")),
+        copyrightLine: decodeHeaderValue(response.headers.get("X-Audius-Copyright-Line")),
+        producerCopyrightLine: decodeHeaderValue(response.headers.get("X-Audius-Producer-Copyright-Line")),
       });
       setSaved(record);
       setProgress(100);
@@ -176,10 +190,10 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
   };
 
   const buttonClass = compact
-    ? "inline-flex items-center gap-1.5 rounded-lg border border-border/70 px-2 py-2 text-[11px] font-semibold text-muted hover:text-text hover:bg-surface-elevated transition disabled:opacity-50"
+    ? "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/70 px-2 py-2 text-[11px] font-semibold text-muted hover:text-text hover:bg-surface-elevated transition disabled:opacity-50"
     : "inline-flex items-center gap-2 rounded-lg border border-border/70 px-3.5 py-2.5 text-xs font-semibold text-muted hover:text-text hover:bg-surface-elevated transition disabled:opacity-50";
 
-  if (song.videoId.startsWith("podcast-")) return null;
+  if (!canDownload) return null;
 
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">
@@ -189,27 +203,27 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {progress === null ? "Downloading…" : "Downloading " + progress + "%"}
           </span>
-          <button type="button" onClick={cancelDownload} className={buttonClass} aria-label="Cancel song download">
+          <button type="button" onClick={cancelDownload} className={buttonClass} aria-label="Cancel song download" title="Cancel download">
             <X className="h-3.5 w-3.5" />
-            Cancel
+            {compact ? <span className="hidden xl:inline">Cancel</span> : "Cancel"}
           </button>
         </div>
       ) : saved ? (
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary" aria-live="polite">
             <Check className="h-3.5 w-3.5" />
-            {compact ? "Saved" : "Saved offline"}
-            <span className="sr-only">{formatDownloadSize(saved.size)}</span>
+            {compact ? <span className="hidden xl:inline">Saved</span> : "Saved offline"}
+            <span className="sr-only">{compact ? "Saved offline. " : ""}{formatDownloadSize(saved.size)}</span>
           </span>
-          <button type="button" onClick={removeDownload} className={buttonClass} aria-label="Remove downloaded song">
+          <button type="button" onClick={removeDownload} className={buttonClass} aria-label="Remove downloaded song" title="Remove download">
             <Trash2 className="h-3.5 w-3.5" />
-            Remove
+            {compact ? <span className="hidden xl:inline">Remove</span> : "Remove"}
           </button>
         </div>
       ) : (
-        <button type="button" onClick={startDownload} className={buttonClass}>
+        <button type="button" onClick={startDownload} className={buttonClass} aria-label="Download song offline" title="Download song offline">
           <Download className="h-3.5 w-3.5" />
-          Download
+          {compact ? <span className="hidden xl:inline">Download</span> : "Download"}
         </button>
       )}
       {downloading && progress !== null && (

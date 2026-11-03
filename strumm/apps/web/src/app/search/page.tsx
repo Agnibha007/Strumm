@@ -10,6 +10,7 @@ import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { searchYouTube, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
+import SongDownloadAction from "web/components/SongDownloadAction";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SafePodcastImage from "web/components/SafePodcastImage";
 import JsonLdList from "web/components/JsonLdList";
@@ -621,7 +622,7 @@ export default function SearchPage() {
                     <motion.div
                       key={song.videoId}
                       variants={staggerItemVariants}
-                      className={`flex items-center gap-3.5 p-2.5 rounded-xl border transition group relative ${
+                      className={`flex flex-wrap items-center gap-3.5 p-2.5 rounded-xl border transition group relative ${
                         isCurrent
                           ? "bg-primary/10 border-primary/40"
                           : "bg-surface/40 border-border/40 hover:bg-surface hover:border-border/80"
@@ -656,7 +657,7 @@ export default function SearchPage() {
                           {formatDuration(song.duration)}
                         </span>
                       )}
-                      <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition flex-shrink-0">
+                      <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                         <button
                           onClick={() => triggerRadio(song.videoId)}
                           className={`p-1.5 rounded-lg transition ${isRadio ? "text-primary text-glow" : "hover:bg-surface-elevated text-muted hover:text-primary"}`}
@@ -690,6 +691,7 @@ export default function SearchPage() {
                         >
                           <FolderPlus className="w-4 h-4" />
                         </button>
+                        <SongDownloadAction song={song} compact />
                       </div>
                     </motion.div>
                     );

@@ -12,6 +12,11 @@ export type PodcastDownloadRecord = {
   collectionId: string;
   collectionName: string;
   contentType?: "podcast" | "song";
+  sourceProvider?: "audius" | "direct";
+  sourceUrl?: string;
+  license?: string;
+  copyrightLine?: string;
+  producerCopyrightLine?: string;
   sourcePlaylistId?: string;
   sourcePlaylistName?: string;
   size: number;
@@ -40,6 +45,11 @@ type SongDownloadInput = {
   audioUrl: string;
   mimeType: string;
   blob: Blob;
+  sourceProvider?: "audius" | "direct";
+  sourceUrl?: string;
+  license?: string;
+  copyrightLine?: string;
+  producerCopyrightLine?: string;
   savedAt?: number;
 };
 
