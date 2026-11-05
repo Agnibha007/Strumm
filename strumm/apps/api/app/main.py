@@ -20,8 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
+HOKAS_PROFILE = os.getenv("HOKAS_PROFILE", "").strip().lower() in {"1", "true", "yes", "on"}
+
 from app.database import mongodb as db
-from app.routes import audius, song_downloads, auth, stream, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media, rooms
+if HOKAS_PROFILE:
+    from app.routes import audius, auth, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media, rooms
+else:
+    from app.routes import audius, song_downloads, auth, stream, youtube, lyrics, playlist, user, podcast, recommendation, share, social, statistics, collaboration, feedback, media, rooms
 from app.services.migration import run_yuzone_migration
 from app.services.security import require_admin
 from app.services.normalizer import clean_song_text_fields
@@ -111,22 +116,23 @@ async def lifespan(app: FastAPI):
         except Exception as e2:
             logger.error(f"MongoDB ping failed on retry: {type(e2).__name__}. App will start anyway.")
 
-    # 2. Launch heavy initialization as background task so server starts accepting immediately
-    asyncio.create_task(_background_startup_work())
+    media_cleanup_task = None
+    if HOKAS_PROFILE:
+        logger.info("HOKAS profile enabled: skipping database-wide index/legacy initialization and periodic media cleanup.")
+    else:
+        asyncio.create_task(_background_startup_work())
 
-    # 3. Periodic unused-media cleanup. Claim-based locking makes it safe to
-    #    run from any number of replicas; cancelled on shutdown below.
-    from app.services import media_lifecycle
-    media_cleanup_task = asyncio.create_task(media_lifecycle.run_media_cleanup_loop())
+        from app.services import media_lifecycle
+        media_cleanup_task = asyncio.create_task(media_lifecycle.run_media_cleanup_loop())
 
     yield  # App serves requests here
 
-    # Shutdown: stop the media cleanup loop, close HTTP client pool and MongoDB
-    media_cleanup_task.cancel()
-    try:
-        await media_cleanup_task
-    except asyncio.CancelledError:
-        pass
+    if media_cleanup_task is not None:
+        media_cleanup_task.cancel()
+        try:
+            await media_cleanup_task
+        except asyncio.CancelledError:
+            pass
     await close_http_client()
     db.close_db()
     logger.info("Application shutdown complete.")
@@ -573,27 +579,69 @@ class PerEndpointRateLimiter:
 
 rate_limiter = PerEndpointRateLimiter()
 
-# Register Routers
-app.include_router(auth.router)
-app.include_router(audius.router)
-app.include_router(song_downloads.router)
-app.include_router(stream.router)
-app.include_router(youtube.router)
-app.include_router(lyrics.router)
-app.include_router(playlist.router)
-app.include_router(user.router)
-app.include_router(podcast.router)
-app.include_router(recommendation.router)
-app.include_router(share.router)
-app.include_router(social.router)
-app.include_router(rooms.router)
-app.include_router(statistics.router)
-app.include_router(collaboration.router)
-app.include_router(feedback.router)
-app.include_router(media.router)
+if HOKAS_PROFILE:
+    for router_module in (
+        auth,
+        audius,
+        youtube,
+        lyrics,
+        playlist,
+        user,
+        podcast,
+        recommendation,
+        share,
+        social,
+        rooms,
+        statistics,
+        collaboration,
+        feedback,
+        media,
+    ):
+        app.include_router(router_module.router)
+else:
+    app.include_router(auth.router)
+    app.include_router(audius.router)
+    app.include_router(song_downloads.router)
+    app.include_router(stream.router)
+    app.include_router(youtube.router)
+    app.include_router(lyrics.router)
+    app.include_router(playlist.router)
+    app.include_router(user.router)
+    app.include_router(podcast.router)
+    app.include_router(recommendation.router)
+    app.include_router(share.router)
+    app.include_router(social.router)
+    app.include_router(rooms.router)
+    app.include_router(statistics.router)
+    app.include_router(collaboration.router)
+    app.include_router(feedback.router)
+    app.include_router(media.router)
 
 # WebSocket realtime router (global connection at /ws)
 app.include_router(realtime_router)
+
+
+@app.middleware("http")
+async def hokas_media_guard(request: Request, call_next):
+    if HOKAS_PROFILE:
+        path = request.url.path
+        disabled_media_route = (
+            path == "/downloads/song"
+            or path.startswith(("/resolve/", "/play/"))
+            or path in {"/audio-proxy", "/podcast-audio"}
+            or path.startswith("/yt/streams/")
+            or (path.startswith("/audius/tracks/") and path.endswith("/stream"))
+            or (path.startswith("/podcasts/episode/") and path.endswith("/download"))
+        )
+        if disabled_media_route:
+            return JSONResponse(
+                status_code=501,
+                content={
+                    "success": False,
+                    "error": "Audio streaming and downloads are disabled on the HOKAS free profile.",
+                },
+            )
+    return await call_next(request)
 
 # Lightweight health endpoints — never query MongoDB, always respond in <10ms
 @app.get("/")
