@@ -65,6 +65,8 @@ Configure the email provider variables (`RESEND_API_KEY` and `SENDER_FROM`, or t
 
 The existing MongoDB database is expected to already have the application's indexes from the primary deployment. This low-resource profile skips the full database-wide index and legacy-room initialization at startup.
 
+**Database isolation warning:** `app/database/mongodb.py` currently fixes the database name to `strumm`. The HOKAS profile therefore reads and writes the same `strumm` database as the primary deployment when given the same MongoDB URI. Use a dedicated test account and test records only. Do not run destructive tests or point the production frontend at this HOKAS instance.
+
 ## Verify the deployment
 
 Replace `<hokas-host>` with the subdomain assigned by HOKAS:
