@@ -180,14 +180,19 @@ describe("SongDownloadAction", () => {
     authFetchMock.mockResolvedValue(okResponse());
     act(() => usePlayerStore.setState({ currentSong: baseSong }));
 
-    render(<SongDownloadAction song={baseSong} compact />);
+    const { rerender } = render(<SongDownloadAction song={baseSong} compact />);
     fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
 
     await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
 
-    act(() => usePlayerStore.setState({ currentSong: { ...baseSong, videoId: "lmnopqrstuv", title: "Next Song" } }));
+    const nextSong = { ...baseSong, videoId: "lmnopqrstuv", title: "Next Song" };
+    act(() => usePlayerStore.setState({ currentSong: nextSong }));
+    rerender(<SongDownloadAction song={nextSong} compact />);
+
     await waitFor(() => expect(screen.getByRole("button", { name: "Download song offline" })).toBeTruthy());
     expect(store.saveSongDownload).toHaveBeenCalledOnce();
+    expect(store.getSongDownload).toHaveBeenCalledOnce();
+    expect(store.getSongDownload).toHaveBeenCalledWith(baseSong.videoId);
     expect(store.removeSongDownload).not.toHaveBeenCalled();
   });
 

@@ -5,7 +5,6 @@ import { Check, Download, Loader2, Trash2, X } from "lucide-react";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import type { Song } from "@strumm/types";
-import { usePlayerStore } from "web/store/usePlayerStore";
 import {
   formatDownloadSize,
   getSongDownload,
@@ -32,40 +31,43 @@ function decodeHeaderValue(value: string | null) {
 
 export default function SongDownloadAction({ song, compact = false }: SongDownloadActionProps) {
   const downloadUrl = apiUrl("/downloads/song");
-  const currentSongId = usePlayerStore((state) => state.currentSong?.videoId ?? null);
   const canDownload = !song.videoId.startsWith("podcast-");
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const savedForCurrentSong = saved?.videoId === song.videoId ? saved : null;
   const abortRef = useRef<AbortController | null>(null);
-  const savedInThisSessionRef = useRef(false);
-  const playerSongIdAtSaveRef = useRef<string | null>(null);
+  const previousSongIdRef = useRef(song.videoId);
 
   useEffect(() => {
     let active = true;
-    getSongDownload(song.videoId)
-      .then((record) => {
-        if (active) setSaved(record);
-      })
-      .catch(() => {
-        if (active) setError("Offline storage is unavailable in this browser.");
-      });
+    const songChanged = previousSongIdRef.current !== song.videoId;
+    previousSongIdRef.current = song.videoId;
+
+    if (songChanged) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setSaved(null);
+      setDownloading(false);
+      setProgress(null);
+      setError(null);
+    } else {
+      getSongDownload(song.videoId)
+        .then((record) => {
+          if (active) setSaved(record);
+        })
+        .catch(() => {
+          if (active) setError("Offline storage is unavailable in this browser.");
+        });
+    }
+
     return () => {
       active = false;
       abortRef.current?.abort();
       abortRef.current = null;
     };
   }, [song.videoId]);
-
-  useEffect(() => {
-    if (!savedInThisSessionRef.current || !currentSongId) return;
-    if (currentSongId === playerSongIdAtSaveRef.current) return;
-
-    savedInThisSessionRef.current = false;
-    setSaved(null);
-    setProgress(null);
-  }, [currentSongId]);
 
   const startDownload = async () => {
     if (downloading || !canDownload) return;
@@ -173,8 +175,6 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         attribution: decodeHeaderValue(response.headers.get("X-Download-Attribution")) || undefined,
         copyrightLine: decodeHeaderValue(response.headers.get("X-Download-Creator")) || undefined,
       });
-      playerSongIdAtSaveRef.current = currentSongId;
-      savedInThisSessionRef.current = true;
       setSaved(record);
       setProgress(100);
       if (typeof window !== "undefined") window.dispatchEvent(new Event("strumm:downloads-changed"));
@@ -199,8 +199,6 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
     try {
       await removeSongDownload(song.videoId);
       setSaved(null);
-      savedInThisSessionRef.current = false;
-      playerSongIdAtSaveRef.current = null;
       setProgress(null);
       if (typeof window !== "undefined") window.dispatchEvent(new Event("strumm:downloads-changed"));
     } catch (err) {
@@ -215,7 +213,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
   if (!canDownload) return null;
 
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1.5">
+    <div className="flex w-fit max-w-full shrink-0 min-w-0 flex-col items-center gap-1.5 sm:items-start">
       {downloading ? (
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary" aria-live="polite">
@@ -227,12 +225,12 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
             {compact ? <span className="hidden xl:inline">Cancel</span> : "Cancel"}
           </button>
         </div>
-      ) : saved ? (
+      ) : savedForCurrentSong ? (
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary" aria-live="polite">
             <Check className="h-3.5 w-3.5" />
             {compact ? <span className="hidden xl:inline">Saved</span> : "Saved offline"}
-            <span className="sr-only">{compact ? "Saved offline. " : ""}{formatDownloadSize(saved.size)}</span>
+            <span className="sr-only">{compact ? "Saved offline. " : ""}{formatDownloadSize(savedForCurrentSong.size)}</span>
           </span>
           <button type="button" onClick={removeDownload} className={buttonClass} aria-label="Remove downloaded song" title="Remove download">
             <Trash2 className="h-3.5 w-3.5" />
@@ -250,7 +248,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
           <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: progress + "%" }} />
         </div>
       )}
-      {error && <p className="max-w-64 text-[11px] leading-relaxed text-primary" role="alert">{error}</p>}
+      {error && <p className="max-w-48 break-words text-center text-[11px] leading-relaxed text-primary sm:text-left" role="alert">{error}</p>}
     </div>
   );
 }

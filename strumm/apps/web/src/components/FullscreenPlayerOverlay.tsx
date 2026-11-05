@@ -604,7 +604,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             </div>
 
             {/* Secondary Action controls */}
-            <div className={`flex items-center justify-center gap-6 w-full mt-2 transition-all ${
+            <div className={`flex w-full min-w-0 max-w-full flex-wrap items-center justify-center gap-3 sm:gap-6 mt-2 transition-all ${
               effectiveShowLyrics ? "hidden lg:flex lg:justify-center" : "flex justify-center"
             }`}>
 
@@ -617,7 +617,7 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               </button>
 
               <AddToPlaylistMenu song={currentSong} className="!p-0 !bg-transparent hover:!bg-transparent hover:scale-105" />
-              {!isPodcast && <SongDownloadAction song={currentSong} compact />}
+              <SongDownloadAction song={currentSong} compact />
 
               {!isPodcast && (
                 <button
