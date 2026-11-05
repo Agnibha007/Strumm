@@ -1,15 +1,16 @@
+import asyncio
+
 import pytest
-import httpx
 
 from app.main import app
 from app.routes import song_downloads
 from app.routes.dependencies import get_current_user
 
-
 TEST_USER = {
     "id": "64a1b2c3d4e5f67890123456",
     "username": "testuser",
     "email": "test@example.com",
+    "createdAt": "2025-01-01T00:00:00",
 }
 
 
@@ -31,357 +32,116 @@ def client(monkeypatch):
         app.dependency_overrides[get_current_user] = previous
 
 
-def openverse_item(**overrides):
-    item = {
-        "id": "openverse-1",
-        "title": "Test Song",
-        "creator": "Test Artist",
-        "url": "https://media.example/test-song.mp3",
-        "foreign_landing_url": "https://source.example/test-song",
-        "license": "cc0",
-        "license_version": "1.0",
-        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "attribution": "Test Song by Test Artist is CC0.",
-        "filetype": "mp3",
-        "duration": 172000,
-    }
-    item.update(overrides)
-    return item
-
-
-def ccmixter_item(**overrides):
-    item = {
-        "upload_id": 123,
-        "upload_name": "Test Song",
-        "user_name": "Test Artist",
-        "file_page_url": "https://ccmixter.org/files/test-artist/123",
-        "license_name": "Attribution",
-        "license_url": "https://creativecommons.org/licenses/by/4.0/",
-        "files": [
-            {
-                "file_name": "test-song.mp3",
-                "download_url": "https://ccmixter.org/content/TestArtist/test-song.mp3",
-                "file_format_info": {"mime_type": "audio/mpeg", "ps": "2:52"},
-            }
-        ],
-    }
-    item.update(overrides)
-    return item
-
-
 @pytest.mark.asyncio
-async def test_openverse_finds_commercially_usable_exact_mp3(monkeypatch):
-    calls = []
+async def test_download_streams_ytdlp_mp3_directly_to_client(client, monkeypatch):
+    started = []
 
-    async def provider_json(url, params=None, headers=None):
-        calls.append((url, params))
-        return {"results": [openverse_item()]}
+    async def stream_mp3(video_id):
+        started.append(video_id)
 
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
+        async def chunks():
+            yield b"ID3"
+            yield b"mp3-audio"
 
-    result = await song_downloads._find_openverse("Test Song", "Test Artist", 172)
+        return chunks()
 
-    assert result is not None
-    assert result.provider == "openverse"
-    assert result.audio_url == "https://media.example/test-song.mp3"
-    assert result.license == "CC0 1.0"
-    assert calls[0][1]["license_type"] == "commercial"
-    assert calls[0][1]["extension"] == "mp3"
-    assert "category" not in calls[0][1]
-    assert "length" not in calls[0][1]
-
-
-@pytest.mark.asyncio
-async def test_openverse_rejects_noncommercial_and_duration_mismatch(monkeypatch):
-    async def provider_json(url, params=None, headers=None):
-        return {
-            "results": [
-                openverse_item(license="by-nc"),
-                openverse_item(id="wrong-duration", duration=250000),
-            ]
-        }
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_openverse("Test Song", "Test Artist", 172)
-
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_openverse_requires_song_length_when_duration_is_missing(monkeypatch):
-    async def provider_json(url, params=None, headers=None):
-        return {"results": [openverse_item(duration=12000)]}
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_openverse("Test Song", "Test Artist", 0)
-
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_openverse_accepts_uncategorized_result_when_duration_matches(monkeypatch):
-    async def provider_json(url, params=None, headers=None):
-        return {"results": [openverse_item(category=None, duration=172000)]}
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_openverse("Test Song", "Test Artist", 172)
-
-    assert result is not None
-    assert result.provider == "openverse"
-
-
-@pytest.mark.asyncio
-async def test_ccmixter_finds_attribution_licensed_mp3(monkeypatch):
-    calls = []
-
-    async def provider_json(url, params=None, headers=None):
-        calls.append((url, params))
-        return [ccmixter_item()]
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_ccmixter("Test Song", "Test Artist", 172)
-
-    assert result is not None
-    assert result.provider == "ccmixter"
-    assert result.audio_url.endswith("test-song.mp3")
-    assert result.license_url.startswith("https://creativecommons.org/licenses/by/")
-    assert calls[0][1]["f"] == "js"
-    assert calls[0][1]["lic"] == "by"
-
-
-@pytest.mark.asyncio
-async def test_ccmixter_skips_sample_file_and_uses_full_track(monkeypatch):
-    item = ccmixter_item()
-    item["files"] = [
-        {
-            "file_name": "test-sample.mp3",
-            "download_url": "https://ccmixter.org/content/TestArtist/test-sample.mp3",
-            "file_format_info": {"mime_type": "audio/mpeg", "ps": "2:52"},
-            "file_extra": {"type": "samples", "ccud": "sample,media"},
-        },
-        {
-            "file_name": "test-song.mp3",
-            "download_url": "https://ccmixter.org/content/TestArtist/test-song.mp3",
-            "file_format_info": {"mime_type": "audio/mpeg", "ps": "2:52"},
-            "file_extra": {"sha1": "example"},
-        },
-    ]
-
-    async def provider_json(url, params=None, headers=None):
-        return [item]
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_ccmixter("Test Song", "Test Artist", 172)
-
-    assert result is not None
-    assert result.audio_url.endswith("test-song.mp3")
-
-
-@pytest.mark.asyncio
-async def test_ccmixter_rejects_noncommercial_license(monkeypatch):
-    async def provider_json(url, params=None, headers=None):
-        return [ccmixter_item(license_url="https://creativecommons.org/licenses/by-nc/4.0/")]
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_ccmixter("Test Song", "Test Artist", 172)
-
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_epidemic_download_resolves_full_track_after_metadata_match(monkeypatch):
-    monkeypatch.setenv("EPIDEMIC_SOUND_API_KEY", "test-api-key")
-    monkeypatch.setenv("EPIDEMIC_SOUND_PRODUCTION_LICENSE_CONFIRMED", "true")
-    calls = []
-
-    async def provider_json(url, params=None, headers=None):
-        calls.append((url, params, headers))
-        if url.endswith("/tracks/search"):
-            return {
-                "tracks": [
-                    {
-                        "id": "6rUPerw2po",
-                        "title": "Test Song",
-                        "mainArtists": ["Test Artist"],
-                        "featuredArtists": [],
-                        "length": 172,
-                        "isPreviewOnly": True,
-                    }
-                ]
-            }
-        if url.endswith("/tracks/6rUPerw2po/download"):
-            return {"url": "https://cdn.example/test-song.mp3", "expires": "2030-01-01T00:00:00Z"}
-        return None
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_epidemic("Test Song", "Test Artist", 172, TEST_USER["id"])
-
-    assert result is not None
-    assert result.provider == "epidemic-sound"
-    assert result.audio_url == "https://cdn.example/test-song.mp3"
-    assert calls[0][1]["term"] == "Test Song Test Artist"
-    assert calls[0][2]["Authorization"] == "Bearer test-api-key"
-    assert calls[1][1] == {"format": "mp3", "quality": "normal"}
-
-
-@pytest.mark.asyncio
-async def test_epidemic_skips_duration_mismatch(monkeypatch):
-    monkeypatch.setenv("EPIDEMIC_SOUND_API_KEY", "test-api-key")
-    monkeypatch.setenv("EPIDEMIC_SOUND_PRODUCTION_LICENSE_CONFIRMED", "true")
-    calls = []
-
-    async def provider_json(url, params=None, headers=None):
-        calls.append(url)
-        return {
-            "tracks": [
-                {
-                    "id": "6rUPerw2po",
-                    "title": "Test Song",
-                    "mainArtists": ["Test Artist"],
-                    "featuredArtists": [],
-                    "length": 240,
-                }
-            ]
-        }
-
-    monkeypatch.setattr(song_downloads, "_provider_json", provider_json)
-
-    result = await song_downloads._find_epidemic("Test Song", "Test Artist", 172, TEST_USER["id"])
-
-    assert result is None
-    assert all(not url.endswith("/download") for url in calls)
-
-
-def test_epidemic_sound_requires_production_license_gate(monkeypatch):
-    monkeypatch.setenv("EPIDEMIC_SOUND_API_KEY", "test-api-key")
-    monkeypatch.delenv("EPIDEMIC_SOUND_PRODUCTION_LICENSE_CONFIRMED", raising=False)
-
-    assert song_downloads._epidemic_enabled() is False
-
-    monkeypatch.setenv("EPIDEMIC_SOUND_PRODUCTION_LICENSE_CONFIRMED", "true")
-
-    assert song_downloads._epidemic_enabled() is True
-
-
-@pytest.mark.asyncio
-async def test_download_route_streams_provider_mp3_and_attribution(client, monkeypatch):
-    source = song_downloads.DownloadSource(
-        provider="openverse",
-        audio_url="https://media.example/test-song.mp3",
-        title="Test Song",
-        artist="Test Artist",
-        source_url="https://source.example/test-song",
-        license="CC0 1.0",
-        license_url="https://creativecommons.org/publicdomain/zero/1.0/",
-        attribution="Test Song by Test Artist is CC0.",
-        track_id="openverse-1",
-    )
-    upstream = httpx.Response(
-        200,
-        headers={"content-type": "audio/mpeg", "content-length": "11"},
-        content=b"ID3-audio-bytes",
-    )
-    opened = song_downloads.OpenedMedia(response=upstream, clients=[])
-    quota_calls = []
-
-    async def find_openverse(*args):
-        return source
-
-    async def find_ccmixter(*args):
-        raise AssertionError("ccMixter should not run after an Openverse match")
-
-    async def find_epidemic(*args):
-        raise AssertionError("Epidemic Sound should not run after an Openverse match")
-
-    async def open_external(url, range_header=None, referer=None):
-        assert url == source.audio_url
-        assert referer == source.source_url
-        return opened
-
-    async def consume(user_id):
-        quota_calls.append(user_id)
-        return True
-
-    monkeypatch.setattr(song_downloads, "_find_openverse", find_openverse)
-    monkeypatch.setattr(song_downloads, "_find_ccmixter", find_ccmixter)
-    monkeypatch.setattr(song_downloads, "_find_epidemic", find_epidemic)
-    monkeypatch.setattr(song_downloads, "_open_external_audio", open_external)
-    monkeypatch.setattr(song_downloads, "try_consume_song_download", consume)
+    monkeypatch.setattr(song_downloads, "_start_ytdlp_mp3_stream", stream_mp3)
 
     async with client:
         response = await client.post(
             "/downloads/song",
-            json={"title": "Test Song", "artist": "Test Artist", "duration": 172},
+            json={
+                "videoId": "6rOCiszTz-I",
+                "title": "Egiye de",
+                "artist": "SVF Music",
+                "duration": 260,
+                "rightsConfirmed": True,
+            },
         )
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("audio/mpeg")
-    assert response.headers["x-download-provider"] == "openverse"
-    assert response.headers["x-download-source-url"] == source.source_url
-    assert response.headers["x-download-license"] == "CC0%201.0"
-    assert response.headers["x-download-license-url"] == source.license_url
-    assert response.headers["x-download-attribution"] == "Test%20Song%20by%20Test%20Artist%20is%20CC0."
-    assert response.content == b"ID3-audio-bytes"
-    assert quota_calls == [TEST_USER["id"]]
+    assert response.headers["x-download-provider"] == "yt-dlp"
+    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate"
+    assert "Egiye-de.mp3" in response.headers["content-disposition"]
+    assert response.content == b"ID3mp3-audio"
+    assert started == ["6rOCiszTz-I"]
 
 
 @pytest.mark.asyncio
-async def test_download_route_falls_through_when_first_provider_media_is_broken(client, monkeypatch):
-    openverse_source = song_downloads.DownloadSource(
-        provider="openverse",
-        audio_url="https://media.example/broken.mp3",
-        title="Test Song",
-        artist="Test Artist",
-    )
-    ccmixter_source = song_downloads.DownloadSource(
-        provider="ccmixter",
-        audio_url="https://ccmixter.org/content/TestArtist/test-song.mp3",
-        title="Test Song",
-        artist="Test Artist",
-        license="Attribution",
-    )
-    upstream = httpx.Response(200, headers={"content-type": "audio/mpeg"}, content=b"ID3")
-    opened = song_downloads.OpenedMedia(response=upstream, clients=[])
-    attempted = []
+async def test_download_requires_explicit_rights_confirmation(client, monkeypatch):
+    started = []
 
-    async def find_openverse(*args):
-        return openverse_source
+    async def stream_mp3(video_id):
+        started.append(video_id)
+        return iter(())
 
-    async def find_ccmixter(*args):
-        return ccmixter_source
-
-    async def find_epidemic(*args):
-        raise AssertionError("Epidemic should not run after a successful ccMixter match")
-
-    async def open_external(url, range_header=None, referer=None):
-        attempted.append(url)
-        if url == openverse_source.audio_url:
-            raise song_downloads.HTTPException(status_code=502, detail="Invalid preview file")
-        return opened
-
-    async def consume(user_id):
-        return True
-
-    monkeypatch.setattr(song_downloads, "_find_openverse", find_openverse)
-    monkeypatch.setattr(song_downloads, "_find_ccmixter", find_ccmixter)
-    monkeypatch.setattr(song_downloads, "_find_epidemic", find_epidemic)
-    monkeypatch.setattr(song_downloads, "_open_external_audio", open_external)
-    monkeypatch.setattr(song_downloads, "try_consume_song_download", consume)
+    monkeypatch.setattr(song_downloads, "_start_ytdlp_mp3_stream", stream_mp3)
 
     async with client:
         response = await client.post(
             "/downloads/song",
-            json={"title": "Test Song", "artist": "Test Artist", "duration": 172},
+            json={"videoId": "6rOCiszTz-I", "title": "Track", "rightsConfirmed": False},
         )
 
-    assert response.status_code == 200
-    assert response.headers["x-download-provider"] == "ccmixter"
-    assert attempted == [openverse_source.audio_url, ccmixter_source.audio_url]
-    assert response.content == b"ID3"
+    assert response.status_code == 400
+    assert "permission" in response.json()["detail"]
+    assert started == []
+
+
+@pytest.mark.asyncio
+async def test_download_rejects_non_youtube_ids(client, monkeypatch):
+    started = []
+
+    async def stream_mp3(video_id):
+        started.append(video_id)
+        return iter(())
+
+    monkeypatch.setattr(song_downloads, "_start_ytdlp_mp3_stream", stream_mp3)
+
+    async with client:
+        response = await client.post(
+            "/downloads/song",
+            json={"videoId": "audius-KlK59", "title": "Track", "rightsConfirmed": True},
+        )
+
+    assert response.status_code == 422
+    assert started == []
+
+
+def test_ytdlp_and_ffmpeg_use_only_pipes_and_stdout(monkeypatch):
+    monkeypatch.setattr(song_downloads.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    ytdlp = song_downloads._ytdlp_command("6rOCiszTz-I")
+    ffmpeg = song_downloads._ffmpeg_command()
+
+    assert ytdlp[0] == "/usr/bin/yt-dlp"
+    assert ytdlp[ytdlp.index("--output") + 1] == "-"
+    assert ytdlp[-1] == "https://www.youtube.com/watch?v=6rOCiszTz-I"
+    assert "pipe:0" in ffmpeg
+    assert "pipe:1" in ffmpeg
+    assert ffmpeg[ffmpeg.index("-f") + 1] == "mp3"
+    assert not any(argument.endswith(".mp3") for argument in ytdlp + ffmpeg)
+
+
+@pytest.mark.asyncio
+async def test_download_releases_concurrency_slot_when_request_is_cancelled():
+    starting_slots = song_downloads._download_semaphore._value
+
+    async def cancel_stream(video_id):
+        raise asyncio.CancelledError
+
+    original = song_downloads._start_ytdlp_mp3_stream
+    song_downloads._start_ytdlp_mp3_stream = cancel_stream
+    try:
+        payload = song_downloads.SongDownloadRequest(
+            videoId="6rOCiszTz-I",
+            title="Track",
+            rightsConfirmed=True,
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await song_downloads.download_song(payload, TEST_USER)
+    finally:
+        song_downloads._start_ytdlp_mp3_stream = original
+
+    assert song_downloads._download_semaphore._value == starting_slots

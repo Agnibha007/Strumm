@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import SongDownloadAction from "./SongDownloadAction";
 import { usePlayerStore } from "web/store/usePlayerStore";
@@ -40,12 +40,6 @@ function okResponse() {
   const values: Record<string, string> = {
     "content-type": "audio/mpeg",
     "content-length": "11",
-    "x-download-provider": "openverse",
-    "x-download-source-url": "https://openverse.example/track",
-    "x-download-license": "CC0 1.0",
-    "x-download-license-url": "https://creativecommons.org/publicdomain/zero/1.0/",
-    "x-download-attribution": "Test Song by Test Artist",
-    "x-download-creator": "Test Artist",
   };
   return {
     ok: true,
@@ -73,6 +67,10 @@ function savedRecord(record: Record<string, unknown>) {
   };
 }
 
+beforeEach(() => {
+  vi.stubGlobal("confirm", vi.fn(() => true));
+});
+
 afterEach(() => {
   cleanup();
   usePlayerStore.setState({ currentSong: null });
@@ -81,7 +79,7 @@ afterEach(() => {
 });
 
 describe("SongDownloadAction", () => {
-  it("downloads from the provider resolver on demand while keeping the original song ID", async () => {
+  it("streams an MP3 from yt-dlp on demand and saves it to the browser library", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
     authFetchMock.mockResolvedValue(okResponse());
@@ -94,7 +92,7 @@ describe("SongDownloadAction", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Test Song", artist: "Test Artist", duration: 172 }),
+        body: JSON.stringify({ videoId: "abcdefghijk", title: "Test Song", artist: "Test Artist", duration: 172, rightsConfirmed: true }),
         signal: expect.any(AbortSignal),
       }),
     ));
@@ -105,18 +103,14 @@ describe("SongDownloadAction", () => {
       artist: "Test Artist",
       audioUrl: "/proxy/downloads/song",
       mimeType: "audio/mpeg",
-      sourceProvider: "openverse",
-      sourceUrl: "https://openverse.example/track",
-      license: "CC0 1.0",
-      licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
-      attribution: "Test Song by Test Artist",
-      copyrightLine: "Test Artist",
+      sourceProvider: "yt-dlp",
+      sourceUrl: "https://www.youtube.com/watch?v=abcdefghijk",
       blob: expect.any(Blob),
     }));
     await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
   });
 
-  it("uses the provider resolver instead of a song's existing direct download URL", async () => {
+  it("uses the yt-dlp endpoint instead of a song's existing direct download URL", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
     authFetchMock.mockResolvedValue(okResponse());
@@ -133,23 +127,26 @@ describe("SongDownloadAction", () => {
     await waitFor(() => expect(store.saveSongDownload).toHaveBeenCalledOnce());
     expect(authFetchMock).toHaveBeenCalledWith(
       "/proxy/downloads/song",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ videoId: "abcdefghijk", title: "Test Song", artist: "Test Artist", duration: 172, rightsConfirmed: true }),
+      }),
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("explains when no provider has a confidently matching public download", async () => {
+  it("explains when yt-dlp cannot resolve an audio stream", async () => {
     store.getSongDownload.mockResolvedValue(null);
     authFetchMock.mockResolvedValue({
       ok: false,
-      status: 404,
-      json: async () => ({ detail: "No confidently matching, publicly downloadable Audius track was found." }),
+      status: 502,
+      json: async () => ({ detail: "yt-dlp could not resolve an audio stream for this track." }),
     });
 
     render(<SongDownloadAction song={baseSong} compact />);
     fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("No confidently matching"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("yt-dlp could not resolve"));
     expect(store.saveSongDownload).not.toHaveBeenCalled();
   });
 
@@ -196,11 +193,23 @@ describe("SongDownloadAction", () => {
     expect(store.removeSongDownload).not.toHaveBeenCalled();
   });
 
-  it("does not offer song downloads for podcast episodes", async () => {
+  it("does not offer song downloads for podcast or non-YouTube provider IDs", async () => {
     store.getSongDownload.mockResolvedValue(null);
     const podcastSong = { ...baseSong, videoId: "podcast-123" };
-    const { container } = render(<SongDownloadAction song={podcastSong} compact />);
-    await waitFor(() => expect(store.getSongDownload).toHaveBeenCalledWith("podcast-123"));
-    expect(container.querySelector("button")).toBeNull();
+    const audiusSong = { ...baseSong, videoId: "audius-KlK59" };
+    const podcastView = render(<SongDownloadAction song={podcastSong} compact />);
+    expect(podcastView.container.querySelector("button")).toBeNull();
+    podcastView.unmount();
+    const audiusView = render(<SongDownloadAction song={audiusSong} compact />);
+    expect(audiusView.container.querySelector("button")).toBeNull();
+  });
+
+  it("does not call the download API when the user declines the rights confirmation", async () => {
+    store.getSongDownload.mockResolvedValue(null);
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    render(<SongDownloadAction song={baseSong} compact />);
+    fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
+    expect(authFetchMock).not.toHaveBeenCalled();
+    expect(store.saveSongDownload).not.toHaveBeenCalled();
   });
 });

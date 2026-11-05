@@ -89,4 +89,4 @@ SESSIONS = "sessions"
 MEDIA = "media"
 
 # Daily download / export quotas (per user)
-DOWNLOAD_QUOTA = "downloadquotas"
+PLAYLIST_EXPORT_QUOTA = "downloadquotas"

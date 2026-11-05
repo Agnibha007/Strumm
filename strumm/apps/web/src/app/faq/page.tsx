@@ -32,7 +32,7 @@ const faqs = [
   },
   {
     q: "How does music playback work?",
-    a: "Strumm resolves track metadata and usually plays through YouTube's embedded player. A backend audio-streaming fallback may be used for supported background-playback or network cases. Offline song downloads are available only when a track source explicitly provides an authorized download URL. Strumm does not extract or convert YouTube streams into downloadable files; other YouTube-backed tracks require an internet connection.",
+    a: "Strumm resolves track metadata and usually plays through YouTube's embedded player. For tracks you own or have permission to download, you can request an MP3 using yt-dlp; the backend converts and streams the audio directly to your browser without storing an MP3 on Strumm's servers. The browser can save the result locally for offline listening. You must confirm that you have the necessary rights before each download.",
   },
   {
     q: "What is Strumm Replay?",
@@ -64,7 +64,7 @@ const faqs = [
   },
   {
     q: "Does Strumm work offline?",
-    a: "The Strumm PWA caches the app shell. Podcast episodes and eligible songs you download are stored on this device and can play offline. YouTube-backed tracks without an authorized download asset still require an internet connection.",
+    a: "The Strumm PWA caches the app shell. Podcast episodes and songs you are authorized to download are saved in this browser's local offline library. Other YouTube-backed tracks require an internet connection.",
   },
   {
     q: "How do I report a bug?",

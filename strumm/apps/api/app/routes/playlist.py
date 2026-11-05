@@ -18,7 +18,7 @@ from app.services.avatar import decorate_user_avatar
 from app.models.schemas import PlaylistCreateSchema, PlaylistUpdateSchema, SongSchema
 from app.services.security import escaped_regex, is_valid_youtube_id, parse_object_id, sanitize_enum, sanitize_multiline_text, sanitize_text
 from app.services.cache import cache_search, get_cached_search
-from app.services.download_quota import try_consume_playlist_export
+from app.services.playlist_export_quota import try_consume_playlist_export
 from app.services.normalizer import (
     canonical_song_key,
     normalize_title_for_match,

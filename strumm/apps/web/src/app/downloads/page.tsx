@@ -332,7 +332,7 @@ export default function DownloadsPage() {
           </div>
           <h2 className="font-editorial text-2xl font-bold text-text">Nothing saved yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-            Download podcast episodes or tracks whose source explicitly supports offline copies to keep them ready for flights, commutes, or spotty connections.
+            Download podcast episodes or tracks you own or have permission to download, then keep them ready for offline listening.
           </p>
           <Link href="/podcasts" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-primary-hover">
             <Radio className="h-4 w-4" />
@@ -390,11 +390,8 @@ export default function DownloadsPage() {
                             <div className="mt-1 space-y-1 text-[11px] text-muted">
                               {record.sourceUrl && (
                                 <a href={record.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-primary hover:underline">
-                                  Source: {record.sourceProvider === "epidemic-sound" ? "Epidemic Sound" : record.sourceProvider === "ccmixter" ? "ccMixter" : record.sourceProvider === "openverse" ? "Openverse" : record.sourceProvider === "audius" ? "Audius" : "Direct source"}
+                                  Source: {record.sourceProvider === "yt-dlp" ? "YouTube (yt-dlp)" : "Direct source"}
                                 </a>
-                              )}
-                              {record.sourceProvider === "audius" && (
-                                <p>Third-party music-player use through the Audius API is governed by the <a href="https://audius.org/open-music-license.pdf" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Audius Open Music License</a>. The track licence shown below is separate.</p>
                               )}
                             </div>
                           )}

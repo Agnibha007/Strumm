@@ -20,18 +20,9 @@ interface SongDownloadActionProps {
   compact?: boolean;
 }
 
-function decodeHeaderValue(value: string | null) {
-  if (!value) return undefined;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 export default function SongDownloadAction({ song, compact = false }: SongDownloadActionProps) {
   const downloadUrl = apiUrl("/downloads/song");
-  const canDownload = !song.videoId.startsWith("podcast-");
+  const canDownload = !song.videoId.startsWith("podcast-") && /^[A-Za-z0-9_-]{11}$/.test(song.videoId);
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -71,6 +62,8 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
 
   const startDownload = async () => {
     if (downloading || !canDownload) return;
+    const confirmed = window.confirm("Only download this track if you own it or have permission from the rights holder. Continue?");
+    if (!confirmed) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setDownloading(true);
@@ -85,19 +78,19 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          videoId: song.videoId,
           title: song.title,
           artist: song.artist,
           duration: song.duration,
+          rightsConfirmed: true,
         }),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         let message = response.status === 404
-          ? "No matching track with a verified public download licence was found."
-          : response.status === 403
-            ? "The matched provider does not allow this track to be downloaded."
-            : "Unable to download this track.";
+          ? "yt-dlp could not find an audio stream for this track."
+          : "Unable to download this track.";
         const parsed = await response.json().catch(() => null);
         if (parsed?.detail) message = parsed.detail;
         else if (parsed?.error) message = parsed.error;
@@ -106,7 +99,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
 
       const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
       if (mimeType !== "audio/mpeg" && mimeType !== "audio/mp3") {
-        throw new Error("The matched provider did not return an MP3 file.");
+        throw new Error("The yt-dlp and FFmpeg pipeline did not return an MP3 file.");
       }
 
       const rawLength = response.headers.get("content-length");
@@ -168,12 +161,8 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         audioUrl: downloadUrl,
         mimeType,
         blob,
-        sourceProvider: (response.headers.get("X-Download-Provider") || "audius") as SongDownloadRecord["sourceProvider"],
-        sourceUrl: decodeHeaderValue(response.headers.get("X-Download-Source-Url")) || undefined,
-        license: decodeHeaderValue(response.headers.get("X-Download-License")) || undefined,
-        licenseUrl: decodeHeaderValue(response.headers.get("X-Download-License-Url")) || undefined,
-        attribution: decodeHeaderValue(response.headers.get("X-Download-Attribution")) || undefined,
-        copyrightLine: decodeHeaderValue(response.headers.get("X-Download-Creator")) || undefined,
+        sourceProvider: "yt-dlp",
+        sourceUrl: `https://www.youtube.com/watch?v=${song.videoId}`,
       });
       setSaved(record);
       setProgress(100);
