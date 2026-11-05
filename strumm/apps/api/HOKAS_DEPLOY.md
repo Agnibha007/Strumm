@@ -25,14 +25,8 @@ Do not enable or proxy copyrighted audio on HOKAS unless you have the rights or 
 1. Create a HOKAS account. Its current terms allow free accounts from age 13; paid plans require age 18.
 2. Choose **Deploy New Server**, select **Python**, and choose **Free**.
 3. Use the GitHub deployment option if it is available in the dashboard and select the `deploy/hokas-free-profile` branch of `Agnibha007/Strumm`. Otherwise upload/clone the repository using the HOKAS terminal/file tools.
-4. In the HOKAS terminal, locate the repository checkout and enter `strumm/apps/api`.
-5. Install the HOKAS runtime dependencies:
-
-   ```sh
-   python -m pip install --no-cache-dir -r requirements-hokas.txt
-   ```
-
-6. Set the server's startup command to:
+4. Keep **Install dependencies** enabled. The repository root contains a HOKAS-specific `requirements.txt` so HOKAS can install the small runtime dependency set automatically.
+5. Set the server's startup command to:
 
    ```sh
    sh strumm/apps/api/hokas_start.sh
