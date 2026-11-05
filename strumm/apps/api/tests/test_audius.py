@@ -1,5 +1,7 @@
-import pytest
+import asyncio
+
 import httpx
+import pytest
 
 from app.main import app
 from app.routes import audius
@@ -490,3 +492,73 @@ async def test_download_by_song_metadata_rejects_unmatched_song_without_consumin
 
     assert response.status_code == 404
     assert quota_calls == []
+
+
+@pytest.mark.asyncio
+async def test_download_match_falls_back_to_title_only_search(monkeypatch):
+    queries = []
+
+    async def search(path, params=None):
+        queries.append(params["query"])
+        if params["query"] == "Wobblebug - INVADE Sweeppah":
+            return []
+        if params["query"] == "Wobblebug - INVADE":
+            return [track()]
+        return []
+
+    monkeypatch.setattr(audius, "_audius_json", search)
+
+    match = await audius._find_downloadable_match("Wobblebug - INVADE", "Sweeppah")
+
+    assert match is not None
+    assert match["id"] == "KlK59"
+    assert queries[:2] == ["Wobblebug - INVADE Sweeppah", "Wobblebug - INVADE"]
+
+
+def test_artist_match_accepts_one_member_of_a_multi_artist_credit():
+    assert audius._artist_match_score("Repsaj, ATLXS, MC Jhey", "Repsaj") == 100
+    assert audius._artist_match_score("Repsaj, ATLXS, MC Jhey", "Unrelated Artist") < 55
+
+
+@pytest.mark.asyncio
+async def test_audius_json_retries_transient_timeout(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        is_success = True
+
+        def json(self):
+            return {"data": [{"id": "KlK59"}]}
+
+    class FakeClient:
+        async def get(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            if len(calls) == 1:
+                raise httpx.ReadTimeout("temporary Audius timeout")
+            return FakeResponse()
+
+    monkeypatch.setattr(audius, "get_http_client", lambda: FakeClient())
+    async def no_sleep(_):
+        return None
+
+    monkeypatch.setattr(audius.asyncio, "sleep", no_sleep)
+
+    result = await audius._audius_json("/tracks/search", {"query": "Wobblebug"})
+
+    assert result == [{"id": "KlK59"}]
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_download_match_reports_unavailable_when_all_search_variants_fail(monkeypatch):
+    async def search(path, params=None):
+        raise audius.HTTPException(status_code=503, detail="Audius is temporarily unavailable.")
+
+    monkeypatch.setattr(audius, "_audius_json", search)
+
+    with pytest.raises(audius.HTTPException) as exc:
+        await audius._find_downloadable_match("A song", "An artist")
+
+    assert exc.value.status_code == 503
+    assert "temporarily unstable" in exc.value.detail

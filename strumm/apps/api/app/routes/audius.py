@@ -29,7 +29,9 @@ SEARCH_UPSTREAM_PAGE_SIZE = 100
 MAX_SEARCH_PAGES = 6
 SEARCH_PAGE_CONCURRENCY = 2
 MAX_MEDIA_ATTEMPTS = 2
+MAX_API_ATTEMPTS = 2
 MAX_MATCH_SEARCH_PAGES = 3
+MAX_MATCH_SEARCH_QUERIES = 3
 TRACK_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,64}$")
 RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
@@ -68,31 +70,43 @@ async def _audius_json(path: str, params: Optional[dict[str, Any]] = None) -> An
     query = {"app_name": AUDIUS_APP_NAME}
     if params:
         query.update(params)
-    try:
-        response = await client.get(
-            AUDIUS_API_BASE + path,
-            params=query,
-            timeout=httpx.Timeout(20.0, connect=8.0),
-            follow_redirects=False,
-        )
-    except httpx.HTTPError as exc:
-        logger.warning("Audius API request failed: %s", type(exc).__name__)
-        raise HTTPException(status_code=503, detail="Audius is temporarily unavailable.") from exc
 
-    if response.status_code == 404:
-        return None
-    if response.status_code == 429:
-        raise HTTPException(status_code=503, detail="Audius is rate limiting requests. Try again shortly.")
-    if not response.is_success:
-        logger.warning("Audius API returned HTTP %s for %s", response.status_code, path)
-        raise HTTPException(status_code=502, detail="Audius could not complete the request.")
+    for attempt in range(MAX_API_ATTEMPTS):
+        try:
+            response = await client.get(
+                AUDIUS_API_BASE + path,
+                params=query,
+                timeout=httpx.Timeout(15.0, connect=8.0, read=12.0),
+                follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            if attempt + 1 < MAX_API_ATTEMPTS:
+                logger.warning("Audius API request failed for %s (%s); retrying once.", path, type(exc).__name__)
+                await asyncio.sleep(0.25)
+                continue
+            logger.warning("Audius API request failed for %s after retry: %s", path, type(exc).__name__)
+            raise HTTPException(status_code=503, detail="Audius is temporarily unavailable. Try again shortly.") from exc
 
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise HTTPException(status_code=502, detail="Audius returned an invalid response.") from exc
-    return payload.get("data") if isinstance(payload, dict) else None
+        if response.status_code == 404:
+            return None
+        if response.status_code == 429:
+            raise HTTPException(status_code=503, detail="Audius is rate limiting requests. Try again shortly.")
+        if response.status_code >= 500 and attempt + 1 < MAX_API_ATTEMPTS:
+            logger.warning("Audius API returned HTTP %s for %s; retrying once.", response.status_code, path)
+            await response.aclose()
+            await asyncio.sleep(0.25)
+            continue
+        if not response.is_success:
+            logger.warning("Audius API returned HTTP %s for %s", response.status_code, path)
+            raise HTTPException(status_code=502, detail="Audius could not complete the request.")
 
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail="Audius returned an invalid response.") from exc
+        return payload.get("data") if isinstance(payload, dict) else None
+
+    raise HTTPException(status_code=503, detail="Audius is temporarily unavailable. Try again shortly.")
 
 async def _get_track(track_id: str) -> Optional[dict]:
     result = await _audius_json("/tracks/" + quote(track_id, safe=""))
@@ -136,54 +150,111 @@ def _normalize_match_text(value: str) -> str:
     return re.sub(r"[^\w]+", " ", cleaned, flags=re.UNICODE).strip()
 
 
+def _match_search_queries(title: str, artist: str) -> list[str]:
+    cleaned_title = re.sub(
+        r"\s*[\[(](?:official|lyrics?|visualizer|audio only|music video|hd|4k)[^\])]*[\])]?\s*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    cleaned_title = re.sub(
+        r"\s*[-|–]\s*(?:official(?: music)? (?:audio|video)|lyrics? video|visualizer)\s*$",
+        "",
+        cleaned_title,
+        flags=re.IGNORECASE,
+    ).strip(" -|–")
+
+    candidates = [
+        " ".join(part.strip() for part in (title, artist) if part.strip()),
+        title.strip(),
+        " ".join(part.strip() for part in (cleaned_title, artist) if part.strip()),
+    ]
+    queries: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = _normalize_match_text(candidate)
+        if candidate and normalized and normalized not in seen:
+            queries.append(candidate[:200])
+            seen.add(normalized)
+        if len(queries) >= MAX_MATCH_SEARCH_QUERIES:
+            break
+    return queries
+
+
+def _artist_match_score(requested_artist: str, candidate_artist: str) -> float:
+    normalized_candidate = _normalize_match_text(candidate_artist)
+    if not requested_artist or not normalized_candidate:
+        return 0.0
+    choices = [_normalize_match_text(requested_artist)]
+    choices.extend(
+        _normalize_match_text(part)
+        for part in re.split(r"\s*(?:,|;|\bfeat\.?\b|\bft\.?\b|\s&\s)\s*", requested_artist, flags=re.IGNORECASE)
+        if _normalize_match_text(part)
+    )
+    return max(ratio(choice, normalized_candidate) for choice in choices if choice)
+
+
 async def _find_downloadable_match(title: str, artist: str) -> Optional[dict]:
     requested_title = _normalize_match_text(title)
     requested_artist = _normalize_match_text(artist)
     if not requested_title or not requested_artist:
         return None
 
-    query = " ".join(part for part in (title.strip(), artist.strip()) if part)
     best_track = None
     best_score = 0.0
     best_title_score = 0.0
     best_artist_score = 0.0
+    # Audius search can be sensitive to query ordering and artist aliases. Try
+    # the full metadata first, then title-only and a cleaned title variant. The
+    # artist/title score gates below remain unchanged to avoid false downloads.
+    for query in _match_search_queries(title, artist):
+        for page in range(MAX_MATCH_SEARCH_PAGES):
+            try:
+                result = await _audius_json(
+                    "/tracks/search",
+                    {
+                        "query": query,
+                        "limit": SEARCH_UPSTREAM_PAGE_SIZE,
+                        "offset": page * SEARCH_UPSTREAM_PAGE_SIZE,
+                        "only_downloadable": "true",
+                    },
+                )
+            except HTTPException as exc:
+                if exc.status_code in (502, 503):
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Audius search is temporarily unstable. Please retry the download.",
+                    ) from exc
+                raise
 
-    for page in range(MAX_MATCH_SEARCH_PAGES):
-        result = await _audius_json(
-            "/tracks/search",
-            {
-                "query": query,
-                "limit": SEARCH_UPSTREAM_PAGE_SIZE,
-                "offset": page * SEARCH_UPSTREAM_PAGE_SIZE,
-                "only_downloadable": "true",
-            },
-        )
-        candidates = result if isinstance(result, list) else []
-        if not candidates:
-            break
+            candidates = result if isinstance(result, list) else []
+            if not candidates:
+                break
 
-        for candidate in candidates:
-            if (
-                not isinstance(candidate, dict)
-                or not TRACK_ID_PATTERN.fullmatch(str(candidate.get("id") or ""))
-                or candidate.get("is_available") is False
-                or candidate.get("is_delete") is True
-                or candidate.get("is_unlisted") is True
-                or not _download_allowed(candidate)
-            ):
-                continue
-            user = candidate.get("user") if isinstance(candidate.get("user"), dict) else {}
-            candidate_title = _normalize_match_text(str(candidate.get("title") or ""))
-            candidate_artist = _normalize_match_text(str(user.get("name") or user.get("handle") or ""))
-            title_score = ratio(requested_title, candidate_title)
-            artist_score = ratio(requested_artist, candidate_artist) if candidate_artist else 0.0
-            score = title_score * 0.78 + artist_score * 0.22
-            if score > best_score:
-                best_track = candidate
-                best_score = score
-                best_title_score = title_score
-                best_artist_score = artist_score
+            for candidate in candidates:
+                if (
+                    not isinstance(candidate, dict)
+                    or not TRACK_ID_PATTERN.fullmatch(str(candidate.get("id") or ""))
+                    or candidate.get("is_available") is False
+                    or candidate.get("is_delete") is True
+                    or candidate.get("is_unlisted") is True
+                    or not _download_allowed(candidate)
+                ):
+                    continue
+                user = candidate.get("user") if isinstance(candidate.get("user"), dict) else {}
+                candidate_title = _normalize_match_text(str(candidate.get("title") or ""))
+                candidate_artist = _normalize_match_text(str(user.get("name") or user.get("handle") or ""))
+                title_score = ratio(requested_title, candidate_title)
+                artist_score = _artist_match_score(artist, candidate_artist)
+                score = title_score * 0.78 + artist_score * 0.22
+                if score > best_score:
+                    best_track = candidate
+                    best_score = score
+                    best_title_score = title_score
+                    best_artist_score = artist_score
 
+            if best_track and best_title_score >= 90 and best_artist_score >= 80 and best_score >= 88:
+                break
         if best_track and best_title_score >= 90 and best_artist_score >= 80 and best_score >= 88:
             break
 

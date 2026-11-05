@@ -5,6 +5,7 @@ import { Check, Download, Loader2, Trash2, X } from "lucide-react";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import type { Song } from "@strumm/types";
+import { usePlayerStore } from "web/store/usePlayerStore";
 import {
   formatDownloadSize,
   getSongDownload,
@@ -30,13 +31,16 @@ function decodeHeaderValue(value: string | null) {
 }
 
 export default function SongDownloadAction({ song, compact = false }: SongDownloadActionProps) {
-  const downloadUrl = apiUrl("/audius/download");
+  const downloadUrl = apiUrl("/downloads/song");
+  const currentSongId = usePlayerStore((state) => state.currentSong?.videoId ?? null);
   const canDownload = !song.videoId.startsWith("podcast-");
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const savedInThisSessionRef = useRef(false);
+  const playerSongIdAtSaveRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -53,6 +57,15 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
       abortRef.current = null;
     };
   }, [song.videoId]);
+
+  useEffect(() => {
+    if (!savedInThisSessionRef.current || !currentSongId) return;
+    if (currentSongId === playerSongIdAtSaveRef.current) return;
+
+    savedInThisSessionRef.current = false;
+    setSaved(null);
+    setProgress(null);
+  }, [currentSongId]);
 
   const startDownload = async () => {
     if (downloading || !canDownload) return;
@@ -72,15 +85,16 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         body: JSON.stringify({
           title: song.title,
           artist: song.artist,
+          duration: song.duration,
         }),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         let message = response.status === 404
-          ? "No matching publicly downloadable Audius track was found."
+          ? "No matching track with a verified public download licence was found."
           : response.status === 403
-            ? "Audius does not allow this track to be downloaded."
+            ? "The matched provider does not allow this track to be downloaded."
             : "Unable to download this track.";
         const parsed = await response.json().catch(() => null);
         if (parsed?.detail) message = parsed.detail;
@@ -90,7 +104,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
 
       const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
       if (mimeType !== "audio/mpeg" && mimeType !== "audio/mp3") {
-        throw new Error("Audius did not return an MP3 file.");
+        throw new Error("The matched provider did not return an MP3 file.");
       }
 
       const rawLength = response.headers.get("content-length");
@@ -138,7 +152,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         blob = await response.blob();
       }
 
-      if (!blob.size) throw new Error("Audius returned an empty audio file.");
+      if (!blob.size) throw new Error("The download source returned an empty audio file.");
       if (blob.size > MAX_DOWNLOAD_BYTES) {
         throw new Error("This track is larger than the 500 MiB download limit.");
       }
@@ -152,12 +166,15 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         audioUrl: downloadUrl,
         mimeType,
         blob,
-        sourceProvider: "audius",
-        sourceUrl: response.headers.get("X-Audius-Source-Url") || undefined,
-        license: decodeHeaderValue(response.headers.get("X-Audius-License")),
-        copyrightLine: decodeHeaderValue(response.headers.get("X-Audius-Copyright-Line")),
-        producerCopyrightLine: decodeHeaderValue(response.headers.get("X-Audius-Producer-Copyright-Line")),
+        sourceProvider: (response.headers.get("X-Download-Provider") || "audius") as SongDownloadRecord["sourceProvider"],
+        sourceUrl: decodeHeaderValue(response.headers.get("X-Download-Source-Url")) || undefined,
+        license: decodeHeaderValue(response.headers.get("X-Download-License")) || undefined,
+        licenseUrl: decodeHeaderValue(response.headers.get("X-Download-License-Url")) || undefined,
+        attribution: decodeHeaderValue(response.headers.get("X-Download-Attribution")) || undefined,
+        copyrightLine: decodeHeaderValue(response.headers.get("X-Download-Creator")) || undefined,
       });
+      playerSongIdAtSaveRef.current = currentSongId;
+      savedInThisSessionRef.current = true;
       setSaved(record);
       setProgress(100);
       if (typeof window !== "undefined") window.dispatchEvent(new Event("strumm:downloads-changed"));
@@ -182,6 +199,8 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
     try {
       await removeSongDownload(song.videoId);
       setSaved(null);
+      savedInThisSessionRef.current = false;
+      playerSongIdAtSaveRef.current = null;
       setProgress(null);
       if (typeof window !== "undefined") window.dispatchEvent(new Event("strumm:downloads-changed"));
     } catch (err) {

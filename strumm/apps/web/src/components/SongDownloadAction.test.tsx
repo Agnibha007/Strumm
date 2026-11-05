@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import SongDownloadAction from "./SongDownloadAction";
+import { usePlayerStore } from "web/store/usePlayerStore";
 
 const store = vi.hoisted(() => ({
   getSongDownload: vi.fn(),
@@ -39,9 +40,12 @@ function okResponse() {
   const values: Record<string, string> = {
     "content-type": "audio/mpeg",
     "content-length": "11",
-    "x-audius-source-url": "https://audius.co/artist/test-song",
-    "x-audius-license": "All%20rights%20reserved",
-    "x-audius-copyright-line": "Copyright%20Artist",
+    "x-download-provider": "openverse",
+    "x-download-source-url": "https://openverse.example/track",
+    "x-download-license": "CC0 1.0",
+    "x-download-license-url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "x-download-attribution": "Test Song by Test Artist",
+    "x-download-creator": "Test Artist",
   };
   return {
     ok: true,
@@ -71,12 +75,13 @@ function savedRecord(record: Record<string, unknown>) {
 
 afterEach(() => {
   cleanup();
+  usePlayerStore.setState({ currentSong: null });
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 describe("SongDownloadAction", () => {
-  it("downloads from Audius on demand while keeping the original song ID", async () => {
+  it("downloads from the provider resolver on demand while keeping the original song ID", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
     authFetchMock.mockResolvedValue(okResponse());
@@ -85,11 +90,11 @@ describe("SongDownloadAction", () => {
     fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
 
     await waitFor(() => expect(authFetchMock).toHaveBeenCalledWith(
-      "/proxy/audius/download",
+      "/proxy/downloads/song",
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Test Song", artist: "Test Artist" }),
+        body: JSON.stringify({ title: "Test Song", artist: "Test Artist", duration: 172 }),
         signal: expect.any(AbortSignal),
       }),
     ));
@@ -98,18 +103,20 @@ describe("SongDownloadAction", () => {
       videoId: "abcdefghijk",
       title: "Test Song",
       artist: "Test Artist",
-      audioUrl: "/proxy/audius/download",
+      audioUrl: "/proxy/downloads/song",
       mimeType: "audio/mpeg",
-      sourceProvider: "audius",
-      sourceUrl: "https://audius.co/artist/test-song",
-      license: "All rights reserved",
-      copyrightLine: "Copyright Artist",
+      sourceProvider: "openverse",
+      sourceUrl: "https://openverse.example/track",
+      license: "CC0 1.0",
+      licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+      attribution: "Test Song by Test Artist",
+      copyrightLine: "Test Artist",
       blob: expect.any(Blob),
     }));
     await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
   });
 
-  it("uses Audius instead of a song's existing direct download URL", async () => {
+  it("uses the provider resolver instead of a song's existing direct download URL", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
     authFetchMock.mockResolvedValue(okResponse());
@@ -125,13 +132,13 @@ describe("SongDownloadAction", () => {
 
     await waitFor(() => expect(store.saveSongDownload).toHaveBeenCalledOnce());
     expect(authFetchMock).toHaveBeenCalledWith(
-      "/proxy/audius/download",
+      "/proxy/downloads/song",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("explains when Audius has no confidently matching public download", async () => {
+  it("explains when no provider has a confidently matching public download", async () => {
     store.getSongDownload.mockResolvedValue(null);
     authFetchMock.mockResolvedValue({
       ok: false,
@@ -153,7 +160,7 @@ describe("SongDownloadAction", () => {
       artist: "Test Artist",
       thumbnail: baseSong.thumbnail,
       duration: baseSong.duration,
-      audioUrl: "/proxy/audius/download",
+      audioUrl: "/proxy/downloads/song",
       mimeType: "audio/mpeg",
       blob: new Blob(["audio bytes"], { type: "audio/mpeg" }),
     }));
@@ -165,6 +172,23 @@ describe("SongDownloadAction", () => {
 
     await waitFor(() => expect(store.removeSongDownload).toHaveBeenCalledWith("abcdefghijk"));
     await waitFor(() => expect(screen.getByRole("button", { name: "Download song offline" })).toBeTruthy());
+  });
+
+  it("resets the transient Saved button after playback advances but keeps the offline record", async () => {
+    store.getSongDownload.mockResolvedValue(null);
+    store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
+    authFetchMock.mockResolvedValue(okResponse());
+    act(() => usePlayerStore.setState({ currentSong: baseSong }));
+
+    render(<SongDownloadAction song={baseSong} compact />);
+    fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
+
+    await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
+
+    act(() => usePlayerStore.setState({ currentSong: { ...baseSong, videoId: "lmnopqrstuv", title: "Next Song" } }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Download song offline" })).toBeTruthy());
+    expect(store.saveSongDownload).toHaveBeenCalledOnce();
+    expect(store.removeSongDownload).not.toHaveBeenCalled();
   });
 
   it("does not offer song downloads for podcast episodes", async () => {

@@ -386,17 +386,25 @@ export default function DownloadsPage() {
                         <div className="min-w-0 flex-1">
                           <h3 className="truncate text-sm font-semibold text-text">{record.title}</h3>
                           <p className="mt-1 truncate text-xs text-muted">{record.showTitle || group.name}</p>
-                          {record.sourceProvider === "audius" && (
+                          {record.sourceProvider && (
                             <div className="mt-1 space-y-1 text-[11px] text-muted">
                               {record.sourceUrl && (
                                 <a href={record.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-primary hover:underline">
-                                  Source: Audius
+                                  Source: {record.sourceProvider === "epidemic-sound" ? "Epidemic Sound" : record.sourceProvider === "ccmixter" ? "ccMixter" : record.sourceProvider === "openverse" ? "Openverse" : record.sourceProvider === "audius" ? "Audius" : "Direct source"}
                                 </a>
                               )}
-                              <p>Third-party music-player use through the Audius API is governed by the <a href="https://audius.org/open-music-license.pdf" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Audius Open Music License</a>. The track licence shown below is separate.</p>
+                              {record.sourceProvider === "audius" && (
+                                <p>Third-party music-player use through the Audius API is governed by the <a href="https://audius.org/open-music-license.pdf" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Audius Open Music License</a>. The track licence shown below is separate.</p>
+                              )}
                             </div>
                           )}
-                          {record.license && <p className="mt-1 truncate text-[11px] text-muted">Track licence: {record.license}</p>}
+                          {record.license && (
+                            <p className="mt-1 truncate text-[11px] text-muted">
+                              Track licence: {record.license}
+                              {record.licenseUrl && <> · <a href={record.licenseUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">View licence</a></>}
+                            </p>
+                          )}
+                          {record.attribution && <p className="mt-1 text-[11px] leading-relaxed text-muted">{record.attribution}</p>}
                           {record.copyrightLine && <p className="mt-1 truncate text-[11px] text-muted">{record.copyrightLine}</p>}
                           {record.producerCopyrightLine && <p className="mt-1 truncate text-[11px] text-muted">{record.producerCopyrightLine}</p>}
                           {record.sourcePlaylistName && group.type !== "playlist" && (
