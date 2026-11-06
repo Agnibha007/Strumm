@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import gzip
 import json
 import logging
 import os
@@ -125,8 +126,10 @@ def get_ytdlp_cookiefile() -> str | None:
     try:
         compact = "".join(encoded.split())
         raw = base64.b64decode(compact, validate=True)
+        if raw.startswith(b"\x1f\x8b"):
+            raw = gzip.decompress(raw)
         filename = _convert_json_cookie_bytes(raw)
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+    except (binascii.Error, EOFError, OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
         logger.warning("YTDLP_COOKIES_JSON_B64 is configured but is invalid; yt-dlp will run without cookies.")
         return None
 
