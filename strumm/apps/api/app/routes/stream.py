@@ -24,6 +24,7 @@ import asyncio
 
 from app.database import mongodb as db
 from app.services.security import sanitize_youtube_id
+from app.services.youtube_cookies import ytdlp_cookie_options
 
 logger = logging.getLogger("strumm-stream")
 router = APIRouter(tags=["stream"])
@@ -262,6 +263,7 @@ def _run_ytdlp_extract(video_id: str) -> dict:
             "skip_download": True,
             "socket_timeout": 15,
             "retries": 1,
+            **ytdlp_cookie_options(),
         }
         opts.update(override)
         try:

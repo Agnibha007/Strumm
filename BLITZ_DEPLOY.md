@@ -62,6 +62,24 @@ Use a bucket-scoped B2 application key.
 
 Environment changes take effect after restarting the app.
 
+### YouTube yt-dlp cookies (optional)
+
+The API supports a browser-exported YouTube cookie JSON file for yt-dlp extraction and authorized song downloads:
+
+- `YTDLP_COOKIES_JSON_B64`: base64-encoded JSON cookie export, stored as a secret environment variable in Blitz.
+- `YTDLP_COOKIES_FILE`: alternatively, a mounted Netscape-format cookie file or browser-exported JSON file path. Use only if the platform provides a private secret-file mount.
+
+For the current local export, copy its encoded value to the clipboard without printing it into a terminal transcript:
+
+```sh
+cd ~/Desktop/Strumm
+base64 -w0 .secrets/youtube/cookie.json | wl-copy
+```
+
+Create `YTDLP_COOKIES_JSON_B64` in Blitz's Environment tab, mark it as a secret if the dashboard offers that option, paste the clipboard value, and restart the app. The API filters the JSON export to YouTube domains, converts it to Netscape format at runtime, and writes the temporary cookie file with owner-only permissions. Cookie values are never logged, copied into the Docker image, or committed to Git. Refresh the secret whenever the browser export expires or is rotated; each environment update requires an app restart.
+
+The cookie export is an account credential. Keep it private and use the download endpoint only for media you own or have permission to download. A valid cookie does not guarantee YouTube will serve every cloud-hosted request; cloud egress/IP challenges and provider availability can still prevent extraction.
+
 ## Database safety
 
 The API currently fixes its MongoDB database name to `strumm` in `app/database/mongodb.py`; a database name appended to the URI does not select a different database in this code. Use a separate MongoDB Atlas cluster for deployment tests.

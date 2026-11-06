@@ -40,6 +40,8 @@ from typing import Any, Optional
 
 import requests
 
+from app.services.youtube_cookies import ytdlp_cookie_options
+
 logger = logging.getLogger("strumm-ytfallback")
 
 # Google Cloud API key with "YouTube Data API v3" enabled (same key the
@@ -204,7 +206,8 @@ def ytdlp_search(query: str, *, limit: int = 8) -> list[dict[str, Any]]:
         import yt_dlp
 
         search_query = f"ytsearch{limit}:{query}"
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+        options = {"quiet": True, "no_warnings": True, **ytdlp_cookie_options()}
+        with yt_dlp.YoutubeDL(options) as ydl:
             entries = ydl.extract_info(search_query, download=False) or {}
             entries = entries.get("entries") or []
     except Exception as exc:

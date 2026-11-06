@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.routes.dependencies import get_current_user
+from app.services.youtube_cookies import ytdlp_cookie_cli_args
 
 logger = logging.getLogger("strumm-song-downloads")
 router = APIRouter(prefix="/downloads", tags=["song-downloads"])
@@ -53,6 +54,7 @@ def _ytdlp_command(video_id: str) -> list[str]:
         "--fragment-retries", "1",
         "--format", "bestaudio/best",
         "--output", "-",
+        *ytdlp_cookie_cli_args(),
         "https://www.youtube.com/watch?v=" + video_id,
     ]
 

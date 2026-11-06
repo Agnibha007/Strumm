@@ -1,5 +1,7 @@
 .git
 .github
+.secrets/
+**/.secrets/
 **/.env
 **/.env.local
 **/.env.*.local

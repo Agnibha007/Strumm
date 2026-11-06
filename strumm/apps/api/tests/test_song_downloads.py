@@ -109,6 +109,18 @@ async def test_download_rejects_non_youtube_ids(client, monkeypatch):
     assert started == []
 
 
+def test_ytdlp_command_includes_configured_cookie_file(monkeypatch, tmp_path):
+    cookiefile = tmp_path / "cookies.txt"
+    cookiefile.write_text("# Netscape HTTP Cookie File")
+    monkeypatch.setattr(song_downloads, "ytdlp_cookie_cli_args", lambda: ["--cookies", str(cookiefile)])
+    monkeypatch.setattr(song_downloads.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    command = song_downloads._ytdlp_command("6rOCiszTz-I")
+
+    assert command[command.index("--cookies") + 1] == str(cookiefile)
+    assert command[-1] == "https://www.youtube.com/watch?v=6rOCiszTz-I"
+
+
 def test_ytdlp_and_ffmpeg_use_only_pipes_and_stdout(monkeypatch):
     monkeypatch.setattr(song_downloads.shutil, "which", lambda name: f"/usr/bin/{name}")
 
