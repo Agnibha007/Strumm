@@ -157,3 +157,39 @@ async def test_download_releases_concurrency_slot_when_request_is_cancelled():
         song_downloads._start_ytdlp_mp3_stream = original
 
     assert song_downloads._download_semaphore._value == starting_slots
+
+
+def test_process_stderr_sanitizer_keeps_error_and_redacts_secrets():
+    raw = (
+        "ERROR: [youtube] piUHBTXsoiY: Sign in to confirm you’re not a bot\n"
+        "Request URL: https://youtube.example/watch?v=abc&sig=private-signature\n"
+        "Authorization: Bearer private-access-token\n"
+        "Cookie: SID=private-cookie; HSID=another-private-cookie\n"
+    )
+
+    diagnostic = song_downloads._sanitize_process_stderr(raw)
+
+    assert "Sign in to confirm you’re not a bot" in diagnostic
+    assert "[URL REDACTED]" in diagnostic
+    assert "https://" not in diagnostic
+    assert "private-signature" not in diagnostic
+    assert "private-access-token" not in diagnostic
+    assert "private-cookie" not in diagnostic
+    assert "another-private-cookie" not in diagnostic
+
+
+@pytest.mark.asyncio
+async def test_process_stderr_capture_is_bounded_and_sanitized():
+    class FakeReader:
+        def __init__(self, chunks):
+            self.chunks = iter(chunks)
+
+        async def read(self, size):
+            return next(self.chunks, b"")
+
+    stream = FakeReader([b"x" * 9000, b"ERROR: HTTP Error 403: Forbidden\n"])
+
+    diagnostic = await song_downloads._capture_process_stderr(stream)
+
+    assert "HTTP Error 403: Forbidden" in diagnostic
+    assert len(diagnostic) <= song_downloads.MAX_LOG_DIAGNOSTIC_CHARS
