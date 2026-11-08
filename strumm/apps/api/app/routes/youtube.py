@@ -712,7 +712,8 @@ async def proxy_aytube_audio(video_id: str):
                 audio_only=True,
                 quality="high",
                 verify=False,
-                timeout=25,
+                timeout=12,
+                method="innertube",
             ),
             timeout=30,
         )

@@ -32,7 +32,8 @@ async def test_aytube_endpoint_returns_audio_metadata():
         audio_only=True,
         quality="high",
         verify=False,
-        timeout=25,
+        timeout=12,
+        method="innertube",
     )
 
 
