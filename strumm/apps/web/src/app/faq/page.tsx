@@ -32,7 +32,7 @@ const faqs = [
   },
   {
     q: "How does music playback work?",
-    a: "Strumm resolves track metadata and usually plays through YouTube's embedded player. For tracks you own or have permission to download, you can request an MP3 using yt-dlp; the backend converts and streams the audio directly to your browser without storing an MP3 on Strumm's servers. The browser can save the result locally for offline listening. You must confirm that you have the necessary rights before each download.",
+    a: "Strumm resolves track metadata and usually plays through YouTube's embedded player. For tracks you own or have permission to download, Strumm can resolve an available audio stream in your browser and save it to this device's offline library. Downloads are stored locally in your browser, not in Strumm's music storage. You must confirm that you have the necessary rights before each download.",
   },
   {
     q: "What is Strumm Replay?",

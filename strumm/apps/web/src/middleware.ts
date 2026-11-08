@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const apiOrigin = "https://agnibha07-strumm.hf.space";
-const downloaderOrigin = "https://strumm-downloader.onrender.com";
+const downloadProxyOrigin = (() => {
+  try {
+    const value = process.env.NEXT_PUBLIC_YTDOWN_PROXY_URL;
+    return value ? new URL(value).origin : "";
+  } catch {
+    return "";
+  }
+})();
 
 export function buildCspHeader(nonce: string): string {
   return [
@@ -16,7 +23,7 @@ export function buildCspHeader(nonce: string): string {
     `media-src 'self' https: data: blob:`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com`,
-    `connect-src 'self' ${apiOrigin} ${downloaderOrigin} ${apiOrigin
+    `connect-src 'self' ${apiOrigin} ${downloadProxyOrigin} ${apiOrigin
       .replace(/^https:/, "wss:")
       .replace(/^http:/, "ws:")} https://www.youtube.com https://www.youtube-nocookie.com https://music.youtube.com https://www.googleapis.com https://i.ytimg.com https://img.youtube.com https://s.ytimg.com https://lh3.googleusercontent.com https://*.sentry.io`,
     // CSP-01: connect-src is an explicit allowlist — no `https:` catch-all so
