@@ -1,9 +1,12 @@
+import asyncio
+import shutil
+import tempfile
 import feedparser
 import httpx
 import os
 import re
 from urllib.parse import quote, urljoin, urlparse
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
@@ -762,3 +765,121 @@ async def clear_podcast_progress(
     except Exception as e:
         logger.error(f"Error clearing podcast progress: {str(e)}")
         return {"success": False, "error": "Failed to clear podcast progress."}
+
+
+PODCAST_MP3_CONVERSION_MAX_BYTES = 500 * 1024 * 1024
+PODCAST_MP3_CONVERSION_CHUNK_SIZE = 1024 * 1024
+_podcast_mp3_semaphore = asyncio.Semaphore(2)
+
+
+@router.post("/convert/mp3")
+async def convert_downloaded_podcast_to_mp3(
+    file: UploadFile = File(...),
+    title: str = Form("Podcast episode", max_length=200),
+    current_user: dict = Depends(get_current_user),
+):
+    """Convert a podcast blob already saved by the user's browser to MP3."""
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    input_formats = {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/mp4": "mov",
+        "audio/aac": "aac",
+        "audio/ogg": "ogg",
+        "application/ogg": "ogg",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/flac": "flac",
+        "audio/webm": "matroska",
+    }
+    input_format = input_formats.get(content_type)
+    if not input_format:
+        await file.close()
+        raise HTTPException(status_code=415, detail="This podcast audio format cannot be converted to MP3.")
+
+    executable = shutil.which("ffmpeg")
+    if not executable:
+        await file.close()
+        raise HTTPException(status_code=503, detail="The MP3 conversion service is unavailable.")
+
+    temp_path = None
+    semaphore_acquired = False
+    try:
+        await _podcast_mp3_semaphore.acquire()
+        semaphore_acquired = True
+        with tempfile.NamedTemporaryFile(prefix="strumm-podcast-", suffix=".audio", delete=False) as temp:
+            temp_path = temp.name
+            total = 0
+            while chunk := await file.read(PODCAST_MP3_CONVERSION_CHUNK_SIZE):
+                total += len(chunk)
+                if total > PODCAST_MP3_CONVERSION_MAX_BYTES:
+                    raise HTTPException(status_code=413, detail="This episode exceeds the 500 MiB conversion limit.")
+                temp.write(chunk)
+
+        if total == 0:
+            raise HTTPException(status_code=400, detail="The uploaded podcast audio is empty.")
+
+        process = await asyncio.create_subprocess_exec(
+            executable,
+            "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-protocol_whitelist", "file,pipe,data",
+            "-f", input_format,
+            "-i", temp_path,
+            "-map", "0:a:0", "-vn",
+            "-c:a", "libmp3lame", "-b:a", "192k",
+            "-f", "mp3", "pipe:1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        if process.stdout is None:
+            await process.wait()
+            raise HTTPException(status_code=500, detail="Unable to start MP3 conversion.")
+
+        filename, encoded_filename = _podcast_download_filename(title, "audio/mpeg")
+
+        async def converted_audio():
+            sent = 0
+            try:
+                while chunk := await process.stdout.read(64 * 1024):
+                    sent += len(chunk)
+                    if sent > PODCAST_MP3_CONVERSION_MAX_BYTES:
+                        raise RuntimeError("Converted podcast exceeded the size limit.")
+                    yield chunk
+                return_code = await process.wait()
+                if return_code != 0:
+                    logger.warning("Podcast MP3 conversion failed with exit code %s", return_code)
+                    raise RuntimeError("Podcast MP3 conversion failed.")
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                    await process.wait()
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                await file.close()
+                if semaphore_acquired:
+                    _podcast_mp3_semaphore.release()
+
+        return StreamingResponse(
+            converted_audio(),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{encoded_filename}",
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    except HTTPException:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        await file.close()
+        if semaphore_acquired:
+            _podcast_mp3_semaphore.release()
+        raise
+    except Exception as exc:
+        logger.warning("Podcast MP3 conversion setup failed (%s)", type(exc).__name__)
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        await file.close()
+        if semaphore_acquired:
+            _podcast_mp3_semaphore.release()
+        raise HTTPException(status_code=500, detail="Unable to convert this podcast to MP3.") from exc

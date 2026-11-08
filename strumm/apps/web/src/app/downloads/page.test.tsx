@@ -9,6 +9,8 @@ const player = vi.hoisted(() => ({
 
 const downloads = vi.hoisted(() => ({
   listAllDownloads: vi.fn(),
+  authFetch: vi.fn(),
+  apiUrl: (path: string) => path,
   removePodcastDownload: vi.fn(),
   preparePodcastDownloadPlayback: vi.fn(),
   formatDownloadSize: (size: number) => (size < 1024 ? `${size} B` : `${(size / 1024).toFixed(1)} KB`),
@@ -30,6 +32,9 @@ vi.mock("web/lib/podcast-downloads", () => ({
   removePodcastDownload: downloads.removePodcastDownload,
   preparePodcastDownloadPlayback: downloads.preparePodcastDownloadPlayback,
 }));
+
+vi.mock("web/lib/auth-client", () => ({ authFetch: downloads.authFetch }));
+vi.mock("web/lib/api", () => ({ apiUrl: downloads.apiUrl }));
 
 vi.mock("web/lib/host-audio", () => ({
   playHostAudioUrl: playHostAudioUrl,
@@ -120,4 +125,35 @@ describe("downloads page", () => {
     await waitFor(() => expect(player.playSong).toHaveBeenCalledOnce());
     await waitFor(() => expect(player.setPodcastMode).toHaveBeenCalledWith("audio"));
   });
+
+  it("exports a saved non-MP3 podcast as MP3 through the conversion endpoint", async () => {
+    const m4aRecord = { ...podcastRecord, mimeType: "audio/mp4", blob: new Blob(["m4a bytes"], { type: "audio/mp4" }) };
+    downloads.listAllDownloads.mockResolvedValue([m4aRecord]);
+    downloads.authFetch.mockResolvedValue({ ok: true, blob: async () => new Blob(["mp3 bytes"], { type: "audio/mpeg" }) });
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:mp3"), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    render(<DownloadsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download Saved Episode as MP3" }));
+
+    await waitFor(() => expect(downloads.authFetch).toHaveBeenCalledOnce());
+    const [url, init] = downloads.authFetch.mock.calls[0];
+    expect(url).toBe("/podcasts/convert/mp3");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("title")).toBe("Saved Episode");
+    expect(await (init.body as FormData).get("file").text()).toBe("m4a bytes");
+  });
+
+  it("exports an already-MP3 podcast without calling the conversion endpoint", async () => {
+    downloads.listAllDownloads.mockResolvedValue([podcastRecord]);
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:mp3"), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    render(<DownloadsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download Saved Episode as MP3" }));
+
+    await waitFor(() => expect(downloads.authFetch).not.toHaveBeenCalled());
+  });
+
 });

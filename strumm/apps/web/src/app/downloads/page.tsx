@@ -58,6 +58,7 @@ export default function DownloadsPage() {
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimate | null>(null);
   const [online, setOnline] = useState(true);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [mp3ExportingId, setMp3ExportingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -165,6 +166,45 @@ export default function DownloadsPage() {
       setError(err instanceof Error ? err.message : "Unable to remove this download.");
     } finally {
       setRemovingId(null);
+    }
+  };
+
+  const handleMp3Export = async (record: PodcastDownloadRecord) => {
+    setMp3ExportingId(record.id);
+    setError(null);
+    try {
+      let mp3Blob: Blob;
+      const mimeType = (record.mimeType || record.blob.type || "").split(";")[0].trim().toLowerCase();
+      if (mimeType === "audio/mpeg" || mimeType === "audio/mp3") {
+        mp3Blob = record.blob;
+      } else {
+        const form = new FormData();
+        form.append("file", record.blob, "podcast-audio");
+        form.append("title", record.title);
+        const response = await authFetch(apiUrl("/podcasts/convert/mp3"), {
+          method: "POST",
+          body: form,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(body?.detail || body?.error || "Unable to convert this episode to MP3.");
+        }
+        mp3Blob = await response.blob();
+      }
+
+      if (!mp3Blob.size) throw new Error("The MP3 file is empty.");
+      const url = URL.createObjectURL(mp3Blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = (record.title.replace(/[\\/:*?"<>|]/g, "-").trim() || "podcast-episode") + ".mp3";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to export this episode as MP3.");
+    } finally {
+      setMp3ExportingId(null);
     }
   };
 
@@ -398,6 +438,16 @@ export default function DownloadsPage() {
                               Export CSV
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => void handleMp3Export(record)}
+                            disabled={mp3ExportingId === record.id}
+                            className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text disabled:opacity-50"
+                            aria-label={"Download " + record.title + " as MP3"}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            {mp3ExportingId === record.id ? "Converting…" : "MP3"}
+                          </button>
                           <button
                             type="button"
                             onClick={() => void handleRemove(record)}

@@ -216,3 +216,52 @@ async def test_download_route_requires_authentication(client, local_episode_db):
     finally:
         if previous is not None:
             app.dependency_overrides[get_current_user] = previous
+
+
+@pytest.mark.asyncio
+async def test_convert_downloaded_podcast_to_mp3(client, monkeypatch):
+    from app.routes import podcast
+
+    class FakeStdout:
+        def __init__(self):
+            self.chunks = [b"converted mp3 bytes", b""]
+
+        async def read(self, _size):
+            return self.chunks.pop(0)
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdout = FakeStdout()
+            self.returncode = 0
+
+        async def wait(self):
+            return 0
+
+    monkeypatch.setattr(podcast.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    command = AsyncMock(return_value=FakeProcess())
+    monkeypatch.setattr(podcast.asyncio, "create_subprocess_exec", command)
+
+    async with client:
+        response = await client.post(
+            "/podcasts/convert/mp3",
+            files={"file": ("episode.m4a", b"source audio", "audio/mp4")},
+            data={"title": "Example Podcast Episode"},
+        )
+
+    assert response.status_code == 200
+    assert response.content == b"converted mp3 bytes"
+    assert response.headers["content-type"] == "audio/mpeg"
+    assert "Example Podcast Episode.mp3" in response.headers["content-disposition"]
+    assert command.await_args.args[-3:] == ("-f", "mp3", "pipe:1")
+
+
+@pytest.mark.asyncio
+async def test_convert_downloaded_podcast_rejects_non_audio(client):
+    async with client:
+        response = await client.post(
+            "/podcasts/convert/mp3",
+            files={"file": ("not-audio.txt", b"not audio", "text/plain")},
+            data={"title": "Invalid"},
+        )
+
+    assert response.status_code == 415
