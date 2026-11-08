@@ -441,8 +441,29 @@ async def _open_cobalt_audio(video_id: str):
             },
         )
         if response.is_error:
-            logger.warning("Cobalt API returned HTTP %s for %s", response.status_code, video_id)
-            raise HTTPException(status_code=502, detail="Cobalt could not process this track.")
+            error_code = "unknown"
+            try:
+                error_payload = response.json()
+                if isinstance(error_payload, dict):
+                    error = error_payload.get("error")
+                    if isinstance(error, dict):
+                        candidate = error.get("code")
+                    else:
+                        candidate = error_payload.get("code")
+                    if isinstance(candidate, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,100}", candidate):
+                        error_code = candidate
+            except ValueError:
+                pass
+            logger.warning(
+                "Cobalt rejected request for %s (http_status=%s, error_code=%s)",
+                video_id,
+                response.status_code,
+                error_code,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Cobalt rejected this track (upstream HTTP {response.status_code}; error code: {error_code}).",
+            )
         result = response.json()
         if result.get("status") != "tunnel" or not isinstance(result.get("url"), str):
             error_code = result.get("error", {}).get("code", "unknown") if isinstance(result.get("error"), dict) else "unknown"

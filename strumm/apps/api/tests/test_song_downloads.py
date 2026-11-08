@@ -287,3 +287,35 @@ async def test_cobalt_download_requires_rights_confirmation(client, monkeypatch)
 
     assert response.status_code == 400
     assert called == []
+
+
+@pytest.mark.asyncio
+async def test_cobalt_upstream_error_exposes_only_status_and_error_code(monkeypatch):
+    class FakeResponse:
+        status_code = 400
+        is_error = True
+
+        def json(self):
+            return {"error": {"code": "youtube_video_unavailable", "context": {"url": "https://private.example/token"}}}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(song_downloads.httpx, "AsyncClient", FakeClient)
+
+    with pytest.raises(Exception) as exc_info:
+        await song_downloads._open_cobalt_audio("6rOCiszTz-I")
+
+    assert getattr(exc_info.value, "status_code", None) == 502
+    detail = exc_info.value.detail
+    assert "HTTP 400" in detail
+    assert "youtube_video_unavailable" in detail
+    assert "private.example" not in detail
+    assert "token" not in detail
