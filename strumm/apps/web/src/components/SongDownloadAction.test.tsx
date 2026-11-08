@@ -36,10 +36,11 @@ const baseSong = {
   metadata: {},
 };
 
-function okResponse() {
+function okResponse(provider?: string) {
   const values: Record<string, string> = {
     "content-type": "audio/mpeg",
     "content-length": "11",
+    ...(provider ? { "x-download-provider": provider } : {}),
   };
   return {
     ok: true,
@@ -86,7 +87,7 @@ describe("SongDownloadAction", () => {
       ok: true,
       json: async () => ({ downloadUrl: "https://strumm-downloader.onrender.com/downloads/song", token: "signed-token" }),
     });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse()));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse("yt-dlp")));
 
     render(<SongDownloadAction song={baseSong} compact />);
     fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
@@ -107,7 +108,7 @@ describe("SongDownloadAction", () => {
       artist: "Test Artist",
       audioUrl: "https://strumm-downloader.onrender.com/downloads/song",
       mimeType: "audio/mpeg",
-      sourceProvider: "cobalt",
+      sourceProvider: "yt-dlp",
       sourceUrl: "https://www.youtube.com/watch?v=abcdefghijk",
       blob: expect.any(Blob),
     }));

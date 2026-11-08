@@ -171,6 +171,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         throw new Error("This track is larger than the 500 MiB download limit.");
       }
 
+      const downloadProvider = response.headers.get("x-download-provider") === "yt-dlp" ? "yt-dlp" : "cobalt";
       const record = await saveSongDownload({
         videoId: song.videoId,
         title: song.title,
@@ -180,7 +181,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         audioUrl: authorization.downloadUrl,
         mimeType,
         blob,
-        sourceProvider: "cobalt",
+        sourceProvider: downloadProvider,
         sourceUrl: `https://www.youtube.com/watch?v=${song.videoId}`,
       });
       setSaved(record);
