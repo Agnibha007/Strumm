@@ -177,15 +177,20 @@ async def _stop_process(process: asyncio.subprocess.Process | None):
         await process.wait()
 
 
-async def _start_ytdlp_mp3_stream(video_id: str) -> AsyncIterator[bytes]:
+async def _start_ytdlp_mp3_stream(video_id: str, provider: str = "yt-dlp") -> AsyncIterator[bytes]:
     source = None
     encoder = None
     pump_task = None
     source_stderr_task = None
     encoder_stderr_task = None
     try:
+        source_command = (
+            _ytdlp_command(video_id)
+            if provider == "yt-dlp"
+            else ["/usr/local/bin/strumm-ytdl-go", video_id]
+        )
         source = await asyncio.create_subprocess_exec(
-            *_ytdlp_command(video_id),
+            *source_command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -209,9 +214,10 @@ async def _start_ytdlp_mp3_stream(video_id: str) -> AsyncIterator[bytes]:
             source_stderr = await _stderr_task_result(source_stderr_task)
             encoder_stderr = await _stderr_task_result(encoder_stderr_task)
             logger.warning(
-                "Song download failed for %s (yt-dlp=%s, ffmpeg=%s); "
-                "yt-dlp stderr: %s; ffmpeg stderr: %s",
+                "Song download failed for %s (provider=%s, source=%s, ffmpeg=%s); "
+                "source stderr: %s; ffmpeg stderr: %s",
                 video_id,
+                provider,
                 source_code,
                 encoder_code,
                 source_stderr or "<empty>",
@@ -219,7 +225,7 @@ async def _start_ytdlp_mp3_stream(video_id: str) -> AsyncIterator[bytes]:
             )
             raise HTTPException(
                 status_code=502,
-                detail="yt-dlp could not resolve an audio stream for this track.",
+                detail=f"{provider} could not resolve an audio stream for this track.",
             )
     except asyncio.CancelledError:
         if pump_task:
@@ -240,16 +246,17 @@ async def _start_ytdlp_mp3_stream(video_id: str) -> AsyncIterator[bytes]:
             _stderr_task_result(encoder_stderr_task),
         )
         logger.warning(
-            "Song download timed out for %s after %ss; "
-            "yt-dlp stderr: %s; ffmpeg stderr: %s",
+            "Song download timed out for %s via %s after %ss; "
+            "source stderr: %s; ffmpeg stderr: %s",
             video_id,
+            provider,
             DOWNLOAD_START_TIMEOUT_SECONDS,
             source_stderr or "<empty>",
             encoder_stderr or "<empty>",
         )
         raise HTTPException(
             status_code=504,
-            detail="yt-dlp timed out while resolving this track. Try again shortly.",
+            detail=f"{provider} timed out while resolving this track. Try again shortly.",
         ) from exc
     except HTTPException:
         if pump_task and not pump_task.done():
@@ -281,9 +288,10 @@ async def _start_ytdlp_mp3_stream(video_id: str) -> AsyncIterator[bytes]:
             _stderr_task_result(encoder_stderr_task),
         )
         logger.error(
-            "Unable to start song download for %s (%s); "
-            "yt-dlp stderr: %s; ffmpeg stderr: %s",
+            "Unable to start song download for %s via %s (%s); "
+            "source stderr: %s; ffmpeg stderr: %s",
             video_id,
+            provider,
             type(exc).__name__,
             source_stderr or "<empty>",
             encoder_stderr or "<empty>",
@@ -307,9 +315,10 @@ async def _start_ytdlp_mp3_stream(video_id: str) -> AsyncIterator[bytes]:
                     _stderr_task_result(encoder_stderr_task),
                 )
                 logger.warning(
-                    "Audio stream ended with a process error for %s (yt-dlp=%s, ffmpeg=%s); "
-                    "yt-dlp stderr: %s; ffmpeg stderr: %s",
+                    "Audio stream ended with a process error for %s via %s (source=%s, ffmpeg=%s); "
+                    "source stderr: %s; ffmpeg stderr: %s",
                     video_id,
+                    provider,
                     source_code,
                     encoder_code,
                     source_stderr or "<empty>",
@@ -328,10 +337,10 @@ async def _start_ytdlp_mp3_stream(video_id: str) -> AsyncIterator[bytes]:
     return stream()
 
 
-@router.post("/song")
-async def download_song(
+async def _download_song_with_provider(
     payload: SongDownloadRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict,
+    provider: str,
 ):
     video_id = payload.video_id.strip()
     if not YOUTUBE_ID_PATTERN.fullmatch(video_id):
@@ -341,11 +350,16 @@ async def download_song(
             status_code=400,
             detail="Confirm that you own this track or have permission to download it.",
         )
+    if provider == "ytdl-go" and not os.path.isfile("/usr/local/bin/strumm-ytdl-go"):
+        raise HTTPException(status_code=503, detail="The Go audio resolver is not installed.")
     if _download_semaphore.locked():
         raise HTTPException(status_code=503, detail="Downloads are busy. Try again shortly.")
     await _download_semaphore.acquire()
     try:
-        audio_stream = await _start_ytdlp_mp3_stream(video_id)
+        if provider == "yt-dlp":
+            audio_stream = await _start_ytdlp_mp3_stream(video_id)
+        else:
+            audio_stream = await _start_ytdlp_mp3_stream(video_id, provider=provider)
     except asyncio.CancelledError:
         _download_semaphore.release()
         raise
@@ -360,7 +374,7 @@ async def download_song(
         "Pragma": "no-cache",
         "X-Content-Type-Options": "nosniff",
         "X-Accel-Buffering": "no",
-        "X-Download-Provider": "yt-dlp",
+        "X-Download-Provider": provider,
         "X-Download-Source-Url": "https://www.youtube.com/watch?v=" + video_id,
     }
 
@@ -375,9 +389,25 @@ async def download_song(
         finally:
             _download_semaphore.release()
 
-    logger.info("Starting direct yt-dlp MP3 stream for user %s, video %s", current_user.get("id"), video_id)
+    logger.info("Starting %s MP3 stream for user %s, video %s", provider, current_user.get("id"), video_id)
     return StreamingResponse(
         response_stream(),
         media_type="audio/mpeg",
         headers=headers,
     )
+
+
+@router.post("/song")
+async def download_song(
+    payload: SongDownloadRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    return await _download_song_with_provider(payload, current_user, "yt-dlp")
+
+
+@router.post("/song/ytdl-go")
+async def download_song_ytdl_go(
+    payload: SongDownloadRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    return await _download_song_with_provider(payload, current_user, "ytdl-go")

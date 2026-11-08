@@ -1,6 +1,13 @@
+FROM golang:1.24-bookworm AS ytdl-builder
+WORKDIR /src
+COPY go-ytdl/ ./
+RUN mkdir -p /out && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/strumm-ytdl-go .
+
 FROM python:3.11-slim-bookworm
 
 WORKDIR /app
+
+COPY --from=ytdl-builder /out/strumm-ytdl-go /usr/local/bin/strumm-ytdl-go
 
 # Install CA certificates for SSL/TLS (required for YouTube Music API in containers)
 RUN apt-get update && apt-get install -y --no-install-recommends \

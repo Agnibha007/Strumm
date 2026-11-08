@@ -193,3 +193,35 @@ async def test_process_stderr_capture_is_bounded_and_sanitized():
 
     assert "HTTP Error 403: Forbidden" in diagnostic
     assert len(diagnostic) <= song_downloads.MAX_LOG_DIAGNOSTIC_CHARS
+
+
+@pytest.mark.asyncio
+async def test_ytdl_go_download_uses_isolated_provider_route(client, monkeypatch):
+    started = []
+
+    async def stream_mp3(video_id, provider="yt-dlp"):
+        started.append((video_id, provider))
+
+        async def chunks():
+            yield b"ID3-go-mp3"
+
+        return chunks()
+
+    monkeypatch.setattr(song_downloads.os.path, "isfile", lambda path: True)
+    monkeypatch.setattr(song_downloads, "_start_ytdlp_mp3_stream", stream_mp3)
+
+    async with client:
+        response = await client.post(
+            "/downloads/song/ytdl-go",
+            json={
+                "videoId": "6rOCiszTz-I",
+                "title": "Go resolver test",
+                "rightsConfirmed": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/mpeg")
+    assert response.headers["x-download-provider"] == "ytdl-go"
+    assert response.content == b"ID3-go-mp3"
+    assert started == [("6rOCiszTz-I", "ytdl-go")]
