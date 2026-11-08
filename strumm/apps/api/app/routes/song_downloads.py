@@ -6,7 +6,7 @@ import shutil
 import sys
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -405,9 +405,20 @@ async def download_song(
     return await _download_song_with_provider(payload, current_user, "yt-dlp")
 
 
-@router.post("/song/ytdl-go")
+@router.get("/song/ytdl-go")
 async def download_song_ytdl_go(
-    payload: SongDownloadRequest,
+    video_id: str = Query(..., alias="videoId", min_length=11, max_length=11),
+    title: str = Query("", max_length=200),
+    artist: str = Query("", max_length=120),
+    duration: float = Query(0, ge=0, le=86400),
+    rights_confirmed: bool = Query(False, alias="rightsConfirmed"),
     current_user: dict = Depends(get_current_user),
 ):
+    payload = SongDownloadRequest(
+        videoId=video_id,
+        title=title,
+        artist=artist,
+        duration=duration,
+        rightsConfirmed=rights_confirmed,
+    )
     return await _download_song_with_provider(payload, current_user, "ytdl-go")

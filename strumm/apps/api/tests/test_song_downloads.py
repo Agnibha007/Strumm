@@ -211,12 +211,12 @@ async def test_ytdl_go_download_uses_isolated_provider_route(client, monkeypatch
     monkeypatch.setattr(song_downloads, "_start_ytdlp_mp3_stream", stream_mp3)
 
     async with client:
-        response = await client.post(
+        response = await client.get(
             "/downloads/song/ytdl-go",
-            json={
+            params={
                 "videoId": "6rOCiszTz-I",
                 "title": "Go resolver test",
-                "rightsConfirmed": True,
+                "rightsConfirmed": "true",
             },
         )
 
