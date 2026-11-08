@@ -55,8 +55,8 @@ from app.services.rooms import (
     build_member_profiles,
     can_access_room,
     can_control,
-    cancel_pending_host_transfer,
     cancel_pending_room_delete,
+    handle_room_member_join,
     circle_user_ids,
     ensure_join_code,
     fetch_host_name,
@@ -71,6 +71,7 @@ from app.services.rooms import (
     queue_clear,
     queue_push,
     queue_remove,
+    set_room_track,
     serialize_room,
 )
 logger = logging.getLogger("strumm-rooms")
@@ -490,19 +491,14 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
     # MUST accept before sending/receiving any frames.
     await websocket.accept()
     await ws_manager.connect_room(roomId, userId, websocket)
-    # A reconnect (e.g. after the host's socket dropped) cancels any pending
-    # deferred hostless-room delete so the room survives the blip.
-    cancel_pending_room_delete(roomId)
-    # If the host is the one reconnecting, also cancel the deferred host
-    # hand-off scheduled when their socket dropped — they never actually left.
-    if room.get("hostId") == userId:
-        cancel_pending_host_transfer(roomId)
+    handle_room_member_join(database, roomId, room.get("hostId"), userId)
 
     # Update room member lists
     await database[db.ROOMS].update_one(
         {"_id": room_oid},
         {"$addToSet": {"members": userId}}
     )
+    room = await database[db.ROOMS].find_one({"_id": room_oid}) or room
 
     # Broadcast join (with profile data so clients need no refetch)
     from app.services.rooms import fetch_user_doc
@@ -545,9 +541,24 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
     try:
         while True:
             data = await websocket.receive_text()
-            payload = json.loads(data)
+            try:
+                payload = json.loads(data)
+            except (TypeError, ValueError):
+                await ws_manager.send_json(websocket, {
+                    "event": "error",
+                    "data": {"reason": "Invalid JSON message."},
+                })
+                continue
+            if not isinstance(payload, dict):
+                await ws_manager.send_json(websocket, {
+                    "event": "error",
+                    "data": {"reason": "Message must be a JSON object."},
+                })
+                continue
             event = payload.get("event")
             event_data = payload.get("data", {})
+            if not isinstance(event_data, dict):
+                event_data = {}
 
             if event == "track:update":
                 # Only the host or approved controllers can change the room track.
@@ -558,14 +569,21 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
                         "data": {"reason": perm["reason"]},
                     })
                     continue
-                await database[db.ROOMS].update_one(
-                    {"_id": room_oid},
-                    {"$set": {"currentTrack": event_data.get("song")}}
+                song = await set_room_track(database, room_oid, event_data.get("song"))
+                if song is None:
+                    await ws_manager.send_json(websocket, {
+                        "event": "error",
+                        "data": {"reason": "Invalid track payload."},
+                    })
+                    continue
+                await ws_manager.broadcast_to_room(
+                    room_id=roomId,
+                    message={"event": "track:update", "data": {"song": song}},
+                    exclude_user_id=userId
                 )
                 await ws_manager.broadcast_to_room(
                     room_id=roomId,
-                    message={"event": "track:update", "data": event_data},
-                    exclude_user_id=userId
+                    message={"event": QUEUE_REMOVED, "data": {"videoId": song["videoId"]}},
                 )
 
             elif event in {"play", "pause", "seek"}:
@@ -576,9 +594,19 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
                         "data": {"reason": perm["reason"]},
                     })
                     continue
+                import math
+                timestamp = event_data.get("timestamp", 0.0)
+                if (
+                    not isinstance(timestamp, (int, float))
+                    or not math.isfinite(timestamp)
+                    or timestamp < 0
+                    or timestamp > 86400
+                ):
+                    timestamp = 0.0
+                event_data = {**event_data, "timestamp": timestamp}
                 playback_state = {
                     "playing": event == "play",
-                    "timestamp": event_data.get("timestamp", 0.0),
+                    "timestamp": timestamp,
                     "updatedAt": datetime.utcnow()
                 }
                 await database[db.ROOMS].update_one(
@@ -611,8 +639,9 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
                     })
                     continue
                 video_id = event_data.get("videoId")
-                if not video_id:
+                if not isinstance(video_id, str) or not video_id.strip() or len(video_id) > 128:
                     continue
+                video_id = video_id.strip()
                 await queue_remove(database, room_oid, video_id)
                 await ws_manager.broadcast_to_room(
                     room_id=roomId,
@@ -636,14 +665,14 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
 
             elif event == "room:controller-add":
                 # Host-only: grant control to another member.
-                perm = await can_control(database, roomId, userId)
+                room_for_control = await database[db.ROOMS].find_one({"_id": room_oid})
                 target = event_data.get("userId")
-                if not perm["allowed"]:
+                if not room_for_control or room_for_control.get("hostId") != userId:
                     await ws_manager.send_json(websocket, {
                         "event": "control:denied",
-                        "data": {"reason": perm["reason"]},
+                        "data": {"reason": "Only the room host can manage controllers."},
                     })
-                elif target and target != userId and ObjectId.is_valid(str(target)):
+                elif target and target != userId and target in (room_for_control.get("members") or []) and ObjectId.is_valid(str(target)):
                     await database[db.ROOMS].update_one(
                         {"_id": room_oid},
                         {"$addToSet": {"controllers": target}}
@@ -656,14 +685,14 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
                     )
 
             elif event == "room:controller-remove":
-                perm = await can_control(database, roomId, userId)
+                room_for_control = await database[db.ROOMS].find_one({"_id": room_oid})
                 target = event_data.get("userId")
-                if not perm["allowed"]:
+                if not room_for_control or room_for_control.get("hostId") != userId:
                     await ws_manager.send_json(websocket, {
                         "event": "control:denied",
-                        "data": {"reason": perm["reason"]},
+                        "data": {"reason": "Only the room host can manage controllers."},
                     })
-                elif target and target != userId:
+                elif target and target != userId and target in (room_for_control.get("members") or []):
                     await database[db.ROOMS].update_one(
                         {"_id": room_oid},
                         {"$pull": {"controllers": target}}

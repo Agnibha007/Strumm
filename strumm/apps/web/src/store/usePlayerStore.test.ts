@@ -7,7 +7,7 @@
  *  2. An explicit pause is a hard stop: no auto-advance path may resurrect
  *     playback afterwards.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Song } from "@strumm/types";
 import { usePlayerStore } from "./usePlayerStore";
 
@@ -297,5 +297,102 @@ describe("committed next track (crossfade prediction)", () => {
     usePlayerStore.getState().addToQueue(song("added"));
 
     expect(usePlayerStore.getState().pendingNextIndex).toBe(2);
+  });
+});
+
+
+describe("queue transport and repeat modes", () => {
+  beforeEach(reset);
+
+  const seed = (index = 0) => usePlayerStore.setState({
+    queue: [PICKED, OTHER_1, OTHER_2],
+    currentIndex: index,
+    currentSong: [PICKED, OTHER_1, OTHER_2][index],
+    isPlaying: true,
+  });
+
+  it("wraps next to the first queued track only when repeat-all is enabled", () => {
+    seed(2);
+    usePlayerStore.getState().setRepeatMode("all");
+    usePlayerStore.getState().next();
+    expect(usePlayerStore.getState().currentIndex).toBe(0);
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("picked");
+  });
+
+  it("does not replay the last track when next is pressed with repeat off", () => {
+    seed(2);
+    usePlayerStore.getState().next();
+    expect(usePlayerStore.getState().currentIndex).toBe(2);
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("other2");
+    expect(usePlayerStore.getState().isPlaying).toBe(true);
+  });
+
+  it("wraps previous to the last queued track in repeat-all mode", () => {
+    seed(0);
+    usePlayerStore.getState().setRepeatMode("all");
+    usePlayerStore.getState().prev();
+    expect(usePlayerStore.getState().currentIndex).toBe(2);
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("other2");
+  });
+
+  it("restarts a single queued track in repeat-one mode", () => {
+    const seekTo = vi.fn();
+    const playVideo = vi.fn();
+    usePlayerStore.setState({
+      queue: [PICKED],
+      currentIndex: 0,
+      currentSong: PICKED,
+      isPlaying: true,
+      repeatMode: "one",
+      playerRef: { seekTo, playVideo, pauseVideo: vi.fn(), setVolume: vi.fn(), setPlaybackRate: vi.fn() },
+    });
+
+    usePlayerStore.getState().handleTrackEnded();
+
+    expect(seekTo).toHaveBeenCalledWith(0);
+    expect(playVideo).toHaveBeenCalledOnce();
+    expect(usePlayerStore.getState().currentIndex).toBe(0);
+    expect(usePlayerStore.getState().isPlaying).toBe(true);
+  });
+
+  it("repeats the full queue from the first track after the final track ends", () => {
+    seed(2);
+    usePlayerStore.getState().setRepeatMode("all");
+    usePlayerStore.getState().handleTrackEnded();
+    expect(usePlayerStore.getState().currentIndex).toBe(0);
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("picked");
+  });
+
+  it("repeats a one-track queue in repeat-all mode", () => {
+    usePlayerStore.setState({
+      queue: [PICKED],
+      currentIndex: 0,
+      currentSong: PICKED,
+      isPlaying: true,
+      repeatMode: "all",
+    });
+    usePlayerStore.getState().handleTrackEnded();
+    expect(usePlayerStore.getState().currentIndex).toBe(0);
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("picked");
+    expect(usePlayerStore.getState().isPlaying).toBe(true);
+  });
+});
+
+
+describe("queue replacement index reconciliation", () => {
+  beforeEach(reset);
+
+  it("recomputes currentIndex when a replacement queue reorders the current song", () => {
+    usePlayerStore.setState({
+      queue: [PICKED, OTHER_1, OTHER_2],
+      currentSong: OTHER_1,
+      currentIndex: 1,
+    });
+
+    usePlayerStore.getState().setQueue([OTHER_2, OTHER_1, PICKED]);
+
+    expect(usePlayerStore.getState().currentIndex).toBe(1);
+    usePlayerStore.getState().next();
+    expect(usePlayerStore.getState().currentSong?.videoId).toBe("picked");
   });
 });

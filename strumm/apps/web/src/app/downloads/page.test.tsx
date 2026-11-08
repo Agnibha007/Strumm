@@ -142,7 +142,10 @@ describe("downloads page", () => {
     expect(init.method).toBe("POST");
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.body as FormData).get("title")).toBe("Saved Episode");
-    expect(await (init.body as FormData).get("file").text()).toBe("m4a bytes");
+    const uploadedFile = (init.body as FormData).get("file");
+    expect(uploadedFile).toBeInstanceOf(File);
+    if (!(uploadedFile instanceof File)) throw new Error("Expected the converted upload to be a File");
+    expect(await uploadedFile.text()).toBe("m4a bytes");
   });
 
   it("exports an already-MP3 podcast without calling the conversion endpoint", async () => {

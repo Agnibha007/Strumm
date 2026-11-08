@@ -36,6 +36,7 @@ import { PlayerPageSkeleton } from "web/components/PageSkeleton";
 import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { useRouter } from "next/navigation";
 import { useNotificationStore } from "web/store/useNotificationStore";
+import { appendRoomQueueSong, buildRoomPlaybackQueue, removeRoomQueueSong } from "web/lib/room-sync";
 
 interface RoomDetails {
   id: string;
@@ -78,6 +79,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const { currentSong, isPlaying, currentTime, setCurrentTime, playSong, setPlaying, playerRef, addToQueue } = usePlayerStore();
 
   const [room, setRoom] = useState<RoomDetails | null>(null);
+  const roomRef = useRef<RoomDetails | null>(null);
+  roomRef.current = room;
   const [roomError, setRoomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -241,11 +244,28 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       members: (snap.membersProfiles || []).map((m: any) => m.id),
     } as RoomDetails));
 
+    if (isHostRef.current && effectiveTrack) {
+      const playbackQueue = buildRoomPlaybackQueue(effectiveTrack, snap.queue);
+      const state = usePlayerStore.getState();
+      if (state.currentSong?.videoId === effectiveTrack.videoId) {
+        state.setQueue(playbackQueue);
+      } else if (!state.currentSong) {
+        playSong(effectiveTrack, playbackQueue);
+        setPlaying(!!snap.playbackState?.playing);
+        const timestamp = snap.playbackState?.timestamp || 0;
+        setCurrentTime(timestamp);
+        if (playerRef?.seekTo) playerRef.seekTo(timestamp);
+      }
+    }
+
     // Non-hosts sync their local player to the room's live state on connect.
     if (!isHostRef.current && snap.currentTrack) {
       const track = snap.currentTrack;
+      const playbackQueue = buildRoomPlaybackQueue(track, snap.queue);
       if (currentSongRef.current?.videoId !== track.videoId) {
-        playSong(track, [track]);
+        playSong(track, playbackQueue);
+      } else {
+        usePlayerStore.getState().setQueue(playbackQueue);
       }
       setPlaying(!!snap.playbackState?.playing);
       const ts = snap.playbackState?.timestamp || 0;
@@ -409,7 +429,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
 
       else if (wsEvent === "track:update") {
         if (!isHostRef.current && eventData.song) {
-          playSong(eventData.song, [eventData.song]);
+          const playbackQueue = buildRoomPlaybackQueue(eventData.song, roomRef.current?.queue);
+          playSong(eventData.song, playbackQueue);
         }
         setRoom(prev => prev ? { ...prev, currentTrack: eventData.song } : null);
       }
@@ -443,17 +464,24 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         const entry = cleanQueueEntry(eventData.song);
         if (!entry) return;
         addToQueue(entry);
-        setRoom(prev => prev ? { ...prev, queue: [...(prev.queue || []), entry] } : null);
+        setRoom(prev => prev ? { ...prev, queue: appendRoomQueueSong(prev.queue || [], entry) } : null);
       }
 
       else if (wsEvent === "queue:removed") {
-        setRoom(prev => prev
-          ? { ...prev, queue: (prev.queue || []).filter((s) => s.videoId !== eventData.videoId) }
-          : null);
+        setRoom(prev => {
+          const nextQueue = removeRoomQueueSong(prev?.queue || [], eventData.videoId);
+          const current = usePlayerStore.getState().currentSong;
+          usePlayerStore.getState().setQueue(buildRoomPlaybackQueue(current, nextQueue));
+          return prev ? { ...prev, queue: nextQueue } : null;
+        });
       }
 
       else if (wsEvent === "queue:cleared") {
-        setRoom(prev => prev ? { ...prev, queue: [] } : null);
+        setRoom(prev => {
+          const current = usePlayerStore.getState().currentSong;
+          usePlayerStore.getState().setQueue(buildRoomPlaybackQueue(current, []));
+          return prev ? { ...prev, queue: [] } : null;
+        });
       }
 
       else if (wsEvent === "control:denied") {
@@ -832,8 +860,10 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
 
   const handlePlayNow = (song: any) => {
     if (!canControl) return;
-    playSong(song, [song]);
-    setRoom(prev => prev ? { ...prev, currentTrack: song } : null);
+    const remaining = removeRoomQueueSong(roomRef.current?.queue || [], song.videoId);
+    playSong(song, [song, ...remaining]);
+    setRoom(prev => prev ? { ...prev, currentTrack: song, queue: remaining } : null);
+    sendWhenConnected({ event: "queue:remove", data: { videoId: song.videoId } }, () => {});
   };
 
   const handleCopyCode = (code: string) => {

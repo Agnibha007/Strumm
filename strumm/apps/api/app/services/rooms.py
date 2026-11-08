@@ -91,11 +91,12 @@ def schedule_hostless_room_delete(database, room_id_str: str) -> None:
     _pending_room_deletes[room_id_str] = task
 
 
-def cancel_pending_room_delete(room_id_str: str) -> None:
-    """Cancel a pending deferred delete because someone reconnected to the room."""
+def cancel_pending_room_delete(room_id_str: str) -> bool:
     task = _pending_room_deletes.pop(room_id_str, None)
     if task and not task.done():
         task.cancel()
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +189,15 @@ def cancel_pending_host_transfer(room_id_str: str) -> None:
     task = _pending_host_transfers.pop(room_id_str, None)
     if task and not task.done():
         task.cancel()
+
+
+def handle_room_member_join(database, room_id_str: str, host_id: str, joining_user_id: str) -> None:
+    cancel_pending_room_delete(room_id_str)
+    if host_id == joining_user_id:
+        cancel_pending_host_transfer(room_id_str)
+        return
+    if host_id and host_id not in manager.room_connected_user_ids(room_id_str):
+        schedule_host_transfer(database, room_id_str, host_id)
 
 # Manager used for room channel + circle broadcasts (alias keeps tests simple).
 manager = realtime_manager
@@ -399,7 +409,7 @@ async def can_control(database, room_id: str, user_id: str) -> dict:
         return {"allowed": False, "reason": "Room not found."}
     if room.get("hostId") == user_id:
         return {"allowed": True, "reason": ""}
-    if user_id in (room.get("controllers") or []):
+    if user_id in (room.get("controllers") or []) and user_id in (room.get("members") or []):
         return {"allowed": True, "reason": ""}
     return {
         "allowed": False,
@@ -412,23 +422,74 @@ async def can_control(database, room_id: str, user_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def normalize_room_song(song: Any) -> Optional[dict]:
+    import json
+    import math
+
+    if not isinstance(song, dict):
+        return None
+    video_id = song.get("videoId")
+    if not isinstance(video_id, str) or not video_id.strip() or len(video_id) > 128:
+        return None
+    try:
+        if len(json.dumps(song, ensure_ascii=False, default=str).encode("utf-8")) > 64 * 1024:
+            return None
+    except (TypeError, ValueError):
+        return None
+    clean_song = dict(song)
+    clean_song["videoId"] = video_id.strip()
+    for key in ("title", "artist", "thumbnail"):
+        value = clean_song.get(key)
+        if value is not None and not isinstance(value, str):
+            return None
+        if isinstance(value, str) and len(value) > (4096 if key == "thumbnail" else 512):
+            return None
+    duration = clean_song.get("duration")
+    if duration is not None and (
+        not isinstance(duration, (int, float))
+        or not math.isfinite(duration)
+        or duration < 0
+        or duration > 86400
+    ):
+        clean_song.pop("duration", None)
+    return clean_song
+
+
 async def queue_push(database, room_oid: ObjectId, song: dict) -> Optional[dict]:
-    """Append a song to the room queue. Returns the appended song or None."""
-    if not song or not song.get("videoId"):
+    clean_song = normalize_room_song(song)
+    if clean_song is None:
+        return None
+    result = await database[db.ROOMS].update_one(
+        {
+            "_id": room_oid,
+            "queue.videoId": {"$ne": clean_song["videoId"]},
+        },
+        {"$push": {"queue": clean_song}}
+    )
+    if getattr(result, "matched_count", 1) == 0:
+        return None
+    return clean_song
+
+
+async def set_room_track(database, room_oid: ObjectId, song: dict) -> Optional[dict]:
+    clean_song = normalize_room_song(song)
+    if clean_song is None:
         return None
     await database[db.ROOMS].update_one(
         {"_id": room_oid},
-        {"$push": {"queue": song}}
+        {
+            "$set": {"currentTrack": clean_song},
+            "$pull": {"queue": {"videoId": clean_song["videoId"]}},
+        },
     )
-    return song
-
+    return clean_song
 
 async def queue_remove(database, room_oid: ObjectId, video_id: str) -> int:
-    """Remove all queue entries matching a videoId. Returns how many removed."""
-    selected = getattr(video_id, "strip", lambda: video_id)
+    if not isinstance(video_id, str) or not video_id.strip() or len(video_id) > 128:
+        return 0
     result = await database[db.ROOMS].update_one(
         {"_id": room_oid},
-        {"$pull": {"queue": {"videoId": selected()}}}
+        {"$pull": {"queue": {"videoId": video_id.strip()}}}
     )
     return (result.modified_count or 0)
 
@@ -449,7 +510,7 @@ async def remove_member(database, room: dict, user_id: str) -> None:
     """Remove a user from a room's member + controller lists in the DB."""
     await database[db.ROOMS].update_one(
         {"_id": room["_id"]},
-        {"$pull": {"members": user_id}, "$pull": {"controllers": user_id}}
+        {"$pull": {"members": user_id, "controllers": user_id}}
     )
 
 
@@ -476,6 +537,15 @@ async def handle_room_disconnect(room_id: str, user_id: str, explicit: bool = Fa
         if not room:
             return
         room_id_str = str(room["_id"])
+        is_member = user_id in (room.get("members") or [])
+        is_host = room.get("hostId") == user_id
+        if not is_member and not is_host:
+            return
+        if not is_member and is_host and not explicit:
+            return
+
+        if user_id in manager.room_connected_user_ids(room_id_str):
+            return
 
         if room.get("hostId") == user_id:
             remaining = manager.room_connected_user_ids(room_id_str)

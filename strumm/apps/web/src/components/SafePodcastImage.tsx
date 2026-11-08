@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, type ImgHTMLAttributes } from "react";
 import { apiUrl } from "web/lib/api";
-import { loadImage, preloadImage } from "web/lib/image-loader";
+import { loadImage } from "web/lib/image-loader";
 
 /**
  * Maximum time (ms) to show the skeleton before forcing the fallback icon.
@@ -25,10 +25,30 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = useState(false);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setIsNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setIsNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "320px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [src]);
 
   // Safety net: dismiss the skeleton if the pipeline can't resolve any URL,
   // so artwork is never stuck shimmering forever.
   useEffect(() => {
+    if (!isNearViewport) return;
     if (loaded || errored) {
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
       return;
@@ -36,15 +56,10 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setErrored(true), LOAD_TIMEOUT_MS);
     return () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; } };
-  }, [loaded, errored, src]);
+  }, [loaded, errored, src, isNearViewport]);
 
-  // Resolve the artwork through the shared throttle/dedup pipeline. The fetch
-  // is an eager synthetic <img> — the browser's native lazy loader cancels or
-  // pauses image requests when the tab is hidden, but the pipeline does not,
-  // so podcast art keeps "passively" downloading in background tabs. Once a
-  // URL resolves it is in the HTTP cache, and the rendered <img> below paints
-  // from cache without issuing a fresh, cancelable lazy request.
   useEffect(() => {
+    if (!isNearViewport) return;
     const secured = toSecureUrl(src);
     const proxy = src
       ? apiUrl(`/image-proxy?url=${encodeURIComponent(src)}`)
@@ -59,11 +74,6 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
       setErrored(true);
       return;
     }
-
-    // Prime the host URL and its proxy fallback up-front (shared, bounded
-    // concurrency, deduped across the page).
-    preloadImage(secured, 2);
-    if (proxy) preloadImage(proxy, 3);
 
     const resolveFrom = (start: number): void => {
       if (cancelled) return;
@@ -91,7 +101,7 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [src, isNearViewport]);
 
   const handleLoad = useCallback(() => {
     setLoaded(true);
@@ -121,7 +131,7 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
   }, [currentSrc, handleLoad]);
 
   return (
-    <div className={`relative overflow-hidden bg-surface-elevated ${className || ""}`}>
+    <div ref={containerRef} className={`relative overflow-hidden bg-surface-elevated ${className || ""}`}>
       {/* Polished shimmer skeleton while loading */}
       {!loaded && !errored && <div className="image-skeleton" />}
 
@@ -143,7 +153,7 @@ export default function SafePodcastImage({ src, alt, className, ...props }: Safe
           onError={handleError}
           className={`absolute inset-0 w-full h-full object-cover image-reveal`}
           {...props}
-          loading="eager"
+          loading="lazy"
         />
       ) : null}
     </div>

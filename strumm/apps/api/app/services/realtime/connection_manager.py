@@ -18,6 +18,7 @@ same — swap the implementation behind the same class.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -118,13 +119,28 @@ class ConnectionManager:
                 del self._room_connections[room_id]
 
     def disconnect_user_from_room(self, room_id: str, user_id: str) -> None:
-        """Remove every WebSocket a user holds in a room (e.g. after a kick)."""
-        if room_id in self._room_connections:
-            self._room_connections[room_id] = [
-                c for c in self._room_connections[room_id] if c[0] != user_id
-            ]
-            if not self._room_connections[room_id]:
-                del self._room_connections[room_id]
+        connections = self._room_connections.get(room_id, [])
+        targets = [ws for uid, ws in connections if uid == user_id]
+        remaining = [(uid, ws) for uid, ws in connections if uid != user_id]
+        if remaining:
+            self._room_connections[room_id] = remaining
+        else:
+            self._room_connections.pop(room_id, None)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop:
+            for websocket in targets:
+                loop.create_task(self._close_room_socket(websocket))
+
+    @staticmethod
+    async def _close_room_socket(websocket) -> None:
+        try:
+            await websocket.close(code=1008, reason="No longer a room member")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Sending
@@ -213,7 +229,7 @@ class ConnectionManager:
         host disconnects. ``disconnect_room`` must be called first so the
         departed user is excluded.
         """
-        return [uid for uid, _ in self._room_connections.get(room_id, [])]
+        return list(dict.fromkeys(uid for uid, _ in self._room_connections.get(room_id, [])))
 
     def get_user_connections(self, user_id: str) -> List[WebSocket]:
         return self._user_connections.get(user_id, [])

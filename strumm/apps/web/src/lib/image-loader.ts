@@ -97,7 +97,7 @@ class ImageLoader {
     // Sort candidates highest-priority first, FIFO for ties, then start up to
     // the free slots. Re-sorting a small list per drain is cheap and keeps the
     // priority contract simple.
-    this.queue.sort((a, b) => b.priority - a.priority || a.seq - b.seq);
+    this.queue.sort((a, b) => a.priority - b.priority || a.seq - b.seq);
 
     while (this.active < MAX_CONCURRENCY && this.queue.length > 0) {
       const entry = this.queue.shift()!;

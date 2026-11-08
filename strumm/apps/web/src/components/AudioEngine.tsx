@@ -1123,9 +1123,7 @@ export default function AudioEngine() {
     // play() on an already-playing element is a no-op, so re-asserting on
     // loadedmetadata/canplay is harmless.
     const startPlayback = () => {
-      // Only play while this element is the audible one — the once-listeners
-      // survive a swap and would otherwise start a (demoted) staging element.
-      if (audio !== htmlAudioRef.current) return;
+      if (audio !== htmlAudioRef.current || !usePlayerStore.getState().isPlaying) return;
       try {
         audio.play().catch(() => {});
       } catch (e) {}
@@ -1381,6 +1379,10 @@ export default function AudioEngine() {
       // not toggle isPlaying / media-session playing, or clear crossfade flags.
       if (audio !== htmlAudioRef.current) return;
       if (audio.src && isSilentAudio(audio)) return;
+      if (!usePlayerStore.getState().isPlaying) {
+        audio.pause();
+        return;
+      }
       // A crossfade advanced the queue while the outgoing song was muted — the
       // new track must fade in right AT the transition. The fade-in is
       // position-driven (stepCrossfadeFadeIn ramps 0→1 over the track's first
@@ -1417,6 +1419,7 @@ export default function AudioEngine() {
       // Ignore pause events fired while the engine is swapping tracks — the
       // element for the old track is being torn down and the new one is loading.
       if (transitioningRef.current) return;
+      if (audio.ended) return;
       // Ignore browser-initiated pauses in hidden tabs. When the page is
       // backgrounded, the browser may suspend the <audio> element and fire a
       // pause event. Treating this as a user pause sets isPlaying = false,

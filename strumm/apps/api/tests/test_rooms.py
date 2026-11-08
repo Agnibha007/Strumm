@@ -1102,3 +1102,197 @@ async def test_cleanup_drops_hostless_rooms(mock_db):
     assert stats["deletedHostless"] == 1
     assert stats["deletedEmpty"] == 0
     mock_db[mock_db.ROOMS].delete_one.assert_awaited()
+
+async def test_remove_member_pulls_membership_and_controller_in_one_update(mock_db):
+    from app.services.rooms import remove_member
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d1")
+    await remove_member(mock_db, {"_id": room_oid}, "listener")
+
+    update = mock_db[mock_db.ROOMS].update_one.call_args
+    assert update.args[0] == {"_id": room_oid}
+    assert update.args[1] == {"$pull": {"members": "listener", "controllers": "listener"}}
+
+
+async def test_disconnect_of_one_socket_preserves_user_with_another_live_socket(mock_db, mock_realtime):
+    from app.services.rooms import handle_room_disconnect
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d2")
+    mock_db[mock_db.ROOMS].find_one = AsyncMock(return_value={
+        "_id": room_oid,
+        "hostId": "host",
+        "members": ["host", "listener"],
+        "controllers": ["host"],
+    })
+    mock_realtime.room_connected_user_ids.return_value = ["listener"]
+
+    await handle_room_disconnect(str(room_oid), "listener")
+
+    mock_db[mock_db.ROOMS].update_one.assert_not_awaited()
+    mock_db[mock_db.ROOMS].delete_one.assert_not_awaited()
+    mock_realtime.broadcast_to_room.assert_not_awaited()
+
+
+async def test_queue_push_rejects_invalid_or_oversized_song(mock_db):
+    from app.services.rooms import queue_push
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d3")
+    assert await queue_push(mock_db, room_oid, None) is None
+    assert await queue_push(mock_db, room_oid, {"videoId": ""}) is None
+    assert await queue_push(mock_db, room_oid, {"videoId": "x", "title": "t" * 513}) is None
+    assert await queue_push(mock_db, room_oid, {"videoId": "x", "blob": "x" * (65 * 1024)}) is None
+    mock_db[mock_db.ROOMS].update_one.assert_not_awaited()
+
+
+async def test_queue_push_trims_video_id_and_returns_saved_song(mock_db):
+    from app.services.rooms import queue_push
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d4")
+    song = {"videoId": "  abc_123  ", "title": "Track", "artist": "Artist"}
+    result = await queue_push(mock_db, room_oid, song)
+
+    assert result == {"videoId": "abc_123", "title": "Track", "artist": "Artist"}
+    update = mock_db[mock_db.ROOMS].update_one.await_args
+    assert update.args[0] == {"_id": room_oid, "queue.videoId": {"$ne": "abc_123"}}
+    assert update.args[1] == {"$push": {"queue": result}}
+
+
+async def test_queue_remove_rejects_non_string_video_ids(mock_db):
+    from app.services.rooms import queue_remove
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d5")
+    assert await queue_remove(mock_db, room_oid, {"$ne": None}) == 0
+    assert await queue_remove(mock_db, room_oid, " " ) == 0
+    mock_db[mock_db.ROOMS].update_one.assert_not_awaited()
+
+
+def test_room_connection_manager_deduplicates_user_presence():
+    from app.services.realtime.connection_manager import ConnectionManager
+
+    manager = ConnectionManager()
+    manager._room_connections["room"] = [
+        ("host", MagicMock()),
+        ("listener", MagicMock()),
+        ("listener", MagicMock()),
+        ("another", MagicMock()),
+    ]
+    assert manager.room_connected_user_ids("room") == ["host", "listener", "another"]
+
+
+async def test_set_room_track_atomically_removes_it_from_upcoming_queue(mock_db):
+    from app.services.rooms import set_room_track
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d6")
+    song = {"videoId": "  now-playing  ", "title": "Now Playing", "artist": "Artist"}
+    result = await set_room_track(mock_db, room_oid, song)
+
+    assert result["videoId"] == "now-playing"
+    update = mock_db[mock_db.ROOMS].update_one.await_args
+    assert update.args[0] == {"_id": room_oid}
+    assert update.args[1] == {
+        "$set": {"currentTrack": result},
+        "$pull": {"queue": {"videoId": "now-playing"}},
+    }
+
+
+async def test_set_room_track_rejects_invalid_track_without_writing(mock_db):
+    from app.services.rooms import set_room_track
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d7")
+    assert await set_room_track(mock_db, room_oid, {"videoId": ""}) is None
+    result = await set_room_track(mock_db, room_oid, {"videoId": "valid", "duration": float("nan")})
+    assert result["videoId"] == "valid"
+    assert "duration" not in result
+    mock_db[mock_db.ROOMS].update_one.assert_awaited_once()
+
+
+async def test_disconnect_user_from_room_closes_all_of_their_room_sockets():
+    import asyncio
+    from app.services.realtime.connection_manager import ConnectionManager
+
+    manager = ConnectionManager()
+    first = MagicMock()
+    first.close = AsyncMock()
+    second = MagicMock()
+    second.close = AsyncMock()
+    other = MagicMock()
+    other.close = AsyncMock()
+    manager._room_connections["room"] = [
+        ("listener", first),
+        ("other", other),
+        ("listener", second),
+    ]
+
+    manager.disconnect_user_from_room("room", "listener")
+    await asyncio.sleep(0)
+
+    assert manager.room_connected_user_ids("room") == ["other"]
+    first.close.assert_awaited_once_with(code=1008, reason="No longer a room member")
+    second.close.assert_awaited_once_with(code=1008, reason="No longer a room member")
+    other.close.assert_not_awaited()
+
+
+def test_listener_reviving_hostless_room_schedules_host_transfer(monkeypatch):
+    from app.services import rooms
+
+    monkeypatch.setattr(rooms, "cancel_pending_room_delete", lambda room_id: True)
+    monkeypatch.setattr(rooms.manager, "room_connected_user_ids", lambda room_id: ["listener"])
+    schedule = MagicMock()
+    monkeypatch.setattr(rooms, "schedule_host_transfer", schedule)
+
+    database = MagicMock()
+    rooms.handle_room_member_join(database, "room", "offline-host", "listener")
+
+    schedule.assert_called_once_with(database, "room", "offline-host")
+
+
+def test_host_reconnect_cancels_both_pending_lifecycle_actions(monkeypatch):
+    from app.services import rooms
+
+    monkeypatch.setattr(rooms, "cancel_pending_room_delete", lambda room_id: True)
+    cancel_transfer = MagicMock()
+    monkeypatch.setattr(rooms, "cancel_pending_host_transfer", cancel_transfer)
+    schedule = MagicMock()
+    monkeypatch.setattr(rooms, "schedule_host_transfer", schedule)
+
+    rooms.handle_room_member_join(MagicMock(), "room", "host", "host")
+
+    cancel_transfer.assert_called_once_with("room")
+    schedule.assert_not_called()
+
+
+def test_listener_join_does_not_transfer_while_host_has_another_live_socket(monkeypatch):
+    from app.services import rooms
+
+    monkeypatch.setattr(rooms, "cancel_pending_room_delete", lambda room_id: True)
+    monkeypatch.setattr(rooms.manager, "room_connected_user_ids", lambda room_id: ["host", "listener"])
+    schedule = MagicMock()
+    monkeypatch.setattr(rooms, "schedule_host_transfer", schedule)
+
+    rooms.handle_room_member_join(MagicMock(), "room", "host", "listener")
+
+    schedule.assert_not_called()
+
+
+async def test_queue_push_atomically_rejects_duplicate_video_id(mock_db):
+    from app.services.rooms import queue_push
+
+    room_oid = ObjectId("6630a1c2e4b0a1c2e4b0a1d8")
+    mock_db[mock_db.ROOMS].update_one = AsyncMock(return_value=MagicMock(matched_count=0))
+    assert await queue_push(mock_db, room_oid, {"videoId": "already-queued"}) is None
+    query = mock_db[mock_db.ROOMS].update_one.await_args.args[0]
+    assert query["queue.videoId"] == {"$ne": "already-queued"}
+
+
+def test_listener_join_recovers_orphaned_room_without_pending_delete(monkeypatch):
+    from app.services import rooms
+
+    monkeypatch.setattr(rooms, "cancel_pending_room_delete", lambda room_id: False)
+    monkeypatch.setattr(rooms.manager, "room_connected_user_ids", lambda room_id: ["listener"])
+    schedule = MagicMock()
+    monkeypatch.setattr(rooms, "schedule_host_transfer", schedule)
+    database = MagicMock()
+
+    rooms.handle_room_member_join(database, "room", "offline-host", "listener")
+
+    schedule.assert_called_once_with(database, "room", "offline-host")

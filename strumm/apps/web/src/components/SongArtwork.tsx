@@ -57,31 +57,46 @@ export default function SongArtwork({
   const candidates = getArtworkCandidates(song, priority, effectiveQuality);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
-  // The candidate the pipeline has actually confirmed loadable. Unset until the
-  // shared loader resolves a URL, so the DOM <img> below never initiates its own
-  // (cancelable-on-tab-switch) lazy fetch — the eager synthetic fetch in the
-  // pipeline is the only network request, and it keeps running in background tabs.
   const [src, setSrc] = useState<string | undefined>(undefined);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = useState(priority);
+
+  useEffect(() => {
+    if (priority) {
+      setIsNearViewport(true);
+      return;
+    }
+    const node = containerRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setIsNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setIsNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "320px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [priority, song?.videoId]);
 
   // Safety net: if the pipeline can't resolve anything (every candidate hangs),
   // dismiss the skeleton so the user never sees a permanently stuck shimmer.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (!isNearViewport) return;
     if (loaded || errored) {
       if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
       return;
     }
     timerRef.current = setTimeout(() => setErrored(true), LOAD_TIMEOUT_MS);
     return () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; } };
-  }, [loaded, errored, song?.videoId]);
+  }, [loaded, errored, song?.videoId, isNearViewport]);
 
-  // Resolve the artwork through the shared throttle/dedup pipeline. Every fetch
-  // is an eager synthetic <img> (the browser's native lazy loader pauses or
-  // cancels image requests when you switch to another tab; the pipeline does
-  // not, so "passive" background loading keeps working). Once a URL resolves it
-  // is sitting in the HTTP cache, so the rendered <img> below paints instantly
-  // without issuing a fresh network request.
   useEffect(() => {
+    if (!isNearViewport) return;
     const basePriority: ImagePriority = priority ? 0 : 2;
 
     let cancelled = false;
@@ -123,7 +138,7 @@ export default function SongArtwork({
     return () => {
       cancelled = true;
     };
-  }, [candidates, priority, effectiveQuality]);
+  }, [candidates, priority, effectiveQuality, isNearViewport]);
 
   const handleLoad = useCallback(() => {
     setLoaded(true);
@@ -156,7 +171,7 @@ export default function SongArtwork({
   }, []);
 
   return (
-    <div className={`relative overflow-hidden bg-surface-elevated ${className}`}>
+    <div ref={containerRef} className={`relative overflow-hidden bg-surface-elevated ${className}`}>
       {/* Polished shimmer skeleton while loading */}
       {!loaded && !errored && <div className="image-skeleton" />}
 
@@ -170,7 +185,7 @@ export default function SongArtwork({
           ref={handleImgRef}
           src={src}
           alt={alt || song?.title || "Artwork"}
-          loading="eager"
+          loading={priority ? "eager" : "lazy"}
           decoding="async"
           referrerPolicy="no-referrer"
           sizes={sizes}

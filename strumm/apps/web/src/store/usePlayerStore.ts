@@ -191,9 +191,12 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       setQueue: (queue) => {
-        // Rewriting the queue retires the crossfade's next-track commitment —
-        // the index it named may no longer be the track that plays next.
-        set({ queue: queue.map(cleanSong), pendingNextIndex: null });
+        const cleanedQueue = queue.map(cleanSong);
+        const currentSong = get().currentSong;
+        const currentIndex = currentSong
+          ? cleanedQueue.findIndex((song) => song.videoId === currentSong.videoId)
+          : -1;
+        set({ queue: cleanedQueue, currentIndex, pendingNextIndex: null });
       },
 
       addToQueue: (song) => {
@@ -296,7 +299,7 @@ export const usePlayerStore = create<PlayerState>()(
           committed !== null && committed >= 0 && committed < queue.length
             ? committed
             : resolveNextTrackIndex(queue, currentIndex, repeatMode, isShuffle, false, updatedPlayedIds);
-        if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length) return;
+        if (nextIdx === null || nextIdx < 0 || nextIdx >= queue.length || nextIdx === currentIndex) return;
         playTrackAtIndex(queue, nextIdx, set, get);
       },
 
@@ -310,7 +313,9 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        const prevIdx = Math.max(0, currentIndex - 1);
+        const prevIdx = currentIndex <= 0
+          ? (get().repeatMode === "all" ? queue.length - 1 : 0)
+          : currentIndex - 1;
         playTrackAtIndex(queue, prevIdx, set, get);
       },
 
