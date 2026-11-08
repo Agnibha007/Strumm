@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import re
 import shutil
 import sys
@@ -16,10 +17,21 @@ from app.services.youtube_cookies import ytdlp_cookie_cli_args
 logger = logging.getLogger("strumm-song-downloads")
 router = APIRouter(prefix="/downloads", tags=["song-downloads"])
 
-MAX_CONCURRENT_DOWNLOADS = 3
-DOWNLOAD_START_TIMEOUT_SECONDS = 75
-STREAM_CHUNK_SIZE = 64 * 1024
-MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024
+def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s value; using default %s", name, default)
+        return default
+    return max(minimum, min(value, maximum))
+
+
+# Keep download resource use configurable per deployment. Small EC2 instances
+# should run one conversion at a time; larger hosts can raise this explicitly.
+MAX_CONCURRENT_DOWNLOADS = _bounded_env_int("MAX_CONCURRENT_DOWNLOADS", 3, 1, 8)
+DOWNLOAD_START_TIMEOUT_SECONDS = _bounded_env_int("DOWNLOAD_START_TIMEOUT_SECONDS", 75, 10, 180)
+STREAM_CHUNK_SIZE = _bounded_env_int("DOWNLOAD_STREAM_CHUNK_KB", 64, 16, 256) * 1024
+MAX_DOWNLOAD_BYTES = _bounded_env_int("MAX_DOWNLOAD_MB", 500, 1, 2048) * 1024 * 1024
 MAX_PROCESS_STDERR_BYTES = 8192
 MAX_LOG_DIAGNOSTIC_CHARS = 1200
 _DIAGNOSTIC_URL_RE = re.compile(r"(?i)\bhttps?://[^\s<>\"']+")
