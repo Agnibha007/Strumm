@@ -4,11 +4,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 // Backend API. All client HTTP goes through the same-origin /proxy rewrite so
 // cookies survive (the HF Spaces gateway never sends
 // Access-Control-Allow-Credentials). WebSocket uses API_ORIGIN directly.
-const API_TARGET = (
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+const API_TARGET = "https://agnibha07-strumm.hf.space";
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@strumm/types", "@strumm/ui", "@strumm/database"],

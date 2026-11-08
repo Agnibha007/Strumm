@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const apiOrigin = (
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+const apiOrigin = "https://agnibha07-strumm.hf.space";
 
 export function buildCspHeader(nonce: string): string {
   return [

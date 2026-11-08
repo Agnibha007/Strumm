@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import SongDetailClient from "./SongDetailClient";
 import JsonLd from "web/components/JsonLd";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const BACKEND_URL = "https://agnibha07-strumm.hf.space";
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {

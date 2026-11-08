@@ -4,11 +4,7 @@
 // cross-origin calls (the HF Spaces gateway does not send
 // Access-Control-Allow-Credentials, which broke every cookie-authenticated
 // request).
-export const API_ORIGIN = (
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+export const API_ORIGIN = "https://agnibha07-strumm.hf.space";
 
 // Kept for back-compat; points at the same origin as API_ORIGIN.
 export const API_BASE_URL = API_ORIGIN;
@@ -124,7 +120,7 @@ export function mostVisitedSongs(limit = MAX_PREFETCH_SONGS): string[] {
 /** Prefetch the metadata (via the backend /resolve endpoint) for each id. */
 export async function prefetchSongMetadata(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
-  const base = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const base = "https://agnibha07-strumm.hf.space";
   // Run all resolves in parallel so the whole batch resolves quickly instead of
   // serially. Each call is guarded against throwing so one failed request does
   // not cancel the rest.
