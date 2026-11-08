@@ -479,7 +479,6 @@ async def download_song_cobalt(
     video_id: str = Query(..., alias="videoId", min_length=11, max_length=11),
     title: str = Query("", max_length=200),
     rights_confirmed: bool = Query(False, alias="rightsConfirmed"),
-    current_user: dict = Depends(get_current_user),
 ):
     if not YOUTUBE_ID_PATTERN.fullmatch(video_id):
         raise HTTPException(status_code=400, detail="A valid YouTube video ID is required.")
@@ -518,5 +517,5 @@ async def download_song_cobalt(
             await client.aclose()
             _download_semaphore.release()
 
-    logger.info("Starting Cobalt MP3 stream for user %s, video %s", current_user.get("id"), video_id)
+    logger.warning("Starting unauthenticated experimental Cobalt MP3 stream for video %s", video_id)
     return StreamingResponse(response_stream(), media_type="audio/mpeg", headers=headers)

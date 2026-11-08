@@ -228,7 +228,7 @@ async def test_ytdl_go_download_uses_isolated_provider_route(client, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_cobalt_download_streams_audio_from_internal_tunnel(client, monkeypatch):
+async def test_cobalt_download_streams_audio_without_authentication(client, monkeypatch):
     started = []
 
     class FakeMediaResponse:
@@ -251,6 +251,7 @@ async def test_cobalt_download_streams_audio_from_internal_tunnel(client, monkey
     monkeypatch.setattr(song_downloads, "_open_cobalt_audio", open_audio)
 
     async with client:
+        app.dependency_overrides.pop(get_current_user, None)
         response = await client.get(
             "/downloads/song/cobalt",
             params={
