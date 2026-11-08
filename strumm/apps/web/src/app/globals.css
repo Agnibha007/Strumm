@@ -186,8 +186,8 @@ html[data-theme="Custom"] {
   --color-border: var(--border);
   --color-glow: var(--glow);
   
-  --font-sans: var(--font-outfit), sans-serif;
-  --font-serif: var(--font-playfair), serif;
+  --font-sans: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
 }
 
 /* Micro-Animations toggle — hard kill for all CSS-driven motion */
@@ -214,14 +214,14 @@ a, button, [role="button"], input, textarea, select, .transition {
 body {
   background-color: var(--background);
   color: var(--text);
-  font-family: var(--font-outfit), sans-serif;
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
 }
 
 /* Typography styles */
 h1, h2, h3, h4, .font-editorial {
-  font-family: var(--font-playfair), Georgia, serif;
+  font-family: Georgia, "Times New Roman", serif;
 }
 
 /* Custom Scrollbars */

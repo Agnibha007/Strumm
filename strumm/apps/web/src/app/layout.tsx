@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Outfit, Playfair_Display } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import JsonLd from "web/components/JsonLd";
@@ -10,18 +9,6 @@ import NotificationToast from "web/components/NotificationToast";
 import { RealTimeProvider } from "web/services/realtime";
 import { StrummNonceProvider } from "web/components/StrummNonceContext";
 import ConditionalFooter from "web/components/ConditionalFooter";
-
-const outfit = Outfit({
-  variable: "--font-outfit",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-});
-
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-});
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 const logoUrl = `${appUrl}/strumm-logo.png`;
@@ -239,9 +226,7 @@ export default async function RootLayout({
         />
 
       </head>
-      <body
-        className={`${outfit.variable} ${playfair.variable} antialiased selection:bg-primary selection:text-white relative flex flex-col min-h-screen pb-[136px] md:pb-24`}
-      >
+      <body className="antialiased selection:bg-primary selection:text-white relative flex flex-col min-h-screen pb-[136px] md:pb-24">
         <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[999] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-lg focus:text-sm focus:font-semibold focus:outline-none">
           Skip to content
         </a>
