@@ -109,6 +109,18 @@ async def test_download_rejects_non_youtube_ids(client, monkeypatch):
     assert started == []
 
 
+def test_ytdlp_command_includes_configured_cookie_file(monkeypatch, tmp_path):
+    cookiefile = tmp_path / "cookies.txt"
+    cookiefile.write_text("# Netscape HTTP Cookie File")
+    monkeypatch.setattr(song_downloads, "ytdlp_cookie_cli_args", lambda: ["--cookies", str(cookiefile)])
+    monkeypatch.setattr(song_downloads.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    command = song_downloads._ytdlp_command("6rOCiszTz-I")
+
+    assert command[command.index("--cookies") + 1] == str(cookiefile)
+    assert command[-1] == "https://www.youtube.com/watch?v=6rOCiszTz-I"
+
+
 def test_ytdlp_and_ffmpeg_use_only_pipes_and_stdout(monkeypatch):
     monkeypatch.setattr(song_downloads.shutil, "which", lambda name: f"/usr/bin/{name}")
 
@@ -145,3 +157,39 @@ async def test_download_releases_concurrency_slot_when_request_is_cancelled():
         song_downloads._start_ytdlp_mp3_stream = original
 
     assert song_downloads._download_semaphore._value == starting_slots
+
+
+def test_process_stderr_sanitizer_keeps_error_and_redacts_secrets():
+    raw = (
+        "ERROR: [youtube] piUHBTXsoiY: Sign in to confirm you’re not a bot\n"
+        "Request URL: https://youtube.example/watch?v=abc&sig=private-signature\n"
+        "Authorization: Bearer private-access-token\n"
+        "Cookie: SID=private-cookie; HSID=another-private-cookie\n"
+    )
+
+    diagnostic = song_downloads._sanitize_process_stderr(raw)
+
+    assert "Sign in to confirm you’re not a bot" in diagnostic
+    assert "[URL REDACTED]" in diagnostic
+    assert "https://" not in diagnostic
+    assert "private-signature" not in diagnostic
+    assert "private-access-token" not in diagnostic
+    assert "private-cookie" not in diagnostic
+    assert "another-private-cookie" not in diagnostic
+
+
+@pytest.mark.asyncio
+async def test_process_stderr_capture_is_bounded_and_sanitized():
+    class FakeReader:
+        def __init__(self, chunks):
+            self.chunks = iter(chunks)
+
+        async def read(self, size):
+            return next(self.chunks, b"")
+
+    stream = FakeReader([b"x" * 9000, b"ERROR: HTTP Error 403: Forbidden\n"])
+
+    diagnostic = await song_downloads._capture_process_stderr(stream)
+
+    assert "HTTP Error 403: Forbidden" in diagnostic
+    assert len(diagnostic) <= song_downloads.MAX_LOG_DIAGNOSTIC_CHARS
