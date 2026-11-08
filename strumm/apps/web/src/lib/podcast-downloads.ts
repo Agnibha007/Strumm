@@ -12,7 +12,7 @@ export type PodcastDownloadRecord = {
   collectionId: string;
   collectionName: string;
   contentType?: "podcast" | "song";
-  sourceProvider?: "direct" | "yt-dlp";
+  sourceProvider?: "direct" | "yt-dlp" | "cobalt";
   sourceUrl?: string;
   license?: string;
   licenseUrl?: string;
@@ -47,7 +47,7 @@ type SongDownloadInput = {
   audioUrl: string;
   mimeType: string;
   blob: Blob;
-  sourceProvider?: "direct" | "yt-dlp";
+  sourceProvider?: "direct" | "yt-dlp" | "cobalt";
   sourceUrl?: string;
   license?: string;
   licenseUrl?: string;
