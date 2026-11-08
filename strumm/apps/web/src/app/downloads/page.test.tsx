@@ -11,7 +11,6 @@ const downloads = vi.hoisted(() => ({
   listAllDownloads: vi.fn(),
   removePodcastDownload: vi.fn(),
   preparePodcastDownloadPlayback: vi.fn(),
-  prepareSongDownloadPlayback: vi.fn(),
   formatDownloadSize: (size: number) => (size < 1024 ? `${size} B` : `${(size / 1024).toFixed(1)} KB`),
 }));
 
@@ -30,7 +29,6 @@ vi.mock("web/lib/podcast-downloads", () => ({
   listAllDownloads: downloads.listAllDownloads,
   removePodcastDownload: downloads.removePodcastDownload,
   preparePodcastDownloadPlayback: downloads.preparePodcastDownloadPlayback,
-  prepareSongDownloadPlayback: downloads.prepareSongDownloadPlayback,
 }));
 
 vi.mock("web/lib/host-audio", () => ({
@@ -47,23 +45,34 @@ vi.mock("next/link", () => ({
 
 import DownloadsPage from "./page";
 
+const podcastRecord = {
+  id: "episode-123",
+  episodeId: "episode-123",
+  title: "Saved Episode",
+  showTitle: "Example Podcast",
+  thumbnail: "",
+  duration: 180,
+  audioUrl: "https://assets.strumm.me/audio/episode.mp3",
+  mimeType: "audio/mpeg",
+  collectionType: "podcast",
+  collectionId: "show-123",
+  collectionName: "Example Podcast",
+  size: 2048,
+  savedAt: Date.now(),
+  blob: new Blob(["audio bytes"], { type: "audio/mpeg" }),
+};
+
 const songRecord = {
+  ...podcastRecord,
   id: "song-video-123",
   videoId: "video-123",
   episodeId: "video-123",
   title: "Saved Track",
   showTitle: "Saved Artist",
-  thumbnail: "",
-  duration: 180,
-  audioUrl: "https://assets.strumm.me/audio/track.mp3",
-  mimeType: "audio/mpeg",
   collectionType: "song",
   collectionId: "songs",
   collectionName: "Songs",
   contentType: "song",
-  size: 2048,
-  savedAt: Date.now(),
-  blob: new Blob(["audio bytes"], { type: "audio/mpeg" }),
 };
 
 afterEach(() => {
@@ -74,7 +83,6 @@ afterEach(() => {
 describe("downloads page", () => {
   it("shows the empty library state when nothing has been saved", async () => {
     downloads.listAllDownloads.mockResolvedValue([]);
-    downloads.prepareSongDownloadPlayback.mockReturnValue("blob:prepared");
 
     render(<DownloadsPage />);
 
@@ -96,17 +104,18 @@ describe("downloads page", () => {
     await waitFor(() => expect(downloads.listAllDownloads).toHaveBeenCalledTimes(2));
   });
 
-  it("plays a saved offline song from the stored blob", async () => {
-    downloads.listAllDownloads.mockResolvedValue([songRecord]);
-    downloads.prepareSongDownloadPlayback.mockReturnValue("blob:prepared-url");
+  it("hides legacy song downloads and plays saved podcast episodes", async () => {
+    downloads.listAllDownloads.mockResolvedValue([songRecord, podcastRecord]);
+    downloads.preparePodcastDownloadPlayback.mockReturnValue("blob:prepared-url");
     playHostAudioUrl.mockResolvedValue(undefined);
 
     render(<DownloadsPage />);
 
-    const playButton = await screen.findByRole("button", { name: "Play" });
-    fireEvent.click(playButton);
+    expect(await screen.findByText("Saved Episode")).toBeTruthy();
+    expect(screen.queryByText("Saved Track")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
 
-    await waitFor(() => expect(downloads.prepareSongDownloadPlayback).toHaveBeenCalledWith("video-123", songRecord.blob));
+    await waitFor(() => expect(downloads.preparePodcastDownloadPlayback).toHaveBeenCalledWith("episode-123", podcastRecord.blob));
     await waitFor(() => expect(playHostAudioUrl).toHaveBeenCalledWith("blob:prepared-url"));
     await waitFor(() => expect(player.playSong).toHaveBeenCalledOnce());
     await waitFor(() => expect(player.setPodcastMode).toHaveBeenCalledWith("audio"));
