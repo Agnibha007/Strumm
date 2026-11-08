@@ -677,6 +677,90 @@ async def proxy_related(
 
     return {"success": True, "data": {"songs": songs}}
 
+
+# ---------------------------------------------------------------------------
+# YouTube extraction path diagnostics (Innertube vs watch-page HTML)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/extractor-check/{video_id}")
+async def proxy_extractor_check(video_id: str):
+    """Compare YouTube Innertube and watch-page access without resolving media URLs."""
+    import time
+    from fastapi import HTTPException
+    from app.services.security import sanitize_youtube_id_strict
+
+    try:
+        vid = sanitize_youtube_id_strict(video_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="A valid YouTube video ID is required.") from exc
+
+    async def run_stage(name: str, fn, *args, **kwargs):
+        started = time.monotonic()
+        try:
+            result = await asyncio.wait_for(asyncio.to_thread(fn, *args, **kwargs), timeout=9)
+            return {"status": "ok", "seconds": round(time.monotonic() - started, 2), "result": result}
+        except asyncio.TimeoutError:
+            return {"status": "timeout", "seconds": round(time.monotonic() - started, 2)}
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "status": "error",
+                "seconds": round(time.monotonic() - started, 2),
+                "errorType": type(exc).__name__,
+                "error": str(exc)[:180],
+            }
+
+    from aytube.innertube import fetch_player_response, CLIENT_PROFILES
+    from aytube.utils import fetch_page, get_player_response
+
+    innertube = {}
+    for profile_name in ("ANDROID_VR", "WEB", "IOS"):
+        stage = await run_stage(
+            "innertube",
+            fetch_player_response,
+            vid,
+            timeout=7,
+            client=CLIENT_PROFILES[profile_name],
+        )
+        payload = stage.pop("result", None)
+        if payload is not None:
+            streaming = payload.get("streamingData") or {}
+            formats = (streaming.get("formats") or []) + (streaming.get("adaptiveFormats") or [])
+            playability = payload.get("playabilityStatus") or {}
+            stage.update({
+                "client": profile_name,
+                "formatCount": len(formats),
+                "directUrlCount": sum(1 for item in formats if item.get("url")),
+                "playabilityStatus": playability.get("status"),
+                "playabilityReason": str(playability.get("reason") or "")[:140],
+            })
+        else:
+            stage["client"] = profile_name
+        innertube[profile_name] = stage
+        if stage.get("directUrlCount", 0):
+            break
+
+    html_stage = await run_stage("watch_page", fetch_page, vid, timeout=7)
+    html_content = html_stage.pop("result", None)
+    if isinstance(html_content, str):
+        html_stage["htmlBytes"] = len(html_content.encode("utf-8"))
+        parsed = await run_stage("player_response_parse", get_player_response, html_content)
+        player = parsed.pop("result", None)
+        if isinstance(player, dict):
+            streaming = player.get("streamingData") or {}
+            formats = (streaming.get("formats") or []) + (streaming.get("adaptiveFormats") or [])
+            html_stage["playerResponse"] = {
+                "status": parsed.get("status"),
+                "formatCount": len(formats),
+                "directUrlCount": sum(1 for item in formats if item.get("url")),
+                "playabilityStatus": (player.get("playabilityStatus") or {}).get("status"),
+            }
+        else:
+            html_stage["playerResponse"] = parsed
+
+    return {"success": True, "videoId": vid, "innertube": innertube, "watchPageHtml": html_stage}
+
+
 # ---------------------------------------------------------------------------
 # AyTube isolated audio resolver (provider evaluation endpoint)
 # ---------------------------------------------------------------------------
