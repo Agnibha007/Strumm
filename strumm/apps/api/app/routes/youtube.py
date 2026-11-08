@@ -676,3 +676,67 @@ async def proxy_related(
             logger.warning(f"Piped related failed for {vid}: {exc!s:.120}")
 
     return {"success": True, "data": {"songs": songs}}
+
+# ---------------------------------------------------------------------------
+# AyTube isolated audio resolver (provider evaluation endpoint)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/aytube/{video_id}")
+async def proxy_aytube_audio(video_id: str):
+    """Resolve a YouTube video's direct audio URL using AyTube only.
+
+    This deliberately stays separate from ``/streams`` so AyTube can be
+    evaluated against the existing yt-dlp/Piped provider chain without
+    changing playback behavior. The returned CDN URL is temporary.
+    """
+    from fastapi import HTTPException
+    from app.services.security import sanitize_youtube_id_strict
+
+    try:
+        vid = sanitize_youtube_id_strict(video_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="A valid YouTube video ID is required.") from exc
+
+    try:
+        from aytube import get_stream_url
+    except ImportError as exc:
+        logger.error("AyTube is not installed in this backend environment")
+        raise HTTPException(status_code=503, detail="AyTube provider is not installed.") from exc
+
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                get_stream_url,
+                f"https://www.youtube.com/watch?v={vid}",
+                audio_only=True,
+                quality="high",
+                timeout=25,
+            ),
+            timeout=30,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="AyTube audio resolution timed out.") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AyTube failed to resolve %s (%s): %s", vid, type(exc).__name__, str(exc)[:180])
+        raise HTTPException(status_code=502, detail="AyTube could not resolve an audio stream.") from exc
+
+    stream_url = str(getattr(result, "url", "") or "")
+    if not stream_url.startswith("https://"):
+        raise HTTPException(status_code=502, detail="AyTube returned an invalid audio stream URL.")
+
+    return {
+        "success": True,
+        "provider": "aytube",
+        "videoId": vid,
+        "data": {
+            "url": stream_url,
+            "title": str(getattr(result, "title", "") or ""),
+            "quality": str(getattr(result, "quality", "") or ""),
+            "container": str(getattr(result, "container", "") or ""),
+            "audioCodec": str(getattr(result, "audio_codec", "") or ""),
+            "mimeType": str(getattr(result, "mime_type", "") or ""),
+            "size": int(getattr(result, "size", 0) or 0),
+            "itag": str(getattr(result, "itag", "") or ""),
+        },
+    }
