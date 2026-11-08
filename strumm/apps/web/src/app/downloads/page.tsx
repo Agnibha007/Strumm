@@ -9,7 +9,6 @@ import {
   Download,
   HardDrive,
   ListMusic,
-  Music,
   Play,
   Radio,
   RefreshCw,
@@ -27,9 +26,7 @@ import {
   formatDownloadSize,
   listAllDownloads,
   removePodcastDownload,
-  removeSongDownload,
   preparePodcastDownloadPlayback,
-  prepareSongDownloadPlayback,
   type PodcastDownloadRecord,
 } from "web/lib/podcast-downloads";
 
@@ -48,7 +45,6 @@ type DownloadGroup = {
 
 function collectionFor(record: PodcastDownloadRecord) {
   const type = record.collectionType || "podcast";
-  if (type === "song") return { type, name: "Songs", id: "songs", key: "song:songs" };
   const name = record.collectionName || record.showTitle || "Podcasts";
   const id = record.collectionId || record.episodeId;
   return { type, name, id, key: type + ":" + id + ":" + name };
@@ -70,7 +66,9 @@ export default function DownloadsPage() {
     setError(null);
     try {
       const records = await listAllDownloads();
-      setDownloads(records);
+      // Keep the offline library podcast-only. Older song downloads remain in
+      // IndexedDB but are no longer surfaced as downloadable library items.
+      setDownloads(records.filter((record) => record.collectionType !== "song"));
       if (typeof navigator !== "undefined" && navigator.storage?.estimate) {
         const estimate = await navigator.storage.estimate().catch(() => null);
         if (estimate) setStorageEstimate(estimate);
@@ -136,21 +134,16 @@ export default function DownloadsPage() {
   }, [filteredDownloads]);
 
   const handlePlay = (record: PodcastDownloadRecord) => {
-    const isSong = record.collectionType === "song";
-    const sourceId = isSong ? record.videoId || record.episodeId : record.id;
-    const playbackUrl = isSong
-      ? prepareSongDownloadPlayback(sourceId, record.blob)
-      : preparePodcastDownloadPlayback(record.id, record.blob);
+    const playbackUrl = preparePodcastDownloadPlayback(record.id, record.blob);
     const song: Song = {
-      videoId: isSong ? sourceId : record.id,
+      videoId: record.id,
       title: record.title,
-      artist: record.showTitle || (isSong ? "Unknown Artist" : "Podcast"),
+      artist: record.showTitle || "Podcast",
       thumbnail: record.thumbnail,
       duration: record.duration,
       metadata: {
-        album: isSong ? "Songs" : record.showTitle || "Podcasts",
+        album: record.showTitle || "Podcasts",
         audioUrl: record.audioUrl,
-        offlineDownload: isSong || undefined,
         mediaType: "audio",
       },
     };
@@ -158,9 +151,7 @@ export default function DownloadsPage() {
     setPlayerError(null);
     playSong(song, [song]);
     void playHostAudioUrl(playbackUrl).catch(() => {
-      setPlayerError(isSong
-        ? "Unable to start this downloaded song. Tap Play in the player to retry."
-        : "Unable to start this downloaded episode. Tap Play in the player to retry.");
+      setPlayerError("Unable to start this downloaded episode. Tap Play in the player to retry.");
     });
   };
 
@@ -168,11 +159,7 @@ export default function DownloadsPage() {
     setRemovingId(record.id);
     setError(null);
     try {
-      if (record.collectionType === "song") {
-        await removeSongDownload(record.videoId || record.episodeId);
-      } else {
-        await removePodcastDownload(record.id);
-      }
+      await removePodcastDownload(record.id);
       setDownloads((current) => current.filter((item) => item.id !== record.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to remove this download.");
@@ -213,26 +200,8 @@ export default function DownloadsPage() {
     }
   };
 
-  const handleSongDirectDownload = (record: PodcastDownloadRecord) => {
-    // Download the MP3 straight to the device without leaving the PWA.
-    // The blob is served as an attachment so the browser treats it as a
-    // download rather than attempting playback.
-    const url = URL.createObjectURL(record.blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    const base = (record.title || record.showTitle || "strumm").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "track";
-    const ext = (record.mimeType || "audio/mpeg").split(";")[0].split("/")[1]?.toLowerCase() || "mp3";
-    const allowedExts = ["mp3", "m4a", "mp4", "webm", "ogg", "opus", "aac", "wav", "flac"];
-    const safeExt = allowedExts.includes(ext) ? ext : "mp3";
-    anchor.download = `${base}-${record.videoId || record.id}.${safeExt}`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
 
   const totalSize = downloads.reduce((total, record) => total + record.size, 0);
-  const songCount = downloads.filter((record) => record.collectionType === "song").length;
   const podcastCount = downloads.filter((record) => (record.collectionType || "podcast") === "podcast").length;
   const playlistCount = downloads.filter((record) => record.collectionType === "playlist").length;
 
@@ -252,7 +221,7 @@ export default function DownloadsPage() {
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">Your device library</p>
             <h1 className="font-editorial text-4xl font-bold tracking-tight text-text md:text-5xl">Downloads</h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-              Songs and podcast episodes saved for offline listening stay on this browser and device.
+              Podcast episodes saved for offline listening stay on this browser and device.
             </p>
           </div>
         </div>
@@ -271,7 +240,7 @@ export default function DownloadsPage() {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Download size</p>
           <p className="mt-2 text-2xl font-bold text-text">{formatDownloadSize(totalSize)}</p>
           <p className="mt-1 text-[10px] text-muted">
-            {songCount} song{songCount === 1 ? "" : "s"} · {podcastCount} podcast episode{podcastCount === 1 ? "" : "s"}{playlistCount ? " · " + playlistCount + " playlist item" + (playlistCount === 1 ? "" : "s") : ""}
+            {podcastCount} podcast episode{podcastCount === 1 ? "" : "s"}{playlistCount ? " · " + playlistCount + " playlist item" + (playlistCount === 1 ? "" : "s") : ""}
           </p>
         </div>
         <div className="rounded-xl border border-border/60 bg-surface/40 p-4">
@@ -316,7 +285,7 @@ export default function DownloadsPage() {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search downloaded songs, episodes, podcasts, or playlists"
+            placeholder="Search downloaded podcasts or episodes"
             aria-label="Search downloads"
             className="w-full rounded-xl border border-border/60 bg-surface/40 py-3 pl-10 pr-4 text-sm text-text outline-none transition placeholder:text-muted focus:border-primary/60"
           />
@@ -332,7 +301,7 @@ export default function DownloadsPage() {
           </div>
           <h2 className="font-editorial text-2xl font-bold text-text">Nothing saved yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-            Download podcast episodes or tracks you own or have permission to download, then keep them ready for offline listening.
+            Download podcast episodes and keep them ready for offline listening.
           </p>
           <Link href="/podcasts" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-primary-hover">
             <Radio className="h-4 w-4" />
@@ -343,7 +312,7 @@ export default function DownloadsPage() {
         <div className="rounded-2xl border border-dashed border-border/70 bg-surface/20 px-6 py-12 text-center">
           <Search className="mx-auto mb-3 h-6 w-6 text-muted" />
           <h2 className="font-editorial text-xl font-bold text-text">No matching downloads</h2>
-          <p className="mt-2 text-sm text-muted">Try a different song, podcast, playlist, or episode title.</p>
+          <p className="mt-2 text-sm text-muted">Try a different podcast or episode title.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -364,17 +333,17 @@ export default function DownloadsPage() {
                       <SafePodcastImage src={group.thumbnail} alt={group.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
-                        {group.type === "song" ? <Music className="h-6 w-6 text-muted" /> : group.type === "playlist" ? <ListMusic className="h-6 w-6 text-muted" /> : <Radio className="h-6 w-6 text-muted" />}
+                        {group.type === "playlist" ? <ListMusic className="h-6 w-6 text-muted" /> : <Radio className="h-6 w-6 text-muted" />}
                       </div>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
-                      {group.type === "song" ? "Songs" : group.type === "playlist" ? "Downloaded from playlist" : "Podcast"}
+                      {group.type === "playlist" ? "Podcast from playlist" : "Podcast"}
                     </span>
                     <h2 className="truncate font-editorial text-lg font-bold text-text sm:text-xl">{group.name}</h2>
                     <p className="mt-1 text-xs text-muted">
-                      {group.records.length} {group.type === "song" ? "track" : "episode"}{group.records.length === 1 ? "" : "s"} · {formatDownloadSize(groupSize)}
+                      {group.records.length} episode{group.records.length === 1 ? "" : "s"} · {formatDownloadSize(groupSize)}
                     </p>
                   </div>
                 </button>
@@ -418,7 +387,7 @@ export default function DownloadsPage() {
                             <Play className="h-3.5 w-3.5 fill-current" />
                             Play
                           </button>
-                          {record.collectionType === "playlist" ? (
+                          {record.collectionType === "playlist" && (
                             <button
                               type="button"
                               onClick={() => handlePlaylistExport(record)}
@@ -427,16 +396,6 @@ export default function DownloadsPage() {
                             >
                               <ListMusic className="h-3.5 w-3.5" />
                               Export CSV
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSongDirectDownload(record)}
-                              className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text"
-                              aria-label={"Download MP3 for " + record.title}
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              Save MP3
                             </button>
                           )}
                           <button
