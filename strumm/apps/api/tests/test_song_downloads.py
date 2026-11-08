@@ -225,3 +225,64 @@ async def test_ytdl_go_download_uses_isolated_provider_route(client, monkeypatch
     assert response.headers["x-download-provider"] == "ytdl-go"
     assert response.content == b"ID3-go-mp3"
     assert started == [("6rOCiszTz-I", "ytdl-go")]
+
+
+@pytest.mark.asyncio
+async def test_cobalt_download_streams_audio_from_internal_tunnel(client, monkeypatch):
+    started = []
+
+    class FakeMediaResponse:
+        is_error = False
+
+        async def aiter_bytes(self, chunk_size):
+            yield b"ID3-cobalt-mp3"
+
+        async def aclose(self):
+            started.append("media-closed")
+
+    class FakeClient:
+        async def aclose(self):
+            started.append("client-closed")
+
+    async def open_audio(video_id):
+        started.append(video_id)
+        return FakeClient(), FakeMediaResponse()
+
+    monkeypatch.setattr(song_downloads, "_open_cobalt_audio", open_audio)
+
+    async with client:
+        response = await client.get(
+            "/downloads/song/cobalt",
+            params={
+                "videoId": "6rOCiszTz-I",
+                "title": "Cobalt test",
+                "rightsConfirmed": "true",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/mpeg")
+    assert response.headers["x-download-provider"] == "cobalt"
+    assert "Cobalt-test.mp3" in response.headers["content-disposition"]
+    assert response.content == b"ID3-cobalt-mp3"
+    assert started == ["6rOCiszTz-I", "media-closed", "client-closed"]
+
+
+@pytest.mark.asyncio
+async def test_cobalt_download_requires_rights_confirmation(client, monkeypatch):
+    called = []
+
+    async def open_audio(video_id):
+        called.append(video_id)
+        raise AssertionError("Cobalt must not be called without rights confirmation")
+
+    monkeypatch.setattr(song_downloads, "_open_cobalt_audio", open_audio)
+
+    async with client:
+        response = await client.get(
+            "/downloads/song/cobalt",
+            params={"videoId": "6rOCiszTz-I", "rightsConfirmed": "false"},
+        )
+
+    assert response.status_code == 400
+    assert called == []
