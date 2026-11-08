@@ -79,16 +79,20 @@ afterEach(() => {
 });
 
 describe("SongDownloadAction", () => {
-  it("streams an MP3 from yt-dlp on demand and saves it to the browser library", async () => {
+  it("streams an MP3 from the dedicated downloader and saves it to the browser library", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
-    authFetchMock.mockResolvedValue(okResponse());
+    authFetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ downloadUrl: "https://strumm-downloader.onrender.com/downloads/song", token: "signed-token" }),
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse()));
 
     render(<SongDownloadAction song={baseSong} compact />);
     fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
 
     await waitFor(() => expect(authFetchMock).toHaveBeenCalledWith(
-      "/proxy/downloads/song",
+      "/proxy/downloads/song/authorize",
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -101,24 +105,27 @@ describe("SongDownloadAction", () => {
       videoId: "abcdefghijk",
       title: "Test Song",
       artist: "Test Artist",
-      audioUrl: "/proxy/downloads/song",
+      audioUrl: "https://strumm-downloader.onrender.com/downloads/song",
       mimeType: "audio/mpeg",
-      sourceProvider: "yt-dlp",
+      sourceProvider: "cobalt",
       sourceUrl: "https://www.youtube.com/watch?v=abcdefghijk",
       blob: expect.any(Blob),
     }));
     await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
   });
 
-  it("uses the yt-dlp endpoint instead of a song's existing direct download URL", async () => {
+  it("uses the dedicated downloader instead of a song's existing direct download URL", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
-    authFetchMock.mockResolvedValue(okResponse());
+    authFetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ downloadUrl: "https://strumm-downloader.onrender.com/downloads/song", token: "signed-token" }),
+    });
     const song = {
       ...baseSong,
       metadata: { downloadUrl: "https://assets.strumm.me/audio/test.mp3" },
     };
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(okResponse());
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SongDownloadAction song={song} compact />);
@@ -126,27 +133,34 @@ describe("SongDownloadAction", () => {
 
     await waitFor(() => expect(store.saveSongDownload).toHaveBeenCalledOnce());
     expect(authFetchMock).toHaveBeenCalledWith(
-      "/proxy/downloads/song",
+      "/proxy/downloads/song/authorize",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ videoId: "abcdefghijk", title: "Test Song", artist: "Test Artist", duration: 172, rightsConfirmed: true }),
       }),
     );
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://strumm-downloader.onrender.com/downloads/song",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer signed-token" },
+      }),
+    );
   });
 
-  it("explains when yt-dlp cannot resolve an audio stream", async () => {
+  it("explains when the downloader cannot resolve an audio stream", async () => {
     store.getSongDownload.mockResolvedValue(null);
     authFetchMock.mockResolvedValue({
       ok: false,
       status: 502,
-      json: async () => ({ detail: "yt-dlp could not resolve an audio stream for this track." }),
+      json: async () => ({ detail: "Cobalt could not resolve an audio stream for this track." }),
     });
 
     render(<SongDownloadAction song={baseSong} compact />);
     fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("yt-dlp could not resolve"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Cobalt could not resolve"));
     expect(store.saveSongDownload).not.toHaveBeenCalled();
   });
 
@@ -157,7 +171,7 @@ describe("SongDownloadAction", () => {
       artist: "Test Artist",
       thumbnail: baseSong.thumbnail,
       duration: baseSong.duration,
-      audioUrl: "/proxy/downloads/song",
+      audioUrl: "https://strumm-downloader.onrender.com/downloads/song",
       mimeType: "audio/mpeg",
       blob: new Blob(["audio bytes"], { type: "audio/mpeg" }),
     }));
@@ -174,7 +188,11 @@ describe("SongDownloadAction", () => {
   it("resets the transient Saved button after playback advances but keeps the offline record", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
-    authFetchMock.mockResolvedValue(okResponse());
+    authFetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ downloadUrl: "https://strumm-downloader.onrender.com/downloads/song", token: "signed-token" }),
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse()));
     act(() => usePlayerStore.setState({ currentSong: baseSong }));
 
     const { rerender } = render(<SongDownloadAction song={baseSong} compact />);

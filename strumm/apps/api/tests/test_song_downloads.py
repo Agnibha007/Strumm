@@ -196,126 +196,65 @@ async def test_process_stderr_capture_is_bounded_and_sanitized():
 
 
 @pytest.mark.asyncio
-async def test_ytdl_go_download_uses_isolated_provider_route(client, monkeypatch):
-    started = []
+async def test_song_download_authorization_returns_short_lived_video_bound_token(client, monkeypatch):
+    import jwt
 
-    async def stream_mp3(video_id, provider="yt-dlp"):
-        started.append((video_id, provider))
-
-        async def chunks():
-            yield b"ID3-go-mp3"
-
-        return chunks()
-
-    monkeypatch.setattr(song_downloads.os.path, "isfile", lambda path: True)
-    monkeypatch.setattr(song_downloads, "_start_ytdlp_mp3_stream", stream_mp3)
+    secret = "test-downloader-secret-that-is-at-least-32-bytes"
+    monkeypatch.setenv("DOWNLOADER_API_URL", "https://strumm-downloader.onrender.com")
+    monkeypatch.setenv("DOWNLOADER_TOKEN_SECRET", secret)
 
     async with client:
-        response = await client.get(
-            "/downloads/song/ytdl-go",
-            params={
+        response = await client.post(
+            "/downloads/song/authorize",
+            json={
                 "videoId": "6rOCiszTz-I",
-                "title": "Go resolver test",
-                "rightsConfirmed": "true",
+                "title": "Test Track",
+                "artist": "Test Artist",
+                "duration": 180,
+                "rightsConfirmed": True,
             },
         )
 
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("audio/mpeg")
-    assert response.headers["x-download-provider"] == "ytdl-go"
-    assert response.content == b"ID3-go-mp3"
-    assert started == [("6rOCiszTz-I", "ytdl-go")]
+    data = response.json()
+    assert data["downloadUrl"] == "https://strumm-downloader.onrender.com/downloads/song"
+    assert data["expiresIn"] == 180
+    claims = jwt.decode(
+        data["token"],
+        secret,
+        algorithms=["HS256"],
+        issuer="strumm-download-authorizer",
+        audience="strumm-downloader",
+    )
+    assert claims["videoId"] == "6rOCiszTz-I"
+    assert claims["rightsConfirmed"] is True
+    assert claims["sub"] == TEST_USER["id"]
+    assert claims["title"] == "Test Track"
 
 
 @pytest.mark.asyncio
-async def test_cobalt_download_streams_audio_without_authentication(client, monkeypatch):
-    started = []
-
-    class FakeMediaResponse:
-        is_error = False
-
-        async def aiter_bytes(self, chunk_size):
-            yield b"ID3-cobalt-mp3"
-
-        async def aclose(self):
-            started.append("media-closed")
-
-    class FakeClient:
-        async def aclose(self):
-            started.append("client-closed")
-
-    async def open_audio(video_id):
-        started.append(video_id)
-        return FakeClient(), FakeMediaResponse()
-
-    monkeypatch.setattr(song_downloads, "_open_cobalt_audio", open_audio)
+async def test_song_download_authorization_requires_rights_confirmation(client, monkeypatch):
+    monkeypatch.setenv("DOWNLOADER_API_URL", "https://strumm-downloader.onrender.com")
+    monkeypatch.setenv("DOWNLOADER_TOKEN_SECRET", "test-downloader-secret-that-is-at-least-32-bytes")
 
     async with client:
-        app.dependency_overrides.pop(get_current_user, None)
-        response = await client.get(
-            "/downloads/song/cobalt",
-            params={
-                "videoId": "6rOCiszTz-I",
-                "title": "Cobalt test",
-                "rightsConfirmed": "true",
-            },
-        )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("audio/mpeg")
-    assert response.headers["x-download-provider"] == "cobalt"
-    assert "Cobalt-test.mp3" in response.headers["content-disposition"]
-    assert response.content == b"ID3-cobalt-mp3"
-    assert started == ["6rOCiszTz-I", "media-closed", "client-closed"]
-
-
-@pytest.mark.asyncio
-async def test_cobalt_download_requires_rights_confirmation(client, monkeypatch):
-    called = []
-
-    async def open_audio(video_id):
-        called.append(video_id)
-        raise AssertionError("Cobalt must not be called without rights confirmation")
-
-    monkeypatch.setattr(song_downloads, "_open_cobalt_audio", open_audio)
-
-    async with client:
-        response = await client.get(
-            "/downloads/song/cobalt",
-            params={"videoId": "6rOCiszTz-I", "rightsConfirmed": "false"},
+        response = await client.post(
+            "/downloads/song/authorize",
+            json={"videoId": "6rOCiszTz-I", "rightsConfirmed": False},
         )
 
     assert response.status_code == 400
-    assert called == []
 
 
 @pytest.mark.asyncio
-async def test_cobalt_upstream_error_exposes_only_status_and_error_code(monkeypatch):
-    class FakeResponse:
-        status_code = 400
-        is_error = True
+async def test_song_download_authorization_requires_downloader_configuration(client, monkeypatch):
+    monkeypatch.delenv("DOWNLOADER_API_URL", raising=False)
+    monkeypatch.setenv("DOWNLOADER_TOKEN_SECRET", "test-downloader-secret-that-is-at-least-32-bytes")
 
-        def json(self):
-            return {"error": {"code": "youtube_video_unavailable", "context": {"url": "https://private.example/token"}}}
+    async with client:
+        response = await client.post(
+            "/downloads/song/authorize",
+            json={"videoId": "6rOCiszTz-I", "rightsConfirmed": True},
+        )
 
-    class FakeClient:
-        def __init__(self, **kwargs):
-            pass
-
-        async def post(self, *args, **kwargs):
-            return FakeResponse()
-
-        async def aclose(self):
-            pass
-
-    monkeypatch.setattr(song_downloads.httpx, "AsyncClient", FakeClient)
-
-    with pytest.raises(Exception) as exc_info:
-        await song_downloads._open_cobalt_audio("6rOCiszTz-I")
-
-    assert getattr(exc_info.value, "status_code", None) == 502
-    detail = exc_info.value.detail
-    assert "HTTP 400" in detail
-    assert "youtube_video_unavailable" in detail
-    assert "private.example" not in detail
-    assert "token" not in detail
+    assert response.status_code == 503

@@ -21,7 +21,7 @@ interface SongDownloadActionProps {
 }
 
 export default function SongDownloadAction({ song, compact = false }: SongDownloadActionProps) {
-  const downloadUrl = apiUrl("/downloads/song");
+  const authorizeUrl = apiUrl("/downloads/song/authorize");
   const canDownload = !song.videoId.startsWith("podcast-") && /^[A-Za-z0-9_-]{11}$/.test(song.videoId);
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -74,7 +74,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
       const storage = typeof navigator !== "undefined" && navigator.storage?.estimate
         ? await navigator.storage.estimate().catch(() => null)
         : null;
-      const response = await authFetch(downloadUrl, {
+      const authorizationResponse = await authFetch(authorizeUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -87,19 +87,38 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         signal: controller.signal,
       });
 
+      if (!authorizationResponse.ok) {
+        const parsed = await authorizationResponse.json().catch(() => null);
+        throw new Error(parsed?.detail || parsed?.error || "Unable to authorize this download.");
+      }
+
+      const authorization = await authorizationResponse.json();
+      if (
+        typeof authorization?.downloadUrl !== "string" ||
+        typeof authorization?.token !== "string" ||
+        !/^https:\/\//.test(authorization.downloadUrl)
+      ) {
+        throw new Error("The download service returned an invalid authorization response.");
+      }
+
+      const response = await fetch(authorization.downloadUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + authorization.token,
+        },
+        body: JSON.stringify({ videoId: song.videoId, title: song.title }),
+        signal: controller.signal,
+      });
+
       if (!response.ok) {
-        let message = response.status === 404
-          ? "yt-dlp could not find an audio stream for this track."
-          : "Unable to download this track.";
         const parsed = await response.json().catch(() => null);
-        if (parsed?.detail) message = parsed.detail;
-        else if (parsed?.error) message = parsed.error;
-        throw new Error(message);
+        throw new Error(parsed?.detail || parsed?.error || "Unable to download this track.");
       }
 
       const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
       if (mimeType !== "audio/mpeg" && mimeType !== "audio/mp3") {
-        throw new Error("The yt-dlp and FFmpeg pipeline did not return an MP3 file.");
+        throw new Error("The downloader service did not return an MP3 file.");
       }
 
       const rawLength = response.headers.get("content-length");
@@ -158,10 +177,10 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
         artist: song.artist,
         thumbnail: song.thumbnail,
         duration: song.duration,
-        audioUrl: downloadUrl,
+        audioUrl: authorization.downloadUrl,
         mimeType,
         blob,
-        sourceProvider: "yt-dlp",
+        sourceProvider: "cobalt",
         sourceUrl: `https://www.youtube.com/watch?v=${song.videoId}`,
       });
       setSaved(record);

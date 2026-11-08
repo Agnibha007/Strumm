@@ -1,13 +1,15 @@
 import asyncio
+import jwt
 import logging
 import os
 import re
 import shutil
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -398,145 +400,50 @@ async def _download_song_with_provider(
     )
 
 
+@router.post("/song/authorize")
+async def authorize_song_download(
+    payload: SongDownloadRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    video_id = payload.video_id.strip()
+    if not YOUTUBE_ID_PATTERN.fullmatch(video_id):
+        raise HTTPException(status_code=400, detail="A valid YouTube video ID is required.")
+    if not payload.rights_confirmed:
+        raise HTTPException(status_code=400, detail="Confirm that you own this track or have permission to download it.")
+
+    downloader_url = os.getenv("DOWNLOADER_API_URL", "").strip().rstrip("/")
+    signing_secret = os.getenv("DOWNLOADER_TOKEN_SECRET", "")
+    if not downloader_url.startswith("https://") or len(downloader_url) > 300:
+        raise HTTPException(status_code=503, detail="The dedicated download service is not configured.")
+    if len(signing_secret) < 32:
+        logger.error("DOWNLOADER_TOKEN_SECRET is missing or too short")
+        raise HTTPException(status_code=503, detail="The dedicated download service is not configured.")
+
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {
+            "sub": str(current_user.get("id", "unknown")),
+            "videoId": video_id,
+            "title": payload.title,
+            "rightsConfirmed": True,
+            "iat": now,
+            "exp": now + timedelta(minutes=3),
+            "iss": "strumm-download-authorizer",
+            "aud": "strumm-downloader",
+        },
+        signing_secret,
+        algorithm="HS256",
+    )
+    return {
+        "downloadUrl": downloader_url + "/downloads/song",
+        "token": token,
+        "expiresIn": 180,
+    }
+
+
 @router.post("/song")
 async def download_song(
     payload: SongDownloadRequest,
     current_user: dict = Depends(get_current_user),
 ):
     return await _download_song_with_provider(payload, current_user, "yt-dlp")
-
-
-@router.get("/song/ytdl-go")
-async def download_song_ytdl_go(
-    video_id: str = Query(..., alias="videoId", min_length=11, max_length=11),
-    title: str = Query("", max_length=200),
-    artist: str = Query("", max_length=120),
-    duration: float = Query(0, ge=0, le=86400),
-    rights_confirmed: bool = Query(False, alias="rightsConfirmed"),
-):
-    payload = SongDownloadRequest(
-        videoId=video_id,
-        title=title,
-        artist=artist,
-        duration=duration,
-        rightsConfirmed=rights_confirmed,
-    )
-    return await _download_song_with_provider(payload, {"id": "unauthenticated-test"}, "ytdl-go")
-
-
-async def _open_cobalt_audio(video_id: str):
-    cobalt_base_url = os.getenv("COBALT_API_URL", "http://127.0.0.1:9000").rstrip("/")
-    timeout = httpx.Timeout(connect=10.0, read=120.0, write=20.0, pool=10.0)
-    client = httpx.AsyncClient(timeout=timeout, follow_redirects=False)
-    try:
-        response = await client.post(
-            cobalt_base_url + "/",
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
-            json={
-                "url": "https://www.youtube.com/watch?v=" + video_id,
-                "downloadMode": "audio",
-                "audioFormat": "mp3",
-                "audioBitrate": "256",
-                "filenameStyle": "basic",
-            },
-        )
-        if response.is_error:
-            error_code = "unknown"
-            try:
-                error_payload = response.json()
-                if isinstance(error_payload, dict):
-                    error = error_payload.get("error")
-                    if isinstance(error, dict):
-                        candidate = error.get("code")
-                    else:
-                        candidate = error_payload.get("code")
-                    if isinstance(candidate, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,100}", candidate):
-                        error_code = candidate
-            except ValueError:
-                pass
-            logger.warning(
-                "Cobalt rejected request for %s (http_status=%s, error_code=%s)",
-                video_id,
-                response.status_code,
-                error_code,
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=f"Cobalt rejected this track (upstream HTTP {response.status_code}; error code: {error_code}).",
-            )
-        result = response.json()
-        if result.get("status") != "tunnel" or not isinstance(result.get("url"), str):
-            error_code = result.get("error", {}).get("code", "unknown") if isinstance(result.get("error"), dict) else "unknown"
-            logger.warning("Cobalt did not return an audio tunnel for %s (status=%s, error=%s)", video_id, result.get("status"), error_code)
-            raise HTTPException(status_code=502, detail="Cobalt could not resolve an audio stream for this track.")
-
-        from urllib.parse import urlparse
-        tunnel_url = result["url"]
-        parsed = urlparse(tunnel_url)
-        if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.port != 9000:
-            logger.error("Cobalt returned an unexpected tunnel origin for %s", video_id)
-            raise HTTPException(status_code=502, detail="Cobalt returned an invalid audio stream.")
-
-        media_response = await client.send(client.build_request("GET", tunnel_url), stream=True)
-        if media_response.is_error:
-            await media_response.aclose()
-            logger.warning("Cobalt tunnel returned HTTP %s for %s", media_response.status_code, video_id)
-            raise HTTPException(status_code=502, detail="Cobalt audio streaming failed.")
-        return client, media_response
-    except HTTPException:
-        await client.aclose()
-        raise
-    except (httpx.HTTPError, ValueError, TypeError) as exc:
-        await client.aclose()
-        logger.warning("Cobalt request failed for %s (%s)", video_id, type(exc).__name__)
-        raise HTTPException(status_code=502, detail="Cobalt is currently unable to process this track.") from exc
-    except Exception:
-        await client.aclose()
-        raise
-
-
-@router.get("/song/cobalt")
-async def download_song_cobalt(
-    video_id: str = Query(..., alias="videoId", min_length=11, max_length=11),
-    title: str = Query("", max_length=200),
-    rights_confirmed: bool = Query(False, alias="rightsConfirmed"),
-):
-    if not YOUTUBE_ID_PATTERN.fullmatch(video_id):
-        raise HTTPException(status_code=400, detail="A valid YouTube video ID is required.")
-    if not rights_confirmed:
-        raise HTTPException(status_code=400, detail="Confirm that you own this track or have permission to download it.")
-    if _download_semaphore.locked():
-        raise HTTPException(status_code=503, detail="Downloads are busy. Try again shortly.")
-    await _download_semaphore.acquire()
-    try:
-        client, media_response = await _open_cobalt_audio(video_id)
-    except Exception:
-        _download_semaphore.release()
-        raise
-
-    filename = _safe_filename(title, video_id)
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-        "Pragma": "no-cache",
-        "X-Content-Type-Options": "nosniff",
-        "X-Accel-Buffering": "no",
-        "X-Download-Provider": "cobalt",
-        "X-Download-Source-Url": "https://www.youtube.com/watch?v=" + video_id,
-    }
-
-    async def response_stream():
-        total = 0
-        try:
-            async for chunk in media_response.aiter_bytes(STREAM_CHUNK_SIZE):
-                total += len(chunk)
-                if total > MAX_DOWNLOAD_BYTES:
-                    raise RuntimeError("The Cobalt audio stream exceeded the download size limit.")
-                yield chunk
-        finally:
-            await media_response.aclose()
-            await client.aclose()
-            _download_semaphore.release()
-
-    logger.warning("Starting unauthenticated experimental Cobalt MP3 stream for video %s", video_id)
-    return StreamingResponse(response_stream(), media_type="audio/mpeg", headers=headers)
