@@ -711,6 +711,7 @@ async def proxy_aytube_audio(video_id: str):
                 f"https://www.youtube.com/watch?v={vid}",
                 audio_only=True,
                 quality="high",
+                verify=False,
                 timeout=25,
             ),
             timeout=30,

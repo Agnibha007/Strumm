@@ -31,6 +31,7 @@ async def test_aytube_endpoint_returns_audio_metadata():
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         audio_only=True,
         quality="high",
+        verify=False,
         timeout=25,
     )
 
