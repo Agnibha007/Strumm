@@ -15,8 +15,8 @@ describe("CSP connect-src", () => {
     expect(directive).toContain("https://www.youtube.com");
     expect(directive).toContain("https://i.ytimg.com");
     expect(directive).toContain("https://*.sentry.io");
-    expect(directive).toContain("http://localhost:8000");
-    expect(directive).toContain("ws://localhost:8000");
+    expect(directive).toContain("https://agnibha07-strumm.hf.space");
+    expect(directive).toContain("wss://agnibha07-strumm.hf.space");
   });
 
   it("uses a per-request nonce and keeps script-src strict", () => {
