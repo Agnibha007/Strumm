@@ -16,6 +16,7 @@ describe("CSP connect-src", () => {
     expect(directive).toContain("https://i.ytimg.com");
     expect(directive).toContain("https://*.sentry.io");
     expect(directive).toContain("https://agnibha07-strumm.hf.space");
+    expect(directive).toContain("https://strumm-downloader.onrender.com");
     expect(directive).toContain("wss://agnibha07-strumm.hf.space");
   });
 
