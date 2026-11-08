@@ -187,6 +187,10 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
         Back to Portal
       </button>
 
+      <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-muted" role="note">
+        <span className="font-semibold text-text">Podcast downloads only.</span> You can download podcast episodes for offline listening; songs are not downloadable.
+      </div>
+
       {/* Podcast Hero Section */}
       <div className="flex flex-col md:flex-row items-center md:items-end gap-8 pb-4">
         {/* Cover image */}

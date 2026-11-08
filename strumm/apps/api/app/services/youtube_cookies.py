@@ -23,8 +23,6 @@ logger = logging.getLogger("strumm-youtube-cookies")
 
 YTDLP_COOKIES_FILE_ENV = "YTDLP_COOKIES_FILE"
 YTDLP_COOKIES_JSON_B64_ENV = "YTDLP_COOKIES_JSON_B64"
-YTDLP_COOKIES_SECRET_ID_ENV = "YTDLP_COOKIES_SECRET_ID"
-DEFAULT_YTDLP_COOKIES_SECRET_ID = "strumm/prod/youtube-cookies"
 
 
 def _youtube_cookie_rows(payload: Any) -> list[str]:
@@ -123,19 +121,7 @@ def get_ytdlp_cookiefile() -> str | None:
 
     encoded = (os.getenv(YTDLP_COOKIES_JSON_B64_ENV) or "").strip()
     if not encoded:
-        secret_id = (os.getenv(YTDLP_COOKIES_SECRET_ID_ENV) or DEFAULT_YTDLP_COOKIES_SECRET_ID).strip()
-        region = (os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-southeast-2").strip()
-        try:
-            import boto3
-
-            response = boto3.client("secretsmanager", region_name=region).get_secret_value(SecretId=secret_id)
-            encoded = str(response.get("SecretString") or "").strip()
-        except Exception:
-            logger.warning("Unable to load YouTube cookies from AWS Secrets Manager.")
-            return None
-        if not encoded:
-            logger.warning("AWS Secrets Manager returned an empty YouTube cookie secret.")
-            return None
+        return None
 
     try:
         compact = "".join(encoded.split())

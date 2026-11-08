@@ -10,7 +10,6 @@ import { authFetch } from "web/lib/auth-client";
 import { apiUrl, cleanText } from "web/lib/api";
 import { searchYouTube, getPlaylistItems } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
-import SongDownloadAction from "web/components/SongDownloadAction";
 import { ARTWORK_QUALITY_MEDIUM } from "web/lib/media";
 import SafePodcastImage from "web/components/SafePodcastImage";
 import JsonLdList from "web/components/JsonLdList";
@@ -691,7 +690,6 @@ export default function SearchPage() {
                         >
                           <FolderPlus className="w-4 h-4" />
                         </button>
-                        <SongDownloadAction song={song} compact />
                       </div>
                     </motion.div>
                     );

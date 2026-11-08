@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Music } from "lucide-react";
 import { Song } from "@strumm/types";
 import { getArtworkCandidates, ARTWORK_QUALITY_MEDIUM, ARTWORK_QUALITY_DATA_SAVER } from "web/lib/media";
-import { loadImage, preloadImage, type ImagePriority } from "web/lib/image-loader";
+import { loadImage, type ImagePriority } from "web/lib/image-loader";
 
 /**
  * Maximum time (ms) to show the skeleton before forcing the fallback icon.
@@ -89,11 +89,9 @@ export default function SongArtwork({
     setErrored(false);
     setSrc(undefined);
 
-    // Prime every candidate up-front (same URL deduped across the grid, bounded
-    // concurrency) so a fallback is already cached if the first candidate fails.
-    candidates.forEach((url, i) => {
-      preloadImage(url, i === 0 ? basePriority : 3);
-    });
+    // Resolve candidates strictly one at a time. Eagerly preloading every
+    // fallback for every playlist tile floods the shared queue and can leave
+    // the grid showing fallback artwork before the primary URLs get a turn.
 
     const resolveFrom = (start: number): void => {
       if (cancelled) return;

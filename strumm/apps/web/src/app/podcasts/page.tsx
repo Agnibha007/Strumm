@@ -122,6 +122,11 @@ export default function PodcastHomePage() {
         </div>
       </div>
 
+      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-muted" role="note">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <p><span className="font-semibold text-text">Podcast downloads only.</span> Offline downloads are available for podcast episodes; song downloads are not supported.</p>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left: Import module and Followed Shows */}
         <div className="lg:col-span-8 space-y-8">

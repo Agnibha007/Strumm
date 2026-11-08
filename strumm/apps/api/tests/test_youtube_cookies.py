@@ -155,28 +155,3 @@ def test_invalid_base64_fails_closed_without_exposing_secret(monkeypatch, caplog
 
     assert youtube_cookies.get_ytdlp_cookiefile() is None
     assert "not-base64" not in caplog.text
-
-
-def test_cookie_secret_is_loaded_from_aws_secrets_manager(monkeypatch):
-    from types import SimpleNamespace
-    import sys
-
-    raw = json.dumps(_export()).encode()
-    encoded = base64.b64encode(raw).decode()
-    calls = {}
-
-    class FakeSecretsManager:
-        def get_secret_value(self, **kwargs):
-            calls.update(kwargs)
-            return {"SecretString": encoded}
-
-    monkeypatch.delenv(youtube_cookies.YTDLP_COOKIES_FILE_ENV, raising=False)
-    monkeypatch.delenv(youtube_cookies.YTDLP_COOKIES_JSON_B64_ENV, raising=False)
-    monkeypatch.setenv("AWS_REGION", "ap-southeast-2")
-    monkeypatch.setitem(sys.modules, "boto3", SimpleNamespace(client=lambda service, region_name: FakeSecretsManager()))
-
-    cookiefile = youtube_cookies.get_ytdlp_cookiefile()
-
-    assert cookiefile
-    assert calls == {"SecretId": "strumm/prod/youtube-cookies"}
-    assert "test-session-value" in open(cookiefile, encoding="utf-8").read()

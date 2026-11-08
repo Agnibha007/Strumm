@@ -15,7 +15,6 @@ import { useLikeSong } from "web/hooks/useLikeSong";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
-import SongDownloadAction from "web/components/SongDownloadAction";
 import SeekBar from "./player/SeekBar";
 
 const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"), {
@@ -461,7 +460,6 @@ export default function EditorialPlayer() {
             </button>
 
             <AddToPlaylistMenu song={currentSong} />
-            <SongDownloadAction song={currentSong} compact />
 
             {/* Sleep Timer Indicator */}
             {sleepTimerDuration && sleepTimerEndTime && (
