@@ -276,7 +276,13 @@ async def test_streams_metadata_only_is_a_truthful_success(monkeypatch):
             "tracks": [{"videoId": "bbb22222222", "title": "Next", "artists": [{"name": "A"}], "length": 180}]
         } if method == "get_watch_playlist" else None,
     )
-    _install_async_client(monkeypatch, lambda url: _resp(200, STREAM_OK))
+    piped_metadata_only = {
+        "title": "T",
+        "audioStreams": [],
+        "videoStreams": [],
+        "relatedStreams": [],
+    }
+    _install_async_client(monkeypatch, lambda url: _resp(200, piped_metadata_only))
 
     result = await youtube.proxy_streams("ccc33333333")
     assert result["success"] is True

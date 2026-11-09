@@ -199,6 +199,37 @@ async def test_proxy_streams_includes_direct_audio_and_related(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_proxy_streams_keeps_piped_audio_when_related_tracks_exist(monkeypatch):
+    """Related metadata must not suppress a valid Piped audio resolution."""
+    from app.routes import youtube
+
+    monkeypatch.setattr("app.routes.stream.get_direct_audio", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "app.services.ytmusic.call_ytmusic_safe",
+        lambda method, **k: {
+            "tracks": [{"videoId": "bbb22222222", "title": "Next", "artists": [{"name": "A"}], "length": 180}]
+        } if method == "get_watch_playlist" else None,
+    )
+
+    async def fake_piped(_vid):
+        return (
+            [{"url": "https://piped.example/audio.m4a", "mimeType": "audio/mp4", "bitrate": 128}],
+            [],
+            {"title": "Track", "duration": 200},
+            "https://piped.example",
+        )
+
+    monkeypatch.setattr(youtube, "_resolve_piped_streams", fake_piped)
+
+    result = await youtube.proxy_streams("dQw4w9WgXcQ")
+    data = result["data"]
+    assert result["success"] is True
+    assert data["streamStatus"] == "playable"
+    assert data["audioStreams"][0]["url"] == "https://piped.example/audio.m4a"
+    assert data["relatedStreams"][0]["url"].endswith("bbb22222222")
+
+
+@pytest.mark.asyncio
 async def test_proxy_streams_degrades_to_unavailable_when_all_providers_blocked(monkeypatch):
     """When direct-audio AND watch-playlist AND every Piped instance fail (e.g.
     host IP blocked by YouTube), the route must NOT return a fake success with

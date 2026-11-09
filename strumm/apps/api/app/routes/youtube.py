@@ -507,9 +507,9 @@ async def proxy_streams(video_id: str):
             _task_piped(),
         )
         piped_payload = piped.get("meta") or {}
-        if not direct and not related and piped.get("audio"):
+        if not direct and piped.get("audio"):
             payload["audioStreams"] = piped["audio"]
-        if not direct and not related and piped.get("video"):
+        if not direct and piped.get("video"):
             payload["videoStreams"] = piped["video"]
 
     budget_exceeded = False
