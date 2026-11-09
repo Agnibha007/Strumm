@@ -36,7 +36,7 @@ function browserResult() {
     blob: new Blob(["audio bytes"], { type: "audio/mp4" }),
     mimeType: "audio/mp4",
     audioUrl: "https://r1.googlevideo.com/videoplayback?id=abcdefghijk",
-    sourceProvider: "browser-wasm",
+    sourceProvider: "direct",
   };
 }
 
@@ -72,7 +72,7 @@ afterEach(() => {
 });
 
 describe("SongDownloadAction", () => {
-  it("extracts audio in the browser and saves it to the offline library", async () => {
+  it("streams audio into the browser and saves it to the offline library", async () => {
     store.getSongDownload.mockResolvedValue(null);
     store.saveSongDownload.mockImplementation(async (record) => savedRecord(record));
 
@@ -92,7 +92,7 @@ describe("SongDownloadAction", () => {
       artist: "Test Artist",
       audioUrl: "https://r1.googlevideo.com/videoplayback?id=abcdefghijk",
       mimeType: "audio/mp4",
-      sourceProvider: "browser-wasm",
+      sourceProvider: "direct",
       sourceUrl: "https://www.youtube.com/watch?v=abcdefghijk",
       blob: expect.any(Blob),
     }));
@@ -114,7 +114,7 @@ describe("SongDownloadAction", () => {
     expect(browserDownloadMock).toHaveBeenCalledOnce();
   });
 
-  it("shows the browser extraction error without saving an incomplete file", async () => {
+  it("shows the audio resolution error without saving an incomplete file", async () => {
     store.getSongDownload.mockResolvedValue(null);
     browserDownloadMock.mockRejectedValue(new Error("No browser-compatible audio stream was found for this track."));
 
@@ -125,14 +125,14 @@ describe("SongDownloadAction", () => {
     expect(store.saveSongDownload).not.toHaveBeenCalled();
   });
 
-  it("shows message details from non-Error WASM failures", async () => {
+  it("shows message details from non-Error download failures", async () => {
     store.getSongDownload.mockResolvedValue(null);
     browserDownloadMock.mockRejectedValue({ message: "WebAssembly resolver initialization failed" });
 
     render(<SongDownloadAction song={baseSong} compact />);
     fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("browser extraction: WebAssembly resolver initialization failed"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("audio resolution: WebAssembly resolver initialization failed"));
     expect(store.saveSongDownload).not.toHaveBeenCalled();
   });
 

@@ -1,135 +1,108 @@
 import type { Song } from "@strumm/types";
-import { Ytdown } from "@4thel00z/ytdown";
+import { authFetch } from "web/lib/auth-client";
+import { apiUrl } from "web/lib/api";
 
 const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024;
 const YOUTUBE_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 
-type BrowserAudioFormat = {
-  url: string;
-  mime_type?: string | null;
-  filesize?: number | null;
-  bitrate?: number | null;
-  audio?: { bitrate?: number | null; codec?: string } | null;
-  video?: unknown;
-  http_headers?: [string, string][];
-};
-
-type BrowserVideoInfo = {
-  formats?: BrowserAudioFormat[];
-};
-
 type DownloadProgress = (percent: number | null) => void;
+type AudioStream = { url?: string; mimeType?: string; bitrate?: number; videoOnly?: boolean };
+type StreamResponse = {
+  success?: boolean;
+  data?: { audioStreams?: AudioStream[]; videoStreams?: AudioStream[] };
+};
+type DirectAudioResponse = {
+  success?: boolean;
+  data?: { audioUrl?: string; mimeType?: string };
+  error?: string;
+};
 
-let resolverPromise: Promise<Ytdown> | null = null;
-
-function getProxyUrl(): string {
-  const value = process.env.NEXT_PUBLIC_YTDOWN_PROXY_URL?.trim();
-  if (!value) throw new Error("Browser download is not configured yet.");
-  const url = new URL(value);
-  if (url.protocol !== "https:" && url.hostname !== "localhost") {
-    throw new Error("The browser download proxy must use HTTPS.");
-  }
-  return url.toString().replace(/\/$/, "");
+function pickAudioStream(data: StreamResponse["data"]): AudioStream | null {
+  const audioOnly = (data?.audioStreams || []).filter((stream) =>
+    typeof stream.url === "string" && /^https?:\/\//i.test(stream.url),
+  );
+  const combined = (data?.videoStreams || []).filter((stream) =>
+    !stream.videoOnly &&
+    typeof stream.url === "string" &&
+    /^https?:\/\//i.test(stream.url) &&
+    (!stream.mimeType || ["audio/mp4", "video/mp4"].includes(stream.mimeType.split(";")[0].toLowerCase())),
+  );
+  const candidates = audioOnly.length ? audioOnly : combined;
+  return candidates.sort((a, b) => {
+    const mimeA = (a.mimeType || "").toLowerCase();
+    const mimeB = (b.mimeType || "").toLowerCase();
+    const scoreA = (mimeA.includes("audio/mp4") ? 1_000_000 : 0) + (Number(a.bitrate) || 0);
+    const scoreB = (mimeB.includes("audio/mp4") ? 1_000_000 : 0) + (Number(b.bitrate) || 0);
+    return scoreB - scoreA;
+  })[0] || null;
 }
 
-function getResolver(proxyUrl: string): Promise<Ytdown> {
-  if (!resolverPromise) {
-    resolverPromise = Ytdown.create({ proxy: proxyUrl }).catch((error) => {
-      resolverPromise = null;
-      throw error;
-    });
-  }
-  return resolverPromise;
-}
-
-function isGoogleVideoUrl(value: string): boolean {
+async function resolveAudioSource(videoId: string, signal: AbortSignal) {
   try {
-    const url = new URL(value);
-    return url.protocol === "https:" && (url.hostname === "googlevideo.com" || url.hostname.endsWith(".googlevideo.com"));
-  } catch {
-    return false;
+    const response = await authFetch(apiUrl(`/yt/streams/${encodeURIComponent(videoId)}`), { signal });
+    if (response.ok) {
+      const payload = (await response.json()) as StreamResponse;
+      const stream = payload.success ? pickAudioStream(payload.data) : null;
+      if (stream?.url) return { audioUrl: stream.url, mimeType: stream.mimeType || "audio/mp4" };
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
   }
-}
 
-export function selectBrowserAudioFormat(formats: BrowserAudioFormat[]): BrowserAudioFormat {
-  const audioOnly = formats.filter((format) => {
-    const mime = (format.mime_type || "").split(";")[0].trim().toLowerCase();
-    return Boolean(format.audio) && !format.video && ["audio/mp4", "audio/webm", "audio/ogg"].includes(mime);
-  });
-  const candidates = audioOnly.length ? audioOnly : formats.filter((format) => {
-    const mime = (format.mime_type || "").split(";")[0].trim().toLowerCase();
-    return Boolean(format.audio) && ["audio/mp4", "audio/webm", "audio/ogg", "video/mp4"].includes(mime);
-  });
-  const selected = candidates
-    .filter((format) => isGoogleVideoUrl(format.url))
-    .sort((a, b) => {
-      const mimeA = (a.mime_type || "").toLowerCase();
-      const mimeB = (b.mime_type || "").toLowerCase();
-      const preferenceA = mimeA.startsWith("audio/mp4") ? 1_000_000 : mimeA.startsWith("audio/webm") ? 500_000 : 0;
-      const preferenceB = mimeB.startsWith("audio/mp4") ? 1_000_000 : mimeB.startsWith("audio/webm") ? 500_000 : 0;
-      return preferenceB + (b.audio?.bitrate || b.bitrate || 0) - preferenceA - (a.audio?.bitrate || a.bitrate || 0);
-    })[0];
-  if (!selected) throw new Error("No browser-compatible audio stream was found for this track.");
-  return selected;
-}
-
-function proxyRequestUrl(proxyUrl: string, targetUrl: string): string {
-  return `${proxyUrl}?url=${encodeURIComponent(targetUrl)}`;
-}
-
-function formatHeaders(format: BrowserAudioFormat): Headers {
-  const headers = new Headers();
-  for (const [name, value] of format.http_headers || []) {
-    const key = name.toLowerCase();
-    if (key === "referer") headers.set("x-ytdown-referer", value);
-    if (key === "origin") headers.set("x-ytdown-origin", value);
-    if (key === "range") headers.set("range", value);
+  const response = await authFetch(apiUrl(`/play/${encodeURIComponent(videoId)}`), { signal });
+  if (!response.ok) {
+    throw new Error(`The audio source could not be resolved (HTTP ${response.status}).`);
   }
-  return headers;
+  const payload = (await response.json()) as DirectAudioResponse;
+  if (!payload.success || !payload.data?.audioUrl) {
+    throw new Error(payload.error || "No downloadable audio source is available for this track.");
+  }
+  return { audioUrl: payload.data.audioUrl, mimeType: payload.data.mimeType || "audio/mp4" };
 }
 
 export async function downloadSongInBrowser(
   song: Pick<Song, "videoId" | "title">,
   signal: AbortSignal,
   onProgress: DownloadProgress,
-): Promise<{ blob: Blob; mimeType: string; audioUrl: string; sourceProvider: "browser-wasm" }> {
-  if (!YOUTUBE_ID_PATTERN.test(song.videoId)) throw new Error("This track does not have a valid YouTube video ID.");
-  const proxyUrl = getProxyUrl();
-  const resolver = await getResolver(proxyUrl);
-  const info = await resolver.resolve(`https://www.youtube.com/watch?v=${song.videoId}`) as BrowserVideoInfo;
-  const format = selectBrowserAudioFormat(info.formats || []);
-  const rawMimeType = (format.mime_type || "audio/webm").split(";")[0].trim().toLowerCase();
-  if (format.filesize && format.filesize > MAX_DOWNLOAD_BYTES) {
-    throw new Error("This track is larger than the 500 MiB download limit.");
+): Promise<{ blob: Blob; mimeType: string; audioUrl: string; sourceProvider: "direct" }> {
+  if (!YOUTUBE_ID_PATTERN.test(song.videoId)) {
+    throw new Error("This track does not have a valid YouTube video ID.");
   }
+
+  const source = await resolveAudioSource(song.videoId, signal);
   const storage = typeof navigator !== "undefined" && navigator.storage?.estimate
     ? await navigator.storage.estimate().catch(() => null)
     : null;
   if (
-    format.filesize &&
     storage?.quota !== undefined &&
     storage.usage !== undefined &&
-    format.filesize > Math.max(0, storage.quota - storage.usage)
+    storage.quota - storage.usage < 1024 * 1024
   ) {
     throw new Error("There is not enough browser storage. Remove an old download and try again.");
   }
-  const audioResponse = await fetch(proxyRequestUrl(proxyUrl, format.url), {
-    method: "GET",
-    headers: formatHeaders(format),
-    signal,
-  });
+
+  const audioResponse = await authFetch(
+    apiUrl(`/audio-proxy?url=${encodeURIComponent(source.audioUrl)}`),
+    { method: "GET", signal },
+  );
   if (!audioResponse.ok || !audioResponse.body) {
-    throw new Error(`The source could not provide this audio stream (HTTP ${audioResponse.status}).`);
+    throw new Error(`The audio stream could not be downloaded (HTTP ${audioResponse.status}).`);
   }
-  const responseMime = (audioResponse.headers.get("content-type") || rawMimeType).split(";")[0].trim().toLowerCase();
-  if (!responseMime.startsWith("audio/") && responseMime !== "video/mp4") {
+
+  const mimeType = (audioResponse.headers.get("content-type") || source.mimeType || "audio/mp4")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!mimeType.startsWith("audio/") && mimeType !== "video/mp4") {
     throw new Error("The source returned an unsupported audio format.");
   }
+
   const rawLength = audioResponse.headers.get("content-length");
-  const expectedLength = rawLength ? Number(rawLength) : format.filesize || null;
+  const expectedLength = rawLength ? Number(rawLength) : null;
   if (expectedLength && expectedLength > MAX_DOWNLOAD_BYTES) {
     throw new Error("This track is larger than the 500 MiB download limit.");
   }
+
   const reader = audioResponse.body.getReader();
   const chunks: ArrayBuffer[] = [];
   let received = 0;
@@ -151,12 +124,13 @@ export async function downloadSongInBrowser(
   } finally {
     reader.releaseLock();
   }
+
   if (!received) throw new Error("The source returned an empty audio file.");
-  const mimeType = responseMime.startsWith("video/mp4") ? "audio/mp4" : responseMime;
+  const normalizedMime = mimeType === "video/mp4" ? "audio/mp4" : mimeType;
   return {
-    blob: new Blob(chunks, { type: mimeType }),
-    mimeType,
-    audioUrl: format.url,
-    sourceProvider: "browser-wasm",
+    blob: new Blob(chunks, { type: normalizedMime }),
+    mimeType: normalizedMime,
+    audioUrl: source.audioUrl,
+    sourceProvider: "direct",
   };
 }

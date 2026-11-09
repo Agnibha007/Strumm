@@ -1,7 +1,0 @@
-name = "strumm-ytdown-proxy"
-main = "src/worker.ts"
-compatibility_date = "2025-10-11"
-workers_dev = true
-
-[vars]
-ALLOWED_ORIGINS = "https://www.strumm.me,https://strumm.me,http://localhost:3000"

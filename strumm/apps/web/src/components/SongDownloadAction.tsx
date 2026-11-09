@@ -75,7 +75,7 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
     setProgress(null);
     setError(null);
 
-    let failureStage = "browser extraction";
+    let failureStage = "audio resolution";
     try {
       const result = await downloadSongInBrowser(song, controller.signal, setProgress);
       failureStage = "saving offline copy";

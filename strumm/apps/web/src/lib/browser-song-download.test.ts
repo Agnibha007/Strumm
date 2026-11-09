@@ -1,103 +1,71 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Ytdown } from "@4thel00z/ytdown";
-import { downloadSongInBrowser, selectBrowserAudioFormat } from "./browser-song-download";
+import { downloadSongInBrowser } from "./browser-song-download";
 
-const format = (overrides: Record<string, unknown> = {}) => ({
-  url: "https://r1.googlevideo.com/videoplayback?id=track",
-  mime_type: "audio/webm; codecs=opus",
-  audio: { bitrate: 128000, codec: "opus" },
-  video: null,
-  ...overrides,
-});
+const authFetchMock = vi.fn();
+
+vi.mock("web/lib/auth-client", () => ({ authFetch: (...args: unknown[]) => authFetchMock(...args) }));
+vi.mock("web/lib/api", () => ({ apiUrl: (path: string) => `/proxy${path}` }));
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
-});
-
-describe("selectBrowserAudioFormat", () => {
-  it("prefers audio-only M4A streams over WebM streams", () => {
-    const webm = format({ audio: { bitrate: 160000 } });
-    const m4a = format({
-      mime_type: "audio/mp4; codecs=mp4a.40.2",
-      audio: { bitrate: 128000 },
-    });
-
-    expect(selectBrowserAudioFormat([webm, m4a])).toBe(m4a);
-  });
-
-  it("selects the highest bitrate audio-only stream within the preferred container", () => {
-    const lower = format({ audio: { bitrate: 96000 } });
-    const higher = format({ audio: { bitrate: 160000 } });
-
-    expect(selectBrowserAudioFormat([lower, higher])).toBe(higher);
-  });
-
-  it("falls back to an audio-bearing progressive MP4 stream", () => {
-    const progressive = format({
-      mime_type: "video/mp4; codecs=avc1,mp4a.40.2",
-      video: { codec: "avc1" },
-    });
-
-    expect(selectBrowserAudioFormat([progressive])).toBe(progressive);
-  });
-
-  it("rejects non-HTTPS and non-GoogleVideo media URLs", () => {
-    expect(() => selectBrowserAudioFormat([
-      format({ url: "http://r1.googlevideo.com/videoplayback" }),
-      format({ url: "https://example.com/audio.mp4" }),
-    ])).toThrow("No browser-compatible audio stream");
-  });
-
-  it("rejects formats without an audio stream", () => {
-    expect(() => selectBrowserAudioFormat([
-      format({ audio: null, video: { codec: "avc1" } }),
-    ])).toThrow("No browser-compatible audio stream");
-  });
 });
 
 describe("downloadSongInBrowser", () => {
-  it("resolves a track and streams the selected audio through the restricted proxy", async () => {
-    vi.stubEnv("NEXT_PUBLIC_YTDOWN_PROXY_URL", "https://proxy.strumm.me");
-    const resolvedFormat = format({
-      mime_type: "audio/mp4; codecs=mp4a.40.2",
-      audio: { bitrate: 128000 },
-      http_headers: [["Referer", "https://www.youtube.com/"]],
-    });
-    const resolver = {
-      resolve: vi.fn().mockResolvedValue({ formats: [resolvedFormat] }),
-    };
-    vi.spyOn(Ytdown, "create").mockResolvedValue(resolver as never);
-    const response = new Response(new Uint8Array([1, 2, 3, 4, 5]), {
-      headers: {
-        "content-type": "audio/mp4",
-        "content-length": "5",
-      },
-    });
-    const fetchMock = vi.fn().mockResolvedValue(response);
-    vi.stubGlobal("fetch", fetchMock);
-    const progress = vi.fn();
+  it("resolves a stream and saves the audio bytes into browser storage", async () => {
+    authFetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: { audioStreams: [{ url: "https://r1.googlevideo.com/videoplayback?id=track", mimeType: "audio/mp4", bitrate: 128000 }] },
+      }), { headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3, 4, 5]), {
+        headers: { "content-type": "audio/mp4", "content-length": "5" },
+      }));
 
+    const progress = vi.fn();
     const result = await downloadSongInBrowser(
       { videoId: "abcdefghijk", title: "Test Song" },
       new AbortController().signal,
       progress,
     );
 
-    expect(Ytdown.create).toHaveBeenCalledWith({ proxy: "https://proxy.strumm.me" });
-    expect(resolver.resolve).toHaveBeenCalledWith("https://www.youtube.com/watch?v=abcdefghijk");
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("https://proxy.strumm.me?url="),
-      expect.objectContaining({
-        method: "GET",
-        signal: expect.any(AbortSignal),
-        headers: expect.any(Headers),
-      }),
-    );
+    expect(authFetchMock).toHaveBeenNthCalledWith(1, "/proxy/yt/streams/abcdefghijk", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(authFetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining("/proxy/audio-proxy?url="), expect.objectContaining({ method: "GET" }));
     expect(result.mimeType).toBe("audio/mp4");
     expect(result.blob.size).toBe(5);
-    expect(result.sourceProvider).toBe("browser-wasm");
+    expect(result.sourceProvider).toBe("direct");
     expect(progress).toHaveBeenCalledWith(100);
+  });
+
+  it("falls back to the direct audio resolver when stream metadata has no audio", async () => {
+    authFetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { audioStreams: [], videoStreams: [] } }), {
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: { audioUrl: "https://r1.googlevideo.com/videoplayback?id=track", mimeType: "audio/mp4" },
+      }), { headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "audio/mp4", "content-length": "3" },
+      }));
+
+    const result = await downloadSongInBrowser(
+      { videoId: "abcdefghijk", title: "Test Song" },
+      new AbortController().signal,
+      vi.fn(),
+    );
+
+    expect(authFetchMock).toHaveBeenNthCalledWith(2, "/proxy/play/abcdefghijk", expect.any(Object));
+    expect(result.blob.size).toBe(3);
+  });
+
+  it("rejects invalid video IDs before making requests", async () => {
+    await expect(downloadSongInBrowser(
+      { videoId: "not-valid", title: "Test Song" },
+      new AbortController().signal,
+      vi.fn(),
+    )).rejects.toThrow("valid YouTube video ID");
+    expect(authFetchMock).not.toHaveBeenCalled();
   });
 });
