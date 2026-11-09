@@ -125,6 +125,17 @@ describe("SongDownloadAction", () => {
     expect(store.saveSongDownload).not.toHaveBeenCalled();
   });
 
+  it("shows message details from non-Error WASM failures", async () => {
+    store.getSongDownload.mockResolvedValue(null);
+    browserDownloadMock.mockRejectedValue({ message: "WebAssembly resolver initialization failed" });
+
+    render(<SongDownloadAction song={baseSong} compact />);
+    fireEvent.click(screen.getByRole("button", { name: "Download song offline" }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("browser extraction: WebAssembly resolver initialization failed"));
+    expect(store.saveSongDownload).not.toHaveBeenCalled();
+  });
+
   it("removes a saved song using its original YouTube ID", async () => {
     store.getSongDownload.mockResolvedValue(savedRecord({
       videoId: "abcdefghijk",

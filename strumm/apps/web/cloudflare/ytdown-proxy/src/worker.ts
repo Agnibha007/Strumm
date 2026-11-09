@@ -50,8 +50,9 @@ async function fetchAllowedTarget(target: URL, init: RequestInit): Promise<Respo
     if (![301, 302, 303, 307, 308].includes(response.status)) return response;
     const location = response.headers.get("location");
     if (!location || redirects === 4) return new Response("Too many redirects", { status: 502 });
-    const next = allowedTarget(new URL(location, current).toString());
-    if (!next) return new Response("Redirect target is not allowed", { status: 403 });
+    const redirectTarget = new URL(location, current);
+    const next = allowedTarget(redirectTarget.toString());
+    if (!next) return new Response(`Redirect target is not allowed: ${redirectTarget.hostname}`, { status: 403 });
     current = next;
   }
   return new Response("Too many redirects", { status: 502 });

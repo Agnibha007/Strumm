@@ -17,6 +17,15 @@ interface SongDownloadActionProps {
   compact?: boolean;
 }
 
+function getDownloadErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "The download failed. Please try again.";
+}
+
 export default function SongDownloadAction({ song, compact = false }: SongDownloadActionProps) {
   const canDownload = !song.videoId.startsWith("podcast-") && /^[A-Za-z0-9_-]{11}$/.test(song.videoId);
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
@@ -66,8 +75,10 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
     setProgress(null);
     setError(null);
 
+    let failureStage = "browser extraction";
     try {
       const result = await downloadSongInBrowser(song, controller.signal, setProgress);
+      failureStage = "saving offline copy";
       const record = await saveSongDownload({
         videoId: song.videoId,
         title: song.title,
@@ -85,7 +96,8 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
       if (typeof window !== "undefined") window.dispatchEvent(new Event("strumm:downloads-changed"));
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "The download failed. Please try again.");
+      console.error(`[song-download] Failed during ${failureStage}`, err);
+      setError(`${failureStage}: ${getDownloadErrorMessage(err)}`);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setDownloading(false);
