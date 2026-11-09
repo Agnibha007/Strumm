@@ -299,7 +299,7 @@ export default function RoomsPage() {
 
   const renderRoomCard = (room: Room, extraLabel?: string) => (
     <Link href={`/rooms/${room.id}`} key={room.id}>
-      <span className="block relative overflow-hidden group h-full rounded-2xl bg-surface/40 border border-border/60 hover:border-primary/40 transition min-w-0 cursor-pointer soft-enter">
+      <span className="block relative overflow-hidden group h-full rounded-3xl bg-surface/55 border border-border/70 hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/10 transition-all duration-200 min-w-0 cursor-pointer soft-enter">
         {/* Full-bleed blurred artwork backdrop */}
         {room.currentTrack ? (
           <div className="absolute inset-0">
@@ -315,10 +315,10 @@ export default function RoomsPage() {
         {/* Legibility gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
 
-        <div className="relative flex flex-col h-full p-5 min-w-0">
+        <div className="relative flex flex-col h-full p-4 sm:p-5 min-w-0">
           <div className="flex items-start justify-between gap-3 min-w-0">
             {/* Artwork thumb */}
-            <div className="w-14 h-14 shrink-0 rounded-xl overflow-hidden ring-1 ring-border/60 shadow-xl">
+            <div className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden ring-1 ring-border/60 shadow-xl">
               <SongArtwork
                 song={room.currentTrack}
                 className="w-full h-full"
@@ -345,7 +345,7 @@ export default function RoomsPage() {
           </div>
 
           {/* Currently playing strip */}
-          <div className="mt-4 p-3 rounded-xl bg-background/50 backdrop-blur-sm border border-white/5 min-w-0">
+          <div className="mt-4 p-3.5 rounded-2xl bg-background/60 backdrop-blur-sm border border-border/40 min-w-0">
             {room.currentTrack ? (
               <div className="flex items-center gap-2 min-w-0">
                 <Signal className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -364,7 +364,7 @@ export default function RoomsPage() {
           </div>
 
           {/* Footer meta */}
-          <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-3 text-[10px] uppercase tracking-wider font-semibold text-muted">
+          <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between gap-3 text-[10px] uppercase tracking-wider font-semibold text-muted">
             <span className="flex items-center gap-1.5 min-w-0">
               <Users className="w-3.5 h-3.5 shrink-0" />
               <span>{room.members.length} listening</span>
@@ -391,15 +391,16 @@ export default function RoomsPage() {
   return (
     <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden soft-enter">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-3xl border border-border/50 bg-gradient-to-br from-surface-elevated/60 via-surface/40 to-background p-8 md:p-12">
+      <section className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-gradient-to-br from-surface-elevated/75 via-surface/55 to-background p-6 sm:p-8 md:p-10">
         <div className="absolute -top-32 -right-24 w-80 h-80 rounded-full bg-primary/15 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-40 -left-24 w-96 h-96 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
-        <div className="relative max-w-2xl space-y-6">
+        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl space-y-5">
           <span className="inline-flex items-center gap-2 text-[10px] tracking-widest uppercase font-bold text-primary">
             <Radio className="w-4 h-4" />
             Strumm Rooms
           </span>
-          <h2 className="font-editorial text-4xl sm:text-5xl text-text tracking-tight font-bold leading-[1.05]">
+          <h2 className="font-editorial text-4xl sm:text-5xl md:text-6xl text-text tracking-tight font-bold leading-[1.02]">
             One song.
             <br />
             <span className="text-primary">Everyone&apos;s listening.</span>
@@ -425,19 +426,32 @@ export default function RoomsPage() {
               Enter with Code
             </button>
           </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:w-64 shrink-0">
+            <div className="rounded-2xl border border-border/60 bg-background/45 p-4 backdrop-blur-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Live rooms</p>
+              <p className="mt-2 font-editorial text-3xl font-bold text-text tabular-nums">{rooms.length}</p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-background/45 p-4 backdrop-blur-sm">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Listening</p>
+              <p className="mt-2 font-editorial text-3xl font-bold text-text tabular-nums">{rooms.reduce((total, room) => total + room.members.length, 0)}</p>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* Find + Discover */}
       <section className="space-y-5 min-w-0">
-        <div className="flex items-center justify-between gap-3 min-w-0">
-          <h3 className="font-editorial text-2xl font-bold text-text truncate min-w-0">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between min-w-0">
+          <div className="min-w-0">
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Tune in together</p>
+            <h3 className="font-editorial text-2xl sm:text-3xl font-bold text-text truncate min-w-0">
             {searchQuery.trim() ? `Results for "${searchQuery.trim()}"` : "Live Rooms"}
-          </h3>
-        </div>
+            </h3>
+          </div>
         <form
           onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }}
-          className="flex gap-2 w-full max-w-md min-w-0"
+          className="flex gap-2 w-full sm:max-w-md min-w-0"
         >
           <div className="flex-1 min-w-0 flex items-center gap-2 bg-surface/30 border border-border/60 focus-within:border-primary/50 rounded-xl px-3 transition">
             <Search className="w-4 h-4 text-muted shrink-0" />
@@ -459,9 +473,10 @@ export default function RoomsPage() {
             Search
           </button>
         </form>
+        </div>
 
         {searchQuery.trim() && searchResults.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 min-w-0">
             {searchResults.map((room) => renderRoomCard(room))}
           </div>
         )}
@@ -503,7 +518,7 @@ export default function RoomsPage() {
         )}
 
         {!searchQuery.trim() && rooms.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 min-w-0">
             {rooms.map((room) => renderRoomCard(room, room.hostId === user.id ? "Hosting" : joinedRoomIds.has(room.id) ? "Joined" : undefined))}
           </div>
         )}
@@ -520,7 +535,7 @@ export default function RoomsPage() {
             <Headphones className="w-4 h-4 text-primary" />
             <h3 className="font-editorial text-xl font-bold text-text">Discover Rooms</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 min-w-0">
             {suggestions.map((room) => renderRoomCard(room))}
           </div>
         </section>

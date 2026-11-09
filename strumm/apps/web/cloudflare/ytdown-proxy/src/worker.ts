@@ -84,7 +84,14 @@ const worker = {
     }
     if (!headers.has("origin")) headers.set("origin", "https://www.youtube.com");
     if (!headers.has("referer")) headers.set("referer", "https://www.youtube.com/");
-    if (!headers.has("user-agent")) headers.set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/132.0.0.0 Safari/537.36");
+    const requestedUserAgent = request.headers.get("x-ytdown-user-agent");
+    if (requestedUserAgent && requestedUserAgent.length <= 512 && /^[\x20-\x7E]+$/.test(requestedUserAgent)) {
+      headers.set("user-agent", requestedUserAgent);
+    } else if (target.hostname.endsWith(".googlevideo.com") && target.searchParams.get("c") === "IOS") {
+      headers.set("user-agent", "com.google.ios.youtube/20.14.2 (iPhone16,2; U; CPU iOS 18_4 like Mac OS X)");
+    } else if (!headers.has("user-agent")) {
+      headers.set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/132.0.0.0 Safari/537.36");
+    }
     const upstream = await fetchAllowedTarget(target, {
       method: request.method,
       headers,
