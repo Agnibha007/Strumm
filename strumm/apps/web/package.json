@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@4thel00z/ytdown": "0.6.0",
     "@sentry/nextjs": "^10.63.0",
     "@strumm/types": "workspace:*",
     "@strumm/ui": "workspace:*",

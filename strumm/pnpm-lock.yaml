@@ -20,6 +20,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@4thel00z/ytdown':
+        specifier: 0.6.0
+        version: 0.6.0
       '@sentry/nextjs':
         specifier: ^10.63.0
         version: 10.63.0(@opentelemetry/core@2.9.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))(next@15.5.19(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)(webpack@5.108.3)
@@ -142,6 +145,9 @@ importers:
         version: 5.9.3
 
 packages:
+
+  '@4thel00z/ytdown@0.6.0':
+    resolution: {integrity: sha512-W+XAmryLHw5V1v0XPVLZjI6w6kwf0tmDrsawfQelrZmc+AAlGrD5ir64QrngNzzXl0CpM6JHZLXY4FkowgoicA==}
 
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
@@ -2021,6 +2027,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -3493,6 +3500,8 @@ packages:
         optional: true
 
 snapshots:
+
+  '@4thel00z/ytdown@0.6.0': {}
 
   '@adobe/css-tools@4.5.0': {}
 

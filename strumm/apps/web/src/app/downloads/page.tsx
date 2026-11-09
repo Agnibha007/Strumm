@@ -399,7 +399,7 @@ export default function DownloadsPage() {
                             <div className="mt-1 space-y-1 text-[11px] text-muted">
                               {record.sourceUrl && (
                                 <a href={record.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-primary hover:underline">
-                                  Source: {record.sourceProvider === "yt-dlp" ? "YouTube (yt-dlp)" : record.sourceProvider === "cobalt" ? "YouTube (Cobalt)" : "Direct source"}
+                                  Source: {record.sourceProvider === "yt-dlp" ? "YouTube (yt-dlp)" : record.sourceProvider === "cobalt" ? "YouTube (Cobalt)" : record.sourceProvider === "browser-wasm" ? "YouTube (browser WASM)" : "Direct source"}
                                 </a>
                               )}
                             </div>

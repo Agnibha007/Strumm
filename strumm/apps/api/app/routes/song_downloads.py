@@ -1,11 +1,9 @@
 import asyncio
-import jwt
 import logging
 import os
 import re
 import shutil
 import sys
-from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 import httpx
@@ -398,47 +396,6 @@ async def _download_song_with_provider(
         media_type="audio/mpeg",
         headers=headers,
     )
-
-
-@router.post("/song/authorize")
-async def authorize_song_download(
-    payload: SongDownloadRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    video_id = payload.video_id.strip()
-    if not YOUTUBE_ID_PATTERN.fullmatch(video_id):
-        raise HTTPException(status_code=400, detail="A valid YouTube video ID is required.")
-    if not payload.rights_confirmed:
-        raise HTTPException(status_code=400, detail="Confirm that you own this track or have permission to download it.")
-
-    downloader_url = os.getenv("DOWNLOADER_API_URL", "").strip().rstrip("/")
-    signing_secret = os.getenv("DOWNLOADER_TOKEN_SECRET", "")
-    if not downloader_url.startswith("https://") or len(downloader_url) > 300:
-        raise HTTPException(status_code=503, detail="The dedicated download service is not configured.")
-    if len(signing_secret) < 32:
-        logger.error("DOWNLOADER_TOKEN_SECRET is missing or too short")
-        raise HTTPException(status_code=503, detail="The dedicated download service is not configured.")
-
-    now = datetime.now(timezone.utc)
-    token = jwt.encode(
-        {
-            "sub": str(current_user.get("id", "unknown")),
-            "videoId": video_id,
-            "title": payload.title,
-            "rightsConfirmed": True,
-            "iat": now,
-            "exp": now + timedelta(minutes=3),
-            "iss": "strumm-download-authorizer",
-            "aud": "strumm-downloader",
-        },
-        signing_secret,
-        algorithm="HS256",
-    )
-    return {
-        "downloadUrl": downloader_url + "/downloads/song",
-        "token": token,
-        "expiresIn": 180,
-    }
 
 
 @router.post("/song")

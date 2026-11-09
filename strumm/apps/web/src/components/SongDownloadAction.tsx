@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Download, Loader2, Trash2, X } from "lucide-react";
-import { authFetch } from "web/lib/auth-client";
-import { apiUrl } from "web/lib/api";
+import { downloadSongInBrowser } from "web/lib/browser-song-download";
 import type { Song } from "@strumm/types";
 import {
   formatDownloadSize,
@@ -13,15 +12,12 @@ import {
   type SongDownloadRecord,
 } from "web/lib/podcast-downloads";
 
-const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024;
-
 interface SongDownloadActionProps {
   song: Song;
   compact?: boolean;
 }
 
 export default function SongDownloadAction({ song, compact = false }: SongDownloadActionProps) {
-  const authorizeUrl = apiUrl("/downloads/song/authorize");
   const canDownload = !song.videoId.startsWith("podcast-") && /^[A-Za-z0-9_-]{11}$/.test(song.videoId);
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -71,117 +67,17 @@ export default function SongDownloadAction({ song, compact = false }: SongDownlo
     setError(null);
 
     try {
-      const storage = typeof navigator !== "undefined" && navigator.storage?.estimate
-        ? await navigator.storage.estimate().catch(() => null)
-        : null;
-      const authorizationResponse = await authFetch(authorizeUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          videoId: song.videoId,
-          title: song.title,
-          artist: song.artist,
-          duration: song.duration,
-          rightsConfirmed: true,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!authorizationResponse.ok) {
-        const parsed = await authorizationResponse.json().catch(() => null);
-        throw new Error(parsed?.detail || parsed?.error || "Unable to authorize this download.");
-      }
-
-      const authorization = await authorizationResponse.json();
-      if (
-        typeof authorization?.downloadUrl !== "string" ||
-        typeof authorization?.token !== "string" ||
-        !/^https:\/\//.test(authorization.downloadUrl)
-      ) {
-        throw new Error("The download service returned an invalid authorization response.");
-      }
-
-      const response = await fetch(authorization.downloadUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + authorization.token,
-        },
-        body: JSON.stringify({ videoId: song.videoId, title: song.title }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const parsed = await response.json().catch(() => null);
-        throw new Error(parsed?.detail || parsed?.error || "Unable to download this track.");
-      }
-
-      const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-      if (mimeType !== "audio/mpeg" && mimeType !== "audio/mp3") {
-        throw new Error("The downloader service did not return an MP3 file.");
-      }
-
-      const rawLength = response.headers.get("content-length");
-      const expectedLength = rawLength ? Number(rawLength) : null;
-      if (expectedLength !== null && Number.isFinite(expectedLength) && expectedLength > MAX_DOWNLOAD_BYTES) {
-        throw new Error("This track is larger than the 500 MiB download limit.");
-      }
-      if (
-        expectedLength !== null &&
-        Number.isFinite(expectedLength) &&
-        storage?.quota !== undefined &&
-        storage.usage !== undefined &&
-        expectedLength > Math.max(0, storage.quota - storage.usage)
-      ) {
-        throw new Error("There is not enough browser storage. Remove an old download and try again.");
-      }
-
-      let blob: Blob;
-      if (response.body) {
-        const reader = response.body.getReader();
-        const chunks: ArrayBuffer[] = [];
-        let received = 0;
-        try {
-          while (true) {
-            const result = await reader.read();
-            if (result.done) break;
-            if (!result.value) continue;
-            received += result.value.byteLength;
-            if (received > MAX_DOWNLOAD_BYTES) {
-              await reader.cancel();
-              throw new Error("This track is larger than the 500 MiB download limit.");
-            }
-            const chunkCopy = new Uint8Array(result.value.byteLength);
-            chunkCopy.set(result.value);
-            chunks.push(chunkCopy.buffer);
-            if (expectedLength && expectedLength > 0) {
-              setProgress(Math.min(100, Math.round((received / expectedLength) * 100)));
-            }
-          }
-        } finally {
-          reader.releaseLock();
-        }
-        blob = new Blob(chunks, { type: mimeType });
-      } else {
-        blob = await response.blob();
-      }
-
-      if (!blob.size) throw new Error("The download source returned an empty audio file.");
-      if (blob.size > MAX_DOWNLOAD_BYTES) {
-        throw new Error("This track is larger than the 500 MiB download limit.");
-      }
-
-      const downloadProvider = response.headers.get("x-download-provider") === "yt-dlp" ? "yt-dlp" : "cobalt";
+      const result = await downloadSongInBrowser(song, controller.signal, setProgress);
       const record = await saveSongDownload({
         videoId: song.videoId,
         title: song.title,
         artist: song.artist,
         thumbnail: song.thumbnail,
         duration: song.duration,
-        audioUrl: authorization.downloadUrl,
-        mimeType,
-        blob,
-        sourceProvider: downloadProvider,
+        audioUrl: result.audioUrl,
+        mimeType: result.mimeType,
+        blob: result.blob,
+        sourceProvider: result.sourceProvider,
         sourceUrl: `https://www.youtube.com/watch?v=${song.videoId}`,
       });
       setSaved(record);
