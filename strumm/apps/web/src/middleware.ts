@@ -17,7 +17,7 @@ export function buildCspHeader(nonce: string): string {
     // when they carry this request's nonce; Next.js automatically applies the
     // nonce to the bootstrap scripts it injects, and our own inline script in
     // <head> receives it explicitly (see layout.tsx).
-    `script-src 'self' 'nonce-${nonce}' https://www.youtube.com https://www.youtube-nocookie.com https://s.ytimg.com https://static.cloudflareinsights.com`,
+    `script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval' https://www.youtube.com https://www.youtube-nocookie.com https://s.ytimg.com https://static.cloudflareinsights.com`,
     `frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com`,
     `img-src 'self' data: https: blob:`,
     `media-src 'self' https: data: blob:`,

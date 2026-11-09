@@ -23,6 +23,8 @@ describe("CSP connect-src", () => {
     const csp = buildCspHeader("deadbeef");
     const script = csp.split("; ").find((d) => d.startsWith("script-src"));
     expect(script).toContain("'nonce-deadbeef'");
+    expect(script).toContain("'wasm-unsafe-eval'");
     expect(script).not.toContain("'unsafe-inline'");
+    expect(script).not.toContain("'unsafe-eval'");
   });
 });
