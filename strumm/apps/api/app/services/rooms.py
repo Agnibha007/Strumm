@@ -97,6 +97,7 @@ async def serialize_room(database, room: dict, viewer_id: str | None = None) -> 
         "currentTrack": room.get("currentTrack"),
         "playbackState": room.get("playbackState") or {
             "playing": False, "timestamp": 0, "updatedAt": None,
+            "startAt": None, "sequence": 0,
         },
         "queue": room.get("queue") or [],
         "createdAt": room.get("createdAt"),

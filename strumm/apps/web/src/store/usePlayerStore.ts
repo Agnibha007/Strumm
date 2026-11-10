@@ -42,11 +42,20 @@ function playTrackAtIndex(
   get().updateMediaSession(song);
 }
 
+type RoomPlaybackCommand = {
+  id: string;
+  videoId: string;
+  timestamp: number;
+  playing: boolean;
+  startAt: number;
+};
+
 interface PlayerState {
   currentSong: Song | null;
   queue: Song[];
   currentIndex: number;
   isPlaying: boolean;
+  roomPlaybackCommand: RoomPlaybackCommand | null;
   volume: number;
   currentTime: number;
   duration: number;
@@ -107,6 +116,7 @@ interface PlayerState {
     playVideo: () => void;
     pauseVideo: () => void;
     seekTo: (seconds: number) => void;
+    getCurrentTime?: () => number;
     setVolume: (volume: number) => void;
     setPlaybackRate: (rate: number) => void;
     setPlaybackQuality?: (quality: string) => void;
@@ -154,6 +164,7 @@ export const usePlayerStore = create<PlayerState>()(
       queue: [],
       currentIndex: -1,
       isPlaying: false,
+      roomPlaybackCommand: null,
       volume: 0.8,
       currentTime: 0,
       duration: 0,
@@ -485,6 +496,20 @@ export const usePlayerStore = create<PlayerState>()(
         const current = get();
         const remoteSong = state.currentSong ? cleanSong(state.currentSong) : null;
         if (!remoteSong) return;
+        const roomCommand = (state as Partial<PlayerState>).roomPlaybackCommand;
+        if (roomCommand) {
+          set({
+            currentSong: remoteSong,
+            queue: (state.queue ?? current.queue).map(cleanSong),
+            currentIndex: state.currentIndex ?? current.currentIndex,
+            currentTime: state.currentTime ?? roomCommand.timestamp,
+            isPlaying: roomCommand.playing,
+            roomPlaybackCommand: roomCommand,
+            pendingNextIndex: null,
+          });
+          get().updateMediaSession(remoteSong);
+          return;
+        }
 
         const songChanged =
           remoteSong.videoId !== (current.currentSong?.videoId ?? null);

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import html
 import math
 import secrets
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -96,7 +97,7 @@ async def create_room(payload: CreateRoomBody, current_user: dict = Depends(get_
         "members": [current_user["id"]],
         "joinCode": await _unique_code(database),
         "currentTrack": None,
-        "playbackState": {"playing": False, "timestamp": 0, "updatedAt": datetime.utcnow()},
+        "playbackState": {"playing": False, "timestamp": 0, "updatedAt": datetime.utcnow(), "startAt": None, "sequence": 0},
         "queue": [],
         "createdAt": datetime.utcnow(),
     }
@@ -184,10 +185,15 @@ async def update_playback(
         raise HTTPException(status_code=400, detail="Invalid song.")
     timestamp = payload.timestamp if math.isfinite(payload.timestamp) else 0
     previous_state = room.get("playbackState") or {}
+    now = datetime.utcnow()
+    # Every play command gets a shared future start instant. Clients seek to
+    # `timestamp` first, then begin together at this server-authored deadline.
+    start_at = int(time.time() * 1000) + 900 if payload.playing else None
     state = {
         "playing": payload.playing,
         "timestamp": timestamp,
-        "updatedAt": datetime.utcnow(),
+        "updatedAt": now,
+        "startAt": start_at,
         "sequence": int(previous_state.get("sequence") or 0) + 1,
     }
     update = {"$set": {"currentTrack": song, "playbackState": state}}

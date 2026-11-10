@@ -108,6 +108,8 @@ async def test_create_room_persists_host_and_empty_playback_state(monkeypatch):
     assert inserted["hostId"] == "host-id"
     assert inserted["members"] == ["host-id"]
     assert inserted["playbackState"]["playing"] is False
+    assert inserted["playbackState"]["startAt"] is None
+    assert inserted["playbackState"]["sequence"] == 0
     assert result["data"]["id"] == str(room_id)
 
 
@@ -229,6 +231,8 @@ async def test_playback_update_is_host_only_and_persists_state(monkeypatch):
     update = rooms.update_one.call_args.args[1]
     assert update["$set"]["playbackState"]["playing"] is True
     assert update["$set"]["playbackState"]["sequence"] == 1
+    assert isinstance(update["$set"]["playbackState"]["startAt"], int)
+    assert update["$set"]["playbackState"]["startAt"] > int(__import__("time").time() * 1000)
     assert update["$set"]["currentTrack"]["videoId"] == "dQw4w9WgXcQ"
     assert update["$pull"]["queue"]["videoId"] == "dQw4w9WgXcQ"
 

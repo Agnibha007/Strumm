@@ -96,6 +96,60 @@ describe("playSongAndContinue", () => {
   });
 });
 
+describe("listening-room playback commands", () => {
+  beforeEach(reset);
+
+  it("applies the host's exact timestamp and scheduled start even on the same track", () => {
+    usePlayerStore.setState({
+      currentSong: PICKED,
+      currentTime: 0,
+      isPlaying: false,
+    });
+
+    const command = {
+      id: "room-1:7",
+      videoId: PICKED.videoId,
+      timestamp: 42.75,
+      playing: true,
+      startAt: Date.now() + 900,
+    };
+
+    usePlayerStore.getState().applyRemoteState({
+      currentSong: PICKED,
+      currentTime: 42.75,
+      isPlaying: true,
+      roomPlaybackCommand: command,
+    });
+
+    const state = usePlayerStore.getState();
+    expect(state.currentTime).toBe(42.75);
+    expect(state.isPlaying).toBe(true);
+    expect(state.roomPlaybackCommand).toEqual(command);
+  });
+
+  it("applies an authoritative pause position immediately", () => {
+    const command = {
+      id: "room-1:8",
+      videoId: PICKED.videoId,
+      timestamp: 58.125,
+      playing: false,
+      startAt: Date.now(),
+    };
+
+    usePlayerStore.getState().applyRemoteState({
+      currentSong: PICKED,
+      currentTime: 58.125,
+      isPlaying: false,
+      roomPlaybackCommand: command,
+    });
+
+    const state = usePlayerStore.getState();
+    expect(state.currentTime).toBe(58.125);
+    expect(state.isPlaying).toBe(false);
+    expect(state.roomPlaybackCommand).toEqual(command);
+  });
+});
+
 describe("handleTrackEnded pause stickiness", () => {
   beforeEach(reset);
 
