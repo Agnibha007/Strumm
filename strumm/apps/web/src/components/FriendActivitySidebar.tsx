@@ -6,10 +6,10 @@ import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_THUMBNAIL, ARTWORK_QUALITY_LOW } from "web/lib/media";
-import { Users, Music, Play, Radio, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
+import { Users, Music, Play, Loader2, ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import Link from "next/link";
 import { usePlayerStore } from "web/store/usePlayerStore";
-import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED, ROOM_CREATED, ROOM_UPDATED, ROOM_DELETED, ROOM_INVITED } from "web/services/realtime";
+import { EventDispatcher, USER_ONLINE, USER_OFFLINE, USER_LISTENING, USER_NOT_LISTENING, WS_CONNECTED } from "web/services/realtime";
 
 interface FriendActivity {
   id: string;
@@ -28,19 +28,6 @@ interface FriendActivity {
   } | null;
 }
 
-interface ActiveRoom {
-  id: string;
-  name: string;
-  hostId: string;
-}
-
-interface RoomInvite {
-  roomId: string;
-  roomName: string;
-  hostId: string;
-  hostName: string;
-}
-
 interface FriendActivitySidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -55,8 +42,6 @@ export default function FriendActivitySidebar({
   const { token, user } = useAuthStore();
   const { playSong, currentSong } = usePlayerStore();
   const [friends, setFriends] = useState<FriendActivity[]>([]);
-  const [activeRooms, setActiveRooms] = useState<ActiveRoom[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<RoomInvite[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Message & Song Share States
@@ -77,13 +62,6 @@ export default function FriendActivitySidebar({
         setFriends(fJson.data || []);
       }
 
-      const rResp = await authFetch(apiUrl("/social/rooms"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const rJson = await rResp.json();
-      if (rJson.success) {
-        setActiveRooms(rJson.data || []);
-      }
     } catch (e) {
       console.warn("Offline or failed to fetch circle activity.");
     } finally {
@@ -134,52 +112,8 @@ export default function FriendActivitySidebar({
       );
     });
 
-    // Refresh full data when WebSocket reconnects (server replays room events)
     const unsubConnected = dispatch.on(WS_CONNECTED, () => {
       fetchActivity();
-    });
-
-    // ---- Rooms list is fully WS-driven (no polling) ----
-    // Backend broadcasts room:created/updated/deleted to the host's circle on
-    // the global /ws, so the sidebar only needs to apply deltas. A friend
-    // hosting a room is, by construction, a circle member.
-    const applyRoomEvent = (data: any, upsert: boolean) => {
-      if (!data?.roomId) return;
-      if (!upsert) {
-        setActiveRooms((prev) => prev.filter((r) => r.id !== data.roomId));
-        return;
-      }
-      if (data.visibility !== "public") return;
-      setActiveRooms((prev) => {
-        const room: ActiveRoom = {
-          id: data.roomId,
-          name: data.name || "Strumm Room",
-          hostId: data.hostId,
-        };
-        const idx = prev.findIndex((r) => r.id === data.roomId);
-        if (idx === -1) return [...prev, room];
-        const next = [...prev];
-        next[idx] = room;
-        return next;
-      });
-    };
-
-    const unsubRoomCreated = dispatch.on(ROOM_CREATED, (data) => applyRoomEvent(data, true));
-    const unsubRoomUpdated = dispatch.on(ROOM_UPDATED, (data) => applyRoomEvent(data, true));
-    const unsubRoomDeleted = dispatch.on(ROOM_DELETED, (data) => applyRoomEvent(data, false));
-
-    // A friend invited you into their room — surface a Join banner.
-    const unsubRoomInvited = dispatch.on(ROOM_INVITED, (data) => {
-      if (!data?.roomId) return;
-      setPendingInvites((prev) => {
-        if (prev.some((inv) => inv.roomId === data.roomId)) return prev;
-        return [...prev, {
-          roomId: data.roomId,
-          roomName: data.roomName || "A Strumm Room",
-          hostId: data.hostId,
-          hostName: data.hostName || "A friend",
-        }];
-      });
     });
 
     return () => {
@@ -188,10 +122,6 @@ export default function FriendActivitySidebar({
       unsubListening();
       unsubNotListening();
       unsubConnected();
-      unsubRoomCreated();
-      unsubRoomUpdated();
-      unsubRoomDeleted();
-      unsubRoomInvited();
     };
   }, [user, token, fetchActivity]);
 
@@ -440,33 +370,6 @@ export default function FriendActivitySidebar({
           </button>
         </div>
 
-        {pendingInvites.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {pendingInvites.map((inv) => (
-              <div key={inv.roomId} className="relative p-3 bg-primary/10 border border-primary/30 rounded-xl space-y-2">
-                <button
-                  onClick={() => setPendingInvites((prev) => prev.filter((i) => i.roomId !== inv.roomId))}
-                  className="absolute top-2 right-2 p-0.5 text-muted hover:text-text rounded transition cursor-pointer"
-                  title="Dismiss invite"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-                <p className="text-[10px] text-text leading-snug pr-4">
-                  <span className="font-bold">{inv.hostName}</span>{" "}
-                  <span className="text-muted">invited you to</span>{" "}
-                  <span className="font-bold text-primary">{inv.roomName}</span>
-                </p>
-                <Link href={`/rooms/${inv.roomId}`}>
-                  <span className="w-full py-1.5 bg-primary hover:bg-primary-hover text-white text-[9px] uppercase tracking-wider font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer">
-                    <Radio className="w-3 h-3" />
-                    Join Strumm Room
-                  </span>
-                </Link>
-              </div>
-            ))}
-          </div>
-        )}
-
         {loading ? (
           <div className="flex items-center justify-center py-8 gap-2 text-xs text-muted">
             <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -476,8 +379,6 @@ export default function FriendActivitySidebar({
           <div className="space-y-4">
             {friends.map((friend) => {
               const hasSongActivity = !!friend.currentActivity?.song;
-              const userRoom = activeRooms.find(r => r.hostId === friend.id);
-
               return (
                 <div key={friend.id} className="p-3 bg-surface-elevated/20 border border-border/40 rounded-xl space-y-3 min-w-0 transition hover:border-primary/20">
                   <div className="flex items-center justify-between gap-2.5 min-w-0">
@@ -535,14 +436,6 @@ export default function FriendActivitySidebar({
                         </button>
                       </div>
 
-                      {userRoom && (
-                        <Link href={`/rooms/${userRoom.id}`} className="block">
-                          <span className="w-full py-1 bg-accent/25 hover:bg-accent/40 border border-accent/30 text-accent text-[9px] uppercase tracking-wider font-bold rounded flex items-center justify-center gap-1.5 transition cursor-pointer">
-                            <Radio className="w-3 h-3 text-primary" />
-                            Join Strumm Room
-                          </span>
-                        </Link>
-                      )}
                     </div>
                   ) : friend.isOnline ? (
                     <span className="text-[9px] text-green-500 font-semibold block px-1">Online</span>
