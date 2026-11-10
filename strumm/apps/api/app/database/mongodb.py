@@ -80,6 +80,7 @@ RECENTLY_PLAYED = "recentlyplayeds"
 CONNECTIONS = "connections"
 ACTIVITIES = "activities"
 ROOMS = "rooms"
+ROOM_PRESENCE = "room_presence"
 NOTIFICATIONS = "notifications"
 
 # Auth collections

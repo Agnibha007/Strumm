@@ -1,738 +1,255 @@
-"""
-Strumm Rooms — REST + WebSocket.
+"""Listening Rooms API.
 
-Mounted at ``/social`` (same wire paths the legacy ``social.py`` routes used),
-so existing clients keep working unchanged::
-
-    GET    /social/rooms            list rooms (public + host + member)
-    POST   /social/rooms            create a room
-    GET    /social/rooms/search     search rooms by name
-    GET    /social/rooms/suggestions   fresh public rooms
-    GET    /social/rooms/{roomId}   room detail (+ member profiles)
-    POST   /social/rooms/{roomId}/invite       host invites a circle friend
-    POST   /social/rooms/{roomId}/leave        leave the room cleanly
-    POST   /social/rooms/{roomId}/kick         host kicks a listener
-    POST   /social/rooms/{roomId}/join-code    host regenerates the join code
-    DELETE /social/rooms/{roomId}   host deletes the room
-    WS     /social/rooms/{roomId}/ws           room sync / voice signalling
-
-All domain logic (access/control gates, lifecycle, queue ops, join codes,
-notifications) lives in ``app/services/rooms.py``; this module only wires it
-to HTTP + WebSocket.
+Room state and presence are persisted in MongoDB. The browser uses short REST
+polls and heartbeat leases, so state is consistent across API replicas.
 """
 
-from __future__ import annotations
+from datetime import datetime, timedelta
+import html
+import math
+import secrets
 
-import json
-import logging
-from datetime import datetime
-from typing import Optional
-
-from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
-from app.services.auth_utils import decode_access_token
-from app.services.avatar import decorate_user_avatar
-from app.services.realtime.events import (
-    ROOM_CONTROLLERS_UPDATED,
-    ROOM_HOST_TRANSFERRED,
-    ROOM_INVITED,
-    ROOM_JOINED,
-    ROOM_KICKED,
-    ROOM_LEFT,
-    ROOM_STATE,
-    QUEUE_ADDED,
-    QUEUE_REMOVED,
-    QUEUE_CLEARED,
-)
+from app.services.security import sanitize_text
 from app.services.rooms import (
-    RoomCreateRequest,
-    RoomInviteRequest,
-    RoomKickRequest,
-    batch_fetch_host_names,
-    build_member_profiles,
-    can_access_room,
-    can_control,
-    cancel_pending_room_delete,
-    handle_room_member_join,
-    circle_user_ids,
-    ensure_join_code,
-    fetch_host_name,
-    find_room_by_join_code,
-    generate_join_code,
-    handle_room_disconnect,
-    is_circle_member,
-    manager as realtime_manager,
-    notify_room_created,
-    notify_room_deleted,
-    notify_room_updated,
-    queue_clear,
-    queue_push,
-    queue_remove,
-    set_room_track,
+    PRESENCE_COLLECTION,
+    PRESENCE_TTL_SECONDS,
+    clean_song,
+    get_room,
+    new_join_code,
+    require_member,
     serialize_room,
 )
-logger = logging.getLogger("strumm-rooms")
+
 router = APIRouter(prefix="/social/rooms", tags=["rooms"])
 
-# Delegate room WebSocket management to the centralized realtime manager
-ws_manager = realtime_manager
+
+class CreateRoomBody(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
 
 
-async def _get_room_or_404(database, room_id: str, detail: str = "Strumm Room not found.") -> dict:
-    if not ObjectId.is_valid(room_id):
-        raise HTTPException(status_code=404, detail=detail)
-    room = await database[db.ROOMS].find_one({"_id": ObjectId(room_id)})
+class JoinRoomBody(BaseModel):
+    code: str | None = Field(default=None, min_length=6, max_length=6)
+
+
+class PlaybackBody(BaseModel):
+    song: dict | None = None
+    playing: bool
+    timestamp: float = Field(default=0, ge=0, le=86400)
+
+
+class QueueBody(BaseModel):
+    song: dict
+
+
+async def _room_or_404(room_id: str) -> dict:
+    room = await get_room(db.get_db(), room_id)
     if not room:
-        raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=404, detail="Room not found.")
     return room
 
 
-# ---------------------------------------------------------------------------
-# List / create
-# ---------------------------------------------------------------------------
+async def _unique_code(database) -> str:
+    for _ in range(10):
+        code = new_join_code()
+        if not await database[db.ROOMS].find_one({"joinCode": code}, {"_id": 1}):
+            return code
+    raise HTTPException(status_code=503, detail="Could not generate a room code. Try again.")
 
 
 @router.get("")
 async def list_rooms(current_user: dict = Depends(get_current_user)):
     database = db.get_db()
-    my_id = current_user["id"]
-
-    # Only public rooms, rooms the user hosts, and rooms the user is a member of.
+    user_id = current_user["id"]
     cursor = database[db.ROOMS].find({
-        "$or": [
-            {"visibility": "public"},
-            {"hostId": my_id},
-            {"members": my_id},
-        ]
-    }).sort("createdAt", -1)
-
-    raw_rooms = await cursor.to_list(length=500)
-    host_ids = [r.get("hostId") for r in raw_rooms]
-    host_names = await batch_fetch_host_names(database, host_ids)
-
-    rooms_list = [
-        serialize_room(r, host_names.get(r.get("hostId"), "Unknown"))
-        for r in raw_rooms
-    ]
-    return {"success": True, "data": rooms_list}
+        "$or": [{"hostId": user_id}, {"members": user_id}]
+    }).sort("createdAt", -1).limit(50)
+    rooms = [await serialize_room(database, room) async for room in cursor]
+    return {"success": True, "data": rooms}
 
 
 @router.post("")
-async def create_room(payload: RoomCreateRequest, current_user: dict = Depends(get_current_user)):
+async def create_room(payload: CreateRoomBody, current_user: dict = Depends(get_current_user)):
     database = db.get_db()
-    my_id = current_user["id"]
-
-    from app.services.security import sanitize_text
-
-    new_room = {
-        "name": sanitize_text(payload.name, max_length=100),
-        "hostId": my_id,
-        "members": [my_id],
+    name = html.unescape(sanitize_text(payload.name, max_length=60)).strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Give your room a name.")
+    room = {
+        "name": name,
+        "hostId": current_user["id"],
+        "hostName": current_user.get("displayName") or current_user.get("username") or "Host",
+        "members": [current_user["id"]],
+        "joinCode": await _unique_code(database),
         "currentTrack": None,
-        "playbackState": {
-            "playing": False,
-            "timestamp": 0.0,
-            "updatedAt": datetime.utcnow()
-        },
+        "playbackState": {"playing": False, "timestamp": 0, "updatedAt": datetime.utcnow()},
         "queue": [],
-        "controllers": [my_id],
-        "visibility": payload.visibility if payload.visibility in {"public", "circle"} else "public",
-        "joinCode": generate_join_code(),
-        "createdAt": datetime.utcnow()
+        "createdAt": datetime.utcnow(),
     }
-
-    res = await database[db.ROOMS].insert_one(new_room)
-    new_room["id"] = str(res.inserted_id)
-    del new_room["_id"]
-    new_room["hostName"] = current_user.get("displayName", "Someone")
-    await notify_room_created(database, new_room, host_name=new_room["hostName"])
-    return {"success": True, "data": new_room}
-
-
-# ---------------------------------------------------------------------------
-# Search / suggestions / join-by-code
-# ---------------------------------------------------------------------------
-
-
-@router.get("/search")
-async def search_rooms(q: str = "", current_user: dict = Depends(get_current_user)):
-    database = db.get_db()
-    my_id = current_user["id"]
-
-    from app.services.security import sanitize_text
-    import re
-
-    query = sanitize_text(q, max_length=100).strip()
-    if not query:
-        return {"success": True, "query": "", "data": []}
-
-    # Mirror of the list filter: only rooms the caller may actually see.
-    cursor = database[db.ROOMS].find({
-        "$and": [
-            {
-                "$or": [
-                    {"visibility": "public"},
-                    {"hostId": my_id},
-                    {"members": my_id},
-                ]
-            },
-            {"name": {"$regex": re.escape(query), "$options": "i"}},
-        ]
-    }).limit(50)
-    raw_rooms = await cursor.to_list(length=50)
-    host_names = await batch_fetch_host_names(database, [r.get("hostId") for r in raw_rooms])
-    return {
-        "success": True,
-        "query": query,
-        "data": [
-            serialize_room(r, host_names.get(r.get("hostId"), "Unknown"))
-            for r in raw_rooms
-        ],
-    }
-
-
-@router.get("/suggestions")
-async def suggest_rooms(current_user: dict = Depends(get_current_user)):
-    database = db.get_db()
-    my_id = current_user["id"]
-
-    # Fresh public rooms the user isn't hosting or already a member of.
-    cursor = database[db.ROOMS].find({
-        "$and": [
-            {"visibility": "public"},
-            {"hostId": {"$ne": my_id}},
-            {"members": {"$ne": my_id}},
-        ]
-    }).sort("createdAt", -1).limit(12)
-    raw_rooms = await cursor.to_list(length=12)
-    host_names = await batch_fetch_host_names(database, [r.get("hostId") for r in raw_rooms])
-
-    suggestions = [
-        serialize_room(r, host_names.get(r.get("hostId"), "Unknown"))
-        for r in raw_rooms
-    ]
-    return {"success": True, "data": suggestions}
+    result = await database[db.ROOMS].insert_one(room)
+    room["_id"] = result.inserted_id
+    return {"success": True, "data": await serialize_room(database, room)}
 
 
 @router.get("/by-code/{code}")
-async def get_room_by_code(code: str, current_user: dict = Depends(get_current_user)):
-    """Resolve a shareable join code (``K7JX2M``) to a room's id + name.
-
-    Enables the "Enter with code" flow without leaking the full room payload
-    until the joining user is a member of the room.
-    """
-    database = db.get_db()
-    room = await find_room_by_join_code(database, code)
+async def resolve_code(code: str, current_user: dict = Depends(get_current_user)):
+    cleaned = "".join(code.upper().split())
+    room = await db.get_db()[db.ROOMS].find_one({"joinCode": cleaned})
     if not room:
         raise HTTPException(status_code=404, detail="No room found for that code.")
-
-    host_name = await fetch_host_name(database, room.get("hostId"), default="Someone")
-    return {
-        "success": True,
-        "data": {
-            "id": str(room.get("_id")),
-            "name": room.get("name"),
-            "hostName": host_name,
-            "visibility": room.get("visibility"),
-            "memberCount": len(room.get("members") or []),
-        },
-    }
+    return {"success": True, "data": {
+        "id": str(room["_id"]), "name": room.get("name"),
+        "hostName": room.get("hostName", "Host"),
+    }}
 
 
-# ---------------------------------------------------------------------------
-# Room detail / invite / leave / kick / join-code regen / delete
-# ---------------------------------------------------------------------------
-
-
-@router.get("/{roomId}")
-async def get_room(roomId: str, current_user: dict = Depends(get_current_user)):
-    database = db.get_db()
-    room = await _get_room_or_404(database, roomId)
-
-    if not await can_access_room(database, room, current_user["id"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this room.")
-
-    members_profiles = await build_member_profiles(database, room.get("members") or [])
-    host_name = await fetch_host_name(database, room.get("hostId"), default="Someone")
-    await ensure_join_code(database, room)
-
-    payload = serialize_room(room, host_name=host_name)
-    payload["membersProfiles"] = members_profiles
-    return {"success": True, "data": payload}
-
-
-@router.post("/{roomId}/invite")
-async def invite_to_room(
-    roomId: str,
-    payload: RoomInviteRequest,
+@router.post("/{room_id}/join")
+async def join_room(
+    room_id: str,
+    payload: JoinRoomBody | None = None,
     current_user: dict = Depends(get_current_user),
 ):
     database = db.get_db()
-    my_id = current_user["id"]
-
-    from app.services.security import sanitize_text
-
-    target_id = sanitize_text(payload.userId, max_length=64)
-    if not ObjectId.is_valid(target_id):
-        raise HTTPException(status_code=404, detail="Invited user not found.")
-
-    room = await _get_room_or_404(database, roomId)
-    if room.get("hostId") != my_id:
-        raise HTTPException(status_code=403, detail="Only the room host can invite listeners.")
-    if target_id == my_id:
-        raise HTTPException(status_code=400, detail="You cannot invite yourself.")
-
-    # Only current Circle friends can be invited directly into a room.
-    if not await is_circle_member(database, my_id, target_id):
-        raise HTTPException(status_code=403, detail="You can only invite Circle friends.")
-
+    room = await _room_or_404(room_id)
+    user_id = current_user["id"]
+    already_member = user_id in (room.get("members") or []) or room.get("hostId") == user_id
+    supplied_code = (payload.code or "").upper() if payload else ""
+    stored_code = room.get("joinCode") or ""
+    if not already_member and (
+        not supplied_code or not secrets.compare_digest(supplied_code, stored_code)
+    ):
+        raise HTTPException(status_code=403, detail="A valid room code is required to join.")
     await database[db.ROOMS].update_one(
-        {"_id": ObjectId(roomId)},
-        {"$addToSet": {"invited": target_id}}
+        {"_id": room["_id"]}, {"$addToSet": {"members": user_id}}
     )
-
-    notification = {
-        "userId": target_id,
-        "type": "room_invite",
-        "senderId": my_id,
-        "senderName": current_user.get("displayName", "Someone"),
-        "senderAvatar": current_user.get("avatar"),
-        "roomId": roomId,
-        "roomName": room.get("name", "A Strumm Room"),
-        "read": False,
-        "createdAt": datetime.utcnow()
-    }
-    await database[db.NOTIFICATIONS].insert_one(notification)
-
-    await ws_manager.send_to_user(target_id, {
-        "event": ROOM_INVITED,
-        "data": {
-            "roomId": roomId,
-            "roomName": room.get("name", "A Strumm Room"),
-            "hostId": my_id,
-            "hostName": current_user.get("displayName", "Someone"),
-        }
-    })
-
-    return {
-        "success": True,
-        "message": f"{current_user.get('displayName', 'You')} invited a listener to the room.",
-    }
+    room = await get_room(database, room_id)
+    return {"success": True, "data": await serialize_room(database, room)}
 
 
-@router.post("/{roomId}/leave")
-async def leave_room(roomId: str, current_user: dict = Depends(get_current_user)):
-    """Leave a room cleanly (disconnect room sockets + run lifecycle cleanup).
-
-    Mirrors the WS-disconnect path so a client that navigated away without
-    closing its socket still becomes a room:left broadcast.
-    """
+@router.get("/{room_id}")
+async def room_snapshot(room_id: str, current_user: dict = Depends(get_current_user)):
     database = db.get_db()
-    room = await _get_room_or_404(database, roomId, detail="Strumm Room not found.")
-    my_id = current_user["id"]
-
-    if my_id not in (room.get("members") or []) and room.get("hostId") != my_id:
-        raise HTTPException(status_code=400, detail="You are not a member of this room.")
-
-    room_id_str = str(room["_id"])
-    # Drop any live room sockets first so the lifecycle cleanup sees an empty slot.
-    ws_manager.disconnect_user_from_room(room_id_str, my_id)
-    await handle_room_disconnect(room_id_str, my_id, explicit=True)
-
-    return {"success": True, "message": "Left the room."}
+    room = await _room_or_404(room_id)
+    await require_member(database, room, current_user["id"])
+    return {"success": True, "data": await serialize_room(database, room)}
 
 
-@router.post("/{roomId}/kick")
-async def kick_member(
-    roomId: str,
-    payload: RoomKickRequest,
+@router.post("/{room_id}/heartbeat")
+async def room_heartbeat(room_id: str, current_user: dict = Depends(get_current_user)):
+    database = db.get_db()
+    room = await _room_or_404(room_id)
+    user_id = current_user["id"]
+    await require_member(database, room, user_id)
+    now = datetime.utcnow()
+    await database[PRESENCE_COLLECTION].update_one(
+        {"roomId": room_id, "userId": user_id},
+        {"$set": {
+            "roomId": room_id, "userId": user_id,
+            "lastSeenAt": now,
+            "expiresAt": now + timedelta(seconds=PRESENCE_TTL_SECONDS * 3),
+        }},
+        upsert=True,
+    )
+    return {"success": True, "data": await serialize_room(database, room)}
+
+
+@router.post("/{room_id}/playback")
+async def update_playback(
+    room_id: str,
+    payload: PlaybackBody,
     current_user: dict = Depends(get_current_user),
 ):
-    """Host kicks a listener out of the room (broadcasts room:kicked)."""
     database = db.get_db()
-    my_id = current_user["id"]
-
-    from app.services.security import sanitize_text
-
-    target_id = sanitize_text(payload.userId, max_length=64)
-    room = await _get_room_or_404(database, roomId)
-
-    if room.get("hostId") != my_id:
-        raise HTTPException(status_code=403, detail="Only the room host can kick listeners.")
-    if target_id == my_id:
-        raise HTTPException(status_code=400, detail="You cannot kick yourself.")
-    if target_id not in (room.get("members") or []):
-        raise HTTPException(status_code=404, detail="That listener is not in the room.")
-
-    room_id_str = str(room["_id"])
-
-    # Broadcast the kick to everyone in the room; the client for the kicked
-    # user reacts by leaving (navigating home) while others just see them go.
-    from app.services.rooms import fetch_user_doc
-    target_doc = await fetch_user_doc(database, target_id)
-    target_name = target_doc.get("displayName", "Someone") if target_doc else "Someone"
-
-    await ws_manager.broadcast_to_room(
-        room_id=room_id_str,
-        message={
-            "event": ROOM_KICKED,
-            "data": {"userId": target_id, "displayName": target_name, "byHostId": my_id},
-        },
-    )
-
-    # Remove their live room sockets, then run the standard leave lifecycle
-    # (room:left broadcast + member removal; host transfer is impossible since
-    # a host may never kick themselves).
-    ws_manager.disconnect_user_from_room(room_id_str, target_id)
-    await handle_room_disconnect(room_id_str, target_id, explicit=True)
-
-    return {"success": True, "message": f"Kicked {target_name} from the room."}
+    room = await _room_or_404(room_id)
+    user_id = current_user["id"]
+    await require_member(database, room, user_id)
+    if room.get("hostId") != user_id:
+        raise HTTPException(status_code=403, detail="Only the host can control playback.")
+    song = clean_song(payload.song) if payload.song is not None else None
+    if payload.song is not None and song is None:
+        raise HTTPException(status_code=400, detail="Invalid song.")
+    timestamp = payload.timestamp if math.isfinite(payload.timestamp) else 0
+    state = {
+        "playing": payload.playing,
+        "timestamp": timestamp,
+        "updatedAt": datetime.utcnow(),
+    }
+    update = {"$set": {"currentTrack": song, "playbackState": state}}
+    if song:
+        update["$pull"] = {"queue": {"videoId": song["videoId"]}}
+    await database[db.ROOMS].update_one({"_id": room["_id"]}, update)
+    updated = await get_room(database, room_id)
+    return {"success": True, "data": await serialize_room(database, updated)}
 
 
-@router.post("/{roomId}/join-code")
-async def regenerate_join_code(roomId: str, current_user: dict = Depends(get_current_user)):
-    """Host regenerates the room's shareable join code."""
+@router.post("/{room_id}/queue")
+async def add_queue_song(
+    room_id: str,
+    payload: QueueBody,
+    current_user: dict = Depends(get_current_user),
+):
     database = db.get_db()
-    room = await _get_room_or_404(database, roomId)
-
-    if room.get("hostId") != current_user["id"]:
-        raise HTTPException(status_code=403, detail="Only the room host can change the join code.")
-
-    new_code = generate_join_code()
+    room = await _room_or_404(room_id)
+    await require_member(database, room, current_user["id"])
+    song = clean_song(payload.song)
+    if song is None:
+        raise HTTPException(status_code=400, detail="Invalid song.")
+    if len(room.get("queue") or []) >= 100:
+        raise HTTPException(status_code=409, detail="This room queue is full.")
     await database[db.ROOMS].update_one(
-        {"_id": room["_id"]}, {"$set": {"joinCode": new_code}}
+        {
+            "_id": room["_id"],
+            "queue.videoId": {"$ne": song["videoId"]},
+            "currentTrack.videoId": {"$ne": song["videoId"]},
+        },
+        {"$push": {"queue": song}},
     )
-    return {"success": True, "data": {"joinCode": new_code}}
+    updated = await get_room(database, room_id)
+    return {"success": True, "data": await serialize_room(database, updated)}
 
 
-@router.delete("/{roomId}")
-async def delete_room(roomId: str, current_user: dict = Depends(get_current_user)):
+@router.delete("/{room_id}/queue/{video_id}")
+async def remove_queue_song(
+    room_id: str,
+    video_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     database = db.get_db()
-    room = await _get_room_or_404(database, roomId)
-
+    room = await _room_or_404(room_id)
+    await require_member(database, room, current_user["id"])
     if room.get("hostId") != current_user["id"]:
-        raise HTTPException(status_code=403, detail="Only the room host can delete this room.")
+        raise HTTPException(status_code=403, detail="Only the host can edit the queue.")
+    await database[db.ROOMS].update_one(
+        {"_id": room["_id"]}, {"$pull": {"queue": {"videoId": video_id}}}
+    )
+    updated = await get_room(database, room_id)
+    return {"success": True, "data": await serialize_room(database, updated)}
 
-    room_id_str = str(room["_id"])
-    cancel_pending_room_delete(room_id_str)
-    await notify_room_deleted(database, room, room_id_str)
+
+@router.post("/{room_id}/leave")
+async def leave_room(room_id: str, current_user: dict = Depends(get_current_user)):
+    database = db.get_db()
+    room = await _room_or_404(room_id)
+    user_id = current_user["id"]
+    await require_member(database, room, user_id)
+    await database[PRESENCE_COLLECTION].delete_one({"roomId": room_id, "userId": user_id})
+    if room.get("hostId") == user_id:
+        await database[db.ROOMS].delete_one({"_id": room["_id"]})
+        await database[PRESENCE_COLLECTION].delete_many({"roomId": room_id})
+        return {"success": True, "data": {"deleted": True}}
+    await database[db.ROOMS].update_one({"_id": room["_id"]}, {"$pull": {"members": user_id}})
+    return {"success": True, "data": {"deleted": False}}
+
+
+@router.delete("/{room_id}")
+async def delete_room(room_id: str, current_user: dict = Depends(get_current_user)):
+    database = db.get_db()
+    room = await _room_or_404(room_id)
+    if room.get("hostId") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only the host can delete this room.")
     await database[db.ROOMS].delete_one({"_id": room["_id"]})
-
-    return {"success": True, "message": "Room deleted successfully."}
-
-
-# ---------------------------------------------------------------------------
-# Room WebSocket — sync + voice signalling
-# ---------------------------------------------------------------------------
-
-
-@router.websocket("/{roomId}/ws")
-async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
-    # Validate the room id before doing anything else.
-    if not ObjectId.is_valid(roomId):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid room")
-        return
-    room_oid = ObjectId(roomId)
-
-    # Authenticate via JWT access token from Sec-WebSocket-Protocol header
-    # Using the subprotocol header instead of query parameter to prevent
-    # token leakage in server access logs and Referer headers.
-    token = None
-    protocols = websocket.headers.get("sec-websocket-protocol", "")
-    if protocols:
-        for p in protocols.split(","):
-            p = p.strip()
-            if p and p != "authorization":
-                token = p
-                break
-
-    if not token:
-        # Fallback: check query parameter (backward compatibility).
-        from starlette.datastructures import QueryParams
-        query_string = websocket.url.query
-        if query_string:
-            params = QueryParams(query_string)
-            token = params.get("token")
-
-    if not token:
-        logger.warning("Room WS rejected — no token provided (roomId=%s)", roomId)
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication required")
-        return
-
-    payload = decode_access_token(token)
-    if not payload:
-        logger.warning("Room WS rejected — invalid token (roomId=%s)", roomId)
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
-        return
-    if payload.get("type") != "access":
-        logger.warning("Room WS rejected — refresh token used (roomId=%s)", roomId)
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Refresh tokens cannot be used for WebSocket connections")
-        return
-    userId = payload.get("sub")
-    if not userId:
-        logger.warning("Room WS rejected — missing sub claim (roomId=%s)", roomId)
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token payload")
-        return
-
-    database = db.get_db()
-
-    # Enforce room access rules server-side (never trust the browser's room data).
-    room = await database[db.ROOMS].find_one({"_id": room_oid})
-    if not room:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room not found")
-        return
-    if not await can_access_room(database, room, userId):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Not allowed in this room")
-        return
-
-    # The browser offered ["authorization", <JWT>] as WebSocket subprotocols.
-    # RFC 6455 requires the server to echo one offered protocol in the handshake;
-    # accepting without one makes browsers reject the connection before onopen.
-    # Echo only the non-secret protocol name, never the JWT.
-    await websocket.accept(subprotocol="authorization")
-    await ws_manager.connect_room(roomId, userId, websocket)
-    handle_room_member_join(database, roomId, room.get("hostId"), userId)
-
-    # Update room member lists
-    await database[db.ROOMS].update_one(
-        {"_id": room_oid},
-        {"$addToSet": {"members": userId}}
-    )
-    room = await database[db.ROOMS].find_one({"_id": room_oid}) or room
-
-    # Broadcast join (with profile data so clients need no refetch)
-    from app.services.rooms import fetch_user_doc
-    join_data = {"userId": userId}
-    user_doc = await fetch_user_doc(database, userId)
-    if user_doc:
-        await decorate_user_avatar(user_doc)
-        join_data["displayName"] = user_doc.get("displayName", "Someone")
-        join_data["avatar"] = user_doc.get("avatar")
-    else:
-        join_data["displayName"] = "Someone"
-        join_data["avatar"] = None
-
-    # Send the joining user a full room:state snapshot so they sync instantly
-    # without a follow-up GET round-trip (track, playback, queue, members).
-    await ensure_join_code(database, room)
-    host_name = await fetch_host_name(database, room.get("hostId"), default="Someone")
-    members_profiles = await build_member_profiles(database, room.get("members") or [])
-    await ws_manager.send_json(websocket, {
-        "event": ROOM_STATE,
-        "data": {
-            "currentTrack": room.get("currentTrack"),
-            "playbackState": room.get("playbackState"),
-            "queue": room.get("queue") or [],
-            "hostId": room.get("hostId"),
-            "hostName": host_name,
-            "controllers": room.get("controllers") or [],
-            "visibility": room.get("visibility"),
-            "joinCode": room.get("joinCode"),
-            "membersProfiles": members_profiles,
-            # Persisted members can include users whose room sockets have
-            # disconnected. Send live presence separately so clients can
-            # render the actual listeners (including a newly joined browser).
-            "connectedMemberIds": ws_manager.room_connected_user_ids(roomId),
-        },
-    })
-
-    await ws_manager.broadcast_to_room(
-        room_id=roomId,
-        message={"event": ROOM_JOINED, "data": join_data},
-        exclude_user_id=userId
-    )
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            try:
-                payload = json.loads(data)
-            except (TypeError, ValueError):
-                await ws_manager.send_json(websocket, {
-                    "event": "error",
-                    "data": {"reason": "Invalid JSON message."},
-                })
-                continue
-            if not isinstance(payload, dict):
-                await ws_manager.send_json(websocket, {
-                    "event": "error",
-                    "data": {"reason": "Message must be a JSON object."},
-                })
-                continue
-            event = payload.get("event")
-            event_data = payload.get("data", {})
-            if not isinstance(event_data, dict):
-                event_data = {}
-
-            if event == "track:update":
-                # Only the host or approved controllers can change the room track.
-                perm = await can_control(database, roomId, userId)
-                if not perm["allowed"]:
-                    await ws_manager.send_json(websocket, {
-                        "event": "control:denied",
-                        "data": {"reason": perm["reason"]},
-                    })
-                    continue
-                song = await set_room_track(database, room_oid, event_data.get("song"))
-                if song is None:
-                    await ws_manager.send_json(websocket, {
-                        "event": "error",
-                        "data": {"reason": "Invalid track payload."},
-                    })
-                    continue
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": "track:update", "data": {"song": song}},
-                    exclude_user_id=userId
-                )
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": QUEUE_REMOVED, "data": {"videoId": song["videoId"]}},
-                )
-
-            elif event in {"play", "pause", "seek"}:
-                perm = await can_control(database, roomId, userId)
-                if not perm["allowed"]:
-                    await ws_manager.send_json(websocket, {
-                        "event": "control:denied",
-                        "data": {"reason": perm["reason"]},
-                    })
-                    continue
-                import math
-                timestamp = event_data.get("timestamp", 0.0)
-                if (
-                    not isinstance(timestamp, (int, float))
-                    or not math.isfinite(timestamp)
-                    or timestamp < 0
-                    or timestamp > 86400
-                ):
-                    timestamp = 0.0
-                event_data = {**event_data, "timestamp": timestamp}
-                playback_state = {
-                    "playing": event == "play",
-                    "timestamp": timestamp,
-                    "updatedAt": datetime.utcnow()
-                }
-                await database[db.ROOMS].update_one(
-                    {"_id": room_oid},
-                    {"$set": {"playbackState": playback_state}}
-                )
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": event, "data": event_data},
-                    exclude_user_id=userId
-                )
-
-            elif event == "queue:add":
-                # Collaborative queue: any member may push a song.
-                song = await queue_push(database, room_oid, event_data.get("song"))
-                if song is None:
-                    continue
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": QUEUE_ADDED, "data": {"song": song, "addedBy": userId}},
-                )
-
-            elif event == "queue:remove":
-                # Host/controllers may remove a song from the queue.
-                perm = await can_control(database, roomId, userId)
-                if not perm["allowed"]:
-                    await ws_manager.send_json(websocket, {
-                        "event": "control:denied",
-                        "data": {"reason": perm["reason"]},
-                    })
-                    continue
-                video_id = event_data.get("videoId")
-                if not isinstance(video_id, str) or not video_id.strip() or len(video_id) > 128:
-                    continue
-                video_id = video_id.strip()
-                await queue_remove(database, room_oid, video_id)
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": QUEUE_REMOVED, "data": {"videoId": video_id}},
-                )
-
-            elif event == "queue:clear":
-                # Host/controllers may clear the whole queue.
-                perm = await can_control(database, roomId, userId)
-                if not perm["allowed"]:
-                    await ws_manager.send_json(websocket, {
-                        "event": "control:denied",
-                        "data": {"reason": perm["reason"]},
-                    })
-                    continue
-                await queue_clear(database, room_oid)
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": QUEUE_CLEARED, "data": {}},
-                )
-
-            elif event == "room:controller-add":
-                # Host-only: grant control to another member.
-                room_for_control = await database[db.ROOMS].find_one({"_id": room_oid})
-                target = event_data.get("userId")
-                if not room_for_control or room_for_control.get("hostId") != userId:
-                    await ws_manager.send_json(websocket, {
-                        "event": "control:denied",
-                        "data": {"reason": "Only the room host can manage controllers."},
-                    })
-                elif target and target != userId and target in (room_for_control.get("members") or []) and ObjectId.is_valid(str(target)):
-                    await database[db.ROOMS].update_one(
-                        {"_id": room_oid},
-                        {"$addToSet": {"controllers": target}}
-                    )
-                    updated = await database[db.ROOMS].find_one({"_id": room_oid})
-                    await ws_manager.broadcast_to_room(
-                        room_id=roomId,
-                        message={"event": ROOM_CONTROLLERS_UPDATED,
-                                 "data": {"controllers": updated.get("controllers") or []}},
-                    )
-
-            elif event == "room:controller-remove":
-                room_for_control = await database[db.ROOMS].find_one({"_id": room_oid})
-                target = event_data.get("userId")
-                if not room_for_control or room_for_control.get("hostId") != userId:
-                    await ws_manager.send_json(websocket, {
-                        "event": "control:denied",
-                        "data": {"reason": "Only the room host can manage controllers."},
-                    })
-                elif target and target != userId and target in (room_for_control.get("members") or []):
-                    await database[db.ROOMS].update_one(
-                        {"_id": room_oid},
-                        {"$pull": {"controllers": target}}
-                    )
-                    updated = await database[db.ROOMS].find_one({"_id": room_oid})
-                    await ws_manager.broadcast_to_room(
-                        room_id=roomId,
-                        message={"event": ROOM_CONTROLLERS_UPDATED,
-                                 "data": {"controllers": updated.get("controllers") or []}},
-                    )
-
-            elif event == "signal":
-                # WebRTC Signaling voice channel bypass
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": "signal", "data": event_data},
-                    exclude_user_id=userId
-                )
-
-            elif event == "chat:message":
-                # Broadcast chat messages to other room members
-                await ws_manager.broadcast_to_room(
-                    room_id=roomId,
-                    message={"event": "chat:message", "data": event_data},
-                    exclude_user_id=userId
-                )
-
-    except WebSocketDisconnect:
-        pass
-    except Exception as exc:
-        logger.error("Room WS error (room=%s user=%s): %s", roomId, userId[:8], exc)
-        import sentry_sdk
-        sentry_sdk.capture_exception(exc)
-    finally:
-        ws_manager.disconnect_room(roomId, websocket)
-        await handle_room_disconnect(roomId, userId)
+    await database[PRESENCE_COLLECTION].delete_many({"roomId": room_id})
+    return {"success": True, "message": "Room deleted."}

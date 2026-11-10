@@ -1127,9 +1127,7 @@ async def delete_user_account(current_user: dict = Depends(get_current_user)):
             await database["password_resets"].delete_many({"email": user_email})
             await database["login_attempts"].delete_many({"email": user_email})
 
-        # Remove the account from other people's social records. Notifications
-        # are cleaned after hosted rooms are removed so room invites cannot be
-        # left pointing at a deleted room.
+        # Remove the account from social connections and the new room model.
         await database[db.CONNECTIONS].delete_many({
             "$or": [
                 {"requesterId": {"$in": possible_ids}},
@@ -1137,34 +1135,34 @@ async def delete_user_account(current_user: dict = Depends(get_current_user)):
             ]
         })
 
+        await database[db.ROOM_PRESENCE].delete_many({
+            "userId": {"$in": possible_id_strings}
+        })
+
         room_ids_to_remove = []
         affected_rooms = database[db.ROOMS].find({
             "$or": [
                 {"hostId": {"$in": possible_ids}},
                 {"members": {"$in": possible_ids}},
-                {"controllers": {"$in": possible_ids}},
-                {"invited": {"$in": possible_ids}},
             ]
         })
         async for room in affected_rooms:
             room_id = room.get("_id")
-            if str(room.get("hostId", "")) in possible_id_strings:
-                if room_id is not None:
-                    await database[db.ROOMS].delete_one({"_id": room_id})
-                    room_ids_to_remove.append(str(room_id))
+            if room_id is None:
                 continue
-
-            # Keep rooms owned by other people, but erase the deleted user's
-            # membership, controller and invitation references from them.
-            room_patch = {}
-            for field in ("members", "controllers", "invited"):
-                values = room.get(field)
-                if isinstance(values, list):
-                    remaining = [value for value in values if str(value) not in possible_id_strings]
-                    if remaining != values:
-                        room_patch[field] = remaining
-            if room_patch and room_id is not None:
-                await database[db.ROOMS].update_one({"_id": room_id}, {"$set": room_patch})
+            if str(room.get("hostId", "")) in possible_id_strings:
+                await database[db.ROOMS].delete_one({"_id": room_id})
+                await database[db.ROOM_PRESENCE].delete_many({"roomId": str(room_id)})
+                room_ids_to_remove.append(str(room_id))
+            else:
+                members = room.get("members")
+                if isinstance(members, list):
+                    remaining = [value for value in members if str(value) not in possible_id_strings]
+                    if remaining != members:
+                        await database[db.ROOMS].update_one(
+                            {"_id": room_id},
+                            {"$set": {"members": remaining}},
+                        )
 
         notification_conditions = [
             {"userId": {"$in": possible_ids}},

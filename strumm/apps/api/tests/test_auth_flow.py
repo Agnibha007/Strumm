@@ -992,8 +992,13 @@ async def test_account_deletion_cleans_user_data_social_links_rooms_and_owned_me
             {"_id": ObjectId(), "requesterId": friend_id, "receiverId": "507f1f77bcf86cd799439088"},
         ]),
         rooms=FakeCollection([
-            {"_id": own_room_id, "hostId": USER_ID, "members": [USER_ID], "controllers": [USER_ID]},
-            {"_id": shared_room_id, "hostId": friend_id, "members": [USER_ID, friend_id], "controllers": [USER_ID], "invited": [USER_ID]},
+            {"_id": own_room_id, "hostId": USER_ID, "members": [USER_ID]},
+            {"_id": shared_room_id, "hostId": friend_id, "members": [USER_ID, friend_id]},
+        ]),
+        room_presence=FakeCollection([
+            {"_id": ObjectId(), "roomId": str(own_room_id), "userId": USER_ID},
+            {"_id": ObjectId(), "roomId": str(shared_room_id), "userId": USER_ID},
+            {"_id": ObjectId(), "roomId": str(shared_room_id), "userId": friend_id},
         ]),
         notifications=FakeCollection([
             {"_id": ObjectId(), "userId": friend_id, "senderId": USER_ID, "type": "friend_request"},
@@ -1026,8 +1031,10 @@ async def test_account_deletion_cleans_user_data_social_links_rooms_and_owned_me
     remaining_room = db[db_names.ROOMS].docs[0]
     assert remaining_room["_id"] == shared_room_id
     assert remaining_room["members"] == [friend_id]
-    assert remaining_room["controllers"] == []
-    assert remaining_room["invited"] == []
+    remaining_presence = db[db_names.ROOM_PRESENCE].docs
+    assert len(remaining_presence) == 1
+    assert remaining_presence[0]["roomId"] == str(shared_room_id)
+    assert remaining_presence[0]["userId"] == friend_id
     assert len(db[db_names.NOTIFICATIONS].docs) == 1
     assert db[db_names.NOTIFICATIONS].docs[0]["type"] == "unrelated"
     assert len(db[db_names.PLAYLISTS].docs) == 1

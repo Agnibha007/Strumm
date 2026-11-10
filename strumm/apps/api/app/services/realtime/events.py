@@ -6,7 +6,6 @@ Every event follows the shape:
 
 Events prefixed with `user:` are sent to a single user.
 Events prefixed with `circle:` are broadcast to all of a user's circle members.
-Events prefixed with `room:` are broadcast to all members of a room.
 """
 
 # ---------------------------------------------------------------------------
@@ -37,27 +36,6 @@ CIRCLE_ACTIVITY_UPDATED = "circle:activity_updated"  # Friend's activity changed
 FRIEND_REQUEST = "circle:friend_request"
 FRIEND_ACCEPTED = "circle:friend_accepted"
 FRIEND_REMOVED = "circle:friend_removed"
-
-# ---------------------------------------------------------------------------
-# Room events
-# ---------------------------------------------------------------------------
-
-ROOM_CREATED = "room:created"
-ROOM_UPDATED = "room:updated"
-ROOM_DELETED = "room:deleted"
-ROOM_JOINED = "room:joined"
-ROOM_LEFT = "room:left"
-ROOM_MEMBER_COUNT = "room:member_count"
-ROOM_HOST_TRANSFERRED = "room:host_transferred"
-ROOM_CONTROLLERS_UPDATED = "room:controllers_updated"
-ROOM_INVITED = "room:invited"
-ROOM_STATE = "room:state"        # Full room snapshot pushed to a joining member
-ROOM_KICKED = "room:kicked"      # Host kicked a listener out of the room
-
-# --- Room queue events (collaborative queue) ---
-QUEUE_ADDED = "queue:add"
-QUEUE_REMOVED = "queue:removed"
-QUEUE_CLEARED = "queue:cleared"
 
 # ---------------------------------------------------------------------------
 # Notification events

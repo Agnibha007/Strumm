@@ -153,22 +153,8 @@ async def _background_startup_work():
         await _create_indexes(database)
         logger.info(f"[{time.time() - t0:.3f}s] Database indexes created.")
 
-        # --- Legacy room cleanup (idempotent; normalizes old room docs so the
-        # extracted rooms service never trips over pre-refactor data) ---
-        try:
-            from app.services.rooms import cleanup_legacy_rooms
-            room_stats = await cleanup_legacy_rooms(database)
-            logger.info(
-                f"[{time.time() - t0:.3f}s] Room cleanup: "
-                f"{room_stats.get('backfilledJoinCodes', 0)} join codes backfilled, "
-                f"{room_stats.get('deletedHostless', 0)} hostless rooms dropped, "
-                f"{room_stats.get('deletedEmpty', 0)} empty rooms dropped, "
-                f"{room_stats.get('removedStaleInvites', 0)} stale invites removed."
-            )
-        except Exception as exc:
-            logger.error(f"Legacy room cleanup failed (app continues serving): {exc}")
-            import sentry_sdk
-            sentry_sdk.capture_exception(exc)
+        # Rooms use MongoDB-backed heartbeat leases; no process-local startup
+        # migration or WebSocket presence state is required.
 
         # --- Disk usage check ---
         _check_disk_usage()
@@ -209,6 +195,11 @@ async def _create_indexes(database):
         ("notifications.userId", lambda: database[db.NOTIFICATIONS].create_index("userId")),
         ("notifications.compound", lambda: database[db.NOTIFICATIONS].create_index([("userId", 1), ("createdAt", -1)])),
         ("rooms.hostId", lambda: database[db.ROOMS].create_index("hostId")),
+        ("rooms.members", lambda: database[db.ROOMS].create_index("members")),
+        ("rooms.joinCode", lambda: database[db.ROOMS].create_index("joinCode")),
+        ("room_presence.room_user", lambda: database[db.ROOM_PRESENCE].create_index([("roomId", 1), ("userId", 1)], unique=True)),
+        ("room_presence.room_last_seen", lambda: database[db.ROOM_PRESENCE].create_index([("roomId", 1), ("lastSeenAt", -1)])),
+        ("room_presence.expiresAt_ttl", lambda: database[db.ROOM_PRESENCE].create_index("expiresAt", expireAfterSeconds=0)),
         ("follows.compound", lambda: database["follows"].create_index([("userId", 1), ("contentType", 1)])),
         # New indexes for previously unindexed collections
         ("sessions.refreshTokenHash", lambda: database[db.SESSIONS].create_index("refreshTokenHash", sparse=True)),
