@@ -170,14 +170,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       if (json.success) {
         setRoom(json.data);
         setRoomError(null);
-        // Initialize active members with all members from initial fetch
-        // (will be updated in real-time via WebSocket). members is an array of
-        // user-ID strings (not objects), so flatten both shapes defensively.
-        setActiveMemberIds(new Set(
-          (json.data.members || [])
-            .map((m: any) => (typeof m === "string" ? m : m?.id))
-            .filter(Boolean)
-        ));
+        // REST members are persistent room membership, not live presence.
+        // The room WebSocket snapshot supplies the authoritative connected IDs.
+        setActiveMemberIds(new Set());
       } else {
         if (response.status === 404) {
           // The room no longer exists server-side (deleted or expired). Leave
@@ -354,9 +349,6 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       }
       ws = new WebSocket(wsUrl, ["authorization", currentToken]);
       socketRef.current = ws;
-
-      // Add current user to active members on connect (re-added on every retry)
-      setActiveMemberIds(prev => new Set([...prev, user.id]));
 
       ws.onopen = () => {
         reconnectDelay = 1000;

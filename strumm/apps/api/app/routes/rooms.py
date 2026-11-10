@@ -488,8 +488,11 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Not allowed in this room")
         return
 
-    # MUST accept before sending/receiving any frames.
-    await websocket.accept()
+    # The browser offered ["authorization", <JWT>] as WebSocket subprotocols.
+    # RFC 6455 requires the server to echo one offered protocol in the handshake;
+    # accepting without one makes browsers reject the connection before onopen.
+    # Echo only the non-secret protocol name, never the JWT.
+    await websocket.accept(subprotocol="authorization")
     await ws_manager.connect_room(roomId, userId, websocket)
     handle_room_member_join(database, roomId, room.get("hostId"), userId)
 
