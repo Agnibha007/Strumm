@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useThemeStore } from "web/store/useThemeStore";
 import { usePathname, useRouter } from "next/navigation";
 import BrandLogo from "web/components/BrandLogo";
@@ -24,6 +24,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   // One-time latch: NextAuth flips status back to "loading" when it refetches
   // the session on tab focus, which must not re-trigger the splash screen.
   const [sessionResolved, setSessionResolved] = useState(false);
+  const sessionInvalidated = useRef(false);
   const pathname = usePathname();
   const router = useRouter();
   const { customImage } = useThemeStore();
@@ -46,6 +47,24 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     }
   }, [sessionStatus]);
 
+  useEffect(() => {
+    // A later, fresh sign-in may establish a new NextAuth session.
+    if (sessionStatus === "unauthenticated") {
+      sessionInvalidated.current = false;
+    }
+  }, [sessionStatus]);
+
+  // The backend is authoritative. Clear the separate NextAuth session too,
+  // and prevent a cached OAuth token from repopulating the auth store.
+  useEffect(() => {
+    const handleSessionCleared = () => {
+      sessionInvalidated.current = true;
+      void signOut({ redirect: false });
+    };
+    window.addEventListener("strumm:auth-session-cleared", handleSessionCleared);
+    return () => window.removeEventListener("strumm:auth-session-cleared", handleSessionCleared);
+  }, []);
+
   // Sync NextAuth Google session into the Zustand store.
   // The server-side OAuth sync in the NextAuth route cannot forward the
   // backend's Set-Cookie headers, so after populating the store we also run a
@@ -53,7 +72,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   // (so later page reloads restore from cookies instead of the session cookie)
   // and replaces the trimmed session user with the full backend user.
   useEffect(() => {
-    if (sessionStatus !== "authenticated") return;
+    if (sessionInvalidated.current || sessionStatus !== "authenticated") return;
     const s = session as any;
     if (!s?.accessToken || !s?.user) return;
     const store = useAuthStore.getState();
@@ -79,11 +98,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (loading) return;
     if (!sessionResolved) return;
-    const hasSessionCreds =
-      sessionStatus === "authenticated" &&
-      !!(session as any)?.accessToken &&
-      !!(session as any)?.user;
-    const isAuthenticated = !!user || hasSessionCreds;
+    const isAuthenticated = !!user;
     const isPublic = isPublicRoute(pathname);
     if (!isAuthenticated && pathname !== "/login" && pathname !== "/" && !isPublic) {
       const currentSearch = window.location.search;
@@ -106,7 +121,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     );
   }
 
-  const isAuthenticated = !!user || (sessionStatus === "authenticated" && !!(session as any)?.accessToken && !!(session as any)?.user);
+  const isAuthenticated = !!user;
 
   if (!isAuthenticated) {
     if (pathname === "/login" || pathname === "/" || isPublicRoute(pathname)) {

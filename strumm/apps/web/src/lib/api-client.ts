@@ -70,14 +70,24 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   let response = await attemptFetch();
 
-  // Reactive retry: if the access token expired mid-session (e.g. timers were
-  // throttled while the tab was backgrounded), refresh once and retry.
+  // Reactive retry: only attempt session recovery if this request belonged to
+  // an authenticated user. Public endpoints must not trigger login/session churn.
   if (response.status === 401) {
     const store = await import("web/store/useAuthStore");
-    const refreshed = await store.useAuthStore.getState().silentRefresh();
-    if (refreshed) {
-      headers.set("Authorization", `Bearer ${store.useAuthStore.getState().token}`);
-      response = await attemptFetch();
+    const hadSession = !!effectiveToken || !!store.useAuthStore.getState().user;
+    if (hadSession) {
+      const refresh = await store.refreshSession();
+      if (refresh.ok) {
+        headers.set("Authorization", `Bearer ${store.useAuthStore.getState().token}`);
+        response = await attemptFetch();
+      } else if (
+        refresh.status === 401 &&
+        store.isAccessTokenExpiredOrAbsent(store.useAuthStore.getState().token)
+      ) {
+        const { markSessionExpired } = await import("web/lib/session-expiry");
+        markSessionExpired();
+        store.useAuthStore.getState().clearLocalSession();
+      }
     }
   }
 

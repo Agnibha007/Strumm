@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { User } from "@strumm/types";
 import { apiFetch, ApiError } from "web/lib/api-client";
 import { apiUrl } from "web/lib/api";
-import { consumeSessionExpiredNotice } from "web/lib/session-expiry";
+import { consumeSessionExpiredNotice, markSessionExpired } from "web/lib/session-expiry";
 
 // ---------------------------------------------------------------------------
 // Typed global window extensions for auth timers and visibility handler
@@ -24,7 +24,7 @@ interface AuthState {
   logout: () => void;
   fetchProfile: () => Promise<boolean>;
   silentRefresh: () => Promise<boolean>;
-  /** Drop local session state without revoking the server session or clearing cookies. */
+  /** Clear a definitively expired backend session and its browser credentials. */
   clearLocalSession: () => void;
 }
 
@@ -55,31 +55,34 @@ export const useAuthStore = create<AuthState>()(
       
       logout: () => {
         const { refreshToken } = get();
-
-        // Revoke session on the server before clearing local state.
-        // The httpOnly access_token/refresh_token cookies are cleared by the
-        // backend; credentials must be included for the Set-Cookie to apply.
         if (typeof window !== "undefined") {
           fetch(apiUrl("/auth/logout"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
             body: JSON.stringify({ refreshToken }),
-          }).catch(() => {
-            // Fire-and-forget: don't block logout if the request fails
-          });
+          }).catch(() => undefined);
         }
-
         set({ token: null, user: null, refreshToken: null });
         teardownSessionListeners();
+        notifyAuthSessionCleared();
       },
 
-      // Clears only the local state. Unlike logout(), this does NOT revoke the
-      // server session or delete the httpOnly cookies, so a later page load can
-      // still restore the session via refreshSession once the API is reachable.
+      // A confirmed-dead backend session must also clear its cookies and the
+      // separate NextAuth session; otherwise stale OAuth state can resurrect it.
       clearLocalSession: () => {
+        const { refreshToken } = get();
+        if (typeof window !== "undefined") {
+          fetch(apiUrl("/auth/logout"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ refreshToken }),
+          }).catch(() => undefined);
+        }
         set({ token: null, user: null, refreshToken: null });
         teardownSessionListeners();
+        notifyAuthSessionCleared();
       },
 
       silentRefresh: async () => {
@@ -102,6 +105,7 @@ export const useAuthStore = create<AuthState>()(
             // error or cold start keeps the session so the
             // background retry in initializeAuth can recover it.
             if (isAccessTokenExpiredOrAbsent(get().token) && result.status === 401) {
+              markSessionExpired();
               get().clearLocalSession();
             }
             return false;
@@ -132,12 +136,14 @@ export const useAuthStore = create<AuthState>()(
                   err.status === 401 &&
                   isAccessTokenExpiredOrAbsent(get().token)
                 ) {
+                  markSessionExpired();
                   get().clearLocalSession();
                 }
                 return false;
               }
             }
             if (isAccessTokenExpiredOrAbsent(get().token) && result.status === 401) {
+              markSessionExpired();
               get().clearLocalSession();
             }
             return false;
@@ -166,6 +172,12 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+function notifyAuthSessionCleared() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("strumm:auth-session-cleared"));
+  }
+}
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
@@ -285,6 +297,7 @@ async function retryRefreshInBackground() {
       result.status === 401 &&
       isAccessTokenExpiredOrAbsent(useAuthStore.getState().token)
     ) {
+      markSessionExpired();
       useAuthStore.getState().clearLocalSession();
       return;
     }
@@ -315,8 +328,15 @@ function setupVisibilityRefresh() {
     // If less than the refresh buffer remains, refresh proactively
     if (remaining < REFRESH_BUFFER_MS) {
       _refreshing = true;
-      const { silentRefresh } = useAuthStore.getState();
-      await silentRefresh();
+      const result = await refreshSession();
+      if (
+        !result.ok &&
+        result.status === 401 &&
+        isAccessTokenExpiredOrAbsent(useAuthStore.getState().token)
+      ) {
+        markSessionExpired();
+        useAuthStore.getState().clearLocalSession();
+      }
       _refreshing = false;
     }
   };
