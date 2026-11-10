@@ -97,9 +97,9 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
   const [messages, setMessages] = useState<Array<{ sender: string; text: string }>>([]);
   const [inputText, setInputText] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
-  const isHost = room && user ? room.hostId === user.id : false;
+  const isHost = !!room && !!user && String(room.hostId) === String(user.id);
   // Host OR an approved controller can drive playback (backend enforces too).
-  const canControl = isHost || !!room?.controllers?.includes(user?.id ?? "");
+  const canControl = isHost || !!room?.controllers?.some((controllerId) => String(controllerId) === String(user?.id ?? ""));
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [suggestQuery, setSuggestQuery] = useState("");
   const [suggestResults, setSuggestResults] = useState<any[]>([]);
@@ -1245,7 +1245,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             <div className="space-y-2 min-w-0 max-w-xl">
               <h1 className="font-editorial text-2xl md:text-3xl font-bold text-text">Waiting for the first track</h1>
               <p className="text-sm text-muted">
-                {canControl ? "Drop a song into the queue using the Suggest button to get the listening party going." : "The host hasn't loaded a song yet — sit tight."}
+                {canControl ? "Choose a track and play it for everyone in the room." : "The host hasn't loaded a song yet — sit tight."}
               </p>
             </div>
           )}
@@ -1256,7 +1256,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface/60 border border-border/50 hover:border-primary/50 text-text text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 text-primary" />
-              {canControl ? "Add a song" : "Suggest"}
+              {canControl ? "Play from room" : "Suggest"}
             </button>
             <button
               onClick={() => { setCodeOpen(true); setCodeCopied(false); }}
@@ -1477,10 +1477,10 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
             >
               <div className="flex items-center gap-2 text-primary">
                 <Search className="w-4 h-4" />
-                <span className="text-[10px] uppercase tracking-widest font-bold">Suggest songs</span>
+                <span className="text-[10px] uppercase tracking-widest font-bold">{canControl ? "Play from room" : "Suggest songs"}</span>
               </div>
               <p className="text-xs text-text mt-2 font-semibold group-hover:text-primary transition">
-                {canControl ? "Search & drop the next track" : "Add your pick to the queue"}
+                {canControl ? "Search and play a track for everyone" : "Add your pick to the queue"}
               </p>
               <p className="text-[10px] text-muted mt-1">Powering the room&apos;s collaborative queue.</p>
             </button>
@@ -1534,8 +1534,8 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
           >
             <div className="flex items-start justify-between min-w-0">
               <div className="min-w-0">
-                <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">Collaborative queue</span>
-                <h3 className="font-editorial text-xl font-bold text-text mt-0.5">{canControl ? "Add the next track" : "Suggest a song"}</h3>
+                <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">{canControl ? "Host playback" : "Collaborative queue"}</span>
+                <h3 className="font-editorial text-xl font-bold text-text mt-0.5">{canControl ? "Play from room" : "Suggest a song"}</h3>
               </div>
               <button
                 onClick={() => setSuggestOpen(false)}
@@ -1585,7 +1585,7 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
                             onClick={() => { handlePlayNow(song); setSuggestOpen(false); }}
                             className="px-2.5 py-1.5 bg-primary/15 hover:bg-primary/30 text-primary font-bold rounded-lg text-[10px] transition cursor-pointer whitespace-nowrap"
                           >
-                            Play
+                            Play now
                           </button>
                           <button
                             onClick={() => handleAddToQueue(song)}

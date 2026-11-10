@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { useAuthStore } from "web/store/useAuthStore";
 import { useThemeStore } from "web/store/useThemeStore";
 import { mostVisitedSongs, prefetchSongMetadata } from "web/lib/api";
+import RoomNavigationGuard from "web/components/RoomNavigationGuard";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const isAnimated = useThemeStore((state) => state.isAnimated);
@@ -37,7 +38,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
        * motion — the app preference overrode the accessibility preference.
        * "always" is still used when the user turns animations off here.
        */}
-      <MotionConfig reducedMotion={isAnimated ? "user" : "always"}>{children}</MotionConfig>
+      <MotionConfig reducedMotion={isAnimated ? "user" : "always"}>
+        <RoomNavigationGuard />
+        {children}
+      </MotionConfig>
     </SessionProvider>
   );
 }
