@@ -1,714 +1,174 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useAuthStore } from "web/store/useAuthStore";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Headphones, Plus, Radio, Users } from "lucide-react";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
-import {
-  ArrowRight,
-  Check,
-  Crown,
-  Headphones,
-  KeyRound,
-  Loader2,
-  Music,
-  Plus,
-  Radio,
-  Search,
-  ShieldAlert,
-  Signal,
-  Users,
-  X,
-} from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { CardGridSkeleton } from "web/components/PageSkeleton";
-import SongArtwork from "web/components/SongArtwork";
-import { ARTWORK_QUALITY_LOW } from "web/lib/media";
+import { useAuthStore } from "web/store/useAuthStore";
 
-interface RoomTrack {
-  videoId: string;
-  title: string;
-  artist?: string;
-  thumbnail: string;
-}
-
-interface Room {
-  id: string;
-  name: string;
-  hostId: string;
-  hostName: string;
-  members: string[];
-  currentTrack?: RoomTrack | null;
-  visibility: string;
-  joinCode?: string | null;
-}
-
-interface ResolvedByCode {
+type Room = {
   id: string;
   name: string;
   hostName: string;
-  memberCount: number;
-}
+  joinCode: string;
+  listenerCount: number;
+  currentTrack?: { title?: string; artist?: string } | null;
+};
 
-function LivePill({ listeners }: { listeners: number }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 px-2.5 py-1 text-[9px] uppercase tracking-wider font-bold">
-      <span className="relative flex h-1.5 w-1.5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-      </span>
-      Live · {listeners}
-    </span>
-  );
+async function readResponse(response: Response) {
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !json?.success) {
+    throw new Error(json?.detail || json?.error || "Something went wrong.");
+  }
+  return json.data;
 }
 
 export default function RoomsPage() {
-  const { token, user } = useAuthStore();
   const router = useRouter();
-
+  const token = useAuthStore((state) => state.token);
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [suggestions, setSuggestions] = useState<Room[]>([]);
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(true);
-  // Loading failures used to be written to a state slot that was never read, so
-  // a backend outage rendered identically to "there are no rooms". The two are
-  // completely different messages to a user, so the error is surfaced and the
-  // lobby can be retried without a full reload.
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  // Search
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Room[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  // Start-a-Room sheet
-  const [startOpen, setStartOpen] = useState(false);
-  const [roomName, setRoomName] = useState("");
-  const [roomVisibility, setRoomVisibility] = useState<"public" | "circle">("public");
-  const [creating, setCreating] = useState(false);
-  // Shown inside the sheet. A failed create used to close and clear the form, so
-  // the room name the user just typed was lost along with any explanation.
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  // Enter-with-code sheet
-  const [codeOpen, setCodeOpen] = useState(false);
-  const [codeInput, setCodeInput] = useState("");
-  const [resolving, setResolving] = useState(false);
-  const [resolved, setResolved] = useState<ResolvedByCode | null>(null);
-  const [codeError, setCodeError] = useState<string | null>(null);
-
-  const joinedRoomIds = useMemo(() => {
-    if (!user) return new Set<string>();
-    return new Set(rooms.filter((r) => r.hostId === user.id || r.members.includes(user.id)).map((r) => r.id));
-  }, [rooms, user]);
-
-  const fetchRooms = async () => {
-    if (!user) return;
-    setLoadError(null);
+  const loadRooms = useCallback(async () => {
+    if (!token) return;
     try {
-      const response = await authFetch(apiUrl("/social/rooms"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const json = await response.json().catch(() => null);
-      if (json?.success) {
-        setRooms(json.data || []);
-      } else if (!json) {
-        setLoadError("The room server sent a response we could not read.");
-      } else {
-        setLoadError(json.error || json.detail || "Could not load rooms.");
-      }
-    } catch (e) {
-      setLoadError("Failed to connect to the Room server.");
+      const response = await authFetch(apiUrl("/social/rooms"));
+      setRooms(await readResponse(response));
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load rooms.");
     } finally {
       setLoading(false);
     }
-  };
-
-  const retryRooms = () => {
-    setLoading(true);
-    void fetchRooms();
-  };
-
-  const fetchSuggestions = async () => {
-    if (!user) return;
-    try {
-      const response = await authFetch(apiUrl("/social/rooms/suggestions"), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const json = await response.json();
-      if (json.success) {
-        setSuggestions(json.data || []);
-      }
-    } catch (e) {
-      // Suggestions are non-critical — swallow failures quietly.
-    }
-  };
-
-  // Stale-guard: ignore responses from searches that were superseded (slow
-  // network could otherwise flash outdated results into the results list).
-  const searchRequestRef = useRef(0);
-
-  const handleSearch = async (query: string) => {
-    const q = query.trim();
-    const requestId = ++searchRequestRef.current;
-
-    if (!q) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-
-    setSearching(true);
-    try {
-      const response = await authFetch(apiUrl(`/social/rooms/search?q=${encodeURIComponent(q)}`), {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      const json = await response.json().catch(() => null);
-      if (searchRequestRef.current !== requestId) return;
-      if (json?.success) {
-        setSearchResults(json.data || []);
-      } else {
-        setSearchResults([]);
-      }
-    } catch (e) {
-      if (searchRequestRef.current !== requestId) return;
-      setSearchResults([]);
-    } finally {
-      if (searchRequestRef.current === requestId) setSearching(false);
-    }
-  };
+  }, [token]);
 
   useEffect(() => {
-    if (user) {
-      fetchRooms();
-      fetchSuggestions();
-    }
-  }, [user]);
+    void loadRooms();
+  }, [loadRooms]);
 
-  // Escape closes whichever bottom sheet is open. Both are full-screen overlays
-  // with a backdrop, so a keyboard user had no way out of them before this.
-  useEffect(() => {
-    if (!startOpen && !codeOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (creating || resolving) return;
-      setStartOpen(false);
-      setCodeOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [startOpen, codeOpen, creating, resolving]);
-
-  const openStartSheet = () => {
-    setCreateError(null);
-    setStartOpen(true);
-  };
-
-  const handleCreateRoom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!roomName.trim() || !user) return;
-
-    setCreating(true);
-    setCreateError(null);
+  const createRoom = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError("");
     try {
       const response = await authFetch(apiUrl("/social/rooms"), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: roomName.trim(),
-          visibility: roomVisibility
-        })
+        body: JSON.stringify({ name: name.trim() }),
       });
-      const json = await response.json().catch(() => null);
-      if (json?.success && json.data?.id) {
-        router.push(`/rooms/${json.data.id}`);
-        return;
-      }
-      // Keep the sheet open and the typed name intact so the user can fix and
-      // resubmit instead of retyping everything.
-      setCreateError(
-        json?.error || json?.detail || "The room could not be created. Please try again."
-      );
-    } catch (e) {
-      setCreateError("Failed to connect to the Room server. Please try again.");
+      const room = await readResponse(response);
+      router.push(`/rooms/${room.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create the room.");
     } finally {
-      setCreating(false);
+      setBusy(false);
     }
   };
 
-  const openCodeSheet = () => {
-    setCodeInput("");
-    setResolved(null);
-    setCodeError(null);
-    setCodeOpen(true);
-  };
-
-  const handleResolveCode = async () => {
-    const code = codeInput.trim().toUpperCase().replace(/\s/g, "");
-    if (!code) return;
-    setResolving(true);
-    setResolved(null);
-    setCodeError(null);
+  const joinByCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (code.trim().length < 6 || busy) return;
+    setBusy(true);
+    setError("");
     try {
-      const response = await authFetch(apiUrl(`/social/rooms/by-code/${encodeURIComponent(code)}`), {
-        headers: { "Authorization": `Bearer ${token}` }
+      const lookup = await authFetch(apiUrl(`/social/rooms/by-code/${encodeURIComponent(code.trim())}`));
+      const room = await readResponse(lookup);
+      const joined = await authFetch(apiUrl(`/social/rooms/${room.id}/join`), {
+        method: "POST",
+        body: JSON.stringify({ code: code.trim() }),
       });
-      const json = await response.json();
-      if (json.success) {
-        setResolved(json.data);
-      } else {
-        setCodeError(json.error || json.detail || "No room found for that code.");
-      }
-    } catch (e) {
-      setCodeError("Unable to reach the room server.");
+      await readResponse(joined);
+      router.push(`/rooms/${room.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not join that room.");
     } finally {
-      setResolving(false);
+      setBusy(false);
     }
   };
-
-  const handleCopyCode = (code: string) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(code).catch(() => {});
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-6 gap-4">
-        <Radio className="w-12 h-12 text-primary opacity-50" />
-        <h3 className="font-editorial text-2xl text-text font-bold">Rooms Locked</h3>
-        <p className="text-sm text-muted">Sign in to join or create a shared Strumm Room.</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="max-w-6xl px-4 md:px-0 py-8 space-y-6">
-        <div className="space-y-2 animate-pulse">
-          <div className="h-3 w-20 bg-border/40 rounded" />
-          <div className="h-8 w-48 bg-border/40 rounded" />
-        </div>
-        <CardGridSkeleton count={6} />
-      </div>
-    );
-  }
-
-  const renderRoomCard = (room: Room, extraLabel?: string) => (
-    <Link href={`/rooms/${room.id}`} key={room.id}>
-      <span className="block relative overflow-hidden group h-full rounded-3xl bg-surface/55 border border-border/70 hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/10 transition-all duration-200 min-w-0 cursor-pointer soft-enter">
-        {/* Full-bleed blurred artwork backdrop */}
-        {room.currentTrack ? (
-          <div className="absolute inset-0">
-            <SongArtwork
-              song={room.currentTrack}
-              className="w-full h-full blur-2xl scale-125 opacity-40"
-              quality={ARTWORK_QUALITY_LOW}
-            />
-          </div>
-        ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-surface-elevated/80 via-surface/80 to-background" />
-        )}
-        {/* Legibility gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
-
-        <div className="relative flex flex-col h-full p-4 sm:p-5 min-w-0">
-          <div className="flex items-start justify-between gap-3 min-w-0">
-            {/* Artwork thumb */}
-            <div className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden ring-1 ring-border/60 shadow-xl">
-              <SongArtwork
-                song={room.currentTrack}
-                className="w-full h-full"
-                quality={ARTWORK_QUALITY_LOW}
-                iconClassName="w-5 h-5"
-              />
-            </div>
-            <LivePill listeners={room.members.length} />
-          </div>
-
-          <div className="mt-4 min-w-0">
-            <h4 className="text-lg font-editorial font-bold text-text truncate leading-snug">
-              {room.name}
-              {extraLabel && (
-                <span className="ml-2 text-[9px] font-sans uppercase tracking-widest text-accent align-middle">
-                  {extraLabel}
-                </span>
-              )}
-            </h4>
-            <div className="flex items-center gap-1.5 mt-1 text-xs text-muted min-w-0">
-              <Crown className="w-3.5 h-3.5 text-primary shrink-0" />
-              <span className="truncate">{room.hostName}</span>
-            </div>
-          </div>
-
-          {/* Currently playing strip */}
-          <div className="mt-4 p-3.5 rounded-2xl bg-background/60 backdrop-blur-sm border border-border/40 min-w-0">
-            {room.currentTrack ? (
-              <div className="flex items-center gap-2 min-w-0">
-                <Signal className="w-3.5 h-3.5 text-primary shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[9px] uppercase tracking-wider text-primary font-bold">Now Synced</p>
-                  <p className="text-xs font-semibold text-text truncate leading-snug">{room.currentTrack.title}</p>
-                  <p className="text-[10px] text-muted truncate">{room.currentTrack.artist || "—"}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-[10px] text-muted italic min-w-0">
-                <Music className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Waiting for the host to drop the first track...</span>
-              </div>
-            )}
-          </div>
-
-          {/* Footer meta */}
-          <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between gap-3 text-[10px] uppercase tracking-wider font-semibold text-muted">
-            <span className="flex items-center gap-1.5 min-w-0">
-              <Users className="w-3.5 h-3.5 shrink-0" />
-              <span>{room.members.length} listening</span>
-            </span>
-            {room.joinCode && (
-              <span
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCopyCode(room.joinCode!); }}
-                title="Copy invite code"
-                className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/10 text-primary px-1.5 py-0.5 font-mono text-[10px] tracking-wider hover:bg-primary/20 transition cursor-pointer"
-              >
-                {room.joinCode}
-                <Check className="w-2.5 h-2.5" />
-              </span>
-            )}
-            <span className="shrink-0 capitalize">
-              {room.visibility === "public" ? "Public" : "Circle"}
-            </span>
-          </div>
-        </div>
-      </span>
-    </Link>
-  );
 
   return (
-    <div className="max-w-6xl space-y-10 pb-12 w-full px-4 md:px-0 min-w-0 overflow-hidden soft-enter">
-      {/* Hero */}
-      <section className="relative overflow-hidden rounded-[2rem] border border-border/60 bg-gradient-to-br from-surface-elevated/75 via-surface/55 to-background p-6 sm:p-8 md:p-10">
-        <div className="absolute -top-32 -right-24 w-80 h-80 rounded-full bg-primary/15 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-40 -left-24 w-96 h-96 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
-        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl space-y-5">
-          <span className="inline-flex items-center gap-2 text-[10px] tracking-widest uppercase font-bold text-primary">
-            <Radio className="w-4 h-4" />
-            Strumm Rooms
-          </span>
-          <h2 className="font-editorial text-4xl sm:text-5xl md:text-6xl text-text tracking-tight font-bold leading-[1.02]">
-            One song.
-            <br />
-            <span className="text-primary">Everyone&apos;s listening.</span>
-          </h2>
-          <p className="text-sm text-muted max-w-xl leading-relaxed">
-            Rooms sync playback, queue, and voice on your own player — start a space, drop a
-            track, and share the code with your Circle. No one misses a beat.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <button
-              onClick={openStartSheet}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-white hover:bg-primary-hover text-xs font-bold uppercase tracking-wider transition shadow-lg shadow-primary/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Start a Room
-            </button>
-            <button
-              onClick={openCodeSheet}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-surface border border-border/70 hover:bg-surface-elevated text-text text-xs font-bold uppercase tracking-wider transition cursor-pointer"
-            >
-              <KeyRound className="w-4 h-4 text-primary" />
-              Enter with Code
-            </button>
-          </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 lg:w-64 shrink-0">
-            <div className="rounded-2xl border border-border/60 bg-background/45 p-4 backdrop-blur-sm">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Live rooms</p>
-              <p className="mt-2 font-editorial text-3xl font-bold text-text tabular-nums">{rooms.length}</p>
-            </div>
-            <div className="rounded-2xl border border-border/60 bg-background/45 p-4 backdrop-blur-sm">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Listening</p>
-              <p className="mt-2 font-editorial text-3xl font-bold text-text tabular-nums">{rooms.reduce((total, room) => total + room.members.length, 0)}</p>
-            </div>
-          </div>
+    <main className="mx-auto w-full max-w-5xl px-4 py-10 md:px-6">
+      <header className="mb-8">
+        <div className="mb-3 flex items-center gap-2 text-sm text-primary">
+          <Radio size={16} />
+          <span className="font-semibold uppercase tracking-[0.2em]">Listen together</span>
         </div>
-      </section>
+        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Rooms</h1>
+        <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+          Start a listening room, invite friends with a code, and share the same music queue.
+        </p>
+      </header>
 
-      {/* Find + Discover */}
-      <section className="space-y-5 min-w-0">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between min-w-0">
-          <div className="min-w-0">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Tune in together</p>
-            <h3 className="font-editorial text-2xl sm:text-3xl font-bold text-text truncate min-w-0">
-            {searchQuery.trim() ? `Results for "${searchQuery.trim()}"` : "Live Rooms"}
-            </h3>
+      <section className="mb-8 grid gap-4 md:grid-cols-2">
+        <form onSubmit={createRoom} className="rounded-2xl border border-border bg-card p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="rounded-xl bg-primary/10 p-3 text-primary"><Plus size={20} /></span>
+            <div>
+              <h2 className="font-semibold">Create a room</h2>
+              <p className="text-xs text-muted-foreground">You’ll be the host.</p>
+            </div>
           </div>
-        <form
-          onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }}
-          className="flex gap-2 w-full sm:max-w-md min-w-0"
-        >
-          <div className="flex-1 min-w-0 flex items-center gap-2 bg-surface/30 border border-border/60 focus-within:border-primary/50 rounded-xl px-3 transition">
-            <Search className="w-4 h-4 text-muted shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch(searchQuery)}
-              placeholder="Find a room..."
-              className="flex-1 min-w-0 w-full bg-transparent py-2.5 text-sm text-text focus:outline-none"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={searching}
-            className="px-4 py-2.5 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-hover transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60 shrink-0"
-          >
-            {searching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-            Search
+          <label className="mb-2 block text-xs font-medium text-muted-foreground" htmlFor="room-name">Room name</label>
+          <input id="room-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="Friday night listening" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" />
+          <button disabled={busy || !name.trim()} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+            <Plus size={16} /> {busy ? "Working…" : "Create room"}
           </button>
         </form>
-        </div>
 
-        {searchQuery.trim() && searchResults.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 min-w-0">
-            {searchResults.map((room) => renderRoomCard(room))}
+        <form onSubmit={joinByCode} className="rounded-2xl border border-border bg-card p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="rounded-xl bg-primary/10 p-3 text-primary"><Headphones size={20} /></span>
+            <div>
+              <h2 className="font-semibold">Join with a code</h2>
+              <p className="text-xs text-muted-foreground">Enter the six-character room code.</p>
+            </div>
           </div>
-        )}
-
-        {!loading && !searchQuery.trim() && !loadError && rooms.length === 0 && (
-          <div className="p-16 border border-dashed border-border/60 rounded-2xl text-center bg-surface/20 space-y-3">
-            <Radio className="w-8 h-8 text-muted mx-auto opacity-70 animate-pulse" />
-            <h4 className="font-editorial text-base text-text font-bold">No live rooms right now</h4>
-            <p className="text-xs text-muted max-w-xs mx-auto">
-              Be the first to open a shared listening room and invite Circle friends.
-            </p>
-            <button
-              onClick={openStartSheet}
-              className="px-4 py-2 bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg transition mt-3"
-            >
-              Start the first Room
-            </button>
-          </div>
-        )}
-
-        {/* A failed load is not an empty lobby. Say so, and offer a retry. */}
-        {!loading && !searchQuery.trim() && loadError && rooms.length === 0 && (
-          <div
-            role="alert"
-            className="p-12 border border-red-500/30 rounded-2xl text-center bg-red-500/5 space-y-3"
-          >
-            <ShieldAlert className="w-8 h-8 text-red-400 mx-auto" />
-            <h4 className="font-editorial text-base text-text font-bold">
-              Couldn&apos;t load rooms
-            </h4>
-            <p className="text-xs text-muted max-w-sm mx-auto">{loadError}</p>
-            <button
-              onClick={retryRooms}
-              className="px-4 py-2 bg-surface-elevated hover:bg-surface border border-border text-text text-xs font-semibold rounded-lg transition cursor-pointer mt-2"
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
-        {!searchQuery.trim() && rooms.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 min-w-0">
-            {rooms.map((room) => renderRoomCard(room, room.hostId === user.id ? "Hosting" : joinedRoomIds.has(room.id) ? "Joined" : undefined))}
-          </div>
-        )}
-
-        {searchQuery.trim() && !searching && searchResults.length === 0 && (
-          <p className="text-xs text-muted italic">No rooms match that search.</p>
-        )}
+          <label className="mb-2 block text-xs font-medium text-muted-foreground" htmlFor="room-code">Room code</label>
+          <input id="room-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))} placeholder="ABC123" maxLength={6} className="h-11 w-full rounded-xl border border-border bg-background px-3 text-center font-mono text-lg tracking-[0.3em] outline-none focus:border-primary" />
+          <button disabled={busy || code.length !== 6} className="mt-3 h-11 w-full rounded-xl border border-border px-4 text-sm font-semibold hover:bg-muted disabled:opacity-50">
+            {busy ? "Joining…" : "Join room"}
+          </button>
+        </form>
       </section>
 
-      {/* Suggested rooms (fresh public rooms you aren't hosting/member of) */}
-      {!searchQuery.trim() && suggestions.length > 0 && (
-        <section className="space-y-4 min-w-0 border-t border-border/20 pt-8">
-          <div className="flex items-center gap-2">
-            <Headphones className="w-4 h-4 text-primary" />
-            <h3 className="font-editorial text-xl font-bold text-text">Discover Rooms</h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 min-w-0">
-            {suggestions.map((room) => renderRoomCard(room))}
-          </div>
-        </section>
-      )}
+      {error && <p role="alert" className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">{error}</p>}
 
-      {/* Start a Room — bottom sheet */}
-      {startOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" onClick={() => setStartOpen(false)}>
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-sm bg-surface border border-border/85 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl space-y-5 soft-enter max-h-[85vh] overflow-y-auto"
-          >
-            <div className="flex items-start justify-between min-w-0">
-              <div className="min-w-0">
-                <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">Start a Room</span>
-                <h3 className="font-editorial text-xl font-bold text-text mt-0.5">Name your listening party</h3>
-              </div>
-              <button
-                onClick={() => setStartOpen(false)}
-                className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg transition cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateRoom} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-text">Room Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Late Night Chill 🌙"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  className="w-full bg-background border border-border/60 rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50"
-                  autoFocus
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-text">Who can join?</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRoomVisibility("public")}
-                    className={`rounded-xl px-4 py-2.5 text-xs font-semibold border transition cursor-pointer flex flex-col items-start gap-0.5 ${
-                      roomVisibility === "public"
-                        ? "bg-primary/10 border-primary/40 text-primary"
-                        : "bg-background border-border/60 text-muted hover:text-text"
-                    }`}
-                  >
-                    Public
-                    <span className={`text-[9px] font-normal ${roomVisibility === "public" ? "text-primary/70" : "text-muted/60"}`}>
-                      Anyone in the lobby
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRoomVisibility("circle")}
-                    className={`rounded-xl px-4 py-2.5 text-xs font-semibold border transition cursor-pointer flex flex-col items-start gap-0.5 ${
-                      roomVisibility === "circle"
-                        ? "bg-primary/10 border-primary/40 text-primary"
-                        : "bg-background border-border/60 text-muted hover:text-text"
-                    }`}
-                  >
-                    Circle
-                    <span className={`text-[9px] font-normal ${roomVisibility === "circle" ? "text-primary/70" : "text-muted/60"}`}>
-                      Friends + invitees
-                    </span>
-                  </button>
-                </div>
-              </div>
-              {createError && (
-                <p
-                  role="alert"
-                  className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2"
-                >
-                  {createError}
-                </p>
-              )}
-              <div className="flex gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setStartOpen(false)}
-                  className="flex-1 py-2 px-4 border border-border/80 hover:bg-surface-elevated text-text text-xs font-semibold rounded-xl transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating || !roomName.trim()}
-                  className="flex-1 py-2 px-4 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-xl transition disabled:opacity-50 cursor-pointer inline-flex items-center justify-center gap-2"
-                >
-                  {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                  {creating ? "Opening..." : "Open Room"}
-                </button>
-              </div>
-            </form>
-          </div>
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Your rooms</h2>
+          <button onClick={() => void loadRooms()} className="text-xs font-medium text-muted-foreground hover:text-foreground">Refresh</button>
         </div>
-      )}
-
-      {/* Enter with Code — bottom sheet */}
-      {codeOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4" onClick={() => setCodeOpen(false)}>
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-sm bg-surface border border-border/85 rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl space-y-5 soft-enter max-h-[85vh] overflow-y-auto"
-          >
-            <div className="flex items-start justify-between min-w-0">
-              <div className="min-w-0">
-                <span className="text-[9px] uppercase tracking-widest text-primary font-bold block">Join a Room</span>
-                <h3 className="font-editorial text-xl font-bold text-text mt-0.5">Enter invite code</h3>
-              </div>
-              <button
-                onClick={() => setCodeOpen(false)}
-                className="p-1.5 hover:bg-surface-elevated text-muted hover:text-text rounded-lg transition cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="e.g. K7JX2M"
-                value={codeInput}
-                onChange={(e) => {
-                  setCodeInput(e.target.value.toUpperCase());
-                  setResolved(null);
-                  setCodeError(null);
-                }}
-                onKeyDown={(e) => e.key === "Enter" && handleResolveCode()}
-                className="w-full bg-background border border-border/60 rounded-xl px-4 py-3 text-center font-mono text-lg tracking-[0.3em] text-text focus:outline-none focus:border-primary/50"
-                autoFocus
-                maxLength={8}
-              />
-              <button
-                onClick={handleResolveCode}
-                disabled={resolving || !codeInput.trim()}
-                className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-xl transition disabled:opacity-50 cursor-pointer inline-flex items-center justify-center gap-2"
-              >
-                {resolving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
-                {resolving ? "Looking up..." : "Find Room"}
-              </button>
-
-              {codeError && (
-                <p className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/30 p-2.5 rounded-lg">
-                  {codeError}
-                </p>
-              )}
-
-              {resolved && (
-                <div className="flex items-center justify-between gap-3 p-3 bg-surface-elevated/40 border border-primary/25 rounded-xl">
+        {loading ? (
+          <div className="grid gap-3 sm:grid-cols-2"><div className="h-28 animate-pulse rounded-2xl bg-muted" /><div className="h-28 animate-pulse rounded-2xl bg-muted" /></div>
+        ) : rooms.length ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {rooms.map((room) => (
+              <button key={room.id} onClick={() => router.push(`/rooms/${room.id}`)} className="rounded-2xl border border-border bg-card p-4 text-left transition hover:border-primary/50 hover:bg-muted/40">
+                <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-text truncate">{resolved.name}</p>
-                    <p className="text-[10px] text-muted truncate mt-0.5">
-                      {resolved.hostName} · {resolved.memberCount} listening
-                    </p>
+                    <p className="truncate font-semibold">{room.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Hosted by {room.hostName}</p>
                   </div>
-                  <button
-                    onClick={() => router.push(`/rooms/${resolved.id}`)}
-                    className="px-3 py-1.5 bg-primary text-white text-[10px] font-bold rounded-lg hover:bg-primary-hover transition cursor-pointer shrink-0"
-                  >
-                    Join
-                  </button>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-500"><Users size={13} /> {room.listenerCount}</span>
                 </div>
-              )}
-            </div>
+                <p className="mt-4 truncate text-xs text-muted-foreground">{room.currentTrack?.title || "Nothing playing yet"}</p>
+                <p className="mt-2 font-mono text-[11px] tracking-widest text-muted-foreground">{room.joinCode}</p>
+              </button>
+            ))}
           </div>
-        </div>
-      )}
-    </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center">
+            <Radio className="mx-auto mb-3 text-muted-foreground" size={26} />
+            <p className="font-medium">No rooms yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Create one or join a friend using their code.</p>
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

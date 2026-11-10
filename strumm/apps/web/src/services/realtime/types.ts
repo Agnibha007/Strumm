@@ -41,18 +41,6 @@ export const FRIEND_ACCEPTED = "circle:friend_accepted";
 export const FRIEND_REMOVED = "circle:friend_removed";
 
 // ---------------------------------------------------------------------------
-// Room events
-// ---------------------------------------------------------------------------
-
-export const ROOM_CREATED = "room:created";
-export const ROOM_UPDATED = "room:updated";
-export const ROOM_DELETED = "room:deleted";
-export const ROOM_JOINED = "room:joined";
-export const ROOM_LEFT = "room:left";
-export const ROOM_INVITED = "room:invited";
-export const ROOM_MEMBER_COUNT = "room:member_count";
-
-// ---------------------------------------------------------------------------
 // Notification events
 // ---------------------------------------------------------------------------
 
