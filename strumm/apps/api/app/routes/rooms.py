@@ -529,6 +529,10 @@ async def room_websocket_endpoint(websocket: WebSocket, roomId: str):
             "visibility": room.get("visibility"),
             "joinCode": room.get("joinCode"),
             "membersProfiles": members_profiles,
+            # Persisted members can include users whose room sockets have
+            # disconnected. Send live presence separately so clients can
+            # render the actual listeners (including a newly joined browser).
+            "connectedMemberIds": ws_manager.room_connected_user_ids(roomId),
         },
     })
 

@@ -244,6 +244,16 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       members: (snap.membersProfiles || []).map((m: any) => m.id),
     } as RoomDetails));
 
+    // The room snapshot is authoritative for live socket presence. The REST
+    // member list is persistent membership and may contain stale/offline IDs.
+    if (Array.isArray(snap.connectedMemberIds)) {
+      setActiveMemberIds(new Set(
+        snap.connectedMemberIds.filter((memberId: unknown): memberId is string =>
+          typeof memberId === "string" && memberId.length > 0
+        )
+      ));
+    }
+
     if (isHostRef.current && effectiveTrack) {
       const playbackQueue = buildRoomPlaybackQueue(effectiveTrack, snap.queue);
       const state = usePlayerStore.getState();
@@ -367,6 +377,29 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
         // Track active member
         const newMemberId = eventData.userId;
         setActiveMemberIds(prev => new Set([...prev, newMemberId]));
+        // The join event already carries the member's profile. Add it to the
+        // rendered roster immediately instead of depending on a follow-up REST
+        // fetch to populate membersProfiles (which can race or fail separately).
+        if (newMemberId) {
+          setRoom(prev => {
+            if (!prev) return prev;
+            const profiles = prev.membersProfiles || [];
+            const existing = profiles.some(member => member.id === newMemberId);
+            if (existing) return prev;
+            return {
+              ...prev,
+              members: [...new Set([...(prev.members || []), newMemberId])],
+              membersProfiles: [
+                ...profiles,
+                {
+                  id: newMemberId,
+                  displayName: eventData.displayName || "Someone",
+                  avatar: eventData.avatar || undefined,
+                },
+              ],
+            };
+          });
+        }
 
         if (isHostRef.current && currentSongRef.current) {
           // Sync new member with host's current track state
