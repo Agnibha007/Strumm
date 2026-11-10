@@ -170,9 +170,11 @@ export default function RoomDetailsPage({ params }: { params: Promise<{ id: stri
       if (json.success) {
         setRoom(json.data);
         setRoomError(null);
-        // REST members are persistent room membership, not live presence.
-        // The room WebSocket snapshot supplies the authoritative connected IDs.
-        setActiveMemberIds(new Set());
+        // Do not reset live presence here. This fetch also runs after room:joined
+        // and room:left events; clearing the socket roster during those refreshes
+        // races with the WebSocket events and makes the room show 0 listeners.
+        // The initial empty state is set by the component; snapshots and socket
+        // events are the only sources that update live presence.
       } else {
         if (response.status === 404) {
           // The room no longer exists server-side (deleted or expired). Leave
