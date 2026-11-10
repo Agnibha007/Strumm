@@ -17,6 +17,7 @@ type Room = {
   id: string;
   name: string;
   hostId: string;
+  isHost: boolean;
   hostName: string;
   joinCode: string;
   listeners: Listener[];
@@ -47,7 +48,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const { id } = use(params);
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
-  const user = useAuthStore((state) => state.user);
   const { currentSong, isPlaying, currentTime, playerRef, playSong, setPlaying, applyRemoteState } = usePlayerStore();
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,7 +57,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [searching, setSearching] = useState(false);
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const isHost = !!room && !!user && room.hostId === user.id;
+  const isHost = !!room?.isHost;
   const hasInitialSnapshotRef = useRef(false);
   const lastPublishedTrackRef = useRef<string | null>(null);
   const lastPublishedPlayingRef = useRef<boolean | null>(null);
@@ -80,7 +80,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
     if (next.currentTrack) {
       lastPublishedTrackRef.current = next.currentTrack.videoId;
-      if (next.hostId === user?.id && hasInitialSnapshotRef.current) {
+      if (next.isHost && hasInitialSnapshotRef.current) {
         usePlayerStore.getState().setQueue(sharedQueue);
       } else {
         applyRemoteState({
@@ -93,12 +93,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       }
     } else if (!hasInitialSnapshotRef.current) {
       lastPublishedTrackRef.current = usePlayerStore.getState().currentSong?.videoId ?? null;
-    } else if (next.hostId === user?.id) {
+    } else if (next.isHost) {
       usePlayerStore.getState().setQueue(sharedQueue);
     }
     hasInitialSnapshotRef.current = true;
     setError("");
-  }, [applyRemoteState, user?.id]);
+  }, [applyRemoteState]);
 
   const refresh = useCallback(async (heartbeat = false) => {
     if (!token) return;
@@ -291,7 +291,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         <div>
           <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary"><Headphones size={14} /> Listening room</p>
           <h1 className="text-3xl font-bold">{room.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Hosted by {room.hostName}</p>
+          <p className="mt-1 text-sm text-muted-foreground">Hosted by {room.hostName}{isHost ? " · You are hosting" : ""}</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => void copyCode()} className="rounded-xl border border-border px-4 py-2 text-sm font-mono tracking-widest">{copied ? "Copied" : room.joinCode} <Copy className="ml-2 inline" size={13} /></button>
@@ -347,7 +347,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 <SongArtwork song={song} quality={ARTWORK_QUALITY_LOW} className="h-10 w-10 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{song.title}</p><p className="truncate text-xs text-muted-foreground">{song.artist}</p></div>
                 <button onClick={() => void addToRoomQueue(song)} aria-label={`Add ${song.title} to queue`} className="rounded-lg border border-border p-2 hover:bg-muted"><Plus size={15} /></button>
-                {isHost && <button onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} className="rounded-lg border border-border p-2 hover:bg-muted"><Play size={15} /></button>}
+                {isHost && <button onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10"><Play size={15} /></button>}
               </div>
             ))}
           </div>
@@ -360,7 +360,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               <div key={song.videoId} className="flex items-center gap-3">
                 <SongArtwork song={song} quality={ARTWORK_QUALITY_LOW} className="h-10 w-10 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{song.title}</p><p className="truncate text-xs text-muted-foreground">{song.artist}</p></div>
-                {isHost && <button onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} className="rounded-lg border border-border p-2 hover:bg-muted"><Play size={15} /></button>}
+                {isHost && <button onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10"><Play size={15} /></button>}
                 {isHost && <button onClick={() => void removeFromQueue(song)} aria-label={`Remove ${song.title}`} className="rounded-lg border border-border p-2 text-muted-foreground hover:text-red-500"><Trash2 size={15} /></button>}
               </div>
             ))}

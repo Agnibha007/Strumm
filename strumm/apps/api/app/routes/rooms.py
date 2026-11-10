@@ -68,7 +68,7 @@ async def list_rooms(current_user: dict = Depends(get_current_user)):
     cursor = database[db.ROOMS].find({
         "$or": [{"hostId": user_id}, {"members": user_id}]
     }).sort("createdAt", -1).limit(50)
-    rooms = [await serialize_room(database, room) async for room in cursor]
+    rooms = [await serialize_room(database, room, user_id) async for room in cursor]
     return {"success": True, "data": rooms}
 
 
@@ -91,7 +91,7 @@ async def create_room(payload: CreateRoomBody, current_user: dict = Depends(get_
     }
     result = await database[db.ROOMS].insert_one(room)
     room["_id"] = result.inserted_id
-    return {"success": True, "data": await serialize_room(database, room)}
+    return {"success": True, "data": await serialize_room(database, room, current_user["id"])}
 
 
 @router.get("/by-code/{code}")
@@ -126,7 +126,7 @@ async def join_room(
         {"_id": room["_id"]}, {"$addToSet": {"members": user_id}}
     )
     room = await get_room(database, room_id)
-    return {"success": True, "data": await serialize_room(database, room)}
+    return {"success": True, "data": await serialize_room(database, room, current_user["id"])}
 
 
 @router.get("/{room_id}")
@@ -134,7 +134,7 @@ async def room_snapshot(room_id: str, current_user: dict = Depends(get_current_u
     database = db.get_db()
     room = await _room_or_404(room_id)
     await require_member(database, room, current_user["id"])
-    return {"success": True, "data": await serialize_room(database, room)}
+    return {"success": True, "data": await serialize_room(database, room, current_user["id"])}
 
 
 @router.post("/{room_id}/heartbeat")
@@ -153,7 +153,7 @@ async def room_heartbeat(room_id: str, current_user: dict = Depends(get_current_
         }},
         upsert=True,
     )
-    return {"success": True, "data": await serialize_room(database, room)}
+    return {"success": True, "data": await serialize_room(database, room, current_user["id"])}
 
 
 @router.post("/{room_id}/playback")
@@ -182,7 +182,7 @@ async def update_playback(
         update["$pull"] = {"queue": {"videoId": song["videoId"]}}
     await database[db.ROOMS].update_one({"_id": room["_id"]}, update)
     updated = await get_room(database, room_id)
-    return {"success": True, "data": await serialize_room(database, updated)}
+    return {"success": True, "data": await serialize_room(database, updated, current_user["id"])}
 
 
 @router.post("/{room_id}/queue")
@@ -208,7 +208,7 @@ async def add_queue_song(
         {"$push": {"queue": song}},
     )
     updated = await get_room(database, room_id)
-    return {"success": True, "data": await serialize_room(database, updated)}
+    return {"success": True, "data": await serialize_room(database, updated, current_user["id"])}
 
 
 @router.delete("/{room_id}/queue/{video_id}")
@@ -226,7 +226,7 @@ async def remove_queue_song(
         {"_id": room["_id"]}, {"$pull": {"queue": {"videoId": video_id}}}
     )
     updated = await get_room(database, room_id)
-    return {"success": True, "data": await serialize_room(database, updated)}
+    return {"success": True, "data": await serialize_room(database, updated, current_user["id"])}
 
 
 @router.post("/{room_id}/leave")

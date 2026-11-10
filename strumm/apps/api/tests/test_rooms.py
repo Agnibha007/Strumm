@@ -230,3 +230,27 @@ async def test_playback_update_is_host_only_and_persists_state(monkeypatch):
     assert update["$set"]["playbackState"]["playing"] is True
     assert update["$set"]["currentTrack"]["videoId"] == "dQw4w9WgXcQ"
     assert update["$pull"]["queue"]["videoId"] == "dQw4w9WgXcQ"
+
+
+@pytest.mark.asyncio
+async def test_room_serialization_marks_host_for_authenticated_viewer():
+    from app.services.rooms import serialize_room
+
+    database = MagicMock()
+    presence = MagicMock()
+    presence.find.return_value = AsyncCursor([])
+    database.__getitem__.return_value = presence
+    room = {
+        "_id": ObjectId(),
+        "hostId": "host-id",
+        "hostName": "Host",
+        "members": ["host-id", "listener-id"],
+        "queue": [],
+    }
+
+    host_view = await serialize_room(database, room, "host-id")
+    listener_view = await serialize_room(database, room, "listener-id")
+
+    assert host_view["isHost"] is True
+    assert listener_view["isHost"] is False
+    assert host_view["hostId"] == listener_view["hostId"] == "host-id"

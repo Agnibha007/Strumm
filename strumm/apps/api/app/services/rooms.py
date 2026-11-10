@@ -82,12 +82,13 @@ async def active_presence(database, room_id: str) -> list[dict]:
     return [by_id[user_id] for user_id in ids if user_id in by_id]
 
 
-async def serialize_room(database, room: dict) -> dict:
+async def serialize_room(database, room: dict, viewer_id: str | None = None) -> dict:
     listeners = await active_presence(database, str(room["_id"]))
     return {
         "id": str(room["_id"]),
         "name": room.get("name", "Listening room"),
         "hostId": room.get("hostId"),
+        "isHost": bool(viewer_id and room.get("hostId") == viewer_id),
         "hostName": room.get("hostName", "Host"),
         "members": room.get("members", []),
         "listeners": listeners,
