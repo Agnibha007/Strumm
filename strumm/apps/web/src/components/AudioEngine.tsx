@@ -808,7 +808,7 @@ export default function AudioEngine() {
   const activateHostAudio = useCallback((videoId: string): boolean => {
     const state = usePlayerStore.getState();
     const song = state.currentSong;
-    if (!song || song.metadata?.audioUrl) return false; // podcasts already host audio
+    if (!song || song.metadata?.audioUrl || state.isListeningRoomActive) return false; // Keep one playback surface for room sync.
 
     const url = getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId];
     if (!url) return false;
@@ -1177,7 +1177,8 @@ export default function AudioEngine() {
   // stale surface while the playbar shows the new one.
   const switchToIframeSurface = useCallback((videoId: string) => {
     const state = usePlayerStore.getState();
-    const shouldPlay = state.isPlaying;
+    const roomCommandPending = state.roomPlaybackCommand?.videoId === videoId;
+    const shouldPlay = state.isPlaying && !roomCommandPending;
     // Serving this song from the iframe means the host <audio> element must not
     // be treated as holding a live direct stream anymore — clear any stale refs
     // left by a previous host-audio song, or the near-end/ended gates would
@@ -1211,13 +1212,18 @@ export default function AudioEngine() {
 
     const yt = playerInstanceRef.current;
     if (!yt || !videoId) return;
-    const startSeconds = state.currentTime || 0;
-    // Only treat the iframe as holding this song once loadVideoById actually ran
+    const startSeconds = roomCommandPending
+      ? state.roomPlaybackCommand?.timestamp || 0
+      : state.currentTime || 0;
+    // Only treat the iframe as holding this song once its load/cue command ran
     // without throwing (see the stale-ref "prev song plays again" fix).
     if (currentVideoIdRef.current !== videoId) {
-      if (typeof yt.loadVideoById === "function") {
+      const loadMethod = roomCommandPending && typeof yt.cueVideoById === "function"
+        ? yt.cueVideoById
+        : yt.loadVideoById;
+      if (typeof loadMethod === "function") {
         try {
-          yt.loadVideoById({ videoId, startSeconds });
+          loadMethod.call(yt, { videoId, startSeconds });
           currentVideoIdRef.current = videoId;
         } catch (e) {
           // Leave the ref stale so the next sync retries the load instead of
@@ -1269,6 +1275,7 @@ export default function AudioEngine() {
   // over here — previously enterBackground bailed early on a missing URL and
   // the pre-resolve completion path could never fire.
   const ensureBackgroundAudio = useCallback((videoId: string) => {
+    if (usePlayerStore.getState().isListeningRoomActive) return;
     if (!backgroundModeRef.current) backgroundModeRef.current = true;
 
     if (getCachedDirectAudioUrl(videoId) || directAudioUrlsRef.current[videoId]) {
@@ -2787,17 +2794,22 @@ try {
           // episodes with episodeId = "podcast-{episodeId}". The saved
           // position is looked up in the podcast progress store, which is
           // shared by both download types.
-          let targetTime = usePlayerStore.getState().currentTime;
-          try {
-            const progress = await fetchPodcastProgress(episodeId, { localOnly: true });
-            if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
-            if (progress.positionSeconds >= 0) targetTime = progress.positionSeconds;
-          } catch {
-            targetTime = 0;
+          const hasPendingRoomCommand = () =>
+            usePlayerStore.getState().roomPlaybackCommand?.videoId === currentSong.videoId;
+          const roomCommandPending = hasPendingRoomCommand();
+          let targetTime = roomCommandPending ? 0 : usePlayerStore.getState().currentTime;
+          if (!roomCommandPending) {
+            try {
+              const progress = await fetchPodcastProgress(episodeId, { localOnly: true });
+              if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current || hasPendingRoomCommand()) return;
+              if (progress.positionSeconds >= 0) targetTime = progress.positionSeconds;
+            } catch {
+              targetTime = 0;
+            }
+            usePlayerStore.getState().setCurrentTime(targetTime);
           }
-          usePlayerStore.getState().setCurrentTime(targetTime);
 
-          if (targetTime > 0 && isFinite(targetTime)) {
+          if (targetTime > 0 && isFinite(targetTime) && !hasPendingRoomCommand()) {
             await new Promise<void>((resolve) => {
               let finished = false;
               let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -2836,13 +2848,17 @@ try {
             if (effectCancelled || activeSourceGeneration !== podcastSourceGenerationRef.current) return;
           }
 
-          if (usePlayerStore.getState().isPlaying) {
-            audioElement.play().catch(() => {
-              usePlayerStore.getState().setPlayerError("Unable to start this track. Tap Play to try again.");
-              usePlayerStore.getState().setPlaying(false);
-            });
-          } else {
-            audioElement.pause();
+          // Room synchronization owns the audible play/pause edge. Source loading
+          // can finish after prepare, so it must not change playback before startAt.
+          if (!hasPendingRoomCommand()) {
+            if (usePlayerStore.getState().isPlaying) {
+              audioElement.play().catch(() => {
+                usePlayerStore.getState().setPlayerError("Unable to start this track. Tap Play to try again.");
+                usePlayerStore.getState().setPlaying(false);
+              });
+            } else {
+              audioElement.pause();
+            }
           }
 
           setPlayerRef({
@@ -2913,9 +2929,14 @@ try {
         applyCrossfadeVolume(1);
         activePodcastAudioEpisodeRef.current = episodeId;
 
-        let targetTime = usePlayerStore.getState().currentTime;
+        const hasPendingRoomCommand = () =>
+          usePlayerStore.getState().roomPlaybackCommand?.videoId === currentSong.videoId;
+        const roomCommandPending = hasPendingRoomCommand();
+        let targetTime = roomCommandPending ? 0 : usePlayerStore.getState().currentTime;
         const shouldRestoreProgress =
-          episodeId.startsWith("podcast-") && restoredPodcastEpisodeRef.current !== episodeId;
+          !roomCommandPending &&
+          episodeId.startsWith("podcast-") &&
+          restoredPodcastEpisodeRef.current !== episodeId;
         if (shouldRestoreProgress) {
           try {
             const progress = await fetchPodcastProgress(episodeId.slice("podcast-".length), {
@@ -2970,13 +2991,17 @@ try {
 
         if (shouldRestoreProgress) restoredPodcastEpisodeRef.current = episodeId;
 
-        if (usePlayerStore.getState().isPlaying) {
-          audioElement.play().catch(() => {
-            usePlayerStore.getState().setPlayerError("Unable to start this episode. Tap Play to try again.");
-            usePlayerStore.getState().setPlaying(false);
-          });
-        } else {
-          audioElement.pause();
+        // Room synchronization owns the audible play/pause edge. Source loading
+        // can finish after prepare, so it must not change playback before startAt.
+        if (!hasPendingRoomCommand()) {
+          if (usePlayerStore.getState().isPlaying) {
+            audioElement.play().catch(() => {
+              usePlayerStore.getState().setPlayerError("Unable to start this episode. Tap Play to try again.");
+              usePlayerStore.getState().setPlaying(false);
+            });
+          } else {
+            audioElement.pause();
+          }
         }
 
         setPlayerRef({
@@ -3029,6 +3054,7 @@ try {
       // into the iframe — loadVideoById on the embedded player is slower and
       // less reliable. Falls through to the iframe below when no URL exists.
       if (
+        !usePlayerStore.getState().isListeningRoomActive &&
         currentSong?.videoId &&
         (getCachedDirectAudioUrl(currentSong.videoId) || directAudioUrlsRef.current[currentSong.videoId])
       ) {
@@ -3102,22 +3128,55 @@ try {
     };
   }, [currentSong?.videoId, setCurrentTime]);
 
-  // Listening-room playback uses an explicit two-phase command: prepare at
-  // the host's exact position, then start at the same server-authored instant.
-  // This avoids calling playVideo before a seek has actually taken effect.
+  // Listening-room commands use a server barrier. During prepare, each device
+  // loads/seeks while paused and acknowledges readiness. The committed command
+  // then executes once at the shared server deadline. No periodic seek/restart
+  // loop runs while the song is playing.
   useEffect(() => {
     const command = roomPlaybackCommand;
-    if (!command || handledRoomPlaybackCommandRef.current === command.id) return;
-    handledRoomPlaybackCommandRef.current = command.id;
+    if (!command) return;
+    const phaseKey = `${command.id}:${command.phase}`;
+    if (handledRoomPlaybackCommandRef.current === phaseKey) return;
+    const wasPrepared = handledRoomPlaybackCommandRef.current === `${command.id}:preparing`;
+    handledRoomPlaybackCommandRef.current = phaseKey;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const wait = (ms: number) => new Promise<void>((resolve) => {
       timer = setTimeout(resolve, ms);
     });
+    const waitUntil = (deadline: number) => new Promise<void>((resolve) => {
+      const tick = () => {
+        if (cancelled || Date.now() >= deadline) {
+          resolve();
+          return;
+        }
+        if (document.visibilityState === "visible" && typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(tick);
+        } else {
+          timer = setTimeout(tick, Math.min(50, Math.max(1, deadline - Date.now())));
+        }
+      };
+      tick();
+    });
+    const reportReady = () => {
+      if (cancelled) return;
+      window.dispatchEvent(new CustomEvent("strumm:room-playback-ready", {
+        detail: { sequence: command.sequence, videoId: command.videoId },
+      }));
+    };
 
     const execute = async () => {
-      const deadline = Date.now() + 15000;
+      const deadline = Date.now() + 20000;
+      const preparingPlay = command.phase === "preparing" && command.playing;
+      const localStartAt = (command.startAt ?? (Date.now() + command.clockOffsetMs)) - command.clockOffsetMs;
+
+      if (command.phase === "preparing" && !command.playing) {
+        // A pause barrier does not interrupt current audio while peers prepare.
+        reportReady();
+        return;
+      }
+
       while (!cancelled && Date.now() < deadline) {
         const live = usePlayerStore.getState();
         if (live.currentSong?.videoId !== command.videoId) {
@@ -3126,26 +3185,99 @@ try {
         }
 
         const audio = htmlAudioRef.current;
-        const usesHtmlAudio = !!audio && !isSilentAudio(audio) && (
+        let usesHtmlAudio = !!audio && !isSilentAudio(audio) && (
           !!live.currentSong?.metadata?.audioUrl ||
           currentBackgroundVideoIdRef.current === command.videoId
         );
-        if (usesHtmlAudio && audio) {
-          try { audio.pause(); } catch {}
-          const metadataDeadline = Date.now() + 10000;
-          while (!cancelled && audio.readyState < HTMLMediaElement.HAVE_METADATA && Date.now() < metadataDeadline) {
-            await wait(50);
+
+        // Listening rooms prepare every device on the same direct media
+        // surface whenever a YouTube audio URL can be resolved. The iframe
+        // remains the fallback, but its readiness events are not dependable
+        // across backgrounded/headless/mobile browsers. Loading the direct URL
+        // while paused lets each device acknowledge only after it has buffered
+        // enough media for the shared start deadline.
+        if (
+          audio &&
+          !usesHtmlAudio &&
+          command.phase === "preparing" &&
+          !live.currentSong?.metadata?.audioUrl
+        ) {
+          const directUrl =
+            getCachedDirectAudioUrl(command.videoId) ||
+            directAudioUrlsRef.current[command.videoId] ||
+            await resolveDirectAudioUrl(command.videoId);
+          if (cancelled) return;
+          const latest = usePlayerStore.getState();
+          if (latest.currentSong?.videoId !== command.videoId) return;
+          if (directUrl) {
+            directAudioUrlsRef.current[command.videoId] = directUrl;
+            try {
+              if (playerInstanceRef.current && typeof playerInstanceRef.current.pauseVideo === "function") {
+                playerInstanceRef.current.pauseVideo();
+              }
+              audio.pause();
+              if (audio.src !== directUrl) {
+                audio.src = directUrl;
+                audio.load();
+              }
+              audio.loop = false;
+              currentBackgroundUrlRef.current = directUrl;
+              currentBackgroundVideoIdRef.current = command.videoId;
+              currentVideoIdRef.current = null;
+              usesHtmlAudio = true;
+            } catch {
+              usesHtmlAudio = false;
+            }
           }
+        }
+        if (usesHtmlAudio && audio) {
+          if (preparingPlay || (command.phase === "committed" && command.playing && !wasPrepared)) {
+            try { audio.pause(); } catch {}
+            const metadataDeadline = Date.now() + 15000;
+            while (!cancelled && audio.readyState < HTMLMediaElement.HAVE_METADATA && Date.now() < metadataDeadline) {
+              await wait(50);
+            }
+            if (cancelled || audio.readyState < HTMLMediaElement.HAVE_METADATA) return;
+            const target = command.timestamp + (
+              command.phase === "committed" && command.playing
+                ? Math.max(0, (Date.now() - localStartAt) / 1000)
+                : 0
+            );
+            try { audio.currentTime = Math.max(0, target); } catch {}
+            const seekDeadline = Date.now() + 15000;
+            while (!cancelled && Date.now() < seekDeadline) {
+              if (!audio.seeking && Math.abs(audio.currentTime - target) < 0.75) break;
+              await wait(50);
+            }
+            if (cancelled || audio.seeking || Math.abs(audio.currentTime - target) >= 0.75) return;
+            // HAVE_METADATA is not enough to guarantee a gap-free start. Wait
+            // until the browser has future media data (canplay) before telling
+            // the server this device is ready for the shared start edge.
+            const bufferDeadline = Date.now() + 15000;
+            while (!cancelled && audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA && Date.now() < bufferDeadline) {
+              await wait(40);
+            }
+            if (cancelled || audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
+          }
+
+          if (command.phase === "preparing") {
+            reportReady();
+            return;
+          }
+
+          const startAt = localStartAt;
+          await waitUntil(startAt);
           if (cancelled) return;
-          try {
-            const target = command.timestamp + (command.playing ? Math.max(0, (Date.now() - command.startAt) / 1000) : 0);
-            if (Number.isFinite(target) && audio.readyState >= HTMLMediaElement.HAVE_METADATA) audio.currentTime = target;
-          } catch {}
-          if (!command.playing) return;
-          const remaining = command.startAt - Date.now();
-          if (remaining > 0) await wait(remaining);
-          if (cancelled) return;
-          audio.play().catch(() => {});
+          if (command.playing) {
+            const target = command.timestamp + Math.max(0, (Date.now() - startAt) / 1000);
+            if (Math.abs(audio.currentTime - target) > 0.75) {
+              try { audio.currentTime = target; } catch {}
+            }
+            await audio.play().catch(() => undefined);
+          } else {
+            audio.pause();
+            try { audio.currentTime = Math.max(0, command.timestamp); } catch {}
+          }
           return;
         }
 
@@ -3156,57 +3288,82 @@ try {
         }
 
         try {
-          yt.pauseVideo();
+          if (preparingPlay && typeof yt.pauseVideo === "function") yt.pauseVideo();
           const videoUrl = typeof yt.getVideoUrl === "function" ? yt.getVideoUrl() : "";
-          const iframeHasTrack = videoUrl.includes(command.videoId);
-          if (!iframeHasTrack) {
+          if (!videoUrl.includes(command.videoId)) {
             if (typeof yt.cueVideoById !== "function") return;
             yt.cueVideoById({ videoId: command.videoId, startSeconds: command.timestamp });
             currentVideoIdRef.current = command.videoId;
           }
 
-          // Wait until the iframe has accepted the requested video before
-          // issuing the final seek. A seek against an old/unready iframe is
-          // silently discarded by the YouTube API.
-          const readyDeadline = Date.now() + 8000;
+          const readyDeadline = Date.now() + 12000;
           while (!cancelled && Date.now() < readyDeadline) {
             const url = typeof yt.getVideoUrl === "function" ? yt.getVideoUrl() : "";
             const state = yt.getPlayerState();
-            if (url.includes(command.videoId) && state !== -1 && state !== 3) break;
+            const loadedFraction = typeof yt.getVideoLoadedFraction === "function" ? yt.getVideoLoadedFraction() : 0;
+            const mediaReady = state === 5 || state === 2 || loadedFraction > 0.01;
+            if (url.includes(command.videoId) && state !== -1 && state !== 3 && mediaReady) break;
             await wait(80);
           }
           if (cancelled) return;
-          const target = command.timestamp + (command.playing ? Math.max(0, (Date.now() - command.startAt) / 1000) : 0);
-          yt.seekTo(Math.max(0, target), true);
-          if (!command.playing) return;
-          const remaining = command.startAt - Date.now();
-          if (remaining > 0) await wait(remaining);
-          if (cancelled) return;
-          const actual = typeof yt.getCurrentTime === "function" ? yt.getCurrentTime() : target;
-          const correctedTarget = command.timestamp + Math.max(0, (Date.now() - command.startAt) / 1000);
-          if (Math.abs(actual - correctedTarget) > 0.8) {
-            yt.seekTo(Math.max(0, correctedTarget), true);
-            await wait(120);
+
+          if (preparingPlay || (command.phase === "committed" && command.playing && !wasPrepared)) {
+            if (typeof yt.pauseVideo === "function") yt.pauseVideo();
+            const target = command.timestamp + (
+              command.phase === "committed" && command.playing
+                ? Math.max(0, (Date.now() - localStartAt) / 1000)
+                : 0
+            );
+            yt.seekTo(Math.max(0, target), true);
+            const seekDeadline = Date.now() + 15000;
+            while (!cancelled && Date.now() < seekDeadline) {
+              const stateAfterSeek = yt.getPlayerState();
+              const positionAfterSeek = typeof yt.getCurrentTime === "function" ? yt.getCurrentTime() : target;
+              if (stateAfterSeek !== 3 && Math.abs(positionAfterSeek - target) < 1.25) break;
+              await wait(80);
+            }
+            const settledPosition = typeof yt.getCurrentTime === "function" ? yt.getCurrentTime() : target;
+            if (cancelled || yt.getPlayerState() === 3 || Math.abs(settledPosition - target) >= 1.25) return;
           }
-          yt.playVideo();
+
+          if (command.phase === "preparing") {
+            reportReady();
+            return;
+          }
+
+          const startAt = localStartAt;
+          await waitUntil(startAt);
+          if (cancelled) return;
+          if (command.playing) {
+            const target = command.timestamp + Math.max(0, (Date.now() - startAt) / 1000);
+            const actual = typeof yt.getCurrentTime === "function" ? yt.getCurrentTime() : target;
+            if (Math.abs(actual - target) > 0.75) yt.seekTo(Math.max(0, target), true);
+            yt.playVideo();
+          } else {
+            yt.pauseVideo();
+            yt.seekTo(Math.max(0, command.timestamp), true);
+          }
         } catch {
-          // The next room snapshot/command retries a failed media operation.
+          // Keep the command pending; a later state snapshot can retry it.
+          return;
         }
         return;
       }
     };
 
     void execute().finally(() => {
-      const activeCommand = usePlayerStore.getState().roomPlaybackCommand;
-      if (activeCommand?.id === command.id) {
-        usePlayerStore.setState({ roomPlaybackCommand: null });
+      if (command.phase !== "preparing") {
+        const activeCommand = usePlayerStore.getState().roomPlaybackCommand;
+        if (activeCommand?.id === command.id && activeCommand.phase === command.phase) {
+          usePlayerStore.setState({ roomPlaybackCommand: null });
+        }
       }
     });
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [roomPlaybackCommand, currentSong?.videoId]);
+  }, [roomPlaybackCommand?.id, roomPlaybackCommand?.phase, roomPlaybackCommand?.startAt, currentSong?.videoId]);
 
   // 4. Watch for play/pause and track transitions from UI (with smooth fade-in/fade-out transitions)
   useEffect(() => {
@@ -3215,6 +3372,11 @@ try {
 
     const currentSongId = currentSong?.videoId || null;
     const roomCommandPending = roomPlaybackCommand?.videoId === currentSongId;
+
+    if (roomCommandPending && currentSongId === prevSongIdRef.current) {
+      prevIsPlayingRef.current = isPlaying;
+      return;
+    }
 
     if (currentSongId !== prevSongIdRef.current) {
       prevSongIdRef.current = currentSongId;

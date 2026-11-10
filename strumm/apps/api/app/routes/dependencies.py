@@ -66,7 +66,24 @@ async def get_current_user(
     access_token: Optional[str] = Cookie(None),
     refresh_token: Optional[str] = Cookie(None),
     response: Response = None,
+    dev_user_id: Optional[str] = Header(None, alias="X-Strumm-Dev-User"),
 ):
+    # Local-only guest identities. This requires an explicit opt-in and is
+    # never enabled by the production environment.
+    if (
+        os.getenv("ENVIRONMENT", "").lower() == "development"
+        and os.getenv("STRUMM_DEV_AUTH", "").lower() == "true"
+        and dev_user_id
+        and len(dev_user_id) == 24
+        and all(char in "0123456789abcdef" for char in dev_user_id.lower())
+    ):
+        return {
+            "id": dev_user_id.lower(),
+            "username": f"dev_{dev_user_id[-6:]}",
+            "displayName": f"Local Guest {dev_user_id[-4:]}",
+            "avatar": None,
+        }
+
     token = None
     if authorization:
         try:

@@ -109,6 +109,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
   useEffect(() => {
     const unsub = dispatch.on("player:state", (data) => {
       const store = usePlayerStore.getState();
+      if (store.isListeningRoomActive) return;
       store.applyRemoteState(data);
       lastRemoteApplyAtRef.current = Date.now();
     });
@@ -128,6 +129,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
     syncTimer.current = setTimeout(() => {
       if (!user) return;
       const state = usePlayerStore.getState();
+      if (state.isListeningRoomActive) return;
       wsClient.send("player:sync", {
         currentSong: state.currentSong,
         queue: state.queue,
@@ -147,7 +149,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
       initializedRef.current = true;
       return;
     }
-    if (isRecentlyRemoteApplied()) return;
+    if (isRecentlyRemoteApplied() || usePlayerStore.getState().isListeningRoomActive) return;
     sendPlayerSync();
     return () => {
       if (syncTimer.current) clearTimeout(syncTimer.current);
@@ -159,6 +161,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
     usePlayerStore((s) => s.currentIndex),
     usePlayerStore((s) => s.repeatMode),
     usePlayerStore((s) => s.isShuffle),
+    usePlayerStore((s) => s.isListeningRoomActive),
     sendPlayerSync,
   ]);
 
@@ -167,6 +170,7 @@ export default function RealTimeProvider({ children }: { children: React.ReactNo
   // position so cross-device listeners snap to the same place.
   useEffect(() => {
     const state = usePlayerStore.getState();
+    if (state.isListeningRoomActive) return;
     const t = state.currentTime;
     const songId = state.currentSong?.videoId ?? null;
 

@@ -43,10 +43,16 @@ class PlaybackBody(BaseModel):
     song: dict | None = None
     playing: bool
     timestamp: float = Field(default=0, ge=0, le=86400)
+    deviceId: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
 
 
 class QueueBody(BaseModel):
     song: dict
+
+
+class PlaybackReadyBody(BaseModel):
+    sequence: int = Field(ge=1)
+    deviceId: str = Field(pattern=r"^[0-9a-f]{32}$")
 
 
 async def _room_or_404(room_id: str) -> dict:
@@ -186,15 +192,28 @@ async def update_playback(
     timestamp = payload.timestamp if math.isfinite(payload.timestamp) else 0
     previous_state = room.get("playbackState") or {}
     now = datetime.utcnow()
-    # Every play command gets a shared future start instant. Clients seek to
-    # `timestamp` first, then begin together at this server-authored deadline.
-    start_at = int(time.time() * 1000) + 900 if payload.playing else None
+    # Two-phase barrier: clients prepare the media surface and report ready.
+    # The server commits only after every currently connected room participant
+    # has prepared, then publishes one shared execution deadline.
+    sequence = int(previous_state.get("sequence") or 0) + 1
+    connected_clients = manager.room_connected_clients(room_id)
+    participant_users = {client["deviceId"]: client["userId"] for client in connected_clients}
+    participants = sorted(participant_users)
+    if payload.deviceId:
+        participant_users[payload.deviceId] = user_id
+        participants = sorted(set(participants) | {payload.deviceId})
     state = {
-        "playing": payload.playing,
+        "playing": previous_state.get("playing", False),
+        "targetPlaying": payload.playing,
         "timestamp": timestamp,
         "updatedAt": now,
-        "startAt": start_at,
-        "sequence": int(previous_state.get("sequence") or 0) + 1,
+        "startAt": None,
+        "sequence": sequence,
+        "phase": "preparing",
+        "commandAt": int(time.time() * 1000),
+        "participants": participants,
+        "participantUsers": participant_users,
+        "readyDeviceIds": [],
     }
     update = {"$set": {"currentTrack": song, "playbackState": state}}
     if song:
@@ -203,6 +222,65 @@ async def update_playback(
     updated = await get_room(database, room_id)
     await _broadcast_room_state(database, updated)
     return {"success": True, "data": await serialize_room(database, updated, current_user["id"])}
+
+
+@router.post("/{room_id}/playback/ready")
+async def playback_ready(
+    room_id: str,
+    payload: PlaybackReadyBody,
+    current_user: dict = Depends(get_current_user),
+):
+    database = db.get_db()
+    room = await _room_or_404(room_id)
+    user_id = current_user["id"]
+    await require_member(database, room, user_id)
+    state = room.get("playbackState") or {}
+    if state.get("phase") != "preparing" or state.get("sequence") != payload.sequence:
+        return {"success": True, "data": await serialize_room(database, room, user_id)}
+
+    participants = set(state.get("participants") or [])
+    participant_users = state.get("participantUsers") or {}
+    if participant_users.get(payload.deviceId) != user_id:
+        raise HTTPException(status_code=403, detail="This device is not part of the active sync.")
+    if payload.deviceId not in participants:
+        return {"success": True, "data": await serialize_room(database, room, user_id)}
+    await database[db.ROOMS].update_one(
+        {
+            "_id": room["_id"],
+            "playbackState.sequence": payload.sequence,
+            "playbackState.phase": "preparing",
+        },
+        {"$addToSet": {"playbackState.readyDeviceIds": payload.deviceId}},
+    )
+    updated = await get_room(database, room_id)
+    ready_ids = set((updated.get("playbackState") or {}).get("readyDeviceIds") or [])
+    latest_state = updated.get("playbackState") or {}
+    if participants.issubset(ready_ids):
+        # Pause at the same future instant and account for time spent preparing,
+        # so the saved position is the host's position at the actual pause edge.
+        now_ms = int(time.time() * 1000)
+        start_at = now_ms + 1200
+        final_timestamp = float(latest_state.get("timestamp") or 0)
+        if not latest_state.get("targetPlaying"):
+            final_timestamp += max(0, (start_at - int(latest_state.get("commandAt") or now_ms)) / 1000)
+        await database[db.ROOMS].update_one(
+            {
+                "_id": room["_id"],
+                "playbackState.sequence": payload.sequence,
+                "playbackState.phase": "preparing",
+            },
+            {"$set": {
+                "playbackState.phase": "committed",
+                "playbackState.playing": bool(latest_state.get("targetPlaying")),
+                "playbackState.timestamp": final_timestamp,
+                "playbackState.startAt": start_at,
+                "playbackState.updatedAt": datetime.utcnow(),
+            }},
+        )
+        updated = await get_room(database, room_id)
+
+    await _broadcast_room_state(database, updated)
+    return {"success": True, "data": await serialize_room(database, updated, user_id)}
 
 
 @router.post("/{room_id}/queue")

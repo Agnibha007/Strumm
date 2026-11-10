@@ -47,7 +47,10 @@ type RoomPlaybackCommand = {
   videoId: string;
   timestamp: number;
   playing: boolean;
-  startAt: number;
+  phase: "preparing" | "committed";
+  startAt: number | null;
+  sequence: number;
+  clockOffsetMs: number;
 };
 
 interface PlayerState {
@@ -56,6 +59,7 @@ interface PlayerState {
   currentIndex: number;
   isPlaying: boolean;
   roomPlaybackCommand: RoomPlaybackCommand | null;
+  isListeningRoomActive: boolean;
   volume: number;
   currentTime: number;
   duration: number;
@@ -165,6 +169,7 @@ export const usePlayerStore = create<PlayerState>()(
       currentIndex: -1,
       isPlaying: false,
       roomPlaybackCommand: null,
+      isListeningRoomActive: false,
       volume: 0.8,
       currentTime: 0,
       duration: 0,
@@ -498,16 +503,24 @@ export const usePlayerStore = create<PlayerState>()(
         if (!remoteSong) return;
         const roomCommand = (state as Partial<PlayerState>).roomPlaybackCommand;
         if (roomCommand) {
+          // Room phase snapshots must not replace/reload the active media
+          // source when the video ID is unchanged. In particular, a pause
+          // prepare carries a newer authoritative timestamp; replacing the
+          // Song object re-runs AudioEngine's source effect and seeks before
+          // the shared pause deadline, creating audible gaps.
+          const sameTrack = current.currentSong?.videoId === remoteSong.videoId;
           set({
-            currentSong: remoteSong,
+            currentSong: sameTrack ? current.currentSong : remoteSong,
             queue: (state.queue ?? current.queue).map(cleanSong),
             currentIndex: state.currentIndex ?? current.currentIndex,
             currentTime: state.currentTime ?? roomCommand.timestamp,
-            isPlaying: roomCommand.playing,
+            isPlaying: roomCommand.phase === "preparing"
+              ? (roomCommand.playing ? false : current.isPlaying)
+              : roomCommand.playing,
             roomPlaybackCommand: roomCommand,
             pendingNextIndex: null,
           });
-          get().updateMediaSession(remoteSong);
+          get().updateMediaSession(sameTrack ? current.currentSong! : remoteSong);
           return;
         }
 

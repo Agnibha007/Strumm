@@ -54,6 +54,7 @@ class ConnectionManager:
         self._user_connections: Dict[str, List[WebSocket]] = {}
         # roomId -> list of (userId, WebSocket)
         self._room_connections: Dict[str, List[tuple[str, WebSocket]]] = {}
+        self._room_device_ids: Dict[tuple[str, int], str] = {}
         # Reverse: websocket id -> set of subscribed event types (for filtering)
         self._subscriptions: Dict[int, Set[str]] = {}
 
@@ -109,8 +110,12 @@ class ConnectionManager:
             room_id[:8], user_id[:8],
         )
 
+    def set_room_device_id(self, room_id: str, websocket: WebSocket, device_id: str) -> None:
+        self._room_device_ids[(room_id, id(websocket))] = device_id
+
     def disconnect_room(self, room_id: str, websocket: WebSocket) -> None:
         """Remove a room-scoped WebSocket."""
+        self._room_device_ids.pop((room_id, id(websocket)), None)
         if room_id in self._room_connections:
             self._room_connections[room_id] = [
                 c for c in self._room_connections[room_id] if c[1] != websocket
@@ -230,6 +235,14 @@ class ConnectionManager:
         departed user is excluded.
         """
         return list(dict.fromkeys(uid for uid, _ in self._room_connections.get(room_id, [])))
+
+    def room_connected_clients(self, room_id: str) -> List[dict]:
+        """Return each connected browser separately, including shared accounts."""
+        return [
+            {"userId": user_id, "deviceId": device_id}
+            for user_id, websocket in self._room_connections.get(room_id, [])
+            if (device_id := self._room_device_ids.get((room_id, id(websocket))))
+        ]
 
     def get_user_connections(self, user_id: str) -> List[WebSocket]:
         return self._user_connections.get(user_id, [])

@@ -326,7 +326,7 @@ app.add_middleware(
     allow_origin_regex=PRODUCTION_CORS_ORIGIN_REGEX if os.getenv("ENVIRONMENT", "development").lower() != "development" else None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Admin-API-Key"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Admin-API-Key", "X-Strumm-Dev-User"],
 )
 
 
@@ -392,7 +392,14 @@ class UnifiedBackendMiddleware(BaseHTTPMiddleware):
         # 2. Rate Limiting Check
         client_ip = request.client.host if request.client else "127.0.0.1"
         path = request.url.path
-        is_limited, max_req, current, window, retry_after = rate_limiter.check_rate_limit(client_ip, path)
+        local_dev_auth = (
+            os.getenv("ENVIRONMENT", "").lower() == "development"
+            and os.getenv("STRUMM_DEV_AUTH", "").lower() == "true"
+        )
+        if local_dev_auth:
+            is_limited, max_req, current, window, retry_after = False, GENERAL_MAX, 0, GENERAL_WINDOW, 0.0
+        else:
+            is_limited, max_req, current, window, retry_after = rate_limiter.check_rate_limit(client_ip, path)
 
         if is_limited:
             logger.warning(

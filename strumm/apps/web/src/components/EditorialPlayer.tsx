@@ -16,7 +16,6 @@ import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
 import SeekBar from "./player/SeekBar";
-import SongDownloadAction from "./SongDownloadAction";
 
 const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"), {
   loading: () => (
@@ -460,7 +459,6 @@ export default function EditorialPlayer() {
               <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
             </button>
 
-            <SongDownloadAction song={currentSong} compact />
             <AddToPlaylistMenu song={currentSong} />
 
             {/* Sleep Timer Indicator */}

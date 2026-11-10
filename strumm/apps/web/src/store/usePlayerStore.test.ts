@@ -111,6 +111,9 @@ describe("listening-room playback commands", () => {
       videoId: PICKED.videoId,
       timestamp: 42.75,
       playing: true,
+      phase: "committed" as const,
+      sequence: 7,
+      clockOffsetMs: 0,
       startAt: Date.now() + 900,
     };
 
@@ -127,12 +130,90 @@ describe("listening-room playback commands", () => {
     expect(state.roomPlaybackCommand).toEqual(command);
   });
 
+  it("preserves the active song object across room phases for the same track", () => {
+    const firstSong = {
+      ...PICKED,
+      metadata: { audioUrl: "http://127.0.0.1:8001/strumm-test-tone.wav" },
+    };
+    usePlayerStore.setState({ currentSong: firstSong, isPlaying: false });
+    const command = {
+      id: "room-1:11",
+      videoId: PICKED.videoId,
+      timestamp: 0,
+      playing: true,
+      phase: "preparing" as const,
+      sequence: 11,
+      startAt: null,
+      clockOffsetMs: 0,
+    };
+
+    usePlayerStore.getState().applyRemoteState({
+      currentSong: { ...firstSong, metadata: { ...firstSong.metadata, audioUrl: "https://rotated.example/new-signed-url.mp3" } },
+      currentTime: 0,
+      isPlaying: false,
+      roomPlaybackCommand: command,
+    });
+
+    expect(usePlayerStore.getState().currentSong).toBe(firstSong);
+  });
+
+  it("keeps a play command paused while devices prepare", () => {
+    usePlayerStore.setState({ currentSong: PICKED, isPlaying: true });
+    const command = {
+      id: "room-1:9",
+      videoId: PICKED.videoId,
+      timestamp: 25,
+      playing: true,
+      phase: "preparing" as const,
+      sequence: 9,
+      startAt: null,
+      clockOffsetMs: 0,
+    };
+
+    usePlayerStore.getState().applyRemoteState({
+      currentSong: PICKED,
+      currentTime: 25,
+      isPlaying: false,
+      roomPlaybackCommand: command,
+    });
+
+    expect(usePlayerStore.getState().isPlaying).toBe(false);
+    expect(usePlayerStore.getState().roomPlaybackCommand).toEqual(command);
+  });
+
+  it("does not pause the host while a pause command is preparing", () => {
+    usePlayerStore.setState({ currentSong: PICKED, isPlaying: true });
+    const command = {
+      id: "room-1:10",
+      videoId: PICKED.videoId,
+      timestamp: 25,
+      playing: false,
+      phase: "preparing" as const,
+      sequence: 10,
+      startAt: null,
+      clockOffsetMs: 0,
+    };
+
+    usePlayerStore.getState().applyRemoteState({
+      currentSong: PICKED,
+      currentTime: 25,
+      isPlaying: true,
+      roomPlaybackCommand: command,
+    });
+
+    expect(usePlayerStore.getState().isPlaying).toBe(true);
+    expect(usePlayerStore.getState().roomPlaybackCommand).toEqual(command);
+  });
+
   it("applies an authoritative pause position immediately", () => {
     const command = {
       id: "room-1:8",
       videoId: PICKED.videoId,
       timestamp: 58.125,
       playing: false,
+      phase: "committed" as const,
+      sequence: 8,
+      clockOffsetMs: 0,
       startAt: Date.now(),
     };
 

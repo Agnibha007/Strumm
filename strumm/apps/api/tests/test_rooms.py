@@ -47,6 +47,24 @@ class AsyncCursor:
             raise StopAsyncIteration
 
 
+def test_clean_song_keeps_local_audio_url_only_in_dev_guest_mode(monkeypatch):
+    from app.services.rooms import clean_song
+
+    song = {
+        "videoId": "dQw4w9WgXcQ",
+        "title": "Local sync test",
+        "artist": "Test",
+        "duration": 40,
+        "metadata": {"audioUrl": "http://127.0.0.1:8001/strumm-test-tone.wav"},
+    }
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("STRUMM_DEV_AUTH", "true")
+    assert clean_song(song)["metadata"]["audioUrl"] == song["metadata"]["audioUrl"]
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    assert "metadata" not in clean_song(song)
+
+
 @pytest.mark.asyncio
 async def test_active_presence_uses_database_leases_and_returns_profiles():
     from app.services.rooms import active_presence
@@ -78,6 +96,34 @@ async def test_active_presence_uses_database_leases_and_returns_profiles():
         "avatarMediaId": None,
     }]
     assert presence.find.call_args.args[0]["roomId"] == room_id
+
+
+@pytest.mark.asyncio
+async def test_dev_guest_presence_has_synthetic_profiles(monkeypatch):
+    from app.services.rooms import active_presence
+
+    user_id = "0123456789abcdef01234567"
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("STRUMM_DEV_AUTH", "true")
+    database = MagicMock()
+    presence = MagicMock()
+    presence.find.return_value = AsyncCursor([{"userId": user_id}])
+    users = MagicMock()
+    users.find.return_value = AsyncCursor([])
+    database.__getitem__.side_effect = lambda key: {
+        "room_presence": presence,
+        "users": users,
+    }[key]
+
+    listeners = await active_presence(database, "6630a1c2e4b0a1c2e4b0a1c2")
+
+    assert listeners == [{
+        "id": user_id,
+        "displayName": f"Local Guest {user_id[-4:]}",
+        "username": f"dev_{user_id[-6:]}",
+        "avatar": None,
+        "avatarMediaId": None,
+    }]
 
 
 @pytest.mark.asyncio
@@ -185,6 +231,12 @@ async def test_playback_update_is_host_only_and_persists_state(monkeypatch):
     from fastapi import HTTPException
     from app.database import mongodb
     from app.routes.rooms import PlaybackBody, update_playback
+    from app.services.realtime.connection_manager import manager
+
+    monkeypatch.setattr(manager, "room_connected_clients", lambda room_id: [
+        {"userId": "host-id", "deviceId": "a" * 32},
+        {"userId": "listener-id", "deviceId": "b" * 32},
+    ])
 
     room = {
         "_id": ObjectId(),
@@ -225,16 +277,154 @@ async def test_playback_update_is_host_only_and_persists_state(monkeypatch):
             },
             playing=True,
             timestamp=12,
+            deviceId="a" * 32,
         ),
         {"id": "host-id"},
     )
     update = rooms.update_one.call_args.args[1]
-    assert update["$set"]["playbackState"]["playing"] is True
+    assert update["$set"]["playbackState"]["playing"] is False
+    assert update["$set"]["playbackState"]["targetPlaying"] is True
+    assert update["$set"]["playbackState"]["phase"] == "preparing"
     assert update["$set"]["playbackState"]["sequence"] == 1
-    assert isinstance(update["$set"]["playbackState"]["startAt"], int)
-    assert update["$set"]["playbackState"]["startAt"] > int(__import__("time").time() * 1000)
+    assert update["$set"]["playbackState"]["startAt"] is None
+    assert update["$set"]["playbackState"]["participants"] == ["a" * 32, "b" * 32]
+    assert update["$set"]["playbackState"]["participantUsers"] == {
+        "a" * 32: "host-id", "b" * 32: "listener-id",
+    }
+    assert update["$set"]["playbackState"]["readyDeviceIds"] == []
     assert update["$set"]["currentTrack"]["videoId"] == "dQw4w9WgXcQ"
     assert update["$pull"]["queue"]["videoId"] == "dQw4w9WgXcQ"
+
+
+@pytest.mark.asyncio
+async def test_playback_barrier_commits_only_after_all_expected_devices_are_ready(monkeypatch):
+    import time
+    from app.database import mongodb
+    from app.routes import rooms as rooms_route
+    from app.routes.rooms import PlaybackReadyBody, playback_ready
+    from app.services.realtime.connection_manager import manager
+
+    monkeypatch.setattr(manager, "room_connected_clients", lambda room_id: [
+        {"userId": "host-id", "deviceId": "a" * 32},
+        {"userId": "listener-id", "deviceId": "b" * 32},
+    ])
+    room_id = ObjectId()
+    room = {
+        "_id": room_id,
+        "hostId": "host-id",
+        "members": ["host-id", "listener-id"],
+        "playbackState": {
+            "playing": False,
+            "targetPlaying": True,
+            "timestamp": 32.5,
+            "updatedAt": None,
+            "startAt": None,
+            "sequence": 9,
+            "phase": "preparing",
+            "commandAt": int(time.time() * 1000),
+            "participants": ["a" * 32, "b" * 32],
+            "participantUsers": {"a" * 32: "host-id", "b" * 32: "listener-id"},
+            "readyDeviceIds": ["a" * 32, "b" * 32],
+        },
+    }
+    database = MagicMock()
+    database.__getitem__.return_value = MagicMock()
+    rooms = database.__getitem__.return_value
+    rooms.update_one = AsyncMock()
+    monkeypatch.setattr(mongodb, "get_db", lambda: database)
+    monkeypatch.setattr(rooms_route, "get_room", AsyncMock(return_value=room))
+    monkeypatch.setattr(rooms_route, "serialize_room", AsyncMock(return_value={"id": str(room_id), "playbackState": room["playbackState"]}))
+    monkeypatch.setattr(rooms_route, "_broadcast_room_state", AsyncMock())
+
+    await playback_ready(str(room_id), PlaybackReadyBody(sequence=9, deviceId="b" * 32), {"id": "listener-id"})
+
+    commit_update = rooms.update_one.call_args_list[-1].args[1]["$set"]
+    assert commit_update["playbackState.phase"] == "committed"
+    assert commit_update["playbackState.playing"] is True
+    assert commit_update["playbackState.timestamp"] == 32.5
+    assert commit_update["playbackState.startAt"] >= int(time.time() * 1000) + 1000
+
+
+@pytest.mark.asyncio
+async def test_playback_barrier_does_not_commit_before_every_device_is_ready(monkeypatch):
+    import time
+    from app.database import mongodb
+    from app.routes import rooms as rooms_route
+    from app.routes.rooms import PlaybackReadyBody, playback_ready
+    from app.services.realtime.connection_manager import manager
+
+    monkeypatch.setattr(manager, "room_connected_clients", lambda room_id: [
+        {"userId": "host-id", "deviceId": "a" * 32},
+        {"userId": "listener-id", "deviceId": "b" * 32},
+    ])
+    room_id = ObjectId()
+    room = {
+        "_id": room_id,
+        "hostId": "host-id",
+        "members": ["host-id", "listener-id"],
+        "playbackState": {
+            "playing": True,
+            "targetPlaying": False,
+            "timestamp": 61.0,
+            "startAt": None,
+            "sequence": 10,
+            "phase": "preparing",
+            "commandAt": int(time.time() * 1000),
+            "participants": ["a" * 32, "b" * 32],
+            "participantUsers": {"a" * 32: "host-id", "b" * 32: "listener-id"},
+            "readyDeviceIds": ["a" * 32],
+        },
+    }
+    database = MagicMock()
+    rooms = MagicMock()
+    rooms.update_one = AsyncMock()
+    database.__getitem__.return_value = rooms
+    monkeypatch.setattr(mongodb, "get_db", lambda: database)
+    monkeypatch.setattr(rooms_route, "get_room", AsyncMock(return_value=room))
+    monkeypatch.setattr(rooms_route, "serialize_room", AsyncMock(return_value={"id": str(room_id)}))
+    monkeypatch.setattr(rooms_route, "_broadcast_room_state", AsyncMock())
+
+    await playback_ready(str(room_id), PlaybackReadyBody(sequence=10, deviceId="b" * 32), {"id": "listener-id"})
+
+    assert rooms.update_one.await_count == 1
+    update = rooms.update_one.call_args.args[1]
+    assert "$addToSet" in update
+    assert "$set" not in update
+
+
+@pytest.mark.asyncio
+async def test_dev_guest_auth_requires_explicit_local_opt_in(monkeypatch):
+    from fastapi import BackgroundTasks, HTTPException
+    from app.routes import dependencies
+    get_current_user = dependencies.get_current_user
+
+    monkeypatch.setattr(dependencies, "decode_access_token", lambda token: None)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("STRUMM_DEV_AUTH", "true")
+    user_id = "0123456789abcdef01234567"
+    guest = await get_current_user(BackgroundTasks(), authorization=None, dev_user_id=user_id)
+    assert guest["id"] == user_id
+    assert guest["username"].startswith("dev_")
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    with pytest.raises(HTTPException) as error:
+        await get_current_user(BackgroundTasks(), authorization=None, dev_user_id=user_id)
+    assert error.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_websocket_dev_guest_token_is_local_only(monkeypatch):
+    from app.services.realtime import websocket as ws_route
+
+    user_id = "0123456789abcdef01234567"
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("STRUMM_DEV_AUTH", "true")
+    payload = await ws_route._verify_token(f"dev:{user_id}")
+    assert payload["id"] == user_id
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(ws_route, "decode_access_token", lambda token: None)
+    assert await ws_route._verify_token(f"dev:{user_id}") is None
 
 
 @pytest.mark.asyncio

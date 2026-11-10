@@ -4,7 +4,7 @@
 // cross-origin calls (the HF Spaces gateway does not send
 // Access-Control-Allow-Credentials, which broke every cookie-authenticated
 // request).
-export const API_ORIGIN = "https://agnibha07-strumm.hf.space";
+export const API_ORIGIN = process.env.NEXT_PUBLIC_API_ORIGIN || "https://agnibha07-strumm.hf.space";
 
 // Kept for back-compat; points at the same origin as API_ORIGIN.
 export const API_BASE_URL = API_ORIGIN;

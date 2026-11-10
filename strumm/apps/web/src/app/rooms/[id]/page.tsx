@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Copy, Headphones, Loader2, Pause, Play, Plus, Search, Trash2, Users } from "lucide-react";
 import type { Song } from "@strumm/types";
-import { authFetch } from "web/lib/auth-client";
+import { authFetch, getDeviceId } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import { searchYouTube } from "web/lib/search";
 import SongArtwork from "web/components/SongArtwork";
@@ -14,6 +14,7 @@ import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { WebSocketClient } from "web/services/realtime/WebSocketClient";
 import { EventDispatcher } from "web/services/realtime/EventDispatcher";
 import { WS_CONNECTED } from "web/services/realtime/types";
+import { isNewRoomPlaybackCommand, isStaleRoomPlaybackSnapshot, type RoomPlaybackPhase } from "web/lib/room-playback";
 
 type Listener = { id: string; displayName: string; avatar?: string };
 type Room = {
@@ -26,7 +27,16 @@ type Room = {
   listeners: Listener[];
   listenerCount: number;
   currentTrack: Song | null;
-  playbackState: { playing: boolean; timestamp: number; updatedAt: string | null; startAt?: number | null; sequence?: number };
+  playbackState: {
+    playing: boolean;
+    targetPlaying?: boolean;
+    timestamp: number;
+    updatedAt: string | null;
+    startAt?: number | null;
+    sequence?: number;
+    phase?: RoomPlaybackPhase;
+    serverNow?: number;
+  };
   queue: Song[];
 };
 
@@ -46,10 +56,12 @@ function playbackPosition(room: Room) {
   const updatedAt = state.updatedAt && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(state.updatedAt)
     ? `${state.updatedAt}Z`
     : state.updatedAt;
+  const clockOffsetMs = typeof state.serverNow === "number" ? state.serverNow - Date.now() : 0;
+  const serverNow = Date.now() + clockOffsetMs;
   const anchor = typeof state.startAt === "number"
     ? state.startAt
-    : updatedAt ? new Date(updatedAt).getTime() : Date.now();
-  const elapsed = Math.max(0, (Date.now() - anchor) / 1000);
+    : updatedAt ? new Date(updatedAt).getTime() : serverNow;
+  const elapsed = Math.max(0, (serverNow - anchor) / 1000);
   return (state.timestamp || 0) + elapsed;
 }
 
@@ -59,7 +71,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const token = useAuthStore((state) => state.token);
   const wsClient = WebSocketClient.getInstance();
   const dispatch = EventDispatcher.getInstance();
-  const { currentSong, isPlaying, currentTime, playSong, setPlaying, applyRemoteState } = usePlayerStore();
+  const { currentSong, isPlaying, currentTime, roomPlaybackCommand, playSong, setPlaying, applyRemoteState } = usePlayerStore();
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -69,6 +81,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const isHost = !!room?.isHost;
+  const isSyncingPlayback = room?.playbackState?.phase === "preparing"
+    || (!!room && roomPlaybackCommand?.id.startsWith(`${room.id}:`) === true);
   const hasInitialSnapshotRef = useRef(false);
   const roomRef = useRef<Room | null>(null);
   const roomJoinedRef = useRef(false);
@@ -76,6 +90,17 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const lastPublishedTrackRef = useRef<string | null>(null);
   const lastPublishedPlayingRef = useRef<boolean | null>(null);
   const lastAppliedPlaybackSequenceRef = useRef<number>(-1);
+  const lastAppliedPlaybackPhaseRef = useRef<RoomPlaybackPhase | null>(null);
+
+  useEffect(() => {
+    usePlayerStore.setState({ isListeningRoomActive: true });
+    return () => {
+      usePlayerStore.setState({
+        isListeningRoomActive: false,
+        roomPlaybackCommand: null,
+      });
+    };
+  }, [id]);
 
   useEffect(() => {
     hasInitialSnapshotRef.current = false;
@@ -86,13 +111,22 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     roomJoinedRef.current = false;
     lastRoomSequenceRef.current = 0;
     lastAppliedPlaybackSequenceRef.current = -1;
+    lastAppliedPlaybackPhaseRef.current = null;
     setLoading(true);
     setError("");
   }, [id]);
 
   const applyRoom = useCallback((next: Room) => {
+    const incomingSequence = next.playbackState?.sequence || 0;
+    const incomingPhase = next.playbackState?.phase || "committed";
+    const lastAppliedSequence = lastAppliedPlaybackSequenceRef.current;
+    const lastAppliedPhase = lastAppliedPlaybackPhaseRef.current;
+    if (isStaleRoomPlaybackSnapshot(incomingSequence, incomingPhase, lastAppliedSequence, lastAppliedPhase)) {
+      return;
+    }
+
     roomRef.current = next;
-    lastRoomSequenceRef.current = Math.max(lastRoomSequenceRef.current, next.playbackState?.sequence || 0);
+    lastRoomSequenceRef.current = Math.max(lastRoomSequenceRef.current, incomingSequence);
     setRoom(next);
     lastPublishedPlayingRef.current = !!next.playbackState?.playing;
     const sharedQueue = next.currentTrack
@@ -102,16 +136,32 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     if (next.currentTrack) {
       lastPublishedTrackRef.current = next.currentTrack.videoId;
       const isInitialSnapshot = !hasInitialSnapshotRef.current;
-      const sequence = next.playbackState?.sequence || 0;
-      const isNewPlaybackCommand = sequence > lastAppliedPlaybackSequenceRef.current;
+      const sequence = incomingSequence;
+      const phase = incomingPhase;
+      const isNewPlaybackCommand = isNewRoomPlaybackCommand(
+        sequence,
+        phase,
+        lastAppliedPlaybackSequenceRef.current,
+        lastAppliedPlaybackPhaseRef.current,
+      );
       if (isNewPlaybackCommand || isInitialSnapshot) {
         lastAppliedPlaybackSequenceRef.current = Math.max(lastAppliedPlaybackSequenceRef.current, sequence);
-        const isPlayingNow = !!next.playbackState?.playing;
+        lastAppliedPlaybackPhaseRef.current = phase;
+        const targetPlaying = next.playbackState?.targetPlaying ?? !!next.playbackState?.playing;
+        const isPreparing = phase === "preparing";
+        const isPlayingNow = isPreparing
+          ? (targetPlaying ? false : usePlayerStore.getState().isPlaying)
+          : !!next.playbackState?.playing;
         const currentPosition = playbackPosition(next);
         const commandTimestamp = isInitialSnapshot ? currentPosition : (next.playbackState?.timestamp || 0);
-        const startAt = isInitialSnapshot || !isPlayingNow || typeof next.playbackState?.startAt !== "number"
-          ? Date.now()
-          : next.playbackState.startAt;
+        const clockOffsetMs = typeof next.playbackState?.serverNow === "number"
+          ? next.playbackState.serverNow - Date.now()
+          : 0;
+        const startAt = phase === "preparing"
+          ? null
+          : isInitialSnapshot
+            ? Date.now() + clockOffsetMs
+            : typeof next.playbackState?.startAt === "number" ? next.playbackState.startAt : null;
         applyRemoteState({
           currentSong: next.currentTrack,
           isPlaying: isPlayingNow,
@@ -122,8 +172,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             id: `${next.id}:${sequence}`,
             videoId: next.currentTrack.videoId,
             timestamp: commandTimestamp,
-            playing: isPlayingNow,
+            playing: targetPlaying,
+            phase: phase as "preparing" | "committed",
             startAt,
+            sequence,
+            clockOffsetMs,
           },
         });
       } else if (next.isHost) {
@@ -149,7 +202,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   useEffect(() => {
     const subscribe = () => {
       if (roomJoinedRef.current) {
-        wsClient.send("room:subscribe", { roomId: id });
+        wsClient.send("room:subscribe", { roomId: id, deviceId: getDeviceId() });
       }
     };
     const unsubscribeConnected = dispatch.on(WS_CONNECTED, subscribe);
@@ -164,8 +217,44 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     const unsubscribeError = dispatch.on("room:error", (payload) => {
       if (payload?.roomId === id && payload?.message) setError(payload.message);
     });
+    let barrierDisposed = false;
+    const handlePlaybackReady = (event: Event) => {
+      const detail = (event as CustomEvent<{ sequence: number; videoId: string }>).detail;
+      if (!detail || roomRef.current?.currentTrack?.videoId !== detail.videoId) return;
+      void (async () => {
+        const readyResponse = await authFetch(apiUrl(`/social/rooms/${id}/playback/ready`), {
+          method: "POST",
+          body: JSON.stringify({ sequence: detail.sequence, deviceId: getDeviceId() }),
+        });
+        let latest = await readResponse(readyResponse) as Room;
+        applyRoom(latest);
+        if (latest.playbackState?.sequence !== detail.sequence || latest.playbackState?.phase === "committed") return;
+
+        // WebSocket is the fast path, but a backgrounded/throttled tab can
+        // receive its commit late. Poll only while this exact barrier is open
+        // so the client schedules against the server deadline as soon as the
+        // commit exists, without waiting for the regular 15-second fallback.
+        const deadline = Date.now() + 20000;
+        while (!barrierDisposed && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          if (barrierDisposed) return;
+          const response = await authFetch(apiUrl(`/social/rooms/${id}`));
+          latest = await readResponse(response) as Room;
+          if (latest.playbackState?.sequence !== detail.sequence) return;
+          if (latest.playbackState?.phase === "committed") {
+            applyRoom(latest);
+            return;
+          }
+        }
+      })().catch((err) => {
+        if (!barrierDisposed) setError(err instanceof Error ? err.message : "Could not synchronize playback.");
+      });
+    };
+    window.addEventListener("strumm:room-playback-ready", handlePlaybackReady);
     if (roomJoinedRef.current && wsClient.isConnected) subscribe();
     return () => {
+      barrierDisposed = true;
+      window.removeEventListener("strumm:room-playback-ready", handlePlaybackReady);
       unsubscribeConnected();
       unsubscribeRoom();
       unsubscribeError();
@@ -188,7 +277,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         await refresh(true);
         if (stopped) return;
         roomJoinedRef.current = true;
-        if (wsClient.isConnected) wsClient.send("room:subscribe", { roomId: id });
+        if (wsClient.isConnected) wsClient.send("room:subscribe", { roomId: id, deviceId: getDeviceId() });
         setLoading(false);
         handleVisibility = () => {
           if (document.visibilityState === "visible") {
@@ -234,7 +323,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     try {
       const response = await authFetch(apiUrl(`/social/rooms/${id}/playback`), {
         method: "POST",
-        body: JSON.stringify({ song, playing, timestamp }),
+        body: JSON.stringify({ song, playing, timestamp, deviceId: getDeviceId() }),
       });
       applyRoom(await readResponse(response));
     } catch (err) {
@@ -263,27 +352,11 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   }, [currentTime, isHost, isPlaying, room?.currentTrack?.videoId, updatePlayback]);
 
 
-  // The host's startAt + timestamp is the room clock. Correct listener drift
-  // locally without writing a new playback state every few seconds.
-  useEffect(() => {
-    if (isHost || !room?.playbackState?.playing || !room.currentTrack) return;
-    const timer = setInterval(() => {
-      const activeRoom = roomRef.current;
-      if (!activeRoom?.playbackState?.playing || !activeRoom.currentTrack) return;
-      const live = usePlayerStore.getState();
-      if (live.currentSong?.videoId !== activeRoom.currentTrack.videoId) return;
-      const actual = live.playerRef?.getCurrentTime?.();
-      if (typeof actual !== "number" || !Number.isFinite(actual)) return;
-      const authoritative = playbackPosition(activeRoom);
-      if (Math.abs(actual - authoritative) > 1.25) {
-        live.playerRef?.seekTo(authoritative);
-        live.setCurrentTime(authoritative);
-      }
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [isHost, room?.currentTrack?.videoId, room?.playbackState?.playing, room?.playbackState?.sequence]);
+  // Room commands use a prepare/commit barrier; no periodic seek corrections
+  // are allowed during normal playback because they create audible gaps.
 
   const startTrack = async (song: Song) => {
+    if (isSyncingPlayback) return;
     lastPublishedTrackRef.current = song.videoId;
     lastPublishedPlayingRef.current = true;
     playSong(song);
@@ -293,7 +366,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   };
 
   const togglePlayback = async () => {
-    if (!room?.currentTrack || !isHost) return;
+    if (!room?.currentTrack || !isHost || isSyncingPlayback) return;
     const nextPlaying = !isPlaying;
     const livePlayer = usePlayerStore.getState();
     const measuredPosition = livePlayer.playerRef?.getCurrentTime?.();
@@ -301,9 +374,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       ? measuredPosition
       : livePlayer.currentTime;
     lastPublishedPlayingRef.current = nextPlaying;
-    // Pause locally immediately; both pause and resume are then driven by the
-    // host-authored room command so every device uses the same timestamp.
-    if (!nextPlaying) setPlaying(false);
+    // Neither side changes audible playback during preparation. Every device
+    // executes the final play/pause edge at the server's shared deadline.
     await updatePlayback(room.currentTrack, nextPlaying, position);
   };
 
@@ -392,9 +464,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">{room.currentTrack.title}</p>
                 <p className="truncate text-sm text-muted-foreground">{room.currentTrack.artist}</p>
-                <p className="mt-2 text-xs text-muted-foreground">{room.playbackState.playing ? "Playing" : "Paused"} · {room.listenerCount} listening</p>
+                <p className="mt-2 text-xs text-muted-foreground">{isSyncingPlayback ? "Synchronizing devices…" : room.playbackState.playing ? "Playing" : "Paused"} · {room.listenerCount} listening</p>
               </div>
-              {isHost && <button onClick={() => void togglePlayback()} className="rounded-full bg-primary p-3 text-primary-foreground">{isPlaying ? <Pause size={18} /> : <Play size={18} />}</button>}
+              {isHost && <button disabled={isSyncingPlayback} onClick={() => void togglePlayback()} className="rounded-full bg-primary p-3 text-primary-foreground disabled:opacity-50">{isPlaying ? <Pause size={18} /> : <Play size={18} />}</button>}
             </div>
           ) : <p className="py-8 text-center text-sm text-muted-foreground">The host hasn’t started a track yet.</p>}
           {!isHost && <p className="mt-4 text-xs text-muted-foreground">The host controls playback for everyone.</p>}
@@ -430,7 +502,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 <SongArtwork song={song} quality={ARTWORK_QUALITY_LOW} className="h-10 w-10 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{song.title}</p><p className="truncate text-xs text-muted-foreground">{song.artist}</p></div>
                 <button onClick={() => void addToRoomQueue(song)} aria-label={`Add ${song.title} to queue`} className="rounded-lg border border-border p-2 hover:bg-muted"><Plus size={15} /></button>
-                {isHost && <button onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10"><Play size={15} /></button>}
+                {isHost && <button disabled={isSyncingPlayback} onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10 disabled:opacity-50"><Play size={15} /></button>}
               </div>
             ))}
           </div>
@@ -443,7 +515,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               <div key={song.videoId} className="flex items-center gap-3">
                 <SongArtwork song={song} quality={ARTWORK_QUALITY_LOW} className="h-10 w-10 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{song.title}</p><p className="truncate text-xs text-muted-foreground">{song.artist}</p></div>
-                {isHost && <button onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10"><Play size={15} /></button>}
+                {isHost && <button disabled={isSyncingPlayback} onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10 disabled:opacity-50"><Play size={15} /></button>}
                 {isHost && <button onClick={() => void removeFromQueue(song)} aria-label={`Remove ${song.title}`} className="rounded-lg border border-border p-2 text-muted-foreground hover:text-red-500"><Trash2 size={15} /></button>}
               </div>
             ))}

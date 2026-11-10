@@ -39,7 +39,6 @@ import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_FULL, ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import { useRouter } from "next/navigation";
 import AddToPlaylistMenu from "web/components/AddToPlaylistMenu";
-import SongDownloadAction from "web/components/SongDownloadAction";
 
 
 interface FullscreenPlayerOverlayProps {
@@ -398,7 +397,6 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
             </button>
           )}
           
-          {!isPodcast && <SongDownloadAction song={currentSong} />}
 
           <button
             onClick={() => currentSong && toggleLike(currentSong).catch(console.error)}

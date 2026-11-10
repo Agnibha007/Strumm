@@ -12,7 +12,7 @@ const AudioEngine = dynamic(() => import("web/components/AudioEngine"), {
 
 export default function PersistentPlayerWrapper() {
   const { user, token } = useAuthStore();
-  const hasAuthenticatedSession = !!user && !!token;
+  const hasAuthenticatedSession = !!user && !!token && !token.startsWith("dev:");
 
   return (
     <>

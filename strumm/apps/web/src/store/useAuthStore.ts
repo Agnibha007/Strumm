@@ -353,6 +353,10 @@ function setupVisibilityRefresh() {
 // AuthWrapper's profile restoration handles the final session-state decision.
 async function initializeAuth() {
   if (typeof window === "undefined") return;
+  if (
+    process.env.NODE_ENV === "development" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ) return;
 
   // Purge legacy token storage written by older versions of the app.
   localStorage.removeItem("strumm-token");

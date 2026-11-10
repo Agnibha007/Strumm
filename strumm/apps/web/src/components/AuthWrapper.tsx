@@ -47,6 +47,29 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     }
   }, [sessionStatus]);
 
+  // Local browser guests are isolated per browser profile and accepted only by
+  // a backend explicitly started with STRUMM_DEV_AUTH=true.
+  useEffect(() => {
+    if (
+      process.env.NODE_ENV !== "development" ||
+      (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1")
+    ) return;
+    let id = localStorage.getItem("strumm-dev-user-id");
+    if (!id || !/^[0-9a-f]{24}$/i.test(id)) {
+      const bytes = crypto.getRandomValues(new Uint8Array(12));
+      id = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem("strumm-dev-user-id", id);
+    }
+    login(`dev:${id}`, {
+      id,
+      username: `dev_${id.slice(-6)}`,
+      displayName: `Local Guest ${id.slice(-4)}`,
+      avatar: null,
+    } as any);
+    setLoading(false);
+    setSessionResolved(true);
+  }, [login]);
+
   useEffect(() => {
     // A later, fresh sign-in may establish a new NextAuth session.
     if (sessionStatus === "unauthenticated") {
@@ -84,7 +107,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   // Sync profile details — auth is via httpOnly cookie, so we don't need token
   useEffect(() => {
     const init = async () => {
-      if (user) {
+      if (user && !useAuthStore.getState().token?.startsWith("dev:")) {
         await fetchProfile();
       }
       setLoading(false);

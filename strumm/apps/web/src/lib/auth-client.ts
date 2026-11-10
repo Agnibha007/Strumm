@@ -7,6 +7,19 @@ import { markSessionExpired } from "web/lib/session-expiry";
 
 let _refreshInFlight: Promise<{ ok: boolean; status: number | null }> | null = null;
 
+export function getDeviceId(): string {
+  if (typeof window === "undefined") return "";
+  const key = "strumm-device-id";
+  let deviceId = window.localStorage.getItem(key);
+  if (!deviceId || !/^[0-9a-f]{32}$/.test(deviceId)) {
+    deviceId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) =>
+      value.toString(16).padStart(2, "0"),
+    ).join("");
+    window.localStorage.setItem(key, deviceId);
+  }
+  return deviceId;
+}
+
 function singleFlightRefresh() {
   if (!_refreshInFlight) {
     _refreshInFlight = refreshSession().finally(() => {
@@ -48,6 +61,14 @@ export async function authFetch(url: string, init: RequestInit = {}): Promise<Re
 
   const state = useAuthStore.getState();
   let token = state.token;
+  if (
+    process.env.NODE_ENV === "development" &&
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+    token?.startsWith("dev:")
+  ) {
+    headers.set("X-Strumm-Dev-User", token.slice(4));
+  }
   const explicitBearer = bearerOf(headers);
   if (explicitBearer) token = explicitBearer;
   if (token && !headers.has("Authorization")) {
