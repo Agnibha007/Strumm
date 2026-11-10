@@ -3137,6 +3137,18 @@ try {
 
       if (isPlaying) {
         setPlayerVolume(0);
+        // A remote room resume can arrive with the same timestamp already in
+        // the store (the listener paused at that position). In that case the
+        // store's drift check intentionally skips a seek, but the media surface
+        // may have reloaded at 0 while paused. Re-assert the authoritative
+        // position before play so resuming never starts the iframe at the head.
+        const resumeAt = usePlayerStore.getState().currentTime;
+        const activePlayer = usePlayerStore.getState().playerRef;
+        if (resumeAt > 0 && typeof activePlayer?.seekTo === "function") {
+          try {
+            activePlayer.seekTo(resumeAt);
+          } catch (e) {}
+        }
         triggerPlay();
         fadeVolume(0, 1, 600); // Smooth play resume fade-in
       } else {
