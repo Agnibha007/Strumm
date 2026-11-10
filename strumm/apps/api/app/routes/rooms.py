@@ -11,10 +11,12 @@ import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from fastapi.encoders import jsonable_encoder
 
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.security import sanitize_text
+from app.services.realtime.connection_manager import manager
 from app.services.rooms import (
     PRESENCE_COLLECTION,
     PRESENCE_TTL_SECONDS,
@@ -51,6 +53,15 @@ async def _room_or_404(room_id: str) -> dict:
     if not room:
         raise HTTPException(status_code=404, detail="Room not found.")
     return room
+
+
+async def _broadcast_room_state(database, room: dict) -> None:
+    room_id = str(room["_id"])
+    snapshot = jsonable_encoder(await serialize_room(database, room))
+    await manager.broadcast_to_room(
+        room_id,
+        {"event": "room:state", "data": {"roomId": room_id, "room": snapshot}},
+    )
 
 
 async def _unique_code(database) -> str:
@@ -172,16 +183,19 @@ async def update_playback(
     if payload.song is not None and song is None:
         raise HTTPException(status_code=400, detail="Invalid song.")
     timestamp = payload.timestamp if math.isfinite(payload.timestamp) else 0
+    previous_state = room.get("playbackState") or {}
     state = {
         "playing": payload.playing,
         "timestamp": timestamp,
         "updatedAt": datetime.utcnow(),
+        "sequence": int(previous_state.get("sequence") or 0) + 1,
     }
     update = {"$set": {"currentTrack": song, "playbackState": state}}
     if song:
         update["$pull"] = {"queue": {"videoId": song["videoId"]}}
     await database[db.ROOMS].update_one({"_id": room["_id"]}, update)
     updated = await get_room(database, room_id)
+    await _broadcast_room_state(database, updated)
     return {"success": True, "data": await serialize_room(database, updated, current_user["id"])}
 
 
@@ -208,6 +222,7 @@ async def add_queue_song(
         {"$push": {"queue": song}},
     )
     updated = await get_room(database, room_id)
+    await _broadcast_room_state(database, updated)
     return {"success": True, "data": await serialize_room(database, updated, current_user["id"])}
 
 
@@ -226,6 +241,7 @@ async def remove_queue_song(
         {"_id": room["_id"]}, {"$pull": {"queue": {"videoId": video_id}}}
     )
     updated = await get_room(database, room_id)
+    await _broadcast_room_state(database, updated)
     return {"success": True, "data": await serialize_room(database, updated, current_user["id"])}
 
 

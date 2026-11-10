@@ -228,6 +228,7 @@ async def test_playback_update_is_host_only_and_persists_state(monkeypatch):
     )
     update = rooms.update_one.call_args.args[1]
     assert update["$set"]["playbackState"]["playing"] is True
+    assert update["$set"]["playbackState"]["sequence"] == 1
     assert update["$set"]["currentTrack"]["videoId"] == "dQw4w9WgXcQ"
     assert update["$pull"]["queue"]["videoId"] == "dQw4w9WgXcQ"
 

@@ -11,6 +11,9 @@ import SongArtwork from "web/components/SongArtwork";
 import { useAuthStore } from "web/store/useAuthStore";
 import { usePlayerStore } from "web/store/usePlayerStore";
 import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
+import { WebSocketClient } from "web/services/realtime/WebSocketClient";
+import { EventDispatcher } from "web/services/realtime/EventDispatcher";
+import { WS_CONNECTED } from "web/services/realtime/types";
 
 type Listener = { id: string; displayName: string; avatar?: string };
 type Room = {
@@ -23,7 +26,7 @@ type Room = {
   listeners: Listener[];
   listenerCount: number;
   currentTrack: Song | null;
-  playbackState: { playing: boolean; timestamp: number; updatedAt: string | null };
+  playbackState: { playing: boolean; timestamp: number; updatedAt: string | null; sequence?: number };
   queue: Song[];
 };
 
@@ -48,6 +51,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const { id } = use(params);
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
+  const wsClient = WebSocketClient.getInstance();
+  const dispatch = EventDispatcher.getInstance();
   const { currentSong, isPlaying, currentTime, playerRef, playSong, setPlaying, applyRemoteState } = usePlayerStore();
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +64,9 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [leaving, setLeaving] = useState(false);
   const isHost = !!room?.isHost;
   const hasInitialSnapshotRef = useRef(false);
+  const roomRef = useRef<Room | null>(null);
+  const roomJoinedRef = useRef(false);
+  const lastRoomSequenceRef = useRef(0);
   const lastPublishedTrackRef = useRef<string | null>(null);
   const lastPublishedPlayingRef = useRef<boolean | null>(null);
 
@@ -67,11 +75,16 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     lastPublishedTrackRef.current = null;
     lastPublishedPlayingRef.current = null;
     setRoom(null);
+    roomRef.current = null;
+    roomJoinedRef.current = false;
+    lastRoomSequenceRef.current = 0;
     setLoading(true);
     setError("");
   }, [id]);
 
   const applyRoom = useCallback((next: Room) => {
+    roomRef.current = next;
+    lastRoomSequenceRef.current = Math.max(lastRoomSequenceRef.current, next.playbackState?.sequence || 0);
     setRoom(next);
     lastPublishedPlayingRef.current = !!next.playbackState?.playing;
     const sharedQueue = next.currentTrack
@@ -109,6 +122,34 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   }, [applyRoom, id, token]);
 
   useEffect(() => {
+    const subscribe = () => {
+      if (roomJoinedRef.current) {
+        wsClient.send("room:subscribe", { roomId: id });
+      }
+    };
+    const unsubscribeConnected = dispatch.on(WS_CONNECTED, subscribe);
+    const unsubscribeRoom = dispatch.on("room:state", (payload) => {
+      if (payload?.roomId !== id || !payload?.room) return;
+      const current = roomRef.current;
+      if (!current) return;
+      const sequence = payload.room.playbackState?.sequence || 0;
+      if (sequence && sequence < lastRoomSequenceRef.current) return;
+      applyRoom({ ...payload.room, isHost: current.isHost });
+    });
+    const unsubscribeError = dispatch.on("room:error", (payload) => {
+      if (payload?.roomId === id && payload?.message) setError(payload.message);
+    });
+    if (roomJoinedRef.current && wsClient.isConnected) subscribe();
+    return () => {
+      unsubscribeConnected();
+      unsubscribeRoom();
+      unsubscribeError();
+      roomJoinedRef.current = false;
+      wsClient.send("room:unsubscribe", { roomId: id });
+    };
+  }, [applyRoom, dispatch, id, wsClient]);
+
+  useEffect(() => {
     if (!token) return;
     let stopped = false;
     let snapshotTimer: ReturnType<typeof setInterval>;
@@ -121,6 +162,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         await readResponse(joined);
         await refresh(true);
         if (stopped) return;
+        roomJoinedRef.current = true;
+        if (wsClient.isConnected) wsClient.send("room:subscribe", { roomId: id });
         setLoading(false);
         handleVisibility = () => {
           if (document.visibilityState === "visible") {
@@ -132,11 +175,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         };
         document.addEventListener("visibilitychange", handleVisibility);
         snapshotTimer = setInterval(() => {
+          if (wsClient.isConnected) return;
           void refresh().catch((err) => {
             if (err.status === 404) setRoom(null);
             setError(err.message);
           });
-        }, 2500);
+        }, 15000);
         heartbeatTimer = setInterval(() => {
           void refresh(true).catch((err) => {
             if (err.status === 404) setRoom(null);
@@ -158,7 +202,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       clearInterval(heartbeatTimer);
       if (handleVisibility) document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [id, refresh, token]);
+  }, [id, refresh, token, wsClient]);
 
   const updatePlayback = useCallback(async (song: Song | null, playing: boolean, timestamp: number) => {
     if (!isHost) return;
@@ -217,11 +261,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const togglePlayback = async () => {
     if (!room?.currentTrack || !isHost) return;
     const nextPlaying = !isPlaying;
+    const position = usePlayerStore.getState().currentTime;
     lastPublishedPlayingRef.current = nextPlaying;
     if (nextPlaying) playerRef?.playVideo();
     else playerRef?.pauseVideo();
     setPlaying(nextPlaying);
-    await updatePlayback(room.currentTrack, nextPlaying, currentTime);
+    await updatePlayback(room.currentTrack, nextPlaying, position);
   };
 
   const search = async (event: React.FormEvent) => {

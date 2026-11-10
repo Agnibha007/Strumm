@@ -25,11 +25,13 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi.encoders import jsonable_encoder
 
 from app.database import mongodb as db
 from app.services.auth_utils import decode_access_token
 from app.services.realtime.connection_manager import manager
+from app.services.rooms import get_room, require_member, serialize_room
 from app.services.realtime.events import (
     PING,
     PONG,
@@ -166,6 +168,7 @@ async def global_websocket_endpoint(
 
     # 2. Register connection
     await manager.connect_user(user_id, websocket)
+    subscribed_room_ids: set[str] = set()
     await _update_last_active(user_id)
 
     # Fetch user data for presence broadcast
@@ -199,6 +202,41 @@ async def global_websocket_endpoint(
 
             event = msg.get("event", "")
             event_data = msg.get("data", {})
+
+            # --- Listening room subscriptions ---
+            if event == "room:subscribe":
+                room_id = str(event_data.get("roomId") or "").strip()
+                room = await get_room(database, room_id)
+                if not room:
+                    await manager.send_json(websocket, {
+                        "event": "room:error",
+                        "data": {"roomId": room_id, "message": "Room not found."},
+                    })
+                    continue
+                try:
+                    await require_member(database, room, user_id)
+                except HTTPException:
+                    await manager.send_json(websocket, {
+                        "event": "room:error",
+                        "data": {"roomId": room_id, "message": "Join this room before subscribing."},
+                    })
+                    continue
+                if room_id not in subscribed_room_ids:
+                    await manager.connect_room(room_id, user_id, websocket)
+                    subscribed_room_ids.add(room_id)
+                snapshot = jsonable_encoder(await serialize_room(database, room, user_id))
+                await manager.send_json(websocket, {
+                    "event": "room:state",
+                    "data": {"roomId": room_id, "room": snapshot},
+                })
+                continue
+
+            if event == "room:unsubscribe":
+                room_id = str(event_data.get("roomId") or "").strip()
+                if room_id in subscribed_room_ids:
+                    manager.disconnect_room(room_id, websocket)
+                    subscribed_room_ids.discard(room_id)
+                continue
 
             # --- Ping/Pong ---
             if event == PING:
@@ -248,6 +286,8 @@ async def global_websocket_endpoint(
         logger.warning("WS error for user=%s: %s", user_id[:8], exc)
     finally:
         # 5. Deregister connection
+        for room_id in subscribed_room_ids:
+            manager.disconnect_room(room_id, websocket)
         manager.disconnect_user(user_id, websocket)
         await _update_last_active(user_id)
 

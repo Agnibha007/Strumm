@@ -519,7 +519,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
         if (typeof state.currentTime === "number" && isFinite(state.currentTime)) {
           const target = Math.max(0, state.currentTime);
-          if (Math.abs(target - current.currentTime) > 1.5) {
+          if (Math.abs(target - current.currentTime) > 0.35) {
             patch.currentTime = target;
           }
         }
