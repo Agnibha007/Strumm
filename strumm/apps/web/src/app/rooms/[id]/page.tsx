@@ -72,7 +72,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const token = useAuthStore((state) => state.token);
   const wsClient = WebSocketClient.getInstance();
   const dispatch = EventDispatcher.getInstance();
-  const { currentSong, isPlaying, currentTime, seekCount, lastSeekTime, roomPlaybackCommand, playSong, setPlaying, applyRemoteState } = usePlayerStore();
+  const { currentSong, isPlaying, currentTime, seekCount, lastSeekTime, roomPlaybackCommand, playSong, applyRemoteState } = usePlayerStore();
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -81,6 +81,10 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [searching, setSearching] = useState(false);
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [startingTrackId, setStartingTrackId] = useState<string | null>(null);
+  const [removingTrackId, setRemovingTrackId] = useState<string | null>(null);
+  const [addingTrackId, setAddingTrackId] = useState<string | null>(null);
+  const [playbackPending, setPlaybackPending] = useState(false);
   const isHost = !!room?.isHost;
   const isSyncingPlayback = room?.playbackState?.phase === "preparing"
     || (!!room && roomPlaybackCommand?.id.startsWith(`${room.id}:`) === true);
@@ -549,10 +553,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     if (isSyncingPlayback) return;
     lastPublishedTrackRef.current = song.videoId;
     lastPublishedPlayingRef.current = true;
-    playSong(song);
-    setPlaying(false);
-    lastPublishedPlayingRef.current = false;
-    await updatePlayback(song, true, 0);
+    setStartingTrackId(song.videoId);
+    try {
+      playSong(song);
+      await updatePlayback(song, true, 0);
+    } finally {
+      setStartingTrackId(null);
+    }
   };
 
   const togglePlayback = async () => {
@@ -565,8 +572,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       ? measuredPosition
       : livePlayer.currentTime;
     lastPublishedPlayingRef.current = nextPlaying;
-    if (publishPeerPlayback(nextPlaying, position)) return;
-    await updatePlayback(room.currentTrack, nextPlaying, position);
+    setPlaybackPending(true);
+    try {
+      if (publishPeerPlayback(nextPlaying, position)) return;
+      await updatePlayback(room.currentTrack, nextPlaying, position);
+    } finally {
+      setPlaybackPending(false);
+    }
   };
 
   const search = async (event: React.FormEvent) => {
@@ -584,6 +596,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   };
 
   const addToRoomQueue = async (song: Song) => {
+    if (addingTrackId) return;
+    setAddingTrackId(song.videoId);
     try {
       const response = await authFetch(apiUrl(`/social/rooms/${id}/queue`), {
         method: "POST",
@@ -592,16 +606,21 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       applyRoom(await readResponse(response));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add the song.");
+    } finally {
+      setAddingTrackId(null);
     }
   };
 
   const removeFromQueue = async (song: Song) => {
-    if (!isHost) return;
+    if (!isHost || removingTrackId) return;
+    setRemovingTrackId(song.videoId);
     try {
       const response = await authFetch(apiUrl(`/social/rooms/${id}/queue/${encodeURIComponent(song.videoId)}`), { method: "DELETE" });
       applyRoom(await readResponse(response));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove the song.");
+    } finally {
+      setRemovingTrackId(null);
     }
   };
 
@@ -631,7 +650,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 md:px-6">
-      <button onClick={() => void leave()} className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /> Leave room</button>
+      <button onClick={() => void leave()} disabled={leaving} aria-busy={leaving} className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-60">{leaving ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />} {leaving ? "Leaving…" : "Leave room"}</button>
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary"><Headphones size={14} /> Listening room</p>
@@ -656,7 +675,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
                 <p className="truncate text-sm text-muted-foreground">{room.currentTrack.artist}</p>
                 <p className="mt-2 text-xs text-muted-foreground">{isSyncingPlayback ? "Synchronizing devices…" : room.playbackState.playing ? "Playing" : "Paused"} · {room.listenerCount} listening</p>
               </div>
-              {isHost && <button disabled={isSyncingPlayback} onClick={() => void togglePlayback()} className="rounded-full bg-primary p-3 text-primary-foreground disabled:opacity-50">{isPlaying ? <Pause size={18} /> : <Play size={18} />}</button>}
+              {isHost && <button disabled={isSyncingPlayback || playbackPending} aria-busy={playbackPending || isSyncingPlayback} onClick={() => void togglePlayback()} className="rounded-full bg-primary p-3 text-primary-foreground disabled:opacity-50">{playbackPending || isSyncingPlayback ? <Loader2 size={18} className="animate-spin" /> : isPlaying ? <Pause size={18} /> : <Play size={18} />}</button>}
             </div>
           ) : <p className="py-8 text-center text-sm text-muted-foreground">The host hasn’t started a track yet.</p>}
           {!isHost && <p className="mt-4 text-xs text-muted-foreground">The host controls playback for everyone.</p>}
@@ -691,8 +710,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               <div key={song.videoId} className="flex items-center gap-3">
                 <SongArtwork song={song} quality={ARTWORK_QUALITY_LOW} className="h-10 w-10 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{song.title}</p><p className="truncate text-xs text-muted-foreground">{song.artist}</p></div>
-                <button onClick={() => void addToRoomQueue(song)} aria-label={`Add ${song.title} to queue`} className="rounded-lg border border-border p-2 hover:bg-muted"><Plus size={15} /></button>
-                {isHost && <button disabled={isSyncingPlayback} onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10 disabled:opacity-50"><Play size={15} /></button>}
+                <button onClick={() => void addToRoomQueue(song)} disabled={addingTrackId !== null} aria-busy={addingTrackId === song.videoId} aria-label={`Add ${song.title} to queue`} className="rounded-lg border border-border p-2 hover:bg-muted disabled:opacity-50">{addingTrackId === song.videoId ? <Loader2 className="animate-spin" size={15} /> : <Plus size={15} />}</button>
+                {isHost && <button disabled={isSyncingPlayback || startingTrackId !== null} aria-busy={startingTrackId === song.videoId} onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10 disabled:opacity-50">{startingTrackId === song.videoId ? <Loader2 className="animate-spin" size={15} /> : <Play size={15} />}</button>}
               </div>
             ))}
           </div>
@@ -705,8 +724,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
               <div key={song.videoId} className="flex items-center gap-3">
                 <SongArtwork song={song} quality={ARTWORK_QUALITY_LOW} className="h-10 w-10 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{song.title}</p><p className="truncate text-xs text-muted-foreground">{song.artist}</p></div>
-                {isHost && <button disabled={isSyncingPlayback} onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10 disabled:opacity-50"><Play size={15} /></button>}
-                {isHost && <button onClick={() => void removeFromQueue(song)} aria-label={`Remove ${song.title}`} className="rounded-lg border border-border p-2 text-muted-foreground hover:text-red-500"><Trash2 size={15} /></button>}
+                {isHost && <button disabled={isSyncingPlayback || startingTrackId !== null} aria-busy={startingTrackId === song.videoId} onClick={() => void startTrack(song)} aria-label={`Play ${song.title} now`} title="Play now for everyone" className="rounded-lg border border-primary/40 bg-primary/5 p-2 text-primary hover:bg-primary/10 disabled:opacity-50">{startingTrackId === song.videoId ? <Loader2 className="animate-spin" size={15} /> : <Play size={15} />}</button>}
+                {isHost && <button onClick={() => void removeFromQueue(song)} disabled={removingTrackId !== null} aria-busy={removingTrackId === song.videoId} aria-label={`Remove ${song.title}`} className="rounded-lg border border-border p-2 text-muted-foreground hover:text-red-500 disabled:opacity-50">{removingTrackId === song.videoId ? <Loader2 className="animate-spin" size={15} /> : <Trash2 size={15} />}</button>}
               </div>
             ))}
             {!room.queue.length && <p className="py-8 text-center text-sm text-muted-foreground">The queue is empty. Add a song to get started.</p>}
