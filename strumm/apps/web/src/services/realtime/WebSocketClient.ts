@@ -49,6 +49,7 @@ export class WebSocketClient {
   private _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private _heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
   private _authTimeout: ReturnType<typeof setTimeout> | null = null;
+  private readonly _roomSubscriptions = new Map<string, string>();
 
   /** Callback fired whenever connection state changes. */
   onStateChange: ((state: ConnectionState) => void) | null = null;
@@ -98,6 +99,7 @@ export class WebSocketClient {
    */
   disconnect(): void {
     this._token = null;
+    this._roomSubscriptions.clear();
     this._reconnectAttempt = 0;
     this._clearReconnectTimer();
     this._clearHeartbeat();
@@ -109,8 +111,30 @@ export class WebSocketClient {
    * Send a JSON message through the WebSocket.
    */
   send(event: string, data?: any): void {
-    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+    if (this._ws && this._ws.readyState === WebSocket.OPEN && this._state === "connected") {
       this._ws.send(JSON.stringify({ event, data }));
+    }
+  }
+
+  subscribeRoom(roomId: string, deviceId: string): void {
+    if (!roomId || !/^[0-9a-f]{32}$/i.test(deviceId)) return;
+    this._roomSubscriptions.set(roomId, deviceId);
+    this._sendRoomSubscription(roomId, deviceId);
+  }
+
+  unsubscribeRoom(roomId: string): void {
+    const wasSubscribed = this._roomSubscriptions.delete(roomId);
+    if (wasSubscribed) this.send("room:unsubscribe", { roomId });
+  }
+
+  private _sendRoomSubscription(roomId: string, deviceId: string): void {
+    if (!this.isConnected || !this._ws || this._ws.readyState !== WebSocket.OPEN) return;
+    this._ws.send(JSON.stringify({ event: "room:subscribe", data: { roomId, deviceId } }));
+  }
+
+  private _restoreRoomSubscriptions(): void {
+    for (const [roomId, deviceId] of this._roomSubscriptions) {
+      this._sendRoomSubscription(roomId, deviceId);
     }
   }
 
@@ -180,6 +204,7 @@ export class WebSocketClient {
         this._setState("connected");
         this._startHeartbeat();
         this._dispatch.dispatch(WS_CONNECTED, payload.data ?? null);
+        this._restoreRoomSubscriptions();
         return;
       }
 

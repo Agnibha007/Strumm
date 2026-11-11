@@ -113,7 +113,7 @@ export class RoomVoiceChat {
       this.pendingOffers.delete(from);
     }
     this.onOffer(this.pendingOffers.size > 0);
-    this.ws.send("room:subscribe", { roomId: this.roomId, deviceId: this.deviceId });
+    this.ws.subscribeRoom(this.roomId, this.deviceId);
   }
 
   private async handleSignal(peerId: string, signal: VoiceSignal) {
@@ -175,7 +175,7 @@ export class RoomVoiceChat {
   private recoverPeer(peerId: string, pc: RTCPeerConnection) {
     if (this.peers.get(peerId) !== pc) return;
     this.closePeer(peerId);
-    if (!this.disposed) this.ws.send("room:subscribe", { roomId: this.roomId, deviceId: this.deviceId });
+    if (!this.disposed) this.ws.subscribeRoom(this.roomId, this.deviceId);
   }
 
   private closePeer(peerId: string) {

@@ -13,7 +13,6 @@ import { usePlayerStore } from "web/store/usePlayerStore";
 import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { WebSocketClient } from "web/services/realtime/WebSocketClient";
 import { EventDispatcher } from "web/services/realtime/EventDispatcher";
-import { WS_CONNECTED } from "web/services/realtime/types";
 import { RoomPeerSync } from "web/services/realtime/RoomPeerSync";
 import { RoomVoiceChat } from "web/services/realtime/RoomVoiceChat";
 import { isNewRoomPlaybackCommand, isStaleRoomPlaybackSnapshot, type RoomPlaybackPhase } from "web/lib/room-playback";
@@ -296,12 +295,6 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   }, [applyRemoteState, id, room?.id, room?.isHost]);
 
   useEffect(() => {
-    const subscribe = () => {
-      if (roomJoinedRef.current) {
-        wsClient.send("room:subscribe", { roomId: id, deviceId: getDeviceId() });
-      }
-    };
-    const unsubscribeConnected = dispatch.on(WS_CONNECTED, subscribe);
     const unsubscribeRoom = dispatch.on("room:state", (payload) => {
       if (payload?.roomId !== id || !payload?.room) return;
       const current = roomRef.current;
@@ -363,17 +356,15 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       });
     };
     window.addEventListener("strumm:room-playback-ready", handlePlaybackReady);
-    if (roomJoinedRef.current && wsClient.isConnected) subscribe();
     return () => {
       barrierDisposed = true;
       window.removeEventListener("strumm:room-playback-ready", handlePlaybackReady);
-      unsubscribeConnected();
       unsubscribeRoom();
       unsubscribeError();
       unsubscribeChat();
       unsubscribeClosed();
       roomJoinedRef.current = false;
-      wsClient.send("room:unsubscribe", { roomId: id });
+      wsClient.unsubscribeRoom(id);
     };
   }, [applyRoom, dispatch, id, wsClient]);
 
@@ -391,7 +382,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         await refresh(true);
         if (stopped) return;
         roomJoinedRef.current = true;
-        if (wsClient.isConnected) wsClient.send("room:subscribe", { roomId: id, deviceId: getDeviceId() });
+        wsClient.subscribeRoom(id, getDeviceId());
         setLoading(false);
         handleVisibility = () => {
           if (document.visibilityState === "visible") {
@@ -694,7 +685,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       await voiceChatRef.current?.start();
       setVoiceActive(true);
       setVoiceMuted(false);
-      wsClient.send("room:subscribe", { roomId: id, deviceId: getDeviceId() });
+      wsClient.subscribeRoom(id, getDeviceId());
     } catch {
       setError("Microphone access is required to start voice chat.");
     }

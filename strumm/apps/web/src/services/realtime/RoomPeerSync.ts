@@ -76,7 +76,7 @@ export class RoomPeerSync {
     this.peers.delete(peerId);
     this.pendingCandidates.delete(peerId);
     pc.close();
-    if (!this.disposed) this.ws.send("room:subscribe", { roomId: this.roomId, deviceId: this.deviceId });
+    if (!this.disposed) this.ws.subscribeRoom(this.roomId, this.deviceId);
   }
 
   private attachChannel(peerId: string, channel: RTCDataChannel) {
