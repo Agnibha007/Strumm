@@ -2,7 +2,7 @@
 
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Copy, Headphones, Loader2, Pause, Play, Plus, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Copy, Headphones, Loader2, Pause, Play, Plus, Search, Trash2, Users, MessageCircle, Volume2, VolumeX, Mic, MicOff } from "lucide-react";
 import type { Song } from "@strumm/types";
 import { authFetch, getDeviceId } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
@@ -15,6 +15,7 @@ import { WebSocketClient } from "web/services/realtime/WebSocketClient";
 import { EventDispatcher } from "web/services/realtime/EventDispatcher";
 import { WS_CONNECTED } from "web/services/realtime/types";
 import { RoomPeerSync } from "web/services/realtime/RoomPeerSync";
+import { RoomVoiceChat } from "web/services/realtime/RoomVoiceChat";
 import { isNewRoomPlaybackCommand, isStaleRoomPlaybackSnapshot, type RoomPlaybackPhase } from "web/lib/room-playback";
 
 type Listener = { id: string; displayName: string; avatar?: string };
@@ -72,7 +73,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const token = useAuthStore((state) => state.token);
   const wsClient = WebSocketClient.getInstance();
   const dispatch = EventDispatcher.getInstance();
-  const { currentSong, isPlaying, currentTime, seekCount, lastSeekTime, roomPlaybackCommand, playSong, applyRemoteState } = usePlayerStore();
+  const { currentSong, isPlaying, currentTime, seekCount, lastSeekTime, roomPlaybackCommand, playSong, applyRemoteState, setVolume } = usePlayerStore();
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -85,6 +86,14 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const [removingTrackId, setRemovingTrackId] = useState<string | null>(null);
   const [addingTrackId, setAddingTrackId] = useState<string | null>(null);
   const [playbackPending, setPlaybackPending] = useState(false);
+  const [roomMuted, setRoomMuted] = useState(true);
+  const [deleteOnExit, setDeleteOnExit] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<Array<{ id: string; userId: string; displayName: string; message: string; sentAt: string }>>([]);
+  const [voiceOffer, setVoiceOffer] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const originalVolumeRef = useRef<number | null>(null);
   const isHost = !!room?.isHost;
   const isSyncingPlayback = room?.playbackState?.phase === "preparing"
     || (!!room && roomPlaybackCommand?.id.startsWith(`${room.id}:`) === true);
@@ -97,10 +106,15 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const lastAppliedPlaybackSequenceRef = useRef<number>(-1);
   const lastAppliedPlaybackPhaseRef = useRef<RoomPlaybackPhase | null>(null);
   const peerSyncRef = useRef<RoomPeerSync | null>(null);
+  const voiceChatRef = useRef<RoomVoiceChat | null>(null);
 
   useEffect(() => {
+    originalVolumeRef.current = usePlayerStore.getState().volume;
+    usePlayerStore.getState().setVolume(0);
+    setRoomMuted(true);
     usePlayerStore.setState({ isListeningRoomActive: true });
     return () => {
+      if (originalVolumeRef.current !== null) usePlayerStore.getState().setVolume(originalVolumeRef.current);
       usePlayerStore.setState({
         isListeningRoomActive: false,
         roomPlaybackCommand: null,
@@ -207,6 +221,18 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   useEffect(() => {
     if (!room) return;
+    const voice = new RoomVoiceChat(id, getDeviceId(), !!room.isHost, setVoiceOffer);
+    voiceChatRef.current = voice;
+    return () => {
+      voice.dispose();
+      if (voiceChatRef.current === voice) voiceChatRef.current = null;
+      setVoiceActive(false);
+      setVoiceOffer(false);
+    };
+  }, [id, room?.id, room?.isHost]);
+
+  useEffect(() => {
+    if (!room) return;
     const peerSync = new RoomPeerSync(id, getDeviceId(), !!room.isHost, (command) => {
       if (room.isHost) return;
       if (!command || !["playback", "seek"].includes(command.type) ||
@@ -284,6 +310,22 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       if (sequence && sequence < lastRoomSequenceRef.current) return;
       applyRoom({ ...payload.room, isHost: current.isHost });
     });
+    const unsubscribeChat = dispatch.on("room:chat", (payload) => {
+      if (payload?.roomId !== id || typeof payload.message !== "string") return;
+      setChatMessages((messages) => [...messages.slice(-99), {
+        id: `${payload.sentAt}-${payload.userId}-${Math.random()}`,
+        userId: payload.userId,
+        displayName: payload.displayName || "Listener",
+        message: payload.message,
+        sentAt: payload.sentAt || new Date().toISOString(),
+      }]);
+    });
+    const unsubscribeClosed = dispatch.on("room:closed", (payload) => {
+      if (payload?.roomId !== id) return;
+      setError(payload.message || "The host ended this room.");
+      setRoom(null);
+      router.replace("/rooms");
+    });
     const unsubscribeError = dispatch.on("room:error", (payload) => {
       if (payload?.roomId === id && payload?.message) setError(payload.message);
     });
@@ -328,6 +370,8 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
       unsubscribeConnected();
       unsubscribeRoom();
       unsubscribeError();
+      unsubscribeChat();
+      unsubscribeClosed();
       roomJoinedRef.current = false;
       wsClient.send("room:unsubscribe", { roomId: id });
     };
@@ -637,6 +681,48 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     }
   };
 
+  const sendChat = (event: React.FormEvent) => {
+    event.preventDefault();
+    const message = chatInput.trim();
+    if (!message || message.length > 500) return;
+    wsClient.send("room:chat", { roomId: id, message });
+    setChatInput("");
+  };
+
+  const startVoice = async () => {
+    try {
+      await voiceChatRef.current?.start();
+      setVoiceActive(true);
+      setVoiceMuted(false);
+      wsClient.send("room:subscribe", { roomId: id, deviceId: getDeviceId() });
+    } catch {
+      setError("Microphone access is required to start voice chat.");
+    }
+  };
+
+  const joinVoice = async () => {
+    try {
+      await voiceChatRef.current?.accept();
+      setVoiceActive(true);
+      setVoiceMuted(false);
+    } catch {
+      setError("Could not join voice chat. Check microphone permissions and try again.");
+    }
+  };
+
+  const toggleVoiceMute = () => {
+    const next = !voiceMuted;
+    voiceChatRef.current?.setMuted(next);
+    setVoiceMuted(next);
+  };
+
+  const unmuteRoom = () => {
+    const restore = originalVolumeRef.current ?? 0.8;
+    setVolume(restore > 0 ? restore : 0.8);
+    usePlayerStore.getState().playerRef?.playVideo?.();
+    setRoomMuted(false);
+  };
+
   const copyCode = async () => {
     if (!room?.joinCode) return;
     await navigator.clipboard.writeText(room.joinCode);
@@ -650,7 +736,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 md:px-6">
-      <button onClick={() => void leave()} disabled={leaving} aria-busy={leaving} className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-60">{leaving ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />} {leaving ? "Leaving…" : "Leave room"}</button>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button onClick={() => void leave()} disabled={leaving} aria-busy={leaving} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-60">{leaving ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />} {leaving ? "Leaving…" : isHost && deleteOnExit ? "End room & leave" : "Leave room"}</button>
+          {isHost && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={deleteOnExit} onChange={(event) => setDeleteOnExit(event.target.checked)} /> Delete room for everyone</label>}
+        </div>
+        <button onClick={roomMuted ? unmuteRoom : () => { setVolume(0); setRoomMuted(true); }} className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-2 text-xs font-medium hover:bg-muted">{roomMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}{roomMuted ? "Unmute to listen" : "Mute audio"}</button>
+      </div>
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary"><Headphones size={14} /> Listening room</p>
@@ -659,9 +751,13 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => void copyCode()} className="rounded-xl border border-border px-4 py-2 text-sm font-mono tracking-widest">{copied ? "Copied" : room.joinCode} <Copy className="ml-2 inline" size={13} /></button>
+          {isHost && !voiceActive && <button onClick={() => void startVoice()} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><Mic size={14} /> Start voice</button>}
+          {voiceOffer && !voiceActive && <button onClick={() => void joinVoice()} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><Mic size={14} /> Join voice</button>}
+          {voiceActive && <button onClick={toggleVoiceMute} className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-semibold">{voiceMuted ? <MicOff size={14} /> : <Mic size={14} />}{voiceMuted ? "Unmute mic" : "Mute mic"}</button>}
         </div>
       </header>
 
+      {roomMuted && room.currentTrack && <div className="fixed bottom-28 left-1/2 z-50 flex w-[min(92vw,28rem)] -translate-x-1/2 flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-card px-4 py-3 shadow-2xl"><div><p className="text-sm font-semibold">Your player is muted</p><p className="text-xs text-muted-foreground">Playback stays synchronized. Unmute to hear the room.</p></div><button onClick={unmuteRoom} className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Unmute player</button></div>}
       {error && <p role="alert" className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">{error}</p>}
 
       <section className="mb-6 grid gap-4 md:grid-cols-[1.5fr_1fr]">
@@ -731,6 +827,15 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
             {!room.queue.length && <p className="py-8 text-center text-sm text-muted-foreground">The queue is empty. Add a song to get started.</p>}
           </div>
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center justify-between"><h2 className="flex items-center gap-2 font-semibold"><MessageCircle size={17} /> Room chat</h2><span className="text-xs text-muted-foreground">Live · messages are not saved</span></div>
+        <div className="mb-4 flex max-h-72 min-h-28 flex-col gap-3 overflow-y-auto rounded-xl bg-muted/30 p-3" aria-live="polite">
+          {!chatMessages.length && <p className="m-auto text-sm text-muted-foreground">Say hello to everyone in the room.</p>}
+          {chatMessages.map((message) => <div key={message.id} className="max-w-[90%]"><p className="mb-0.5 text-[11px] font-semibold text-primary">{message.displayName}</p><p className="break-words rounded-xl bg-background px-3 py-2 text-sm">{message.message}</p></div>)}
+        </div>
+        <form onSubmit={sendChat} className="flex gap-2"><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} maxLength={500} placeholder="Message everyone…" className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" /><button disabled={!chatInput.trim()} className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">Send</button></form>
       </section>
     </main>
   );

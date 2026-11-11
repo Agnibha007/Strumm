@@ -52,6 +52,10 @@ class QueueBody(BaseModel):
     song: dict
 
 
+class LeaveRoomBody(BaseModel):
+    delete_room: bool = False
+
+
 class PlaybackReadyBody(BaseModel):
     sequence: int = Field(ge=1)
     deviceId: str = Field(pattern=r"^[0-9a-f]{32}$")
@@ -352,16 +356,19 @@ async def remove_queue_song(
 
 
 @router.post("/{room_id}/leave")
-async def leave_room(room_id: str, current_user: dict = Depends(get_current_user)):
+async def leave_room(room_id: str, payload: LeaveRoomBody | None = None, current_user: dict = Depends(get_current_user)):
     database = db.get_db()
     room = await _room_or_404(room_id)
     user_id = current_user["id"]
     await require_member(database, room, user_id)
     await database[PRESENCE_COLLECTION].delete_one({"roomId": room_id, "userId": user_id})
     if room.get("hostId") == user_id:
-        await database[db.ROOMS].delete_one({"_id": room["_id"]})
-        await database[PRESENCE_COLLECTION].delete_many({"roomId": room_id})
-        return {"success": True, "data": {"deleted": True}}
+        if payload and payload.delete_room:
+            await manager.broadcast_to_room(room_id, {"event": "room:closed", "data": {"roomId": room_id, "message": "The host ended this listening room."}})
+            await database[db.ROOMS].delete_one({"_id": room["_id"]})
+            await database[PRESENCE_COLLECTION].delete_many({"roomId": room_id})
+            return {"success": True, "data": {"deleted": True}}
+        return {"success": True, "data": {"deleted": False}}
     await database[db.ROOMS].update_one({"_id": room["_id"]}, {"$pull": {"members": user_id}})
     return {"success": True, "data": {"deleted": False}}
 
@@ -372,6 +379,7 @@ async def delete_room(room_id: str, current_user: dict = Depends(get_current_use
     room = await _room_or_404(room_id)
     if room.get("hostId") != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only the host can delete this room.")
+    await manager.broadcast_to_room(room_id, {"event": "room:closed", "data": {"roomId": room_id, "message": "The host ended this listening room."}})
     await database[db.ROOMS].delete_one({"_id": room["_id"]})
     await database[PRESENCE_COLLECTION].delete_many({"roomId": room_id})
     return {"success": True, "message": "Room deleted."}

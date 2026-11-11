@@ -542,3 +542,54 @@ async def test_room_serialization_marks_host_for_authenticated_viewer():
     assert host_view["isHost"] is True
     assert listener_view["isHost"] is False
     assert host_view["hostId"] == listener_view["hostId"] == "host-id"
+
+
+@pytest.mark.asyncio
+async def test_host_can_leave_without_deleting_room(monkeypatch):
+    from app.database import mongodb
+    from app.routes import rooms as room_routes
+    from app.routes.rooms import LeaveRoomBody, leave_room
+
+    room = {"_id": ObjectId(), "hostId": "host-id", "members": ["host-id"]}
+    rooms = MagicMock()
+    rooms.delete_one = AsyncMock()
+    presence = MagicMock()
+    presence.delete_one = AsyncMock()
+    database = MagicMock()
+    database.__getitem__.side_effect = lambda key: {"rooms": rooms, "room_presence": presence}[key]
+    monkeypatch.setattr(mongodb, "get_db", lambda: database)
+    monkeypatch.setattr(room_routes, "get_room", AsyncMock(return_value=room))
+
+    result = await leave_room(str(room["_id"]), LeaveRoomBody(delete_room=False), {"id": "host-id"})
+
+    assert result["data"]["deleted"] is False
+    rooms.delete_one.assert_not_awaited()
+    presence.delete_one.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_host_can_delete_room_for_everyone_when_leaving(monkeypatch):
+    from app.database import mongodb
+    from app.routes import rooms as room_routes
+    from app.routes.rooms import LeaveRoomBody, leave_room
+    from app.services.realtime.connection_manager import manager
+
+    room = {"_id": ObjectId(), "hostId": "host-id", "members": ["host-id"]}
+    rooms = MagicMock()
+    rooms.delete_one = AsyncMock()
+    presence = MagicMock()
+    presence.delete_one = AsyncMock()
+    presence.delete_many = AsyncMock()
+    database = MagicMock()
+    database.__getitem__.side_effect = lambda key: {"rooms": rooms, "room_presence": presence}[key]
+    monkeypatch.setattr(mongodb, "get_db", lambda: database)
+    monkeypatch.setattr(room_routes, "get_room", AsyncMock(return_value=room))
+    broadcast = AsyncMock()
+    monkeypatch.setattr(manager, "broadcast_to_room", broadcast)
+
+    result = await leave_room(str(room["_id"]), LeaveRoomBody(delete_room=True), {"id": "host-id"})
+
+    assert result["data"]["deleted"] is True
+    rooms.delete_one.assert_awaited_once()
+    presence.delete_many.assert_awaited_once_with({"roomId": str(room["_id"])})
+    broadcast.assert_awaited_once()

@@ -24,7 +24,7 @@ export class RoomPeerSync {
       }
     });
     this.unsubscribeSignal = this.dispatch.on("room:signal", (data) => {
-      if (data?.roomId === this.roomId && typeof data.fromDeviceId === "string") void this.handleSignal(data.fromDeviceId, data.signal);
+      if (data?.roomId === this.roomId && data?.signal?.channel !== "voice" && typeof data.fromDeviceId === "string") void this.handleSignal(data.fromDeviceId, data.signal);
     });
   }
 

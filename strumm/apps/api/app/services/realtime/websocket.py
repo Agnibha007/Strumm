@@ -264,6 +264,30 @@ async def global_websocket_endpoint(
                     subscribed_room_host_ids.pop(room_id, None)
                 continue
 
+            if event == "room:chat":
+                room_id = str(event_data.get("roomId") or "").strip()
+                message = str(event_data.get("message") or "").strip()
+                if room_id not in subscribed_room_ids or not message or len(message) > 500:
+                    continue
+                room = await get_room(database, room_id)
+                if not room:
+                    continue
+                try:
+                    await require_member(database, room, user_id)
+                except HTTPException:
+                    continue
+                await manager.broadcast_to_room(room_id, {
+                    "event": "room:chat",
+                    "data": {
+                        "roomId": room_id,
+                        "message": message,
+                        "userId": user_id,
+                        "displayName": user_data.get("displayName") or user_data.get("username") or "Listener",
+                        "sentAt": datetime.utcnow().isoformat() + "Z",
+                    },
+                })
+                continue
+
             if event == "room:signal":
                 room_id = str(event_data.get("roomId") or "").strip()
                 target_device_id = str(event_data.get("targetDeviceId") or "").strip().lower()
@@ -271,7 +295,6 @@ async def global_websocket_endpoint(
                 signal_type = signal.get("type") if isinstance(signal, dict) else None
                 signal_value = signal.get("value") if isinstance(signal, dict) else None
                 source_device_id = manager.room_device_id(room_id, websocket)
-                host_user_id = subscribed_room_host_ids.get(room_id)
                 if (
                     room_id not in subscribed_room_ids
                     or not re.fullmatch(r"[0-9a-f]{32}", target_device_id)
@@ -280,7 +303,6 @@ async def global_websocket_endpoint(
                     or not isinstance(signal_value, dict)
                     or len(json.dumps(signal, separators=(",", ":"))) > 32768
                     or not source_device_id
-                    or not host_user_id
                 ):
                     continue
                 target_client = next(
@@ -292,11 +314,13 @@ async def global_websocket_endpoint(
                 )
                 if target_client is None:
                     continue
-                if signal_type == "offer" and user_id != host_user_id:
+                room = await get_room(database, room_id)
+                if not room:
                     continue
-                if signal_type == "answer" and user_id == host_user_id:
-                    continue
-                if user_id != host_user_id and target_client.get("userId") != host_user_id:
+                try:
+                    await require_member(database, room, user_id)
+                    await require_member(database, room, str(target_client.get("userId") or ""))
+                except HTTPException:
                     continue
                 target = manager.room_websocket_for_device(room_id, target_device_id)
                 if target is not None and target != websocket:
