@@ -104,7 +104,8 @@ class ConnectionManager:
         """
         if room_id not in self._room_connections:
             self._room_connections[room_id] = []
-        self._room_connections[room_id].append((user_id, websocket))
+        if not any(existing is websocket for _, existing in self._room_connections[room_id]):
+            self._room_connections[room_id].append((user_id, websocket))
         logger.info(
             "WS connect (room) — room=%s, user=%s",
             room_id[:8], user_id[:8],

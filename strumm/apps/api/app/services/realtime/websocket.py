@@ -262,6 +262,10 @@ async def global_websocket_endpoint(
                     manager.disconnect_room(room_id, websocket)
                     subscribed_room_ids.discard(room_id)
                     subscribed_room_host_ids.pop(room_id, None)
+                    await manager.broadcast_to_room(room_id, {
+                        "event": "room:peers",
+                        "data": {"roomId": room_id, "peers": manager.room_connected_clients(room_id)},
+                    })
                 continue
 
             if event == "room:chat":
@@ -384,6 +388,10 @@ async def global_websocket_endpoint(
         # 5. Deregister connection
         for room_id in subscribed_room_ids:
             manager.disconnect_room(room_id, websocket)
+            await manager.broadcast_to_room(room_id, {
+                "event": "room:peers",
+                "data": {"roomId": room_id, "peers": manager.room_connected_clients(room_id)},
+            })
         manager.disconnect_user(user_id, websocket)
         await _update_last_active(user_id)
 

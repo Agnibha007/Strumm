@@ -1,5 +1,6 @@
 import { EventDispatcher } from "./EventDispatcher";
 import { WebSocketClient } from "./WebSocketClient";
+import { getRoomIceServers } from "./iceServers";
 
 type PeerDescriptor = { deviceId: string; userId: string };
 type SignalPayload = { type: "offer" | "answer" | "candidate"; value: RTCSessionDescriptionInit | RTCIceCandidateInit };
@@ -9,6 +10,7 @@ export class RoomPeerSync {
   private channels = new Map<string, RTCDataChannel>();
   private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
   private clockOffsets = new Map<string, number>();
+  private disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private clockSyncTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly dispatch = EventDispatcher.getInstance();
   private readonly ws = WebSocketClient.getInstance();
@@ -20,11 +22,11 @@ export class RoomPeerSync {
     this.unsubscribePeers = this.dispatch.on("room:peers", (data) => {
       if (data?.roomId !== this.roomId || !this.isHost) return;
       for (const peer of (data.peers || []) as PeerDescriptor[]) {
-        if (peer.deviceId !== this.deviceId && !this.peers.has(peer.deviceId)) void this.createOffer(peer.deviceId);
+        if (peer.deviceId !== this.deviceId && !this.peers.has(peer.deviceId)) void this.createOffer(peer.deviceId).catch(() => undefined);
       }
     });
     this.unsubscribeSignal = this.dispatch.on("room:signal", (data) => {
-      if (data?.roomId === this.roomId && data?.signal?.channel !== "voice" && typeof data.fromDeviceId === "string") void this.handleSignal(data.fromDeviceId, data.signal);
+      if (data?.roomId === this.roomId && data?.signal?.channel !== "voice" && typeof data.fromDeviceId === "string") void this.handleSignal(data.fromDeviceId, data.signal).catch(() => undefined);
     });
   }
 
@@ -32,24 +34,49 @@ export class RoomPeerSync {
     this.ws.send("room:signal", { roomId: this.roomId, targetDeviceId, signal });
   }
 
-  private createPeer(peerId: string) {
-    const pc = new RTCPeerConnection({ iceServers: [
-      { urls: "stun:stun.cloudflare.com:3478" },
-      { urls: "stun:stun.l.google.com:19302" },
-    ] });
+  private async createPeer(peerId: string) {
+    const iceServers = await getRoomIceServers(this.roomId);
+    if (this.disposed) throw new Error("Room peer sync has been disposed");
+    const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 4 });
     this.peers.set(peerId, pc);
     pc.onicecandidate = (event) => {
       if (event.candidate) this.sendSignal(peerId, { type: "candidate", value: event.candidate.toJSON() });
     };
     pc.ondatachannel = (event) => this.attachChannel(peerId, event.channel);
     pc.onconnectionstatechange = () => {
-      if (["failed", "closed"].includes(pc.connectionState)) {
+      if (pc.connectionState === "connected") {
+        const timer = this.disconnectTimers.get(peerId);
+        if (timer) clearTimeout(timer);
+        this.disconnectTimers.delete(peerId);
+      } else if (pc.connectionState === "disconnected") {
+        if (!this.disconnectTimers.has(peerId)) {
+          const timer = setTimeout(() => {
+            this.disconnectTimers.delete(peerId);
+            if (pc.connectionState === "disconnected") this.recoverPeer(peerId, pc);
+          }, 10000);
+          this.disconnectTimers.set(peerId, timer);
+        }
+      } else if (pc.connectionState === "failed") {
+        this.recoverPeer(peerId, pc);
+      } else if (pc.connectionState === "closed") {
         this.channels.delete(peerId);
-        pc.close();
         this.peers.delete(peerId);
       }
     };
     return pc;
+  }
+
+  private recoverPeer(peerId: string, pc: RTCPeerConnection) {
+    if (this.peers.get(peerId) !== pc) return;
+    const timer = this.disconnectTimers.get(peerId);
+    if (timer) clearTimeout(timer);
+    this.disconnectTimers.delete(peerId);
+    this.channels.get(peerId)?.close();
+    this.channels.delete(peerId);
+    this.peers.delete(peerId);
+    this.pendingCandidates.delete(peerId);
+    pc.close();
+    if (!this.disposed) this.ws.send("room:subscribe", { roomId: this.roomId, deviceId: this.deviceId });
   }
 
   private attachChannel(peerId: string, channel: RTCDataChannel) {
@@ -107,11 +134,19 @@ export class RoomPeerSync {
 
   private async createOffer(peerId: string) {
     if (this.disposed || this.peers.has(peerId)) return;
-    const pc = this.createPeer(peerId);
-    this.attachChannel(peerId, pc.createDataChannel("strumm-room", { ordered: true }));
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    this.sendSignal(peerId, { type: "offer", value: offer });
+    const pc = await this.createPeer(peerId);
+    try {
+      this.attachChannel(peerId, pc.createDataChannel("strumm-room", { ordered: true }));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      this.sendSignal(peerId, { type: "offer", value: offer });
+    } catch (error) {
+      this.channels.get(peerId)?.close();
+      pc.close();
+      this.channels.delete(peerId);
+      this.peers.delete(peerId);
+      throw error;
+    }
   }
 
   private async handleSignal(peerId: string, signal: SignalPayload) {
@@ -119,8 +154,16 @@ export class RoomPeerSync {
     let pc = this.peers.get(peerId);
     if (signal.type === "offer") {
       if (this.isHost) return;
-      pc?.close();
-      pc = this.createPeer(peerId);
+      if (pc) {
+        pc.onconnectionstatechange = null;
+        pc.onicecandidate = null;
+        pc.ondatachannel = null;
+        pc.close();
+        this.channels.get(peerId)?.close();
+        this.channels.delete(peerId);
+        this.peers.delete(peerId);
+      }
+      pc = await this.createPeer(peerId);
       await pc.setRemoteDescription(signal.value as RTCSessionDescriptionInit);
       await this.flushCandidates(peerId, pc);
       const answer = await pc.createAnswer();
@@ -172,5 +215,7 @@ export class RoomPeerSync {
     for (const timer of this.clockSyncTimers.values()) clearInterval(timer);
     this.clockSyncTimers.clear();
     this.clockOffsets.clear();
+    for (const timer of this.disconnectTimers.values()) clearTimeout(timer);
+    this.disconnectTimers.clear();
   }
 }

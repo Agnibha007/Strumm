@@ -3,7 +3,7 @@
  * WebSocket at ``/ws``.
  *
  * Features:
- *   - JWT-authenticated connection (token sent as query param)
+ *   - JWT-authenticated connection (token sent in the first message, never in the URL)
  *   - Heartbeat (ping every 30s, timeout after 10s)
  *   - Automatic reconnect with exponential backoff:
  *     0s, 2s, 5s, 10s, 30s (max)
@@ -28,6 +28,7 @@ import { useAuthStore } from "web/store/useAuthStore";
 
 const HEARTBEAT_INTERVAL_MS = 30_000; // send ping every 30s
 const HEARTBEAT_TIMEOUT_MS = 10_000;  // close if no pong within 10s
+const AUTH_TIMEOUT_MS = 12_000;
 const RECONNECT_DELAYS = [0, 2_000, 5_000, 10_000, 30_000];
 const MAX_RECONNECT_DELAY = 30_000;
 
@@ -47,7 +48,7 @@ export class WebSocketClient {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private _heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
-  private _lastCloseCode: number | null = null;
+  private _authTimeout: ReturnType<typeof setTimeout> | null = null;
 
   /** Callback fired whenever connection state changes. */
   onStateChange: ((state: ConnectionState) => void) | null = null;
@@ -136,69 +137,71 @@ export class WebSocketClient {
 
     try {
       const ws = new WebSocket(wsUrl);
-      ws.onopen = () => this._onOpen();
-      ws.onmessage = (event) => this._onMessage(event);
-      ws.onclose = (event) => {
-        this._lastCloseCode = event.code;
-        this._onClose();
-      };
+      this._ws = ws;
+      ws.onopen = () => this._onOpen(ws);
+      ws.onmessage = (event) => this._onMessage(event, ws);
+      ws.onclose = (event) => this._onClose(event, ws);
       ws.onerror = () => {
         // onclose fires after onerror, so cleanup happens there
       };
-      this._ws = ws;
     } catch {
       this._scheduleReconnect();
     }
   }
 
-  private _onOpen(): void {
-    this._reconnectAttempt = 0;
-
-    // Send authenticate event with JWT as the first message
-    this.send(AUTHENTICATE, { token: this._token });
-
-    this._setState("connected");
-    this._startHeartbeat();
-
-    // Notify the event dispatcher
-    this._dispatch.dispatch(WS_CONNECTED, null);
-
-    // Restore listening state if the user was playing
-    // (handled by the provider component)
+  private _onOpen(ws: WebSocket): void {
+    if (this._ws !== ws || !this._token) return;
+    this._setState("connecting");
+    ws.send(JSON.stringify({ event: AUTHENTICATE, data: { token: this._token } }));
+    if (this._authTimeout) clearTimeout(this._authTimeout);
+    this._authTimeout = setTimeout(() => {
+      if (this._ws === ws && ws.readyState === WebSocket.OPEN && this._state !== "connected") {
+        ws.close(4000, "Authentication acknowledgement timed out");
+      }
+    }, AUTH_TIMEOUT_MS);
   }
 
-  private _onMessage(event: MessageEvent): void {
+  private _onMessage(event: MessageEvent, ws: WebSocket): void {
+    if (this._ws !== ws) return;
     try {
       const payload = JSON.parse(event.data);
 
-      // Handle heartbeat pong
       if (payload.event === PONG) {
         this._clearHeartbeatTimeout();
         return;
       }
 
-      // Handle connected acknowledgement
       if (payload.event === "connected") {
+        if (this._authTimeout) {
+          clearTimeout(this._authTimeout);
+          this._authTimeout = null;
+        }
+        this._reconnectAttempt = 0;
+        this._setState("connected");
+        this._startHeartbeat();
+        this._dispatch.dispatch(WS_CONNECTED, payload.data ?? null);
         return;
       }
 
-      // Dispatch to all subscribers
       this._dispatch.dispatchRaw(payload);
     } catch {
-      // Ignore malformed messages
+      // Ignore malformed messages.
     }
   }
 
-  private _onClose(): void {
+  private _onClose(event: CloseEvent, ws: WebSocket): void {
+    if (this._ws !== ws) return;
     this._clearHeartbeat();
-    const closeCode = this._lastCloseCode;
+    if (this._authTimeout) {
+      clearTimeout(this._authTimeout);
+      this._authTimeout = null;
+    }
     this._ws = null;
     this._setState("disconnected");
 
     if (this._token) {
-      // 1008 = Policy Violation (expired/invalid token) — try refresh first
-      if (closeCode === 1008) {
-        this._refreshAndReconnect();
+      if (event.code === 1008) {
+        void this._refreshAndReconnect();
       } else {
         this._scheduleReconnect();
       }
@@ -206,12 +209,16 @@ export class WebSocketClient {
   }
 
   private async _refreshAndReconnect(): Promise<void> {
-    const refreshed = await useAuthStore.getState().silentRefresh();
-    if (refreshed) {
-      this._token = useAuthStore.getState().token;
-      if (this._token) {
-        this._scheduleReconnect();
+    try {
+      const refreshed = await useAuthStore.getState().silentRefresh();
+      if (refreshed) {
+        this._token = useAuthStore.getState().token;
+        if (!this._token) return;
+        this._reconnectAttempt = 0;
       }
+      if (this._token) this._scheduleReconnect();
+    } catch {
+      if (this._token) this._scheduleReconnect();
     }
   }
 
@@ -226,9 +233,11 @@ export class WebSocketClient {
     this._heartbeatTimer = setInterval(() => {
       this.send(PING);
       // If no pong within 10s, assume dead and reconnect
+      this._clearHeartbeatTimeout();
       this._heartbeatTimeout = setTimeout(() => {
-        this._closeWs();
-        this._scheduleReconnect();
+        if (this._ws?.readyState === WebSocket.OPEN) {
+          this._ws.close(4001, "Heartbeat timed out");
+        }
       }, HEARTBEAT_TIMEOUT_MS);
     }, HEARTBEAT_INTERVAL_MS);
   }
@@ -239,6 +248,10 @@ export class WebSocketClient {
       this._heartbeatTimer = null;
     }
     this._clearHeartbeatTimeout();
+    if (this._authTimeout) {
+      clearTimeout(this._authTimeout);
+      this._authTimeout = null;
+    }
   }
 
   private _clearHeartbeatTimeout(): void {

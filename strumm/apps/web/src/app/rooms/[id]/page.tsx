@@ -221,7 +221,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
 
   useEffect(() => {
     if (!room) return;
-    const voice = new RoomVoiceChat(id, getDeviceId(), !!room.isHost, setVoiceOffer);
+    const voice = new RoomVoiceChat(id, getDeviceId(), setVoiceOffer);
     voiceChatRef.current = voice;
     return () => {
       voice.dispose();

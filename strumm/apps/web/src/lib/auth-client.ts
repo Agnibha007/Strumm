@@ -10,12 +10,12 @@ let _refreshInFlight: Promise<{ ok: boolean; status: number | null }> | null = n
 export function getDeviceId(): string {
   if (typeof window === "undefined") return "";
   const key = "strumm-device-id";
-  let deviceId = window.localStorage.getItem(key);
+  let deviceId = window.sessionStorage.getItem(key);
   if (!deviceId || !/^[0-9a-f]{32}$/.test(deviceId)) {
     deviceId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) =>
       value.toString(16).padStart(2, "0"),
     ).join("");
-    window.localStorage.setItem(key, deviceId);
+    window.sessionStorage.setItem(key, deviceId);
   }
   return deviceId;
 }

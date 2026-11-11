@@ -593,3 +593,82 @@ async def test_host_can_delete_room_for_everyone_when_leaving(monkeypatch):
     rooms.delete_one.assert_awaited_once()
     presence.delete_many.assert_awaited_once_with({"roomId": str(room["_id"])})
     broadcast.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_room_peer_connections_are_removed_on_unsubscribe():
+    from app.services.realtime.connection_manager import ConnectionManager
+
+    manager = ConnectionManager()
+    class Socket:
+        pass
+
+    first = Socket()
+    second = Socket()
+    await manager.connect_room("room", "user-1", first)
+    await manager.connect_room("room", "user-1", first)
+    await manager.connect_room("room", "user-2", second)
+    manager.set_room_device_id("room", first, "a" * 32)
+    manager.set_room_device_id("room", second, "b" * 32)
+
+    assert manager.room_connection_count("room") == 2
+    assert {peer["deviceId"] for peer in manager.room_connected_clients("room")} == {"a" * 32, "b" * 32}
+
+    manager.disconnect_room("room", first)
+    assert manager.room_connection_count("room") == 1
+    assert manager.room_connected_clients("room") == [{"userId": "user-2", "deviceId": "b" * 32}]
+
+
+@pytest.mark.asyncio
+async def test_room_ice_servers_issues_temporary_cloudflare_turn_credentials(monkeypatch):
+    from app.routes import rooms as room_routes
+
+    monkeypatch.setenv("CLOUDFLARE_TURN_KEY_ID", "turn-key-id")
+    monkeypatch.setenv("CLOUDFLARE_TURN_API_TOKEN", "server-only-token")
+    monkeypatch.setattr(room_routes.db, "get_db", lambda: object())
+    monkeypatch.setattr(room_routes, "_room_or_404", AsyncMock(return_value={"_id": "room"}))
+    monkeypatch.setattr(room_routes, "require_member", AsyncMock())
+    response = MagicMock()
+    response.json.return_value = {
+        "iceServers": [
+            {"urls": ["stun:stun.cloudflare.com:3478"]},
+            {
+                "urls": ["turn:turn.cloudflare.com:3478?transport=udp", "turns:turn.cloudflare.com:443?transport=tcp"],
+                "username": "temporary-user",
+                "credential": "temporary-password",
+            },
+        ]
+    }
+    response.raise_for_status = MagicMock()
+    client = MagicMock()
+    client.post = AsyncMock(return_value=response)
+    monkeypatch.setattr(room_routes, "get_http_client", lambda: client)
+
+    result = await room_routes.room_ice_servers("room", {"id": "member"})
+
+    client.post.assert_awaited_once()
+    args = client.post.await_args
+    assert args.kwargs["json"] == {"ttl": 86400}
+    assert args.kwargs["headers"]["Authorization"] == "Bearer server-only-token"
+    assert result["data"]["turnEnabled"] is True
+    assert result["data"]["iceServers"][-1]["username"] == "temporary-user"
+    assert result["data"]["iceServers"][-1]["credential"] == "temporary-password"
+
+
+@pytest.mark.asyncio
+async def test_room_ice_servers_falls_back_to_stun_without_cloudflare_credentials(monkeypatch):
+    from app.routes import rooms as room_routes
+
+    monkeypatch.delenv("CLOUDFLARE_TURN_KEY_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_TURN_API_TOKEN", raising=False)
+    monkeypatch.setattr(room_routes.db, "get_db", lambda: object())
+    monkeypatch.setattr(room_routes, "_room_or_404", AsyncMock(return_value={"_id": "room"}))
+    monkeypatch.setattr(room_routes, "require_member", AsyncMock())
+
+    result = await room_routes.room_ice_servers("room", {"id": "member"})
+
+    assert result["data"]["turnEnabled"] is False
+    assert result["data"]["iceServers"] == [
+        {"urls": "stun:stun.cloudflare.com:3478"},
+        {"urls": "stun:stun.l.google.com:19302"},
+    ]

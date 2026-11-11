@@ -7,6 +7,7 @@ polls and heartbeat leases, so state is consistent across API replicas.
 from datetime import datetime, timedelta
 import html
 import math
+import os
 import secrets
 import time
 
@@ -17,6 +18,7 @@ from fastapi.encoders import jsonable_encoder
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.security import sanitize_text
+from app.services.http_client import get_http_client
 from app.services.realtime.connection_manager import manager
 from app.services.rooms import (
     PRESENCE_COLLECTION,
@@ -151,6 +153,52 @@ async def join_room(
     )
     room = await get_room(database, room_id)
     return {"success": True, "data": await serialize_room(database, room, current_user["id"])}
+
+
+@router.get("/{room_id}/ice-servers")
+async def room_ice_servers(room_id: str, current_user: dict = Depends(get_current_user)):
+    database = db.get_db()
+    room = await _room_or_404(room_id)
+    await require_member(database, room, current_user["id"])
+
+    ice_servers = [
+        {"urls": "stun:stun.cloudflare.com:3478"},
+        {"urls": "stun:stun.l.google.com:19302"},
+    ]
+    turn_key_id = os.environ.get("CLOUDFLARE_TURN_KEY_ID")
+    turn_api_token = os.environ.get("CLOUDFLARE_TURN_API_TOKEN")
+    if turn_key_id and turn_api_token:
+        try:
+            response = await get_http_client().post(
+                f"https://rtc.live.cloudflare.com/v1/turn/keys/{turn_key_id}/credentials/generate-ice-servers",
+                headers={"Authorization": f"Bearer {turn_api_token}"},
+                json={"ttl": 86400},
+                timeout=8.0,
+            )
+            response.raise_for_status()
+            generated = response.json().get("iceServers", [])
+            if isinstance(generated, list):
+                for server in generated:
+                    if not isinstance(server, dict):
+                        continue
+                    urls = server.get("urls")
+                    normalized = [urls] if isinstance(urls, str) else urls
+                    if not isinstance(normalized, list) or not all(
+                        isinstance(url, str) and url.startswith(("stun:", "stuns:", "turn:", "turns:"))
+                        for url in normalized
+                    ):
+                        continue
+                    if any(url.startswith(("turn:", "turns:")) for url in normalized):
+                        ice_servers.append({
+                            "urls": normalized,
+                            "username": server.get("username"),
+                            "credential": server.get("credential"),
+                        })
+        except Exception as exc:
+            import logging
+            logging.getLogger("strumm-rooms").warning("Could not issue temporary TURN credentials: %s", exc)
+
+    return {"success": True, "data": {"iceServers": ice_servers, "turnEnabled": len(ice_servers) > 2}}
 
 
 @router.get("/{room_id}")

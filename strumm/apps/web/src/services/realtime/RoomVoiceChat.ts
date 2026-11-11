@@ -1,5 +1,6 @@
 import { EventDispatcher } from "./EventDispatcher";
 import { WebSocketClient } from "./WebSocketClient";
+import { getRoomIceServers } from "./iceServers";
 
 type VoiceSignal = { channel: "voice"; type: "offer" | "answer" | "candidate"; value: RTCSessionDescriptionInit | RTCIceCandidateInit };
 
@@ -9,22 +10,23 @@ export class RoomVoiceChat {
   private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
   private stream: MediaStream | null = null;
   private remoteAudio = new Map<string, HTMLAudioElement>();
+  private disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly dispatch = EventDispatcher.getInstance();
   private readonly ws = WebSocketClient.getInstance();
   private disposed = false;
   private readonly unsubscribePeers: () => void;
   private readonly unsubscribeSignal: () => void;
 
-  constructor(private roomId: string, private deviceId: string, private isHost: boolean, private onOffer: (available: boolean) => void) {
+  constructor(private roomId: string, private deviceId: string, private onOffer: (available: boolean) => void) {
     this.unsubscribePeers = this.dispatch.on("room:peers", (data) => {
       if (data?.roomId !== this.roomId || !this.stream) return;
       for (const peer of (data.peers || []) as Array<{ deviceId: string }>) {
-        if ((this.isHost || this.deviceId < peer.deviceId) && !this.peers.has(peer.deviceId)) void this.offer(peer.deviceId);
+        if (this.deviceId < peer.deviceId && !this.peers.has(peer.deviceId)) void this.offer(peer.deviceId).catch(() => undefined);
       }
     });
     this.unsubscribeSignal = this.dispatch.on("room:signal", (data) => {
       if (data?.roomId !== this.roomId || data?.signal?.channel !== "voice" || typeof data.fromDeviceId !== "string") return;
-      void this.handleSignal(data.fromDeviceId, data.signal);
+      void this.handleSignal(data.fromDeviceId, data.signal).catch(() => undefined);
     });
   }
 
@@ -32,11 +34,10 @@ export class RoomVoiceChat {
     this.ws.send("room:signal", { roomId: this.roomId, targetDeviceId, signal });
   }
 
-  private createPeer(peerId: string) {
-    const pc = new RTCPeerConnection({ iceServers: [
-      { urls: "stun:stun.cloudflare.com:3478" },
-      { urls: "stun:stun.l.google.com:19302" },
-    ] });
+  private async createPeer(peerId: string) {
+    const iceServers = await getRoomIceServers(this.roomId);
+    if (this.disposed) throw new Error("Room voice chat has been disposed");
+    const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 4 });
     this.peers.set(peerId, pc);
     pc.onicecandidate = (event) => {
       if (event.candidate) this.signal(peerId, { channel: "voice", type: "candidate", value: event.candidate.toJSON() });
@@ -54,7 +55,23 @@ export class RoomVoiceChat {
       void audio.play().catch(() => undefined);
     };
     pc.onconnectionstatechange = () => {
-      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) this.closePeer(peerId);
+      if (pc.connectionState === "connected") {
+        const timer = this.disconnectTimers.get(peerId);
+        if (timer) clearTimeout(timer);
+        this.disconnectTimers.delete(peerId);
+      } else if (pc.connectionState === "disconnected") {
+        if (!this.disconnectTimers.has(peerId)) {
+          const timer = setTimeout(() => {
+            this.disconnectTimers.delete(peerId);
+            if (pc.connectionState === "disconnected") this.recoverPeer(peerId, pc);
+          }, 10000);
+          this.disconnectTimers.set(peerId, timer);
+        }
+      } else if (pc.connectionState === "failed") {
+        this.recoverPeer(peerId, pc);
+      } else if (pc.connectionState === "closed") {
+        this.closePeer(peerId);
+      }
     };
     return pc;
   }
@@ -66,11 +83,16 @@ export class RoomVoiceChat {
 
   private async offer(peerId: string) {
     if (!this.stream || this.peers.has(peerId) || this.disposed) return;
-    const pc = this.createPeer(peerId);
-    for (const track of this.stream.getAudioTracks()) pc.addTrack(track, this.stream);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    this.signal(peerId, { channel: "voice", type: "offer", value: offer });
+    const pc = await this.createPeer(peerId);
+    try {
+      for (const track of this.stream.getAudioTracks()) pc.addTrack(track, this.stream);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      this.signal(peerId, { channel: "voice", type: "offer", value: offer });
+    } catch (error) {
+      this.closePeer(peerId);
+      throw error;
+    }
   }
 
   async accept(peerId?: string) {
@@ -80,7 +102,8 @@ export class RoomVoiceChat {
     const entries = peerId ? [[peerId, this.pendingOffers.get(peerId)] as const] : [...this.pendingOffers.entries()];
     for (const [from, offer] of entries) {
       if (!offer || this.disposed) continue;
-      const pc = this.createPeer(from);
+      this.discardPeerConnection(from);
+      const pc = await this.createPeer(from);
       await pc.setRemoteDescription(offer);
       await this.flushCandidates(from, pc);
       for (const track of this.stream.getAudioTracks()) pc.addTrack(track, this.stream);
@@ -98,9 +121,9 @@ export class RoomVoiceChat {
     const pc = this.peers.get(peerId);
     if (signal.type === "offer") {
       this.pendingOffers.set(peerId, signal.value as RTCSessionDescriptionInit);
-      if (this.stream) void this.accept(peerId);
+      if (this.stream) void this.accept(peerId).catch(() => undefined);
       else this.onOffer(true);
-    } else if (signal.type === "answer" && this.isHost && pc) {
+    } else if (signal.type === "answer" && pc) {
       await pc.setRemoteDescription(signal.value as RTCSessionDescriptionInit);
       await this.flushCandidates(peerId, pc);
     } else if (signal.type === "candidate") {
@@ -129,7 +152,36 @@ export class RoomVoiceChat {
 
   get isActive() { return !!this.stream; }
 
+  private discardPeerConnection(peerId: string) {
+    const pc = this.peers.get(peerId);
+    if (pc) {
+      pc.onconnectionstatechange = null;
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.close();
+    }
+    this.peers.delete(peerId);
+    const audio = this.remoteAudio.get(peerId);
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+    }
+    this.remoteAudio.delete(peerId);
+    const timer = this.disconnectTimers.get(peerId);
+    if (timer) clearTimeout(timer);
+    this.disconnectTimers.delete(peerId);
+  }
+
+  private recoverPeer(peerId: string, pc: RTCPeerConnection) {
+    if (this.peers.get(peerId) !== pc) return;
+    this.closePeer(peerId);
+    if (!this.disposed) this.ws.send("room:subscribe", { roomId: this.roomId, deviceId: this.deviceId });
+  }
+
   private closePeer(peerId: string) {
+    const timer = this.disconnectTimers.get(peerId);
+    if (timer) clearTimeout(timer);
+    this.disconnectTimers.delete(peerId);
     this.peers.get(peerId)?.close();
     this.peers.delete(peerId);
     const audio = this.remoteAudio.get(peerId);
