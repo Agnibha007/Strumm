@@ -207,6 +207,6 @@ Strumm is open source under the MIT License. See /licenses for third-party licen
 Room playback synchronization and voice chat use WebRTC. STUN is enabled by default. For restrictive NATs and firewalls, Strumm can request short-lived TURN credentials from Cloudflare Realtime. Configure these backend-only environment variables in the API deployment:
 
 - CLOUDFLARE_TURN_KEY_ID: Cloudflare Realtime TURN key ID.
-- CLOUDFLARE_TURN_KEY_SECRET: Secret key value returned when creating the Cloudflare Realtime TURN key (not the account API token).
+- CLOUDFLARE_TURN_API_TOKEN: TURN key API token returned when creating the TURN key (not the account-level token).
 
 The API keeps the long-lived token server-side and issues temporary credentials with a 24-hour TTL only to authenticated room members. The browser caches the returned ICE configuration for 30 minutes. If TURN is not configured or credential issuance fails, room connections retain STUN-only fallback connectivity.

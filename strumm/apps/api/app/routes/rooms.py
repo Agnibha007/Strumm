@@ -166,7 +166,7 @@ async def room_ice_servers(room_id: str, current_user: dict = Depends(get_curren
         {"urls": "stun:stun.l.google.com:19302"},
     ]
     turn_key_id = os.environ.get("CLOUDFLARE_TURN_KEY_ID")
-    turn_api_token = os.environ.get("CLOUDFLARE_TURN_KEY_SECRET")
+    turn_api_token = os.environ.get("CLOUDFLARE_TURN_API_TOKEN")
     if turn_key_id and turn_api_token:
         try:
             response = await get_http_client().post(

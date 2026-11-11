@@ -624,7 +624,7 @@ async def test_room_ice_servers_issues_temporary_cloudflare_turn_credentials(mon
     from app.routes import rooms as room_routes
 
     monkeypatch.setenv("CLOUDFLARE_TURN_KEY_ID", "turn-key-id")
-    monkeypatch.setenv("CLOUDFLARE_TURN_KEY_SECRET", "server-only-token")
+    monkeypatch.setenv("CLOUDFLARE_TURN_API_TOKEN", "server-only-token")
     monkeypatch.setattr(room_routes.db, "get_db", lambda: object())
     monkeypatch.setattr(room_routes, "_room_or_404", AsyncMock(return_value={"_id": "room"}))
     monkeypatch.setattr(room_routes, "require_member", AsyncMock())
@@ -660,7 +660,7 @@ async def test_room_ice_servers_falls_back_to_stun_without_cloudflare_credential
     from app.routes import rooms as room_routes
 
     monkeypatch.delenv("CLOUDFLARE_TURN_KEY_ID", raising=False)
-    monkeypatch.delenv("CLOUDFLARE_TURN_KEY_SECRET", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_TURN_API_TOKEN", raising=False)
     monkeypatch.setattr(room_routes.db, "get_db", lambda: object())
     monkeypatch.setattr(room_routes, "_room_or_404", AsyncMock(return_value={"_id": "room"}))
     monkeypatch.setattr(room_routes, "require_member", AsyncMock())
