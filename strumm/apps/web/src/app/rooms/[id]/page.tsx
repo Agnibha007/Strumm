@@ -14,6 +14,7 @@ import { ARTWORK_QUALITY_HIGH, ARTWORK_QUALITY_LOW } from "web/lib/media";
 import { WebSocketClient } from "web/services/realtime/WebSocketClient";
 import { EventDispatcher } from "web/services/realtime/EventDispatcher";
 import { WS_CONNECTED } from "web/services/realtime/types";
+import { RoomPeerSync } from "web/services/realtime/RoomPeerSync";
 import { isNewRoomPlaybackCommand, isStaleRoomPlaybackSnapshot, type RoomPlaybackPhase } from "web/lib/room-playback";
 
 type Listener = { id: string; displayName: string; avatar?: string };
@@ -71,7 +72,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const token = useAuthStore((state) => state.token);
   const wsClient = WebSocketClient.getInstance();
   const dispatch = EventDispatcher.getInstance();
-  const { currentSong, isPlaying, currentTime, roomPlaybackCommand, playSong, setPlaying, applyRemoteState } = usePlayerStore();
+  const { currentSong, isPlaying, currentTime, seekCount, lastSeekTime, roomPlaybackCommand, playSong, setPlaying, applyRemoteState } = usePlayerStore();
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -91,6 +92,7 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
   const lastPublishedPlayingRef = useRef<boolean | null>(null);
   const lastAppliedPlaybackSequenceRef = useRef<number>(-1);
   const lastAppliedPlaybackPhaseRef = useRef<RoomPlaybackPhase | null>(null);
+  const peerSyncRef = useRef<RoomPeerSync | null>(null);
 
   useEffect(() => {
     usePlayerStore.setState({ isListeningRoomActive: true });
@@ -198,6 +200,70 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     const data = await readResponse(response);
     applyRoom(data);
   }, [applyRoom, id, token]);
+
+  useEffect(() => {
+    if (!room) return;
+    const peerSync = new RoomPeerSync(id, getDeviceId(), !!room.isHost, (command) => {
+      if (room.isHost) return;
+      if (!command || !["playback", "seek"].includes(command.type) ||
+          typeof command.executeAt !== "number" ||
+          typeof command.timestamp !== "number" ||
+          typeof command.playing !== "boolean" ||
+          typeof command.sequence !== "number") return;
+      const delay = Math.max(0, command.executeAt - Date.now());
+      window.setTimeout(() => {
+        const currentRoom = roomRef.current;
+        if (!currentRoom?.currentTrack || command.sequence <= lastAppliedPlaybackSequenceRef.current) return;
+        lastAppliedPlaybackSequenceRef.current = command.sequence;
+        lastAppliedPlaybackPhaseRef.current = "committed";
+        lastRoomSequenceRef.current = Math.max(lastRoomSequenceRef.current, command.sequence);
+        const sharedQueue = [
+          currentRoom.currentTrack,
+          ...(currentRoom.queue || []).filter((song) => song.videoId !== currentRoom.currentTrack?.videoId),
+        ];
+        const updatedRoom = {
+          ...currentRoom,
+          playbackState: {
+            ...currentRoom.playbackState,
+            sequence: command.sequence,
+            phase: "committed" as const,
+            playing: command.playing,
+            targetPlaying: command.playing,
+            timestamp: command.timestamp,
+            startAt: command.executeAt,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        roomRef.current = updatedRoom;
+        setRoom(updatedRoom);
+        const state = usePlayerStore.getState();
+        state.setCurrentTime(command.timestamp);
+        state.clearLastSeekTime();
+        applyRemoteState({
+          currentSong: state.currentSong ?? currentRoom.currentTrack,
+          isPlaying: command.playing,
+          currentTime: command.timestamp,
+          queue: sharedQueue,
+          currentIndex: 0,
+          roomPlaybackCommand: {
+            id: `${currentRoom.id}:${command.sequence}`,
+            videoId: currentRoom.currentTrack.videoId,
+            timestamp: command.timestamp,
+            playing: command.playing,
+            phase: "committed",
+            startAt: command.executeAt,
+            sequence: command.sequence,
+            clockOffsetMs: 0,
+          },
+        });
+      }, delay);
+    });
+    peerSyncRef.current = peerSync;
+    return () => {
+      peerSync.dispose();
+      if (peerSyncRef.current === peerSync) peerSyncRef.current = null;
+    };
+  }, [applyRemoteState, id, room?.id, room?.isHost]);
 
   useEffect(() => {
     const subscribe = () => {
@@ -318,18 +384,80 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     };
   }, [id, refresh, token, wsClient]);
 
-  const updatePlayback = useCallback(async (song: Song | null, playing: boolean, timestamp: number) => {
+  const updatePlayback = useCallback(async (
+    song: Song | null,
+    playing: boolean,
+    timestamp: number,
+    options: { direct?: boolean; sequence?: number } = {},
+  ) => {
     if (!isHost) return;
     try {
       const response = await authFetch(apiUrl(`/social/rooms/${id}/playback`), {
         method: "POST",
-        body: JSON.stringify({ song, playing, timestamp, deviceId: getDeviceId() }),
+        body: JSON.stringify({
+          song,
+          playing,
+          timestamp,
+          deviceId: getDeviceId(),
+          direct: options.direct === true,
+          sequence: options.sequence,
+        }),
       });
-      applyRoom(await readResponse(response));
+      const data = await readResponse(response);
+      if (!options.direct) applyRoom(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Playback update failed.");
     }
   }, [applyRoom, id, isHost]);
+
+  const publishPeerPlayback = useCallback((playing: boolean, timestamp: number) => {
+    const peerSync = peerSyncRef.current;
+    const currentRoom = roomRef.current;
+    const currentTrack = currentRoom?.currentTrack;
+    if (!isHost || !peerSync || peerSync.connectedPeers === 0 || !currentRoom || !currentTrack) return false;
+
+    const sequence = Math.max(lastAppliedPlaybackSequenceRef.current, currentRoom.playbackState.sequence || 0) + 1;
+    const executeAt = Date.now() + 500;
+    lastAppliedPlaybackSequenceRef.current = sequence;
+    lastAppliedPlaybackPhaseRef.current = "committed";
+    lastRoomSequenceRef.current = Math.max(lastRoomSequenceRef.current, sequence);
+    peerSync.broadcast({ type: "playback", sequence, playing, timestamp, executeAt });
+
+    const updatedRoom = {
+      ...currentRoom,
+      playbackState: {
+        ...currentRoom.playbackState,
+        sequence,
+        phase: "committed" as const,
+        playing,
+        targetPlaying: playing,
+        timestamp,
+        startAt: executeAt,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+    roomRef.current = updatedRoom;
+    setRoom(updatedRoom);
+    applyRemoteState({
+      currentSong: usePlayerStore.getState().currentSong ?? currentTrack,
+      isPlaying: playing,
+      currentTime: timestamp,
+      queue: [currentTrack, ...(currentRoom.queue || []).filter((song) => song.videoId !== currentTrack.videoId)],
+      currentIndex: 0,
+      roomPlaybackCommand: {
+        id: `${currentRoom.id}:${sequence}`,
+        videoId: currentTrack.videoId,
+        timestamp,
+        playing,
+        phase: "committed",
+        startAt: executeAt,
+        sequence,
+        clockOffsetMs: 0,
+      },
+    });
+    void updatePlayback(currentTrack, playing, timestamp, { direct: true, sequence });
+    return true;
+  }, [applyRemoteState, isHost, updatePlayback]);
 
   useEffect(() => {
     if (!hasInitialSnapshotRef.current || !isHost || !room || !currentSong) return;
@@ -348,12 +476,74 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     const authoritativePosition = typeof measuredPosition === "number" && Number.isFinite(measuredPosition)
       ? measuredPosition
       : currentTime;
+    if (publishPeerPlayback(isPlaying, authoritativePosition)) return;
     void updatePlayback(room.currentTrack, isPlaying, authoritativePosition);
-  }, [currentTime, isHost, isPlaying, room?.currentTrack?.videoId, updatePlayback]);
+  }, [currentTime, isHost, isPlaying, publishPeerPlayback, room?.currentTrack?.videoId, updatePlayback]);
 
 
   // Room commands use a prepare/commit barrier; no periodic seek corrections
   // are allowed during normal playback because they create audible gaps.
+
+  const lastPeerSeekCountRef = useRef(seekCount);
+  useEffect(() => {
+    if (!isHost || !room?.currentTrack || seekCount === lastPeerSeekCountRef.current) {
+      lastPeerSeekCountRef.current = seekCount;
+      return;
+    }
+    lastPeerSeekCountRef.current = seekCount;
+    const state = usePlayerStore.getState();
+    const timestamp = typeof state.lastSeekTime === "number" ? state.lastSeekTime : state.currentTime;
+    state.setCurrentTime(timestamp);
+    state.clearLastSeekTime();
+    const peerSync = peerSyncRef.current;
+    if (peerSync && peerSync.connectedPeers > 0 && roomRef.current?.currentTrack) {
+      const currentRoom = roomRef.current;
+      const currentTrack = currentRoom.currentTrack;
+      if (!currentTrack) return;
+      const sequence = Math.max(lastAppliedPlaybackSequenceRef.current, currentRoom.playbackState.sequence || 0) + 1;
+      const executeAt = Date.now() + 500;
+      lastAppliedPlaybackSequenceRef.current = sequence;
+      lastAppliedPlaybackPhaseRef.current = "committed";
+      lastRoomSequenceRef.current = Math.max(lastRoomSequenceRef.current, sequence);
+      peerSync.broadcast({ type: "seek", sequence, timestamp, playing: isPlaying, executeAt });
+      const updatedRoom = {
+        ...currentRoom,
+        playbackState: {
+          ...currentRoom.playbackState,
+          sequence,
+          phase: "committed" as const,
+          playing: isPlaying,
+          targetPlaying: isPlaying,
+          timestamp,
+          startAt: executeAt,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      roomRef.current = updatedRoom;
+      setRoom(updatedRoom);
+      applyRemoteState({
+        currentSong: state.currentSong ?? currentTrack,
+        isPlaying,
+        currentTime: timestamp,
+        queue: [currentTrack, ...(currentRoom.queue || []).filter((song) => song.videoId !== currentTrack?.videoId)],
+        currentIndex: 0,
+        roomPlaybackCommand: {
+          id: `${currentRoom.id}:${sequence}`,
+          videoId: currentTrack.videoId,
+          timestamp,
+          playing: isPlaying,
+          phase: "committed",
+          startAt: executeAt,
+          sequence,
+          clockOffsetMs: 0,
+        },
+      });
+      void updatePlayback(currentTrack, isPlaying, timestamp, { direct: true, sequence });
+
+    } else if (room?.currentTrack) {
+      void updatePlayback(room.currentTrack, isPlaying, timestamp);
+    }
+  }, [applyRemoteState, isHost, isPlaying, lastSeekTime, room?.currentTrack?.videoId, seekCount, updatePlayback]);
 
   const startTrack = async (song: Song) => {
     if (isSyncingPlayback) return;
@@ -370,12 +560,12 @@ export default function RoomPage({ params }: { params: Promise<{ id: string }> }
     const nextPlaying = !isPlaying;
     const livePlayer = usePlayerStore.getState();
     const measuredPosition = livePlayer.playerRef?.getCurrentTime?.();
-    const position = typeof measuredPosition === "number" && Number.isFinite(measuredPosition)
+    const position = typeof measuredPosition === "number" && Number.isFinite(measuredPosition) &&
+      (measuredPosition > 0 || livePlayer.currentTime <= 0)
       ? measuredPosition
       : livePlayer.currentTime;
     lastPublishedPlayingRef.current = nextPlaying;
-    // Neither side changes audible playback during preparation. Every device
-    // executes the final play/pause edge at the server's shared deadline.
+    if (publishPeerPlayback(nextPlaying, position)) return;
     await updatePlayback(room.currentTrack, nextPlaying, position);
   };
 

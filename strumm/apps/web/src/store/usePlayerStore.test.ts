@@ -31,6 +31,8 @@ function reset() {
     isPlaying: false,
     currentTime: 0,
     duration: 0,
+    seekCount: 0,
+    lastSeekTime: null,
     shufflePlayedIds: [],
     isShuffle: false,
     repeatMode: "none",
@@ -529,5 +531,28 @@ describe("queue replacement index reconciliation", () => {
     expect(usePlayerStore.getState().currentIndex).toBe(1);
     usePlayerStore.getState().next();
     expect(usePlayerStore.getState().currentSong?.videoId).toBe("picked");
+  });
+});
+
+
+describe("seek notifications", () => {
+  beforeEach(reset);
+
+  it("preserves the exact requested seek position for room synchronization", () => {
+    usePlayerStore.getState().notifySeek(18.75);
+
+    const state = usePlayerStore.getState();
+    expect(state.seekCount).toBe(1);
+    expect(state.lastSeekTime).toBe(18.75);
+    expect(state.currentTime).toBe(18.75);
+  });
+
+  it("clears the pending seek marker without changing playback position", () => {
+    usePlayerStore.getState().notifySeek(18.75);
+    usePlayerStore.getState().clearLastSeekTime();
+
+    const state = usePlayerStore.getState();
+    expect(state.lastSeekTime).toBeNull();
+    expect(state.currentTime).toBe(18.75);
   });
 });

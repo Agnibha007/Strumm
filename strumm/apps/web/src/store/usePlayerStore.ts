@@ -130,7 +130,9 @@ interface PlayerState {
   // ref, so the listening-time tracker can treat the jump as a seek instead of
   // counting skipped seconds.
   seekCount: number;
+  lastSeekTime: number | null;
   notifySeek: (seconds: number) => void;
+  clearLastSeekTime: () => void;
   updateMediaSession: (song: Song) => void;
 
   // Shuffle history — tracks videoIds played during the current shuffle round
@@ -184,6 +186,7 @@ export const usePlayerStore = create<PlayerState>()(
       audioQuality: "balanced",
       playerRef: null,
       seekCount: 0,
+      lastSeekTime: null,
       isPlayerLoading: false,
       playerError: null,
       ...initialRadioState,
@@ -619,8 +622,13 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
 
-      notifySeek: () =>
-        set((state) => ({ seekCount: state.seekCount + 1 })),
+      notifySeek: (seconds) =>
+        set((state) => ({
+          seekCount: state.seekCount + 1,
+          lastSeekTime: Number.isFinite(seconds) ? Math.max(0, seconds) : state.currentTime,
+          currentTime: Number.isFinite(seconds) ? Math.max(0, seconds) : state.currentTime,
+        })),
+      clearLastSeekTime: () => set({ lastSeekTime: null }),
 
       // Helper function to update system lockscreen metadata (Media Session API)
       updateMediaSession: (song: Song) => {

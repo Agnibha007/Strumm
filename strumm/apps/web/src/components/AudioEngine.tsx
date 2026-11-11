@@ -1101,7 +1101,6 @@ export default function AudioEngine() {
       setPlayerVolume(0);
     }
 
-    const seekTo = Math.max(0, state.currentTime);
     let appliedSeek = false;
     const applySeek = () => {
       if (appliedSeek) return;
@@ -1114,7 +1113,8 @@ export default function AudioEngine() {
       // stream is ready (HAVE_METADATA), where the assignment actually sticks.
       try {
         if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
-          audio.currentTime = seekTo;
+          const latestSeek = Math.max(0, usePlayerStore.getState().currentTime);
+          audio.currentTime = latestSeek;
           appliedSeek = true;
         }
       } catch (e) {}
@@ -3231,6 +3231,24 @@ try {
           }
         }
         if (usesHtmlAudio && audio) {
+          setPlayerRef({
+            playVideo: () => { void htmlAudioRef.current?.play().catch(() => undefined); },
+            pauseVideo: () => htmlAudioRef.current?.pause(),
+            seekTo: (seconds: number) => {
+              const activeAudio = htmlAudioRef.current;
+              if (activeAudio && Number.isFinite(seconds)) activeAudio.currentTime = Math.max(0, seconds);
+            },
+            getCurrentTime: () => {
+              const activeAudio = htmlAudioRef.current;
+              return activeAudio?.currentTime || 0;
+            },
+            setVolume: (value: number) => {
+              if (htmlAudioRef.current) htmlAudioRef.current.volume = Math.max(0, Math.min(1, value / 100));
+            },
+            setPlaybackRate: (rate: number) => {
+              if (htmlAudioRef.current) htmlAudioRef.current.playbackRate = rate;
+            },
+          });
           if (preparingPlay || (command.phase === "committed" && command.playing && !wasPrepared)) {
             try { audio.pause(); } catch {}
             const metadataDeadline = Date.now() + 15000;
@@ -3363,7 +3381,7 @@ try {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [roomPlaybackCommand?.id, roomPlaybackCommand?.phase, roomPlaybackCommand?.startAt, currentSong?.videoId]);
+  }, [roomPlaybackCommand?.id, roomPlaybackCommand?.phase, roomPlaybackCommand?.startAt, currentSong?.videoId, setPlayerRef]);
 
   // 4. Watch for play/pause and track transitions from UI (with smooth fade-in/fade-out transitions)
   useEffect(() => {

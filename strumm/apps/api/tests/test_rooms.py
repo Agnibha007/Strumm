@@ -297,6 +297,99 @@ async def test_playback_update_is_host_only_and_persists_state(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_playback_persists_snapshot_without_broadcasting(monkeypatch):
+    import time
+    from app.database import mongodb
+    from app.routes import rooms as rooms_route
+    from app.routes.rooms import PlaybackBody, update_playback
+
+    room_id = ObjectId()
+    room = {
+        "_id": room_id,
+        "hostId": "host-id",
+        "members": ["host-id", "listener-id"],
+        "queue": [{"videoId": "dQw4w9WgXcQ"}],
+        "playbackState": {"playing": True, "sequence": 4},
+    }
+    rooms = MagicMock()
+    rooms.find_one = AsyncMock(return_value=room)
+    rooms.update_one = AsyncMock()
+    presence = MagicMock()
+    presence.find.return_value = AsyncCursor([])
+    users = MagicMock()
+    database = MagicMock()
+    database.__getitem__.side_effect = lambda key: {
+        "rooms": rooms, "room_presence": presence, "users": users,
+    }[key]
+    monkeypatch.setattr(mongodb, "get_db", lambda: database)
+    monkeypatch.setattr(rooms_route, "get_room", AsyncMock(return_value=room))
+    monkeypatch.setattr(rooms_route, "serialize_room", AsyncMock(return_value={"id": str(room_id)}))
+    broadcast = AsyncMock()
+    monkeypatch.setattr(rooms_route, "_broadcast_room_state", broadcast)
+
+    result = await update_playback(
+        str(room_id),
+        PlaybackBody(
+            song={"videoId": "dQw4w9WgXcQ", "title": "Test", "artist": "Test", "duration": 45},
+            playing=False,
+            timestamp=18.25,
+            direct=True,
+            sequence=5,
+        ),
+        {"id": "host-id"},
+    )
+
+    update = rooms.update_one.call_args.args[1]
+    state = update["$set"]["playbackState"]
+    assert state["phase"] == "committed"
+    assert state["playing"] is False
+    assert state["timestamp"] == 18.25
+    assert state["sequence"] == 5
+    assert state["startAt"] >= int(time.time() * 1000) - 1000
+    assert update["$set"]["currentTrack"]["videoId"] == "dQw4w9WgXcQ"
+    assert update["$pull"]["queue"]["videoId"] == "dQw4w9WgXcQ"
+    broadcast.assert_not_awaited()
+    assert result["data"]["id"] == str(room_id)
+
+
+@pytest.mark.asyncio
+async def test_direct_playback_ignores_out_of_order_snapshot(monkeypatch):
+    from app.database import mongodb
+    from app.routes import rooms as rooms_route
+    from app.routes.rooms import PlaybackBody, update_playback
+
+    room_id = ObjectId()
+    room = {
+        "_id": room_id,
+        "hostId": "host-id",
+        "members": ["host-id"],
+        "queue": [],
+        "playbackState": {"playing": True, "sequence": 8},
+    }
+    rooms = MagicMock()
+    rooms.find_one = AsyncMock(return_value=room)
+    rooms.update_one = AsyncMock()
+    presence = MagicMock()
+    presence.find.return_value = AsyncCursor([])
+    users = MagicMock()
+    database = MagicMock()
+    database.__getitem__.side_effect = lambda key: {
+        "rooms": rooms, "room_presence": presence, "users": users,
+    }[key]
+    monkeypatch.setattr(mongodb, "get_db", lambda: database)
+    monkeypatch.setattr(rooms_route, "serialize_room", AsyncMock(return_value={"id": str(room_id)}))
+
+    result = await update_playback(
+        str(room_id),
+        PlaybackBody(song=None, playing=False, timestamp=4, direct=True, sequence=7),
+        {"id": "host-id"},
+    )
+
+    rooms.update_one.assert_not_awaited()
+    assert result["data"]["id"] == str(room_id)
+
+
+@pytest.mark.asyncio
 async def test_playback_barrier_commits_only_after_all_expected_devices_are_ready(monkeypatch):
     import time
     from app.database import mongodb

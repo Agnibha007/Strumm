@@ -236,6 +236,15 @@ class ConnectionManager:
         """
         return list(dict.fromkeys(uid for uid, _ in self._room_connections.get(room_id, [])))
 
+    def room_device_id(self, room_id: str, websocket: WebSocket) -> Optional[str]:
+        return self._room_device_ids.get((room_id, id(websocket)))
+
+    def room_websocket_for_device(self, room_id: str, device_id: str) -> Optional[WebSocket]:
+        for _, websocket in self._room_connections.get(room_id, []):
+            if self._room_device_ids.get((room_id, id(websocket))) == device_id:
+                return websocket
+        return None
+
     def room_connected_clients(self, room_id: str) -> List[dict]:
         """Return each connected browser separately, including shared accounts."""
         return [

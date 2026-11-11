@@ -179,6 +179,7 @@ async def global_websocket_endpoint(
     # 2. Register connection
     await manager.connect_user(user_id, websocket)
     subscribed_room_ids: set[str] = set()
+    subscribed_room_host_ids: dict[str, str] = {}
     await _update_last_active(user_id)
 
     # Fetch user data for presence broadcast
@@ -241,11 +242,17 @@ async def global_websocket_endpoint(
                 if room_id not in subscribed_room_ids:
                     await manager.connect_room(room_id, user_id, websocket)
                     subscribed_room_ids.add(room_id)
+                subscribed_room_host_ids[room_id] = str(room.get("hostId") or "")
                 manager.set_room_device_id(room_id, websocket, device_id)
                 snapshot = jsonable_encoder(await serialize_room(database, room, user_id))
                 await manager.send_json(websocket, {
                     "event": "room:state",
                     "data": {"roomId": room_id, "room": snapshot},
+                })
+                peers = manager.room_connected_clients(room_id)
+                await manager.broadcast_to_room(room_id, {
+                    "event": "room:peers",
+                    "data": {"roomId": room_id, "peers": peers},
                 })
                 continue
 
@@ -254,6 +261,53 @@ async def global_websocket_endpoint(
                 if room_id in subscribed_room_ids:
                     manager.disconnect_room(room_id, websocket)
                     subscribed_room_ids.discard(room_id)
+                    subscribed_room_host_ids.pop(room_id, None)
+                continue
+
+            if event == "room:signal":
+                room_id = str(event_data.get("roomId") or "").strip()
+                target_device_id = str(event_data.get("targetDeviceId") or "").strip().lower()
+                signal = event_data.get("signal")
+                signal_type = signal.get("type") if isinstance(signal, dict) else None
+                signal_value = signal.get("value") if isinstance(signal, dict) else None
+                source_device_id = manager.room_device_id(room_id, websocket)
+                host_user_id = subscribed_room_host_ids.get(room_id)
+                if (
+                    room_id not in subscribed_room_ids
+                    or not re.fullmatch(r"[0-9a-f]{32}", target_device_id)
+                    or target_device_id == source_device_id
+                    or signal_type not in {"offer", "answer", "candidate"}
+                    or not isinstance(signal_value, dict)
+                    or len(json.dumps(signal, separators=(",", ":"))) > 32768
+                    or not source_device_id
+                    or not host_user_id
+                ):
+                    continue
+                target_client = next(
+                    (
+                        client for client in manager.room_connected_clients(room_id)
+                        if client.get("deviceId") == target_device_id
+                    ),
+                    None,
+                )
+                if target_client is None:
+                    continue
+                if signal_type == "offer" and user_id != host_user_id:
+                    continue
+                if signal_type == "answer" and user_id == host_user_id:
+                    continue
+                if user_id != host_user_id and target_client.get("userId") != host_user_id:
+                    continue
+                target = manager.room_websocket_for_device(room_id, target_device_id)
+                if target is not None and target != websocket:
+                    await manager.send_json(target, {
+                        "event": "room:signal",
+                        "data": {
+                            "roomId": room_id,
+                            "fromDeviceId": source_device_id,
+                            "signal": signal,
+                        },
+                    })
                 continue
 
             # --- Ping/Pong ---

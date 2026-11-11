@@ -44,6 +44,8 @@ class PlaybackBody(BaseModel):
     playing: bool
     timestamp: float = Field(default=0, ge=0, le=86400)
     deviceId: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    direct: bool = False
+    sequence: int | None = Field(default=None, ge=1)
 
 
 class QueueBody(BaseModel):
@@ -192,6 +194,26 @@ async def update_playback(
     timestamp = payload.timestamp if math.isfinite(payload.timestamp) else 0
     previous_state = room.get("playbackState") or {}
     now = datetime.utcnow()
+    if payload.direct:
+        previous_sequence = int(previous_state.get("sequence") or 0)
+        if payload.sequence is not None and payload.sequence <= previous_sequence:
+            return {"success": True, "data": await serialize_room(database, room, user_id)}
+        sequence = max(previous_sequence + 1, payload.sequence or 0)
+        state = {
+            "playing": payload.playing,
+            "targetPlaying": payload.playing,
+            "timestamp": timestamp,
+            "updatedAt": now,
+            "startAt": int(time.time() * 1000),
+            "sequence": sequence,
+            "phase": "committed",
+        }
+        update = {"$set": {"currentTrack": song or room.get("currentTrack"), "playbackState": state}}
+        if song:
+            update["$pull"] = {"queue": {"videoId": song["videoId"]}}
+        await database[db.ROOMS].update_one({"_id": room["_id"]}, update)
+        updated = await get_room(database, room_id)
+        return {"success": True, "data": await serialize_room(database, updated, user_id)}
     # Two-phase barrier: clients prepare the media surface and report ready.
     # The server commits only after every currently connected room participant
     # has prepared, then publishes one shared execution deadline.
