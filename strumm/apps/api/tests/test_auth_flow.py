@@ -564,17 +564,22 @@ async def test_logout_revokes_session_and_clears_cookies():
 
 
 @pytest.mark.asyncio
-async def test_forgot_password_stores_hash_and_returns_generic_message(monkeypatch):
-    monkeypatch.setattr("app.routes.auth.secrets.token_urlsafe", lambda n=None: "reset-token-abc")
+async def test_forgot_password_stores_hashed_otp_and_returns_generic_message(monkeypatch):
+    from app.services.auth_utils import hash_otp
+    async def fake_send(email, code):
+        return True
+    monkeypatch.setattr("app.routes.auth.generate_otp", lambda: "123456")
+    monkeypatch.setattr("app.routes.auth.send_password_reset_otp_email", fake_send)
     db = _make_db(users=FakeCollection([_user_doc()]))
     async with _client(db) as c:
         resp = await c.post("/auth/forgot-password", json={"email": EMAIL})
     assert resp.status_code == 200
     assert "If an account exists" in resp.json()["message"]
     reset = db["password_resets"].docs[0]
-    assert reset["token_hash"] != "reset-token-abc"  # hashed
-    assert reset["token_hash"] == hashlib.sha256("reset-token-abc".encode("utf-8")).hexdigest()
-    assert resp.json()["dev_reset_link"] is not None  # dev environment
+    assert reset["otp_hash"] == hash_otp("123456")
+    assert "token_hash" not in reset
+    assert reset["verified"] is False
+    assert reset["attempts"] == 0
 
 
 @pytest.mark.asyncio
@@ -597,7 +602,8 @@ async def test_reset_password_success_updates_and_revokes_sessions():
     )
     db["password_resets"] = FakeCollection([{
         "email": EMAIL, "token_hash": hashlib.sha256("reset-token".encode("utf-8")).hexdigest(),
-        "expiry": datetime.utcnow() + timedelta(minutes=30), "used": False,
+        "reset_expiry": datetime.utcnow() + timedelta(minutes=10),
+        "verified": True, "used": False,
     }])
     async with _client(db) as c:
         resp = await c.post("/auth/reset-password", json={
@@ -617,7 +623,7 @@ async def test_reset_password_wrong_or_missing_token_rejected():
     db = _make_db(users=FakeCollection([_user_doc()]))
     db["password_resets"] = FakeCollection([{
         "email": EMAIL, "token_hash": hashlib.sha256("right-token".encode("utf-8")).hexdigest(),
-        "expiry": datetime.utcnow() + timedelta(minutes=30), "used": False,
+        "reset_expiry": datetime.utcnow() + timedelta(minutes=10), "verified": True, "used": False,
     }])
     async with _client(db) as c:
         resp = await c.post("/auth/reset-password", json={
@@ -633,7 +639,7 @@ async def test_reset_password_expired_token_rejected():
     db = _make_db(users=FakeCollection([_user_doc()]))
     db["password_resets"] = FakeCollection([{
         "email": EMAIL, "token_hash": hashlib.sha256("old-token".encode("utf-8")).hexdigest(),
-        "expiry": datetime.utcnow() - timedelta(seconds=1), "used": False,
+        "reset_expiry": datetime.utcnow() - timedelta(seconds=1), "verified": True, "used": False,
     }])
     async with _client(db) as c:
         resp = await c.post("/auth/reset-password", json={
@@ -647,13 +653,54 @@ async def test_reset_password_already_used_token_rejected():
     db = _make_db(users=FakeCollection([_user_doc()]))
     db["password_resets"] = FakeCollection([{
         "email": EMAIL, "token_hash": hashlib.sha256("used-token".encode("utf-8")).hexdigest(),
-        "expiry": datetime.utcnow() + timedelta(minutes=30), "used": True,
+        "reset_expiry": datetime.utcnow() + timedelta(minutes=10), "verified": True, "used": True,
     }])
     async with _client(db) as c:
         resp = await c.post("/auth/reset-password", json={
             "email": EMAIL, "token": "used-token", "new_password": "NewHorse1Battery",
         })
     assert resp.json()["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_password_reset_otp_verification_and_single_use(monkeypatch):
+    from app.services.auth_utils import hash_otp
+    async def fake_send(email, code):
+        return True
+    monkeypatch.setattr("app.routes.auth.generate_otp", lambda: "246810")
+    monkeypatch.setattr("app.routes.auth.send_password_reset_otp_email", fake_send)
+    db = _make_db(users=FakeCollection([_user_doc(password=hash_password(PASSWORD))]))
+    async with _client(db) as c:
+        sent = await c.post("/auth/forgot-password", json={"email": EMAIL})
+        assert sent.json()["success"] is True
+        assert db["password_resets"].docs[0]["otp_hash"] == hash_otp("246810")
+        verified = await c.post("/auth/verify-reset-otp", json={"email": EMAIL, "otp": "246810"})
+        assert verified.json()["success"] is True
+        reset_token = verified.json()["data"]["reset_token"]
+        changed = await c.post("/auth/reset-password", json={
+            "email": EMAIL, "token": reset_token, "new_password": "NewHorse1Battery",
+        })
+        assert changed.json()["success"] is True
+        replay = await c.post("/auth/reset-password", json={
+            "email": EMAIL, "token": reset_token, "new_password": "AnotherHorse1Battery",
+        })
+        assert replay.json()["success"] is False
+    assert auth_utils.verify_password("NewHorse1Battery", db["users"].docs[0]["password"])
+    assert db["password_resets"].docs[0]["used"] is True
+
+
+@pytest.mark.asyncio
+async def test_password_reset_otp_wrong_code_increments_attempts(monkeypatch):
+    from app.services.auth_utils import hash_otp
+    db = _make_db(users=FakeCollection([_user_doc()]))
+    db["password_resets"] = FakeCollection([{
+        "email": EMAIL, "otp_hash": hash_otp("111222"), "attempts": 0,
+        "expiry": datetime.utcnow() + timedelta(minutes=10), "verified": False, "used": False,
+    }])
+    async with _client(db) as c:
+        resp = await c.post("/auth/verify-reset-otp", json={"email": EMAIL, "otp": "000000"})
+    assert resp.json()["success"] is False
+    assert db["password_resets"].docs[0]["attempts"] == 1
 
 
 # ---------------------------------------------------------------------------

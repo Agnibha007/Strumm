@@ -229,6 +229,26 @@ async def send_otp_email(receiver_email: str, otp_code: str) -> bool:
     return await _send_email(receiver_email, f"Your Strumm verification code: {otp_code}", html)
 
 
+async def send_password_reset_otp_email(receiver_email: str, otp_code: str) -> bool:
+    """Send a short-lived code to authorize a password reset."""
+    html = _build_html([
+        f"""<h2 style="font-family:Georgia,'Times New Roman',serif;color:{BRAND['text']};font-size:20px;margin:0 0 2px 0;font-weight:700;">Reset Your Password</h2>
+<p style="font-size:11px;color:{BRAND['muted']};margin:0 0 20px 0;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">One-Time Verification Code</p>""",
+        _divider(),
+        f"""<p style="font-size:14px;color:{BRAND['muted']};margin:0;line-height:1.6;">
+  Enter this code in Strumm to verify your identity and choose a new password.
+</p>""",
+        _otp_code_block(otp_code),
+        f"""<p style="font-size:11px;color:{BRAND['muted']};margin:0;line-height:1.5;">
+  This code expires in <strong style="color:{BRAND['text']};">10 minutes</strong>. It can be used only once.
+</p>""",
+        f"""<p style="font-size:11px;color:{BRAND['muted']};margin:0;line-height:1.5;">
+  If you did not request a password reset, ignore this email. Your password will remain unchanged.
+</p>""",
+    ])
+    return await _send_email(receiver_email, f"Your Strumm password reset code: {otp_code}", html)
+
+
 async def send_resend_otp_email(receiver_email: str, otp_code: str) -> bool:
     """Verify signup — send welcome + one-time password."""
     html = _build_html([

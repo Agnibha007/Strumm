@@ -110,6 +110,24 @@ async def test_search_server_ytmusic_primary(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_server_never_uses_generic_youtube_fallback(monkeypatch):
+    from app.routes import youtube
+
+    monkeypatch.setattr("app.services.ytmusic.search_ytmusic_safe", lambda q, filter: [])
+    fallback_calls = []
+    monkeypatch.setattr(
+        "app.services.ytfallback.search_fallback",
+        lambda q, limit=10: fallback_calls.append(q) or [{
+            "videoId": "generic12345", "title": "Unrelated interview",
+            "artist": "Uploader", "duration_seconds": 100,
+        }],
+    )
+    payload = await youtube._search_server("some query", "song")
+    assert payload == {"items": [], "nextpage": ""}
+    assert fallback_calls == []
+
+
+@pytest.mark.asyncio
 async def test_search_server_degrades_when_ytmusic_fails(monkeypatch):
     from app.routes import youtube
 

@@ -11,7 +11,7 @@ from bson import ObjectId
 from app.database import mongodb as db
 from app.routes.dependencies import get_current_user
 from app.services.auth_utils import hash_otp, create_access_token, hash_password, verify_password, ACCESS_TOKEN_EXPIRE, SESSION_IDLE_TIMEOUT
-from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_email, send_password_changed_email, send_welcome_email, send_email_changed_email
+from app.services.email_service import send_otp_email, send_resend_otp_email, send_password_reset_otp_email, send_password_changed_email, send_welcome_email, send_email_changed_email
 from app.services.security import sanitize_text, sanitize_username, parse_object_id, validate_password_strength, normalize_email
 from app.services.user_serializer import serialize_user
 import httpx
@@ -868,61 +868,104 @@ async def logout_session(
 
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest):
+    """Send a short-lived OTP; never email a password-reset URL."""
     try:
         email = normalize_email(request.email)
         database = db.get_db()
-        
-        # Check if user exists with this email
         user = await database[db.USERS].find_one({"email": email})
+        message = "If an account exists with this email, a password reset code has been sent."
         if not user:
-            # For security, we don't reveal if the email exists or not
-            # We always return success to prevent email enumeration
             return {
                 "success": True,
-                "message": "If an account exists with this email, a password reset link has been sent."
+                "message": message,
+                "data": {"dev_otp": None},
             }
-        
-        # Generate a reset token
-        reset_token = secrets.token_urlsafe(32)
-        reset_token_hash = hashlib.sha256(reset_token.encode("utf-8")).hexdigest()
-        expiry = datetime.utcnow() + timedelta(hours=1)  # 1 hour validity
-        
-        # Store reset token
+
+        otp_code = generate_otp()
         await database["password_resets"].update_one(
             {"email": email},
             {
                 "$set": {
                     "email": email,
-                    "token_hash": reset_token_hash,
-                    "expiry": expiry,
-                    "used": False
-                }
+                    "otp_hash": hash_otp(otp_code),
+                    "attempts": 0,
+                    "expiry": datetime.utcnow() + timedelta(minutes=10),
+                    "verified": False,
+                    "used": False,
+                },
+                "$unset": {"token_hash": "", "reset_expiry": ""},
             },
-            upsert=True
+            upsert=True,
         )
-        
-        logger.info(f"Generated password reset token for {email} (token_hash={reset_token_hash[:8]}...)")
-        
-        frontend_url = os.getenv('FRONTEND_URL') or os.getenv('STRUMM_APP_URL', 'https://strumm.me')
-        reset_link = f"{frontend_url}/reset-password?token={reset_token}&email={email}"
-        
-        # Send actual email with reset link
-        email_sent = await send_password_reset_email(email, reset_link)
+        email_sent = await send_password_reset_otp_email(email, otp_code)
         if not email_sent:
-            logger.warning(f"Failed to send password reset email to {email}, but continuing (dev mode fallback)")
-        
+            logger.warning("Password reset OTP delivery failed for an account request")
         return {
             "success": True,
-            "message": "If an account exists with this email, a password reset link has been sent.",
-            "dev_reset_link": reset_link if os.getenv("ENVIRONMENT", "development").lower() == "development" else None,
-            "email_sent": email_sent
+            "message": message,
+            "data": {
+                "dev_otp": otp_code if should_expose_dev_otp() else None,
+            },
         }
     except Exception as e:
-        logger.error(f"Error generating password reset: {str(e)}")
+        logger.error(f"Error generating password reset OTP: {type(e).__name__}: {e}")
+        return {"success": False, "error": "Failed to process password reset request."}
+
+
+class PasswordResetOTPVerifyRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+@router.post("/verify-reset-otp")
+async def verify_password_reset_otp(payload: PasswordResetOTPVerifyRequest):
+    """Verify the reset OTP and exchange it for a short-lived reset token."""
+    try:
+        email = normalize_email(payload.email)
+        otp = payload.otp.strip()
+        database = db.get_db()
+        reset_doc = await database["password_resets"].find_one({"email": email})
+        invalid = {"success": False, "error": "Invalid or expired verification code."}
+
+        if not reset_doc or reset_doc.get("used") or reset_doc.get("verified"):
+            return invalid
+        if reset_doc.get("attempts", 0) >= 5:
+            await database["password_resets"].delete_one({"email": email})
+            return invalid
+        if not reset_doc.get("expiry") or datetime.utcnow() > reset_doc["expiry"]:
+            await database["password_resets"].delete_one({"email": email})
+            return invalid
+        if not secrets.compare_digest(hash_otp(otp), reset_doc.get("otp_hash", "")):
+            await database["password_resets"].update_one(
+                {"email": email}, {"$inc": {"attempts": 1}}
+            )
+            if reset_doc.get("attempts", 0) + 1 >= 5:
+                await database["password_resets"].delete_one({"email": email})
+            return invalid
+
+        reset_token = secrets.token_urlsafe(32)
+        verify_result = await database["password_resets"].update_one(
+            {"email": email, "verified": False, "used": False},
+            {
+                "$set": {
+                    "token_hash": hashlib.sha256(reset_token.encode("utf-8")).hexdigest(),
+                    "verified": True,
+                    "reset_expiry": datetime.utcnow() + timedelta(minutes=10),
+                },
+                "$unset": {"otp_hash": ""},
+            },
+        )
+        if getattr(verify_result, "matched_count", getattr(verify_result, "modified_count", 0)) == 0:
+            return invalid
         return {
-            "success": False,
-            "error": "Failed to process password reset request."
+            "success": True,
+            "data": {"reset_token": reset_token},
+            "message": "Email verified. You can now choose a new password.",
         }
+    except Exception as e:
+        logger.error(f"Error verifying password reset OTP: {type(e).__name__}: {e}")
+        return {"success": False, "error": "Failed to verify the code."}
+
 
 @router.post("/reset-password")
 async def reset_password(payload: PasswordResetRequest):
@@ -931,63 +974,50 @@ async def reset_password(payload: PasswordResetRequest):
         token = payload.token
         new_password = payload.new_password
         database = db.get_db()
-        
-        # Find reset token
         reset_doc = await database["password_resets"].find_one({"email": email})
-        if not reset_doc:
-            return {"success": False, "error": "Invalid or expired reset link."}
-        
-        # Verify token
+        if not reset_doc or not reset_doc.get("verified") or reset_doc.get("used"):
+            return {"success": False, "error": "Verification expired. Request a new code."}
+
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        if reset_doc.get("token_hash") != token_hash:
-            return {"success": False, "error": "Invalid or expired reset link."}
-        
-        # Check expiry
-        if datetime.utcnow() > reset_doc.get("expiry"):
-            return {"success": False, "error": "Reset link has expired. Please request a new one."}
-        
-        # Check if already used
-        if reset_doc.get("used"):
-            return {"success": False, "error": "This reset link has already been used."}
-        
-        # Validate password strength
+        if not secrets.compare_digest(token_hash, reset_doc.get("token_hash", "")):
+            return {"success": False, "error": "Invalid or expired verification."}
+        if not reset_doc.get("reset_expiry") or datetime.utcnow() > reset_doc["reset_expiry"]:
+            return {"success": False, "error": "Verification expired. Request a new code."}
+
         validation = validate_password_strength(new_password)
         if not validation["valid"]:
             return {"success": False, "error": validation["message"]}
-        
-        # Hash new password
-        from app.services.auth_utils import hash_password
+
         hashed_password = hash_password(new_password)
-        
-        # Update user password
-        await database[db.USERS].update_one(
-            {"email": email},
-            {"$set": {"password": hashed_password}}
+        consume_result = await database["password_resets"].update_one(
+            {
+                "email": email,
+                "token_hash": token_hash,
+                "verified": True,
+                "used": False,
+                "reset_expiry": {"$gt": datetime.utcnow()},
+            },
+            {"$set": {"used": True}},
         )
-        
-        # Mark reset token as used
-        await database["password_resets"].update_one(
-            {"email": email},
-            {"$set": {"used": True}}
+        if getattr(consume_result, "matched_count", getattr(consume_result, "modified_count", 0)) == 0:
+            return {"success": False, "error": "Verification expired or already used. Request a new code."}
+
+        user_result = await database[db.USERS].update_one(
+            {"email": email}, {"$set": {"password": hashed_password}}
         )
-        
-        logger.info(f"Password reset successful for {email}")
-        
-        # Fire password changed notification in background
+        if getattr(user_result, "matched_count", getattr(user_result, "modified_count", 0)) == 0:
+            return {"success": False, "error": "Account not found."}
+
+        logger.info("Password reset completed for verified account")
         asyncio.create_task(send_password_changed_email(email))
-        
-        # Invalidate ALL existing sessions for this user (security: password changed via reset)
         user_doc = await database[db.USERS].find_one({"email": email})
         if user_doc:
             await database[db.SESSIONS].delete_many({"userId": str(user_doc["_id"])})
-        
+
         return {
             "success": True,
-            "message": "Password has been reset successfully. You can now log in with your new password."
+            "message": "Password has been reset successfully. You can now log in with your new password.",
         }
     except Exception as e:
-        logger.error(f"Error resetting password: {str(e)}")
-        return {
-            "success": False,
-            "error": "Failed to reset password."
-        }
+        logger.error(f"Error resetting password: {type(e).__name__}: {e}")
+        return {"success": False, "error": "Failed to reset password."}

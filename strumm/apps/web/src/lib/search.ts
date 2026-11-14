@@ -1,11 +1,10 @@
 /**
- * Search API client — resolves searches through the Strumm backend proxy
- * (same-origin `/proxy/yt/*`), which handles YouTube Music / Piped / yt-dlp
- * fallbacks server-side. The browser never calls public Piped instances or
- * YouTube directly.
+ * Search API client — resolves music searches through the Strumm backend
+ * proxy. Search results come only from the YouTube Music catalogue; generic
+ * YouTube/Piped/yt-dlp fallbacks are intentionally excluded from discovery.
  *
- * Primary path:  browser → /proxy/yt/search (FastAPI → YouTube Music)
- * Fallback path: browser → /api/search (Next.js, same backend proxy)
+ * Primary path: browser → /proxy/yt/search (FastAPI → ytmusicapi songs filter)
+ * Fallback path: browser → /api/search (same backend search policy)
  */
 
 import { invidiousProvider } from "web/services/search";
@@ -30,9 +29,9 @@ export interface SearchResults {
 /**
  * Search across videos (songs), playlists (albums), and channels (artists).
  *
- * Resolves from the BROWSER via public Piped instances first (no server egress
- * to YouTube). If that yields nothing, falls back to the same-origin /api/search
- * route, which is itself Piped-only.
+ * Resolves through the Strumm backend's YouTube Music search endpoint. If the
+ * provider is unavailable, returns an empty result rather than substituting
+ * generic YouTube uploads into a music catalogue.
  */
 export async function searchYouTube(
   opts: SearchOptions,
@@ -52,7 +51,7 @@ export async function searchYouTube(
         : "all";
 
   // -------------------------------------------------------------------
-  // 1. Browser → Piped (direct, no server egress to YouTube)
+  // 1. Backend → YouTube Music catalogue (song/playlist/artist filters)
   // -------------------------------------------------------------------
   try {
     const invidiousResults = await invidiousProvider.search(query, invidiousType);
@@ -69,11 +68,11 @@ export async function searchYouTube(
       };
     }
   } catch (err) {
-    console.warn("Piped search failed, falling back to /api/search:", err);
+    console.warn("YouTube Music search failed; trying the same-origin backend route:", err);
   }
 
   // -------------------------------------------------------------------
-  // 2. Same-origin /api/search fallback (Piped-only)
+  // 2. Same-origin /api/search fallback (same YouTube Music-only policy)
   // -------------------------------------------------------------------
   try {
     const params = new URLSearchParams({

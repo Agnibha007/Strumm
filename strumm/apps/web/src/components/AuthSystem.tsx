@@ -27,6 +27,11 @@ export default function AuthSystem() {
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotStep, setForgotStep] = useState<"email" | "otp" | "password">("email");
+  const [forgotOtp, setForgotOtp] = useState("");
+  const [forgotResetToken, setForgotResetToken] = useState<string | null>(null);
+  const [forgotPassword, setForgotPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
   
   const { login } = useAuthStore();
@@ -44,10 +49,9 @@ export default function AuthSystem() {
       setForgotMessage("Please enter your email address.");
       return;
     }
-    
+
     setLoading(true);
     setForgotMessage(null);
-    
     try {
       const cleanedEmail = cleanText(forgotEmail, 254).toLowerCase();
       const response = await authFetch(apiUrl("/auth/forgot-password"), {
@@ -55,20 +59,102 @@ export default function AuthSystem() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanedEmail }),
       });
-      
       const json = await response.json();
       if (json.success) {
-        setForgotMessage(json.message || "Password reset link sent to your email.");
-        setForgotEmail("");
+        setForgotStep("otp");
+        setForgotMessage(json.data?.dev_otp
+          ? `A verification code was generated. Development code: ${json.data.dev_otp}`
+          : "If an account exists with this email, a verification code has been sent.");
+      } else {
+        setForgotMessage(json.error || "Failed to send verification code.");
+      }
+    } catch {
+      setForgotMessage("Cannot connect to Strumm API. Verify server connection.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyForgotOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(forgotOtp.trim())) {
+      setForgotMessage("Enter the 6-digit code from your email.");
+      return;
+    }
+
+    setLoading(true);
+    setForgotMessage(null);
+    try {
+      const response = await authFetch(apiUrl("/auth/verify-reset-otp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: cleanText(forgotEmail, 254).toLowerCase(),
+          otp: forgotOtp.trim(),
+        }),
+      });
+      const json = await response.json();
+      if (json.success && json.data?.reset_token) {
+        setForgotResetToken(json.data.reset_token);
+        setForgotStep("password");
+        setForgotMessage("Email verified. Choose your new password.");
+      } else {
+        setForgotMessage(json.error || "Invalid or expired verification code.");
+      }
+    } catch {
+      setForgotMessage("Cannot connect to Strumm API. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (forgotPassword !== forgotConfirmPassword) {
+      setForgotMessage("Passwords do not match.");
+      return;
+    }
+    if (forgotPassword.length < 8 || !/[A-Z]/.test(forgotPassword) ||
+        !/[a-z]/.test(forgotPassword) || !/[0-9]/.test(forgotPassword)) {
+      setForgotMessage("Use at least 8 characters with uppercase, lowercase and a number.");
+      return;
+    }
+    if (!forgotResetToken) {
+      setForgotStep("email");
+      setForgotMessage("Your verification expired. Request a new code.");
+      return;
+    }
+
+    setLoading(true);
+    setForgotMessage(null);
+    try {
+      const response = await authFetch(apiUrl("/auth/reset-password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: cleanText(forgotEmail, 254).toLowerCase(),
+          token: forgotResetToken,
+          new_password: forgotPassword,
+        }),
+      });
+      const json = await response.json();
+      if (json.success) {
+        setForgotMessage("Password changed successfully. You can now log in.");
+        setForgotStep("email");
+        setForgotOtp("");
+        setForgotResetToken(null);
+        setForgotPassword("");
+        setForgotConfirmPassword("");
         setTimeout(() => {
           setForgotPasswordMode(false);
+          setForgotEmail("");
           setForgotMessage(null);
-        }, 5000);
+        }, 3500);
       } else {
-        setForgotMessage(json.error || "Failed to send reset link.");
+        setForgotMessage(json.error || "Failed to change password.");
       }
-    } catch (err) {
-      setForgotMessage("Cannot connect to Strumm API. Verify server connection.");
+    } catch {
+      setForgotMessage("Cannot connect to Strumm API. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -321,50 +407,71 @@ export default function AuthSystem() {
                 </button>
               </form>
             ) : (
-              <form onSubmit={handleForgotPassword} className="space-y-3">
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">
-                    Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-3 w-4 h-4 text-muted" />
-                    <input
-                      type="email"
-                      placeholder="you@example.com"
-                      value={forgotEmail}
-                      onChange={(e) => setForgotEmail(e.target.value)}
-                      required
-                      className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text focus:outline-none focus:border-primary/50 transition"
-                    />
-                  </div>
+              <div className="space-y-3">
+                <div className="text-center">
+                  <h4 className="font-editorial text-lg text-text font-semibold">
+                    {forgotStep === "email" ? "Recover your account" : forgotStep === "otp" ? "Verify your email" : "Choose a new password"}
+                  </h4>
+                  <p className="text-[11px] text-muted mt-1">
+                    {forgotStep === "email" ? "We’ll send a one-time code to your account email." : forgotStep === "otp" ? `Enter the 6-digit code sent to ${forgotEmail}.` : "Your code is verified. Set a new password below."}
+                  </p>
                 </div>
+
+                {forgotStep === "email" && (
+                  <form onSubmit={handleForgotPassword} className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">Email Address</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3.5 top-3 w-4 h-4 text-muted" />
+                        <input type="email" placeholder="you@example.com" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} required className="w-full bg-background border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text focus:outline-none focus:border-primary/50 transition" />
+                      </div>
+                    </div>
+                    <button type="submit" disabled={loading} className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50">
+                      {loading ? "Sending code..." : "Send verification code"} <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </form>
+                )}
+
+                {forgotStep === "otp" && (
+                  <form onSubmit={handleVerifyForgotOtp} className="space-y-3">
+                    <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" placeholder="6-digit code" value={forgotOtp} onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} required className="w-full bg-background border border-border rounded-lg px-4 py-3 text-center text-xl tracking-[0.5em] font-mono text-text focus:outline-none focus:border-primary/50 transition" />
+                    <button type="submit" disabled={loading || forgotOtp.length !== 6} className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50">
+                      {loading ? "Verifying..." : "Verify code"} <ArrowRight className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={() => { setForgotStep("email"); setForgotOtp(""); setForgotMessage(null); }} className="w-full py-2 text-xs text-muted hover:text-text cursor-pointer transition">Change email or request another code</button>
+                  </form>
+                )}
+
+                {forgotStep === "password" && (
+                  <form onSubmit={handleSetForgotPassword} className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">New Password</label>
+                      <input type="password" autoComplete="new-password" value={forgotPassword} onChange={(e) => setForgotPassword(e.target.value)} required minLength={8} placeholder="At least 8 characters" className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-wider text-muted mb-1 font-semibold">Confirm New Password</label>
+                      <input type="password" autoComplete="new-password" value={forgotConfirmPassword} onChange={(e) => setForgotConfirmPassword(e.target.value)} required minLength={8} placeholder="Enter it again" className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50 transition" />
+                    </div>
+                    <p className="text-[10px] text-muted">Use 8+ characters, including uppercase, lowercase and a number.</p>
+                    <button type="submit" disabled={loading} className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50">
+                      {loading ? "Changing password..." : "Set new password"} <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </form>
+                )}
 
                 {forgotMessage && (
                   <div className={`flex items-center gap-2 text-xs p-2.5 rounded-lg ${
-                    forgotMessage.includes("sent") ? "text-emerald-500 bg-emerald-500/10 border border-emerald-500/20" : "text-primary bg-primary/5 border border-primary/20"
+                    /sent|verified|successfully|development code/i.test(forgotMessage) ? "text-emerald-500 bg-emerald-500/10 border border-emerald-500/20" : "text-primary bg-primary/5 border border-primary/20"
                   }`}>
                     <RotateCcw className="w-4 h-4 flex-shrink-0" />
                     <span>{forgotMessage}</span>
                   </div>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer transition disabled:opacity-50"
-                >
-                  {loading ? "Sending..." : "Send Reset Link"}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setForgotPasswordMode(false); setForgotMessage(null); }}
-                  className="w-full py-2 text-xs text-muted hover:text-text cursor-pointer transition text-center"
-                >
+                <button type="button" onClick={() => { setForgotPasswordMode(false); setForgotStep("email"); setForgotOtp(""); setForgotResetToken(null); setForgotPassword(""); setForgotConfirmPassword(""); setForgotMessage(null); }} className="w-full py-2 text-xs text-muted hover:text-text cursor-pointer transition text-center">
                   Back to login
                 </button>
-              </form>
+              </div>
             )}
 
             <div className="text-center pt-2">

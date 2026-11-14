@@ -138,6 +138,7 @@ async def test_forgot_password_variant_email_uses_canonical_key():
     reset_docs = db["password_resets"].docs
     assert len(reset_docs) == 1
     assert reset_docs[0]["email"] == canonical
+    assert "otp_hash" in reset_docs[0]
 
 
 @pytest.mark.asyncio
@@ -147,7 +148,8 @@ async def test_reset_password_with_variant_email_matches_canonical_token():
     db["password_resets"] = FakeCollection([{
         "email": reset_email,
         "token_hash": hashlib.sha256("reset-token-abc".encode("utf-8")).hexdigest(),
-        "expiry": datetime.utcnow() + timedelta(minutes=30),
+        "reset_expiry": datetime.utcnow() + timedelta(minutes=10),
+        "verified": True,
         "used": False,
     }])
     async with _client(db) as c:
@@ -200,5 +202,6 @@ async def test_forgot_password_unknown_email_not_revealed():
         resp = await c.post("/auth/forgot-password", json={"email": "nobody@nonexistent.example"})
     assert resp.json() == {
         "success": True,
-        "message": "If an account exists with this email, a password reset link has been sent.",
+        "message": "If an account exists with this email, a password reset code has been sent.",
+        "data": {"dev_otp": None},
     }

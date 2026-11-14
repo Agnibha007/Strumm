@@ -492,6 +492,7 @@ RATE_LIMITS = [
     (["/auth/login"], 5, 60),               # Login: 5 per minute
     (["/auth/signup"], 3, 60),              # Signup: 3 per minute
     (["/auth/forgot-password"], 3, 60),     # Forgot password: 3 per minute
+    (["/auth/verify-reset-otp"], 5, 60),   # Password reset OTP verification: 5 per minute
     (["/auth/email", "/auth/google"], 5, 60),  # OTP/Google auth: 5 per minute
     (["/auth/verify"], 10, 60),             # OTP verify: 10 per minute
     (["/auth/refresh", "/auth/logout"], 30, 60),  # Session ops: 30 per minute
