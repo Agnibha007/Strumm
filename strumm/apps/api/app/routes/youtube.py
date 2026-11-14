@@ -11,9 +11,13 @@ That keeps the frontend's existing mappers/pickers/pagination intact — only th
 transport target changes, and no large media bytes are proxied (these are
 metadata resolution endpoints only).
 
-Search discovery is intentionally YouTube Music-only. Playlist imports and
-stream resolution retain their separate provider fallback chains. The Piped
-instance set remains available to those non-discovery paths.
+Provider chain (first provider that returns usable data wins):
+
+    ytmusicapi (primary) -> Piped instances (keyless fallback) -> yt-dlp
+
+The Piped instance set is read from ``PIPED_INSTANCES`` (see ``ytfallback.py``;
+env-configurable, defaults to the maintained list). All metadata is cached by
+the existing ytmusic / cache layers.
 """
 
 from __future__ import annotations
@@ -76,12 +80,20 @@ def _piped_artist(artists: Any) -> str:
 
 
 async def _search_server(query: str, type_: str) -> dict:
-    """Resolve a search server-side using YouTube Music catalogue results only.
+    """Resolve a search server-side into a Piped ``items`` payload.
 
-    Generic YouTube providers are deliberately excluded here: they return
-    uploads, interviews, Shorts and unrelated videos. Import and explicit
-    video-resolution flows retain their own fallback chains.
+    Primary: ytmusicapi search. Fallback: ytfallback chain (YouTube Data API,
+    then Piped, then yt-dlp). Anything unreachable/timeouts/5xx degrades to an
+    empty search rather than erroring — the frontend treats an empty result as
+    "no results" and moves on.
     """
+    filter_map = {
+        "song": "songs",
+        "playlist": "playlists",
+        "channel": "artists",
+        "all": "",
+        "videos": "songs",
+    }
     items: list[dict] = []
 
     # 1. ytmusicapi (messages = playlists, filters = songs), index top hits.
@@ -152,8 +164,30 @@ async def _search_server(query: str, type_: str) -> dict:
     except Exception as exc:  # noqa: BLE001 — fall back below
         logger.warning(f"ytmusic search failed for q={query!r}: {exc!s:.120}")
 
-    # No generic YouTube fallback here. An empty result is preferable to
-    # returning non-music videos in a music search when YouTube Music is down.
+    if items:
+        return {"items": items, "nextpage": ""}
+
+    # 2. Secondary chain (ytfallback): Data API -> Piped -> yt-dlp.
+    try:
+        from app.services.ytfallback import search_fallback
+
+        fallback = await asyncio.to_thread(lambda: search_fallback(query, limit=10))
+        for r in fallback or []:
+            vid = str(r.get("videoId") or "").strip()
+            title = str(r.get("title") or "").strip()
+            if not vid or not title:
+                continue
+            items.append({
+                "url": f"/watch?v={vid}",
+                "type": "stream",
+                "title": title,
+                "thumbnail": _piped_pick_thumb(r.get("thumbnails"), vid),
+                "uploaderName": str(r.get("artist") or "Unknown Artist"),
+                "duration": int(r.get("duration_seconds") or 0),
+            })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"ytfallback search failed for q={query!r}: {exc!s:.120}")
+
     return {"items": items, "nextpage": ""}
 
 
