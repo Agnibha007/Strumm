@@ -293,18 +293,18 @@ export default function EditorialPlayer() {
 
   return (
     <>
-      <div className="fixed bottom-[64px] md:bottom-0 left-0 md:left-64 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-border/60 px-3 sm:px-4 md:px-8 py-3 md:py-4">
+      <div className="fixed bottom-[64px] md:bottom-0 left-0 md:left-64 right-0 z-40 bg-surface/85 backdrop-blur-2xl border-t-2 border-primary/25 shadow-[0_-18px_50px_-30px_var(--glow)] px-3 sm:px-4 md:px-8 py-3 md:py-4">
         {/* Mobile thin top playbar. The absolute wrapper keeps SeekBar itself
             `relative`, so its fill can be positioned without fighting the
             position utility. */}
-        <div className="absolute top-0 left-0 right-0 h-[3px] md:hidden">
+        <div className="absolute top-0 left-0 right-0 h-[4px] md:hidden bg-border/20">
           <SeekBar
             currentTime={currentTime}
             duration={duration}
             onSeek={handleSeek}
             label="Playback position"
-            className="h-full w-full bg-border/25"
-            fillClassName="bg-primary"
+            className="h-full w-full bg-transparent"
+            fillClassName="bg-primary shadow-[0_0_16px_var(--glow)]"
           />
         </div>
         
@@ -373,14 +373,14 @@ export default function EditorialPlayer() {
               </motion.button>
               
               <motion.button 
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
                 onClick={togglePlay} 
                 aria-label={isPlaying ? "Pause" : "Play"}
                 title={isPlaying ? "Pause" : "Play"}
-                className="p-3 bg-text text-background rounded-full cursor-pointer transition shadow-md"
+                className="p-3.5 bg-primary text-background rounded-2xl cursor-pointer transition shadow-[0_10px_24px_-10px_var(--glow)] border border-primary/60"
               >
-                {isPlaying ? <Pause className="w-4 h-4 fill-current text-background" /> : <Play className="w-4 h-4 fill-current translate-x-0.5 text-background" />}
+                {isPlaying ? <Pause className="w-4.5 h-4.5 fill-current" /> : <Play className="w-4.5 h-4.5 fill-current translate-x-0.5" />}
               </motion.button>
 
               <button
@@ -506,7 +506,7 @@ export default function EditorialPlayer() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
               transition={{ duration: 0.2 }}
-              className="absolute bottom-28 md:bottom-20 right-3 left-3 md:left-auto md:right-8 bg-surface-elevated border border-border/80 rounded-xl p-4 md:w-[320px] max-h-[350px] overflow-y-auto shadow-2xl flex flex-col gap-2"
+              className="absolute bottom-28 md:bottom-20 right-3 left-3 md:left-auto md:right-8 reform-panel p-4 md:w-[340px] max-h-[360px] overflow-y-auto shadow-2xl flex flex-col gap-2 border-primary/20"
             >
               <div className="border-b border-border/20 pb-2 mb-1 flex justify-between items-center">
                 <h5 className="font-editorial text-text font-bold text-sm">Up Next ({queue.length})</h5>

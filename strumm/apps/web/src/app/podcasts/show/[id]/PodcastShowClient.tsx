@@ -207,7 +207,7 @@ export default function PodcastShowClient({ params }: PodcastShowPageProps) {
         {/* Text details */}
         <div className="text-center md:text-left flex-grow space-y-4">
           <div className="space-y-2">
-            <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+            <span className="reform-chip">
               Podcast Series
             </span>
             <h1 className="text-4xl md:text-5xl font-editorial font-bold text-text tracking-tight leading-tight break-words w-full">

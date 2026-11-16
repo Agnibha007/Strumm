@@ -50,38 +50,41 @@ export default function HomePage() {
   }
 
   return (
-    <div className="space-y-10 max-w-7xl pb-10 soft-enter">
-      {/* Editorial Header — renders immediately on first paint */}
-      <header>
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-          Welcome Home
-        </span>
-        <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
-          Where your music lives.
+    <div className="space-y-10 max-w-[1400px] pb-10 soft-enter">
+      {/* Editorial Header — bold reform */}
+      <header className="reform-panel relative overflow-hidden p-6 sm:p-8 md:p-10">
+        <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-primary/20 blur-3xl pointer-events-none" />
+        <div className="absolute -left-10 -bottom-16 h-48 w-48 rounded-full bg-accent/15 blur-3xl pointer-events-none" />
+        <span className="reform-chip mb-4">Welcome Home</span>
+        <h1 className="reform-heading-xl text-text mt-2 max-w-4xl">
+          Where your <span className="text-primary text-glow">music</span> lives.
         </h1>
+        <p className="mt-4 text-sm sm:text-base text-muted max-w-2xl font-medium">
+          Discover, queue, and play with a bolder, louder Strumm experience.
+        </p>
       </header>
 
       {/* Global Search — renders immediately */}
       <section aria-label="Search music">
         <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-4 top-4 w-4.5 h-4.5 text-muted" aria-hidden="true" />
+          <div className="relative group">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" aria-hidden="true" />
             <label htmlFor="home-search" className="sr-only">Search songs, artists, and podcasts</label>
             <input
               id="home-search"
               type="text"
-              placeholder="Search song titles, artists, genres, mood flow..."
+              placeholder="Search songs, artists, podcasts, moods..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-surface/50 border border-border/80 rounded-xl pl-11 pr-4 py-3.5 text-base text-text focus:outline-none focus:border-primary/50 transition shadow-sm"
+              className="reform-input w-full pl-13 pr-5 py-4 sm:py-5 text-base sm:text-lg font-semibold placeholder:text-muted/70 shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)]"
             />
           </div>
 
           {/* Real-time search matches list */}
           {searchResults.length > 0 && (
             <section aria-label="Search results">
-              <div className="bg-surface/90 border border-border rounded-xl p-4 space-y-3">
-                <h2 className="text-xs uppercase tracking-wider text-primary font-semibold">Catalog Matches</h2>
+              <div className="reform-panel p-4 sm:p-5 space-y-4">
+                <h2 className="reform-chip w-fit">Catalog Matches</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {searchResults.map((song) => {
                     // Decode provider-supplied entities for display. The player
@@ -99,14 +102,16 @@ export default function HomePage() {
                           playSongAndContinue(song);
                         }}
                         aria-label={`Play ${title} by ${artist}`}
-                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-elevated text-left w-full cursor-pointer transition border border-transparent hover:border-border/60"
+                        className="reform-card group flex items-center gap-3 p-3 text-left w-full cursor-pointer transition"
                       >
-                        <SongArtwork song={song} className="w-10 h-10 rounded shadow flex-shrink-0" quality={ARTWORK_QUALITY_LOW} />
+                        <SongArtwork song={song} className="w-12 h-12 rounded-lg shadow flex-shrink-0 border border-border/60" quality={ARTWORK_QUALITY_LOW} />
                         <div className="min-w-0 flex-grow">
-                          <div className="text-sm font-semibold text-text truncate leading-snug">{title}</div>
-                          <div className="text-xs text-muted truncate">{artist}</div>
+                          <div className="text-sm sm:text-base font-extrabold text-text truncate leading-snug group-hover:text-primary transition-colors">{title}</div>
+                          <div className="text-xs sm:text-sm text-muted truncate font-medium">{artist}</div>
                         </div>
-                        <Play className="w-3.5 h-3.5 text-muted fill-current hover:text-primary transition" />
+                        <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary/15 border border-primary/30 text-primary group-hover:bg-primary group-hover:text-background transition">
+                          <Play className="w-4 h-4 fill-current ml-0.5" />
+                        </span>
                       </button>
                     </article>
                     );

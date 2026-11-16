@@ -111,20 +111,19 @@ export default function PodcastHomePage() {
   return (
     <div className="space-y-10 max-w-6xl soft-enter">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-            Audio Chronicles
-          </span>
-          <h2 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
-            Podcast Portal
-          </h2>
-        </div>
-      </div>
+      <header className="reform-panel p-6 sm:p-8">
+        <span className="reform-chip">Audio Chronicles</span>
+        <h2 className="reform-heading-xl text-text mt-3">
+          Podcast <span className="text-primary">Portal</span>
+        </h2>
+        <p className="mt-3 text-sm sm:text-base text-muted font-medium max-w-2xl">
+          Follow shows, import feeds, and dive into episodes with a bolder listening hub.
+        </p>
+      </header>
 
-      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-muted" role="note">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-        <p><span className="font-semibold text-text">Podcast downloads only.</span> Offline downloads are available for podcast episodes; song downloads are not supported.</p>
+      <div className="flex items-start gap-3 reform-panel p-4 sm:p-5 text-sm text-muted border-primary/20" role="note">
+        <Info className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+        <p><span className="font-extrabold text-text uppercase tracking-wide text-xs block mb-1">Podcast downloads only</span> Offline downloads are available for podcast episodes; song downloads are not supported.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

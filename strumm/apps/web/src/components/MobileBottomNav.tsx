@@ -61,8 +61,8 @@ export default function MobileBottomNav() {
   return (
     <>
       {/* Bottom navigation bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-xl border-t border-border/60 safe-area-bottom">
-        <div className="flex items-center justify-around px-2 py-1.5">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/90 backdrop-blur-2xl border-t-2 border-primary/20 shadow-[0_-12px_40px_-24px_var(--glow)] safe-area-bottom">
+        <div className="flex items-center justify-around px-2 py-2">
           {bottomNavItems.map((item) => {
             const Icon = item.icon;
             const active = item.href !== "#more" ? isActive(item.href) : false;
@@ -74,15 +74,15 @@ export default function MobileBottomNav() {
                 onClick={() => setShowMore(true)}
                 whileTap={{ scale: 0.92 }}
                 transition={{ type: "spring", stiffness: 500, damping: 20 }}
-                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-xl transition cursor-pointer select-none min-w-0 ${
+                className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-2xl transition cursor-pointer select-none min-w-0 ${
                   isMoreActive
-                    ? "text-primary"
+                    ? "text-primary bg-primary/10 border border-primary/30"
                     : "text-muted hover:text-text"
                 }`}
                 aria-label="More options"
               >
                 <Icon className="w-5 h-5" />
-                <span className="text-[9px] font-semibold tracking-wide uppercase">
+                <span className="text-[9px] font-extrabold tracking-[0.12em] uppercase">
                   {item.label}
                 </span>
               </motion.button>
@@ -90,26 +90,26 @@ export default function MobileBottomNav() {
               <Link
                 key={item.label}
                 href={item.href}
-                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-xl transition min-w-0 ${
+                className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-2xl transition min-w-0 border ${
                   active
-                    ? "text-primary"
-                    : "text-muted hover:text-text"
+                    ? "text-primary bg-primary/10 border-primary/30"
+                    : "text-muted hover:text-text border-transparent"
                 }`}
               >
                 <motion.div
                   whileTap={{ scale: 0.92 }}
                   transition={{ type: "spring", stiffness: 500, damping: 20 }}
-                  className="flex flex-col items-center justify-center gap-0.5"
+                  className="flex flex-col items-center justify-center gap-1"
                 >
                   <Icon className="w-5 h-5" />
-                  <span className="text-[9px] font-semibold tracking-wide uppercase">
+                  <span className="text-[9px] font-extrabold tracking-[0.12em] uppercase">
                     {item.label}
                   </span>
                 </motion.div>
                 {active && (
                   <motion.div
                     layoutId="bottom-nav-indicator"
-                    className="w-1 h-1 rounded-full bg-primary mt-0.5"
+                    className="w-4 h-1 rounded-full bg-primary -mt-0.5"
                     transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   />
                 )}

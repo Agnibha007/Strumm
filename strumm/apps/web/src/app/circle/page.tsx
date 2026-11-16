@@ -425,7 +425,7 @@ export default function CirclePage() {
       {/* Header */}
       <div className="flex justify-between items-start min-w-0">
         <div className="min-w-0">
-          <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+          <span className="reform-chip">
             Strumm Social
           </span>
           <h1 className="text-3xl sm:text-4xl font-editorial text-text tracking-tight font-bold mt-1">

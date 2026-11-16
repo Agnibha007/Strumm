@@ -1,21 +1,22 @@
 export default function RootLoading() {
   return (
-    <div className="max-w-7xl px-4 py-8 space-y-8">
+    <div className="max-w-7xl px-4 py-8 space-y-8 soft-enter">
       {/* Branded header skeleton */}
-      <div className="space-y-4 animate-pulse">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-8 h-8 rounded-lg bg-primary/30" />
-          <div className="h-5 w-24 bg-primary/20 rounded" />
+      <div className="reform-panel p-6 sm:p-8 space-y-4 animate-pulse">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-primary/25 border border-primary/30" />
+          <div className="h-6 w-28 bg-primary/20 rounded-full" />
         </div>
-        <div className="space-y-2">
-          <div className="h-3 w-28 bg-border/40 rounded" />
-          <div className="h-10 w-72 bg-border/30 rounded" />
+        <div className="space-y-3">
+          <div className="h-4 w-32 bg-border/40 rounded-full" />
+          <div className="h-12 w-80 max-w-full bg-border/30 rounded-xl" />
+          <div className="h-4 w-64 max-w-full bg-border/20 rounded" />
         </div>
       </div>
 
       {/* Search bar skeleton */}
       <div className="animate-pulse">
-        <div className="h-12 w-full bg-border/20 rounded-xl" />
+        <div className="h-14 w-full bg-border/20 rounded-2xl border border-border/40" />
       </div>
 
       {/* Two-column content skeleton */}

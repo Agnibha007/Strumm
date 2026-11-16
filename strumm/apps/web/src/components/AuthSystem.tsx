@@ -290,8 +290,9 @@ export default function AuthSystem() {
   };
 
   return (
-    <div className="bg-surface/90 backdrop-blur-xl border border-border/40 rounded-2xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-primary to-accent box-glow" />
+    <div className="reform-panel !rounded-3xl p-7 sm:p-8 max-w-md w-full shadow-2xl relative overflow-hidden border-primary/25">
+      <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary via-accent to-primary box-glow" />
+      <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-primary/15 blur-3xl pointer-events-none" />
 
       {sessionExpired && (
         <div className="mb-5 flex items-center gap-2 text-xs text-primary bg-primary/5 border border-primary/20 p-3 rounded-lg">

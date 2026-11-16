@@ -479,14 +479,15 @@ function ProfilePageContent() {
   return (
     <div className="space-y-10 max-w-5xl soft-enter">
       {/* Header */}
-      <div>
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-          Curation Passport
-        </span>
-        <h2 className="text-3xl sm:text-4xl font-editorial text-text tracking-tight font-bold mt-1">
-          {isOwnProfile ? "Strumm Passport" : `${displayedUser.displayName}'s Passport`}
+      <header className="reform-panel p-6 sm:p-8">
+        <span className="reform-chip">Curation Passport</span>
+        <h2 className="reform-heading-xl text-text mt-3">
+          {isOwnProfile ? <>Strumm <span className="text-primary">Passport</span></> : <>{displayedUser.displayName}&apos;s <span className="text-primary">Passport</span></>}
         </h2>
-      </div>
+        <p className="mt-3 text-sm sm:text-base text-muted font-medium max-w-2xl">
+          Your listening identity, achievements, and taste profile — amplified.
+        </p>
+      </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left: Premium Physical Passport Card */}

@@ -55,7 +55,7 @@ export default async function RoadmapPage() {
       />
 
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
-      <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Future</span>
+      <span className="reform-chip mb-3">Future</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Roadmap</h1>
       <p className="text-sm text-muted mb-8">What we are building next for Strumm.</p>
       <div className="space-y-3">

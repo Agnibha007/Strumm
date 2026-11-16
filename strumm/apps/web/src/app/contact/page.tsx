@@ -52,7 +52,7 @@ export default async function ContactPage() {
       />
       <article className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <header>
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Contact</span>
+        <span className="reform-chip mb-3">Contact</span>
         <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-8">Get in touch</h1>
       </header>
       <section aria-label="Contact information">

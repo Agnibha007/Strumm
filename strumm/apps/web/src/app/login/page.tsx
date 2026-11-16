@@ -152,7 +152,7 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen bg-[#080808] text-white flex items-center justify-center p-4 relative overflow-hidden"
+      className="min-h-screen bg-background text-text flex items-center justify-center p-4 relative overflow-hidden"
       style={
         customImage
           ? { backgroundImage: `url(${customImage})`, backgroundSize: "cover", backgroundPosition: "center" }
@@ -160,9 +160,11 @@ export default function LoginPage() {
       }
     >
       {/* Absolute Overlays */}
-      <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-tr from-[#080808] via-[#0b0c10]/95 to-[#161224]/40 z-0" />
-      {customImage && <div className="absolute inset-0 bg-[#080808]/80 backdrop-blur-lg z-0" />}
+      <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none opacity-80" />
+      <div className="absolute inset-0 bg-gradient-to-tr from-background via-background/95 to-primary/10 z-0" />
+      <div className="absolute -left-20 top-1/4 h-72 w-72 rounded-full bg-primary/15 blur-3xl z-0 pointer-events-none" />
+      <div className="absolute -right-20 bottom-1/4 h-72 w-72 rounded-full bg-accent/10 blur-3xl z-0 pointer-events-none" />
+      {customImage && <div className="absolute inset-0 bg-background/80 backdrop-blur-xl z-0" />}
 
       {/* Auth Form Container */}
       <div className="relative z-10 w-full flex justify-center py-8">

@@ -44,7 +44,7 @@ export default async function ContentRemovalPage() {
       />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
       <div className="mb-10">
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Legal</span>
+        <span className="reform-chip mb-3">Legal</span>
         <h1 className="text-4xl font-editorial text-text font-bold tracking-tight">Content Removal Policy</h1>
         <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-muted">
           <span>Effective: July 1, 2026</span>

@@ -252,7 +252,7 @@ export default function StatusClient() {
 
   return (
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
-      <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">
+      <span className="reform-chip mb-3">
         System
       </span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">

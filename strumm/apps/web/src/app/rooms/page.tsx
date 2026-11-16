@@ -92,30 +92,27 @@ export default function RoomsPage() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-10 md:px-6">
-      <header className="mb-8">
-        <div className="mb-3 flex items-center gap-2 text-sm text-primary">
-          <Radio size={16} />
-          <span className="font-semibold uppercase tracking-[0.2em]">Listen together</span>
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Rooms</h1>
-        <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-          Start a listening room, invite friends with a code, and share the same music queue.
+    <main className="mx-auto w-full max-w-6xl px-0 py-2 md:px-0 soft-enter">
+      <header className="reform-panel mb-8 p-6 sm:p-8">
+        <span className="reform-chip mb-3"><Radio size={14} /> Listen together</span>
+        <h1 className="reform-heading-xl text-text mt-2">Rooms</h1>
+        <p className="mt-3 max-w-2xl text-sm sm:text-base text-muted font-medium">
+          Start a listening room, invite friends with a code, and share the same music queue in real time.
         </p>
       </header>
 
       <section className="mb-8 grid gap-4 md:grid-cols-2">
-        <form onSubmit={createRoom} className="rounded-2xl border border-border bg-card p-5">
+        <form onSubmit={createRoom} className="reform-panel p-5 sm:p-6">
           <div className="mb-4 flex items-center gap-3">
-            <span className="rounded-xl bg-primary/10 p-3 text-primary"><Plus size={20} /></span>
+            <span className="rounded-xl bg-primary/15 border border-primary/30 p-3 text-primary"><Plus size={20} /></span>
             <div>
-              <h2 className="font-semibold">Create a room</h2>
-              <p className="text-xs text-muted-foreground">You’ll be the host.</p>
+              <h2 className="font-extrabold text-lg text-text tracking-tight">Create a room</h2>
+              <p className="text-xs text-muted font-medium">You’ll be the host.</p>
             </div>
           </div>
-          <label className="mb-2 block text-xs font-medium text-muted-foreground" htmlFor="room-name">Room name</label>
-          <input id="room-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="Friday night listening" className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary" />
-          <button disabled={busy || !name.trim()} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+          <label className="mb-2 block text-[11px] font-extrabold uppercase tracking-wider text-primary" htmlFor="room-name">Room name</label>
+          <input id="room-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="Friday night listening" className="reform-input h-12 w-full px-4 text-sm font-semibold" />
+          <button disabled={busy || !name.trim()} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold uppercase tracking-wide text-background border border-primary shadow-[0_12px_30px_-16px_var(--glow)] disabled:opacity-50">
             <Plus size={16} /> {busy ? "Working…" : "Create room"}
           </button>
         </form>

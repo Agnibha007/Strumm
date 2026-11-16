@@ -52,10 +52,11 @@ export default async function AboutPage() {
         }}
       />
 
-    <article className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
-      <header>
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">About</span>
-        <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-8">Where your music lives.</h1>
+    <article className="max-w-4xl py-8 sm:py-12 px-4 md:px-0 soft-enter">
+      <header className="reform-panel p-6 sm:p-8 mb-8">
+        <span className="reform-chip mb-3">About</span>
+        <h1 className="reform-heading-xl text-text mb-4">Where your <span className="text-primary">music</span> lives.</h1>
+        <p className="text-sm sm:text-base text-muted font-medium max-w-2xl">A bold, expressive home for discovery, playlists, podcasts, and listening identity.</p>
       </header>
       <section className="space-y-6 text-sm text-muted leading-relaxed">
         <p>Strumm is a premium, handcrafted music ecosystem built for music enthusiasts who value design, privacy, and discovery. It&apos;s not just a music player — it&apos;s a place where your music lives.</p>

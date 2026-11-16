@@ -55,7 +55,7 @@ export default async function SecurityPage() {
       />
 
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
-      <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Trust</span>
+      <span className="reform-chip mb-3">Trust</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Security</h1>
       <p className="text-sm text-muted mb-8">How Strumm protects your data and our security practices.</p>
       <div className="space-y-8">

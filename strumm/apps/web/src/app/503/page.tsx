@@ -10,24 +10,25 @@ export const metadata: Metadata = {
 export default function ServiceUnavailablePage() {
   return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center px-6">
-      <div className="text-center max-w-md mx-auto space-y-6 soft-enter">
-        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 border border-primary/20 mb-2">
-          <span className="text-4xl font-editorial font-bold text-primary">503</span>
+      <div className="reform-panel text-center max-w-lg mx-auto space-y-6 p-8 sm:p-10 soft-enter relative overflow-hidden">
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/15 border-2 border-primary/30 mb-2 box-glow">
+          <span className="text-4xl font-editorial font-black text-primary">503</span>
         </div>
-        <h1 className="text-3xl font-editorial font-bold text-text">Service Unavailable</h1>
-        <p className="text-sm text-muted leading-relaxed">
+        <span className="reform-chip mx-auto">Brief Outage</span>
+        <h1 className="text-3xl sm:text-4xl font-editorial font-black text-text">Service Unavailable</h1>
+        <p className="text-sm sm:text-base text-muted leading-relaxed font-medium">
           Strumm is temporarily unavailable due to maintenance or a brief outage. Please try again in a few moments.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <Link
             href="/"
-            className="px-6 py-2.5 bg-primary hover:bg-primary-hover text-white font-editorial text-sm font-bold rounded-lg transition text-center min-w-[140px]"
+            className="px-6 py-3 bg-primary hover:bg-primary-hover text-background text-sm font-extrabold uppercase tracking-wide rounded-xl transition text-center min-w-[160px] border border-primary shadow-[0_12px_30px_-16px_var(--glow)]"
           >
             Try Again
           </Link>
           <Link
             href="/status"
-            className="px-6 py-2.5 border border-border hover:border-primary/50 text-text text-sm rounded-lg transition text-center min-w-[140px]"
+            className="px-6 py-3 border-2 border-border hover:border-primary/50 hover:text-primary text-text text-sm font-bold rounded-xl transition text-center min-w-[160px] bg-surface/40"
           >
             Service Status
           </Link>

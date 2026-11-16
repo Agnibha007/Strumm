@@ -368,7 +368,7 @@ export default function PublicProfileClient({ params }: { params: Promise<{ user
         <div className="bg-gradient-to-r from-primary/10 to-accent/5 border border-primary/20 rounded-2xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+              <span className="reform-chip">
                 Social Taste Match
               </span>
               <h3 className="font-editorial text-xl font-bold text-text mt-0.5">

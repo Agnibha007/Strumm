@@ -50,21 +50,21 @@ export default function Navigation() {
 
   const sidebarContent = (
     <>
-      <div className="p-6 flex-grow overflow-y-auto min-h-0 scrollbar-none">
-        <div className="mb-8 flex items-start justify-between gap-3">
+      <div className="p-5 flex-grow overflow-y-auto min-h-0 scrollbar-none">
+        <div className="mb-7 flex items-start justify-between gap-3">
           <div>
             <Link
               href="/"
-              className="inline-flex items-center gap-3 hover:opacity-90 transition"
+              className="inline-flex items-center gap-3 hover:opacity-95 transition group"
             >
-              <BrandLogo variant="mark" size="sm" priority />
-              <span className="text-2xl font-editorial text-text tracking-tight font-bold leading-none">
+              <div className="p-1.5 rounded-xl border border-primary/30 bg-primary/10 box-glow">
+                <BrandLogo variant="mark" size="sm" priority />
+              </div>
+              <span className="text-3xl font-editorial text-text tracking-tight font-black leading-none group-hover:text-primary transition-colors">
                 strumm~
               </span>
             </Link>
-            <span className="text-[9px] tracking-widest uppercase font-semibold text-primary block mt-2 ml-12">
-              Where your music lives.
-            </span>
+            <span className="reform-chip mt-3 ml-1">Where your music lives</span>
           </div>
         </div>
 
@@ -75,17 +75,17 @@ export default function Navigation() {
             return (
               <Link key={item.href} href={item.href}>
                 <motion.span
-                  whileHover={{ scale: 1.03, x: 3 }}
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                  className={`flex items-center gap-3.5 px-4 py-3 rounded-lg text-sm font-semibold transition cursor-pointer select-none ${
+                  whileHover={{ scale: 1.02, x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 26 }}
+                  className={`flex items-center gap-3.5 px-4 py-3 rounded-xl text-[13px] font-extrabold tracking-wide uppercase transition cursor-pointer select-none ${
                     isActive
-                      ? "bg-primary/10 text-primary font-bold border border-primary/20"
-                      : "text-muted hover:text-text hover:bg-surface-elevated/40 border border-transparent"
+                      ? "bg-primary text-background border border-primary shadow-[0_8px_24px_-12px_var(--glow)]"
+                      : "text-muted hover:text-text hover:bg-surface-elevated/70 border border-transparent hover:border-border/70"
                   }`}
                 >
                   <Icon
-                    className={`w-4.5 h-4.5 ${isActive ? "text-primary" : "text-muted"}`}
+                    className={`w-4.5 h-4.5 ${isActive ? "text-background" : "text-muted"}`}
                   />
                   {item.label}
                 </motion.span>
@@ -96,7 +96,7 @@ export default function Navigation() {
       </div>
 
       {user && (
-        <div className="p-4 border-t border-border/40 bg-surface/30 flex items-center justify-between gap-3">
+        <div className="p-4 border-t-2 border-primary/20 bg-gradient-to-r from-primary/10 via-surface/40 to-transparent flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {avatarUrl ? (
               <img
@@ -104,18 +104,18 @@ export default function Navigation() {
                 alt={user.displayName}
                 loading="lazy"
                 decoding="async"
-                className="w-8 h-8 rounded-full object-cover shadow border border-border/40"
+                className="w-9 h-9 rounded-xl object-cover shadow border-2 border-primary/30"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-surface-elevated border border-border flex items-center justify-center">
+              <div className="w-9 h-9 rounded-xl bg-surface-elevated border-2 border-border flex items-center justify-center">
                 <UserIcon className="w-4 h-4 text-accent" />
               </div>
             )}
             <div className="text-left min-w-0">
-              <div className="text-xs font-bold text-text truncate leading-tight">
+              <div className="text-xs font-black text-text truncate leading-tight uppercase tracking-wide">
                 {user.displayName}
               </div>
-              <div className="text-[9px] text-muted truncate">
+              <div className="text-[10px] text-primary/80 font-semibold truncate">
                 @{user.username}
               </div>
             </div>
@@ -123,10 +123,10 @@ export default function Navigation() {
 
           <motion.button
             onClick={handleLogout}
-            whileHover={{ scale: 1.12, rotate: 10 }}
-            whileTap={{ scale: 0.88 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
-            className="p-1.5 hover:bg-surface-elevated text-primary rounded cursor-pointer transition"
+            whileHover={{ scale: 1.1, rotate: 8 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 420, damping: 24 }}
+            className="p-2 hover:bg-primary/15 text-primary rounded-xl border border-transparent hover:border-primary/30 cursor-pointer transition"
             title="Sign out session"
             aria-label={`Sign out ${user.displayName}`}
           >
@@ -140,7 +140,7 @@ export default function Navigation() {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 bg-surface/40 border-r border-border/60 flex-col justify-between z-30 backdrop-blur-md">
+      <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 bg-surface/70 border-r-2 border-border/70 flex-col justify-between z-30 backdrop-blur-xl shadow-[8px_0_40px_-30px_var(--glow)]">
         {sidebarContent}
       </aside>
 

@@ -312,7 +312,7 @@ export default function PlaylistDetailClient({ params }: PlaylistDetailPageProps
         {/* Text Details */}
         <div className="text-center md:text-left flex-grow space-y-4">
           <div className="space-y-2">
-            <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+            <span className="reform-chip">
               {playlist.visibility === "public" ? "Public Playlist" : "Private Curation"}
             </span>
             {isEditing ? (

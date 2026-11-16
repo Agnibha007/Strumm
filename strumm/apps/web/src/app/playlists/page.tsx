@@ -152,24 +152,25 @@ export default function PlaylistsPage() {
   return (
     <div className="space-y-10 soft-enter">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      <header className="reform-panel p-6 sm:p-8 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-5">
         <div>
-          <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-            Curation
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-editorial text-text tracking-tight font-bold mt-1">
-            Playlists
+          <span className="reform-chip">Curation</span>
+          <h2 className="reform-heading-xl text-text mt-3">
+            Play<span className="text-primary">lists</span>
           </h2>
+          <p className="mt-3 text-sm sm:text-base text-muted font-medium max-w-xl">
+            Build, import, and manage your collections with bold clarity.
+          </p>
         </div>
         
         <button
           onClick={() => setCreateMode("choose")}
-          className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-lg shadow-md cursor-pointer transition"
+          className="flex items-center justify-center gap-2 px-5 py-3 bg-primary hover:bg-primary-hover text-background text-sm font-extrabold uppercase tracking-wide rounded-xl shadow-[0_12px_30px_-16px_var(--glow)] cursor-pointer transition border border-primary"
         >
           <Plus className="w-4 h-4" />
           Create Playlist
         </button>
-      </div>
+      </header>
 
       {createMode && (
         <div className="bg-surface border border-border/60 rounded-xl p-6 space-y-5">

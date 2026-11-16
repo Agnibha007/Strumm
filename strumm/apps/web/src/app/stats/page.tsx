@@ -104,7 +104,7 @@ export default function StatsPage() {
     <div className="space-y-10 max-w-6xl pb-10 soft-enter">
       {/* Header */}
       <div>
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+        <span className="reform-chip">
           Analytics
         </span>
         <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">

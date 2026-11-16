@@ -49,7 +49,7 @@ export default async function LicensesPage() {
         { name: "Open Source Licenses", href: "/licenses" },
       ]} />
     <div className="max-w-3xl py-12 px-4 md:px-0 soft-enter">
-      <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block mb-2">Legal</span>
+      <span className="reform-chip mb-3">Legal</span>
       <h1 className="text-4xl font-editorial text-text font-bold tracking-tight mb-2">Open Source Licenses</h1>
       <p className="text-sm text-muted mb-8">Strumm is built on open source software. We thank these projects and their maintainers.</p>
       <div className="bg-surface/40 border border-border/60 rounded-xl overflow-hidden">

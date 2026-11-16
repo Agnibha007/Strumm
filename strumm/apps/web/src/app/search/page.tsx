@@ -422,37 +422,38 @@ export default function SearchPage() {
       {/* Individual JSON-LD script tags for each album */}
       <JsonLdList schemas={albumSchemas} />
 
-      <div>
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-          Universal Portal
-        </span>
-        <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
-          Search Directory
+      <header className="reform-panel p-6 sm:p-8">
+        <span className="reform-chip">Universal Portal</span>
+        <h1 className="reform-heading-xl text-text mt-3">
+          Search <span className="text-primary">Directory</span>
         </h1>
-      </div>
+        <p className="mt-3 text-sm sm:text-base text-muted font-medium max-w-2xl">
+          Find songs, artists, albums, podcasts, playlists, and profiles in one bold sweep.
+        </p>
+      </header>
 
       {/* Input */}
       <div className="relative">
-        <Search className="absolute left-4.5 top-4 w-5 h-5 text-muted" />
+        <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
         <input
           ref={searchInputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search songs, artists, playlists, podcasts, curators..."
-          className="w-full bg-surface border border-border/80 rounded-xl pl-12 pr-24 py-3.5 text-base text-text focus:outline-none focus:border-primary/50 transition font-sans shadow-lg"
+          className="reform-input w-full pl-13 pr-28 py-4 sm:py-5 text-base sm:text-lg font-bold placeholder:text-muted/70 shadow-lg"
         />
-        <div className="absolute right-4.5 top-3.5 flex items-center gap-2">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
           {query && (
             <button
               onClick={() => setQuery("")}
-              className="p-1 hover:bg-surface-elevated text-muted hover:text-text rounded-md transition"
+              className="p-2 hover:bg-primary/10 text-muted hover:text-primary rounded-xl border border-transparent hover:border-primary/30 transition"
             >
               <X className="w-4.5 h-4.5" />
             </button>
           )}
-          <span className="hidden sm:inline-block px-2 py-1 text-[9px] font-bold text-muted bg-surface-elevated border border-border/60 rounded-md font-mono select-none">
-            Ctrl + K
+          <span className="hidden sm:inline-block px-2.5 py-1.5 text-[10px] font-extrabold tracking-wider text-primary bg-primary/10 border border-primary/30 rounded-lg select-none">
+            CTRL+K
           </span>
         </div>
       </div>
@@ -958,7 +959,7 @@ export default function SearchPage() {
                     )}
                   </div>
                   <div className="min-w-0 flex flex-col justify-center text-left">
-                    <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
+                    <span className="reform-chip">
                       Album Release
                     </span>
                     <h3 className="font-editorial text-xl sm:text-2xl text-text font-bold leading-tight mt-1 truncate">

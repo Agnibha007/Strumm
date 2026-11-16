@@ -532,20 +532,19 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-6xl soft-enter">
       {/* Header */}
-      <div>
-        <span className="text-[10px] tracking-widest uppercase font-semibold text-primary block">
-          Control Panel
-        </span>
-        <h1 className="text-4xl font-editorial text-text tracking-tight font-bold mt-1">
-          Settings
-        </h1>
-      </div>
+      <header className="reform-panel p-6 sm:p-8">
+        <span className="reform-chip">Control Panel</span>
+        <h1 className="reform-heading-xl text-text mt-3">Set<span className="text-primary">tings</span></h1>
+        <p className="mt-3 text-sm sm:text-base text-muted font-medium max-w-2xl">
+          Tune your profile, security, playback, and appearance with a bolder control surface.
+        </p>
+      </header>
 
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Left: Section Navigation */}
-        <nav className="lg:w-52 flex-shrink-0 space-y-1" aria-label="Settings sections">
+        <nav className="lg:w-56 flex-shrink-0 space-y-1.5 reform-panel p-3 h-fit" aria-label="Settings sections">
           {sections.map((section) => {
             const Icon = section.icon;
             return (
