@@ -115,7 +115,7 @@ export default function SongDownloadAction({
       let blob: Blob;
       if (response.body) {
         const reader = response.body.getReader();
-        const chunks: Uint8Array[] = [];
+        const chunks: ArrayBuffer[] = [];
         let received = 0;
         try {
           while (true) {
@@ -127,7 +127,9 @@ export default function SongDownloadAction({
               await reader.cancel();
               throw new Error("This song is larger than the 500 MiB download limit.");
             }
-            chunks.push(result.value);
+            const chunkCopy = new Uint8Array(result.value.byteLength);
+            chunkCopy.set(result.value);
+            chunks.push(chunkCopy.buffer);
             if (expectedLength && expectedLength > 0) {
               setProgress(Math.min(100, Math.round((received / expectedLength) * 100)));
             }
