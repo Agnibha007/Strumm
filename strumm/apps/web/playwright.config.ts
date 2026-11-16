@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Target the live Vercel deployment for post-deploy verification.
+const DEPLOYED_URL = process.env.PLAYWRIGHT_BASE_URL || "https://www.strumm.me";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -8,7 +11,7 @@ export default defineConfig({
   workers: process.env.CI ? 2 : 1,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: DEPLOYED_URL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

@@ -30,6 +30,7 @@ test.describe("song download", () => {
   });
 
   test("download API endpoint surfaces auth/backend error after login", async ({ page }) => {
+    test.setTimeout(100000);
     await page.goto("/login", { waitUntil: "domcontentloaded" });
     await page.getByPlaceholder("you@example.com").waitFor({ state: "visible", timeout: 20000 });
     await page.getByPlaceholder("you@example.com").fill(EMAIL);
@@ -37,7 +38,10 @@ test.describe("song download", () => {
     await page.getByRole("button", { name: /Enter Strumm/ }).click();
     await expect(page).not.toHaveURL(/.*\/login/, { timeout: 30000 });
 
-    // Directly call the download endpoint to capture the real backend response
+    // Directly call the download endpoint to capture the real backend response.
+    // yt-dlp is bot-blocked on this host, so this may hang until the backend's
+    // ~75s yt-dlp timeout and return 504 — which confirms the download failure
+    // is backend/infrastructure, not frontend code.
     const response = await page.request.post("/proxy/downloads/song", {
       data: {
         videoId: "dQw4w9WgXcQ",
@@ -46,6 +50,7 @@ test.describe("song download", () => {
         duration: 200,
         rightsConfirmed: true,
       },
+      timeout: 90000,
     });
 
     console.log("Download API status:", response.status());
