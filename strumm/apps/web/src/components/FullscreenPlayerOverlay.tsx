@@ -618,7 +618,11 @@ export default function FullscreenPlayerOverlay({ onClose }: FullscreenPlayerOve
               </button>
 
               {!isPodcast && currentSong && (
-                <SongDownloadAction song={currentSong} compact />
+                <SongDownloadAction
+                  song={currentSong}
+                  variant="icon"
+                  className="h-10 w-10 rounded-xl border border-border/40 bg-surface-elevated/30 text-muted hover:text-text hover:bg-surface-elevated/50 p-0"
+                />
               )}
 
               <AddToPlaylistMenu song={currentSong} className="!p-0 !bg-transparent hover:!bg-transparent hover:scale-105" />

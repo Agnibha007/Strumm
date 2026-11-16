@@ -1,4 +1,4 @@
-export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk' | 'Sage Forest' | 'Midnight Amethyst' | 'Glacial Blue' | 'Custom';
+export type ThemeType = 'Obsidian' | 'Black Cherry' | 'Vinyl Classic' | 'Ocean Drive' | 'Monochrome' | 'Aurora' | 'Sunset Blvd' | 'Rose Garden' | 'Cyberpunk' | 'Sage Forest' | 'Midnight Amethyst' | 'Glacial Blue' | 'Night Drive' | 'Studio Warmth' | 'Mint Chill' | 'Custom';
 
 // ---------------------------------------------------------------------------
 // Object-storage (Backblaze B2) media types

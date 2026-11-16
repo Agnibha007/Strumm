@@ -15,6 +15,7 @@ import { useLikeSong } from "web/hooks/useLikeSong";
 import SongArtwork from "web/components/SongArtwork";
 import { ARTWORK_QUALITY_LOW, ARTWORK_QUALITY_THUMBNAIL } from "web/lib/media";
 import AddToPlaylistMenu from "./AddToPlaylistMenu";
+import SongDownloadAction from "./SongDownloadAction";
 import SeekBar from "./player/SeekBar";
 
 const FullscreenPlayerOverlay = dynamic(() => import("./FullscreenPlayerOverlay"), {
@@ -383,6 +384,16 @@ export default function EditorialPlayer() {
                 {isPlaying ? <Pause className="w-4.5 h-4.5 fill-current" /> : <Play className="w-4.5 h-4.5 fill-current translate-x-0.5" />}
               </motion.button>
 
+              {currentSong && !currentSong.videoId?.startsWith("podcast-") && (
+                <div className="md:hidden" onClick={(e) => e.stopPropagation()}>
+                  <SongDownloadAction
+                    song={currentSong}
+                    variant="icon"
+                    className="h-9 w-9 border-border/60 bg-surface-elevated/20 text-muted hover:text-text hover:bg-surface-elevated/50"
+                  />
+                </div>
+              )}
+
               <button
                 onClick={(e) => { e.stopPropagation(); setShowQueue(!showQueue); }}
                 className="md:hidden p-2 text-muted hover:text-text cursor-pointer transition"
@@ -458,6 +469,16 @@ export default function EditorialPlayer() {
             >
               <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
             </button>
+
+            {currentSong && !currentSong.videoId?.startsWith("podcast-") && (
+              <div className="hidden sm:block">
+                <SongDownloadAction
+                  song={currentSong}
+                  variant="icon"
+                  className="h-9 w-9 border-border/60 bg-surface-elevated/20 text-muted hover:text-text hover:bg-surface-elevated/50"
+                />
+              </div>
+            )}
 
             <AddToPlaylistMenu song={currentSong} />
 

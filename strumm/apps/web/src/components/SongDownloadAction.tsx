@@ -17,6 +17,8 @@ const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024;
 interface SongDownloadActionProps {
   song: Pick<Song, "videoId" | "title" | "artist" | "thumbnail" | "duration">;
   compact?: boolean;
+  variant?: "default" | "icon";
+  className?: string;
   onChange?: () => void;
 }
 
@@ -33,6 +35,8 @@ async function responseError(response: Response): Promise<string> {
 export default function SongDownloadAction({
   song,
   compact = false,
+  variant = "default",
+  className = "",
   onChange,
 }: SongDownloadActionProps) {
   const [saved, setSaved] = useState<SongDownloadRecord | null>(null);
@@ -197,7 +201,36 @@ export default function SongDownloadAction({
     ? "inline-flex items-center gap-1.5 rounded-lg border border-border/70 px-2.5 py-2 text-[11px] font-semibold text-muted hover:text-text hover:bg-surface-elevated transition disabled:opacity-50"
     : "inline-flex items-center gap-2 rounded-lg border border-border/70 px-3.5 py-2.5 text-xs font-semibold text-muted hover:text-text hover:bg-surface-elevated transition disabled:opacity-50";
 
+  const iconButtonClass = `inline-flex items-center justify-center rounded-xl border transition disabled:opacity-50 ${className || "h-9 w-9 sm:h-10 sm:w-10 border-border/60 bg-surface-elevated/20 text-muted hover:text-text hover:bg-surface-elevated/50"}`;
+
   if (!song?.videoId) return null;
+
+  if (variant === "icon") {
+    const progressLabel = progress === null ? "Downloading song" : `Downloading ${progress}%`;
+    return (
+      <div className="relative inline-flex flex-col items-center">
+        {downloading ? (
+          <button type="button" onClick={cancelDownload} className={iconButtonClass} aria-label="Cancel download" title={progressLabel}>
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          </button>
+        ) : saved ? (
+          <button type="button" onClick={removeDownload} className={`${iconButtonClass} text-primary border-primary/30 bg-primary/10`} aria-label="Remove downloaded song" title="Saved offline — tap to remove">
+            <Check className="h-4 w-4" />
+          </button>
+        ) : (
+          <button type="button" onClick={startDownload} className={iconButtonClass} aria-label="Download song for offline" title="Download for offline">
+            <Download className="h-4 w-4" />
+          </button>
+        )}
+        {downloading && progress !== null && (
+          <div className="absolute -bottom-1 left-1/2 h-1 w-8 -translate-x-1/2 overflow-hidden rounded-full bg-border/60" role="progressbar" aria-label="Download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+            <div className="h-full rounded-full bg-primary" style={{ width: progress + "%" }} />
+          </div>
+        )}
+        {error && <span className="sr-only" role="alert">{error}</span>}
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">
@@ -235,7 +268,7 @@ export default function SongDownloadAction({
         </div>
       )}
       {error && <p className="max-w-64 text-[11px] leading-relaxed text-primary" role="alert">{error}</p>}
-      {!saved && !downloading && (
+      {!saved && !downloading && !compact && (
         <p className="max-w-64 text-[10px] leading-relaxed text-muted/70">
           Saves to this device. Only download tracks you own or have permission to save.
         </p>

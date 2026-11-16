@@ -157,6 +157,45 @@
   --glow: rgba(56, 189, 248, 0.22);
 }
 
+[data-theme="Night Drive"] {
+  --background: #02040A;
+  --surface: #08101C;
+  --surface-elevated: #0F1A2B;
+  --primary: #5B8CFF;
+  --primary-hover: #82A8FF;
+  --accent: #C084FC;
+  --text: #EDF2FF;
+  --muted: #9AB0D8;
+  --border: #1A2A44;
+  --glow: rgba(91, 140, 255, 0.24);
+}
+
+[data-theme="Studio Warmth"] {
+  --background: #0A0705;
+  --surface: #17110C;
+  --surface-elevated: #241B13;
+  --primary: #FFB347;
+  --primary-hover: #FFC97A;
+  --accent: #FF7A59;
+  --text: #FFF6EC;
+  --muted: #C8A889;
+  --border: #3A2C1F;
+  --glow: rgba(255, 179, 71, 0.22);
+}
+
+[data-theme="Mint Chill"] {
+  --background: #030807;
+  --surface: #081412;
+  --surface-elevated: #0E201C;
+  --primary: #2DD4BF;
+  --primary-hover: #5EEAD4;
+  --accent: #A7F3D0;
+  --text: #ECFEFF;
+  --muted: #8FD7CC;
+  --border: #1B3A33;
+  --glow: rgba(45, 212, 191, 0.22);
+}
+
 [data-theme="Custom"] {
   --background: rgba(8, 10, 16, 0.9);
   --surface: rgba(18, 22, 32, 0.7);

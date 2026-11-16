@@ -9,19 +9,22 @@ export default function ThemeSwitcher() {
   const isCustom = currentTheme === "Custom";
 
   const themes: Array<{ name: ThemeType; desc: string; preview: string; custom?: boolean }> = [
-    { name: "Obsidian", desc: "True dark obsidian slate.", preview: "bg-[#080808] border-[#222222]" },
-    { name: "Black Cherry", desc: "Deep cherry burgundy wash.", preview: "bg-[#0B0505] border-[#3A1F21]" },
-    { name: "Vinyl Classic", desc: "Warm retro cardboard sleeves.", preview: "bg-[#0A0A0A] border-[#38302B]" },
-    { name: "Ocean Drive", desc: "Midnight blue, neon lights.", preview: "bg-[#03080F] border-[#183354]" },
-    { name: "Monochrome", desc: "High contrast pure black/white.", preview: "bg-[#000000] border-[#333333]" },
-    { name: "Aurora", desc: "Forest pine, emerald green.", preview: "bg-[#020907] border-[#134E3F]" },
-    { name: "Sunset Blvd", desc: "Warm gold, dusk violet tones.", preview: "bg-[#0b0612] border-[#3e1f5c]" },
-    { name: "Rose Garden", desc: "Dusty rose and matte pink.", preview: "bg-[#0f070b] border-[#4c1d36]" },
-    { name: "Cyberpunk", desc: "Pure neon yellow, neon cyan.", preview: "bg-[#000000] border-[#2e2e38]" },
-    { name: "Sage Forest", desc: "Calm earthy greens and herbal accents.", preview: "bg-[#090C0A] border-[#2E3A31]" },
-    { name: "Midnight Amethyst", desc: "Deep royal violet with gold accent.", preview: "bg-[#06040A] border-[#31254A]" },
-    { name: "Glacial Blue", desc: "Frosty arctic blue with coral rose.", preview: "bg-[#05080C] border-[#223044]" },
-    { name: "Custom", desc: "Your palette — translucent glass + any color.", preview: "bg-[#0A0C12] border-[#6C8CFF]", custom: true },
+    { name: "Obsidian", desc: "High-contrast dark for everyday listening.", preview: "bg-[#050505] border-[#2A2A2A]" },
+    { name: "Black Cherry", desc: "Rich, moody reds for late-night sessions.", preview: "bg-[#080203] border-[#3D1A22]" },
+    { name: "Vinyl Classic", desc: "Warm retro tones for relaxed playback.", preview: "bg-[#070605] border-[#3A3027]" },
+    { name: "Ocean Drive", desc: "Cool neon blues for energetic mixes.", preview: "bg-[#02060C] border-[#163555]" },
+    { name: "Monochrome", desc: "Pure black-and-white, maximum clarity.", preview: "bg-[#000000] border-[#3F3F46]" },
+    { name: "Aurora", desc: "Fresh greens for calm, immersive listening.", preview: "bg-[#010806] border-[#145741]" },
+    { name: "Sunset Blvd", desc: "Warm gold and violet for evening vibes.", preview: "bg-[#09040F] border-[#43245E]" },
+    { name: "Rose Garden", desc: "Soft rose tones for a warm, personal feel.", preview: "bg-[#0C0408] border-[#4A1E36]" },
+    { name: "Cyberpunk", desc: "High-energy neon for bold, loud sessions.", preview: "bg-[#000000] border-[#2F2F3A]" },
+    { name: "Sage Forest", desc: "Earthy greens for focused, mellow listening.", preview: "bg-[#060907] border-[#2D3B32]" },
+    { name: "Midnight Amethyst", desc: "Deep violet for immersive night listening.", preview: "bg-[#040208] border-[#352A52]" },
+    { name: "Glacial Blue", desc: "Crisp icy blues for clean, bright focus.", preview: "bg-[#03060A] border-[#223044]" },
+    { name: "Night Drive", desc: "Cool indigo glow for focused late-night drives.", preview: "bg-[#02040A] border-[#1A2A44]" },
+    { name: "Studio Warmth", desc: "Cozy amber tones for intimate, creative listening.", preview: "bg-[#0A0705] border-[#3A2C1F]" },
+    { name: "Mint Chill", desc: "Fresh teal palette for calm, refreshing sessions.", preview: "bg-[#030807] border-[#1B3A33]" },
+    { name: "Custom", desc: "Your palette — pick colors that match your mood.", preview: "bg-[#0A0C12] border-[#6C8CFF]", custom: true },
   ];
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
