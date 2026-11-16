@@ -107,35 +107,6 @@ export default function SongDownloadAction({
     };
   }, [song?.videoId]);
 
-  const tryFallbackBlobDownload = async (controller: AbortController): Promise<{ blob: Blob; mimeType: string; sourceUrl: string } | null> => {
-    try {
-      const playRes = await authFetch(apiUrl(`/play/${encodeURIComponent(song.videoId)}`), { signal: controller.signal });
-      if (!playRes.ok) return null;
-      const json = await playRes.json().catch(() => null);
-      const audioUrl: string | undefined = json?.success ? json?.data?.audioUrl : undefined;
-      if (!audioUrl) return null;
-
-      // Try direct fetch (works for proxied/same-origin/CORS-enabled URLs), then audio-proxy fallback.
-      const tryUrls = [audioUrl, apiUrl(`/audio-proxy?url=${encodeURIComponent(audioUrl)}`)];
-      for (const url of tryUrls) {
-        try {
-          const res = await fetch(url, { signal: controller.signal, credentials: url.startsWith("/") || url.includes("/proxy/") ? "include" : "omit" });
-          if (!res.ok) continue;
-          const rawLength = res.headers.get("content-length");
-          const expectedLength = rawLength ? Number(rawLength) : null;
-          const { blob, mimeType } = await readAudioBlobFromResponse(res, Number.isFinite(expectedLength) ? expectedLength : null, (p) => setProgress(p));
-          return { blob, mimeType, sourceUrl: audioUrl };
-        } catch (e) {
-          if (e instanceof DOMException && e.name === "AbortError") throw e;
-          continue;
-        }
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") throw e;
-    }
-    return null;
-  };
-
   const startDownload = async () => {
     if (downloading || !song?.videoId) return;
     const controller = new AbortController();
@@ -199,18 +170,6 @@ export default function SongDownloadAction({
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") throw e;
         primaryError = e instanceof Error ? e.message : "Primary download failed.";
-      }
-
-      // 2) Fallback: resolve/play URL and fetch blob (direct/proxied) when possible
-      if (!blob) {
-        setProgress(null);
-        const fallback = await tryFallbackBlobDownload(controller);
-        if (fallback) {
-          blob = fallback.blob;
-          mimeType = fallback.mimeType || "audio/mpeg";
-          sourceProvider = "direct";
-          sourceUrl = fallback.sourceUrl;
-        }
       }
 
       if (!blob) {
