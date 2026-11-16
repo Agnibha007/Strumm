@@ -123,7 +123,8 @@ describe("downloads page", () => {
 
     expect(await screen.findByText("Saved Episode")).toBeTruthy();
     expect(await screen.findByText("Saved Track")).toBeTruthy();
-    fireEvent.click(screen.getAllByRole("button", { name: "Play" })[1]);
+    // Groups are sorted by name: "Example Podcast" comes before "Songs"
+    fireEvent.click(screen.getAllByRole("button", { name: "Play" })[0]);
 
     await waitFor(() => expect(downloads.preparePodcastDownloadPlayback).toHaveBeenCalledWith("episode-123", podcastRecord.blob));
     await waitFor(() => expect(playHostAudioUrl).toHaveBeenCalledWith("blob:prepared-url"));
