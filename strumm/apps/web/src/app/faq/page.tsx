@@ -32,7 +32,7 @@ const faqs = [
   },
   {
     q: "How does music playback work?",
-    a: "Strumm resolves track metadata and usually plays through YouTube's embedded player. For tracks you own or have permission to download, Strumm can resolve an available audio stream in your browser and save it to this device's offline library. Downloads are stored locally in your browser, not in Strumm's music storage. You must confirm that you have the necessary rights before each download.",
+    a: "Strumm resolves track metadata and usually plays through YouTube's embedded player. For podcast episodes and songs, Strumm can also save an audio copy to this device's offline library when you choose to download it. Downloads are stored locally in your browser, not in Strumm's music storage. Only download content you own or have permission to save.",
   },
   {
     q: "What is Strumm Replay?",

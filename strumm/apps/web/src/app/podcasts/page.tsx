@@ -123,7 +123,7 @@ export default function PodcastHomePage() {
 
       <div className="flex items-start gap-3 reform-panel p-4 sm:p-5 text-sm text-muted border-primary/20" role="note">
         <Info className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-        <p><span className="font-extrabold text-text uppercase tracking-wide text-xs block mb-1">Podcast downloads only</span> Offline downloads are available for podcast episodes; song downloads are not supported.</p>
+        <p><span className="font-extrabold text-text uppercase tracking-wide text-xs block mb-1">Offline downloads</span> Save podcast episodes here for offline listening. You can also download songs from the player when you own them or have permission to save them.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

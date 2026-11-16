@@ -26,7 +26,9 @@ import {
   formatDownloadSize,
   listAllDownloads,
   removePodcastDownload,
+  removeSongDownload,
   preparePodcastDownloadPlayback,
+  prepareSongDownloadPlayback,
   type PodcastDownloadRecord,
 } from "web/lib/podcast-downloads";
 
@@ -45,9 +47,13 @@ type DownloadGroup = {
 
 function collectionFor(record: PodcastDownloadRecord) {
   const type = record.collectionType || "podcast";
-  const name = record.collectionName || record.showTitle || "Podcasts";
+  const name = record.collectionName || record.showTitle || (type === "song" ? "Songs" : "Podcasts");
   const id = record.collectionId || record.episodeId;
   return { type, name, id, key: type + ":" + id + ":" + name };
+}
+
+function isSongRecord(record: PodcastDownloadRecord) {
+  return record.collectionType === "song" || record.contentType === "song" || record.id.startsWith("song-");
 }
 
 export default function DownloadsPage() {
@@ -67,9 +73,7 @@ export default function DownloadsPage() {
     setError(null);
     try {
       const records = await listAllDownloads();
-      // Keep the offline library podcast-only. Older song downloads remain in
-      // IndexedDB but are no longer surfaced as downloadable library items.
-      setDownloads(records.filter((record) => record.collectionType !== "song"));
+      setDownloads(records);
       if (typeof navigator !== "undefined" && navigator.storage?.estimate) {
         const estimate = await navigator.storage.estimate().catch(() => null);
         if (estimate) setStorageEstimate(estimate);
@@ -135,24 +139,28 @@ export default function DownloadsPage() {
   }, [filteredDownloads]);
 
   const handlePlay = (record: PodcastDownloadRecord) => {
-    const playbackUrl = preparePodcastDownloadPlayback(record.id, record.blob);
+    const songRecord = isSongRecord(record);
+    const actualVideoId = record.videoId || record.episodeId || record.id.replace(/^song-/, "");
+    const playbackUrl = songRecord
+      ? prepareSongDownloadPlayback(actualVideoId, record.blob)
+      : preparePodcastDownloadPlayback(record.id, record.blob);
     const song: Song = {
-      videoId: record.id,
+      videoId: songRecord ? actualVideoId : record.id,
       title: record.title,
-      artist: record.showTitle || "Podcast",
+      artist: songRecord ? (record.showTitle || "Unknown Artist") : (record.showTitle || "Podcast"),
       thumbnail: record.thumbnail,
       duration: record.duration,
       metadata: {
-        album: record.showTitle || "Podcasts",
+        album: record.showTitle || (songRecord ? "Downloaded Songs" : "Podcasts"),
         audioUrl: record.audioUrl,
         mediaType: "audio",
       },
     };
-    setPodcastMode("audio");
+    setPodcastMode(songRecord ? "audio" : "audio");
     setPlayerError(null);
     playSong(song, [song]);
     void playHostAudioUrl(playbackUrl).catch(() => {
-      setPlayerError("Unable to start this downloaded episode. Tap Play in the player to retry.");
+      setPlayerError(songRecord ? "Unable to start this downloaded song. Tap Play in the player to retry." : "Unable to start this downloaded episode. Tap Play in the player to retry.");
     });
   };
 
@@ -160,7 +168,11 @@ export default function DownloadsPage() {
     setRemovingId(record.id);
     setError(null);
     try {
-      await removePodcastDownload(record.id);
+      if (isSongRecord(record)) {
+        await removeSongDownload(record.videoId || record.episodeId || record.id.replace(/^song-/, ""));
+      } else {
+        await removePodcastDownload(record.id);
+      }
       setDownloads((current) => current.filter((item) => item.id !== record.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to remove this download.");
@@ -179,7 +191,7 @@ export default function DownloadsPage() {
         mp3Blob = record.blob;
       } else {
         const form = new FormData();
-        form.append("file", record.blob, "podcast-audio");
+        form.append("file", record.blob, isSongRecord(record) ? "song-audio" : "podcast-audio");
         form.append("title", record.title);
         const response = await authFetch(apiUrl("/podcasts/convert/mp3"), {
           method: "POST",
@@ -187,7 +199,7 @@ export default function DownloadsPage() {
         });
         if (!response.ok) {
           const body = await response.json().catch(() => null);
-          throw new Error(body?.detail || body?.error || "Unable to convert this episode to MP3.");
+          throw new Error(body?.detail || body?.error || "Unable to convert this audio to MP3.");
         }
         mp3Blob = await response.blob();
       }
@@ -196,13 +208,13 @@ export default function DownloadsPage() {
       const url = URL.createObjectURL(mp3Blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = (record.title.replace(/[\\/:*?"<>|]/g, "-").trim() || "podcast-episode") + ".mp3";
+      anchor.download = (record.title.replace(/[\\/:*?"<>|]/g, "-").trim() || (isSongRecord(record) ? "song" : "podcast-episode")) + ".mp3";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to export this episode as MP3.");
+      setError(err instanceof Error ? err.message : "Unable to export this audio as MP3.");
     } finally {
       setMp3ExportingId(null);
     }
@@ -242,7 +254,8 @@ export default function DownloadsPage() {
 
 
   const totalSize = downloads.reduce((total, record) => total + record.size, 0);
-  const podcastCount = downloads.filter((record) => (record.collectionType || "podcast") === "podcast").length;
+  const podcastCount = downloads.filter((record) => !isSongRecord(record) && (record.collectionType || "podcast") !== "playlist").length;
+  const songCount = downloads.filter((record) => isSongRecord(record)).length;
   const playlistCount = downloads.filter((record) => record.collectionType === "playlist").length;
 
   const toggleGroup = (key: string) => {
@@ -253,15 +266,15 @@ export default function DownloadsPage() {
     <main className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 md:px-0 md:py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-3">
-          <Link href="/podcasts" className="inline-flex items-center gap-2 text-xs font-semibold text-muted transition hover:text-text">
+          <Link href="/" className="inline-flex items-center gap-2 text-xs font-semibold text-muted transition hover:text-text">
             <ArrowLeft className="h-4 w-4" />
-            Podcasts
+            Home
           </Link>
           <div>
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">Your device library</p>
             <h1 className="font-editorial text-4xl font-bold tracking-tight text-text md:text-5xl">Downloads</h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-              Podcast episodes saved for offline listening stay on this browser and device.
+              Songs and podcast episodes saved for offline listening stay on this browser and device. Only download content you own or have permission to save.
             </p>
           </div>
         </div>
@@ -280,7 +293,7 @@ export default function DownloadsPage() {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Download size</p>
           <p className="mt-2 text-2xl font-bold text-text">{formatDownloadSize(totalSize)}</p>
           <p className="mt-1 text-[10px] text-muted">
-            {podcastCount} podcast episode{podcastCount === 1 ? "" : "s"}{playlistCount ? " · " + playlistCount + " playlist item" + (playlistCount === 1 ? "" : "s") : ""}
+            {songCount} song{songCount === 1 ? "" : "s"} · {podcastCount} podcast episode{podcastCount === 1 ? "" : "s"}{playlistCount ? " · " + playlistCount + " playlist item" + (playlistCount === 1 ? "" : "s") : ""}
           </p>
         </div>
         <div className="rounded-xl border border-border/60 bg-surface/40 p-4">
@@ -325,7 +338,7 @@ export default function DownloadsPage() {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search downloaded podcasts or episodes"
+            placeholder="Search downloaded songs, podcasts, or episodes"
             aria-label="Search downloads"
             className="w-full rounded-xl border border-border/60 bg-surface/40 py-3 pl-10 pr-4 text-sm text-text outline-none transition placeholder:text-muted focus:border-primary/60"
           />
@@ -341,18 +354,24 @@ export default function DownloadsPage() {
           </div>
           <h2 className="font-editorial text-2xl font-bold text-text">Nothing saved yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-            Download podcast episodes and keep them ready for offline listening.
+            Download songs or podcast episodes and keep them ready for offline listening.
           </p>
-          <Link href="/podcasts" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-primary-hover">
-            <Radio className="h-4 w-4" />
-            Browse podcasts
-          </Link>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <Link href="/" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-primary-hover">
+              <Play className="h-4 w-4 fill-current" />
+              Browse music
+            </Link>
+            <Link href="/podcasts" className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-4 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text">
+              <Radio className="h-4 w-4" />
+              Browse podcasts
+            </Link>
+          </div>
         </div>
       ) : filteredDownloads.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border/70 bg-surface/20 px-6 py-12 text-center">
           <Search className="mx-auto mb-3 h-6 w-6 text-muted" />
           <h2 className="font-editorial text-xl font-bold text-text">No matching downloads</h2>
-          <p className="mt-2 text-sm text-muted">Try a different podcast or episode title.</p>
+          <p className="mt-2 text-sm text-muted">Try a different song, podcast, or episode title.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -373,13 +392,13 @@ export default function DownloadsPage() {
                       <SafePodcastImage src={group.thumbnail} alt={group.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
-                        {group.type === "playlist" ? <ListMusic className="h-6 w-6 text-muted" /> : <Radio className="h-6 w-6 text-muted" />}
+                        {group.type === "playlist" ? <ListMusic className="h-6 w-6 text-muted" /> : group.type === "song" ? <Play className="h-6 w-6 text-muted" /> : <Radio className="h-6 w-6 text-muted" />}
                       </div>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
-                      {group.type === "playlist" ? "Podcast from playlist" : "Podcast"}
+                      {group.type === "playlist" ? "Playlist downloads" : group.type === "song" ? "Songs" : "Podcast"}
                     </span>
                     <h2 className="truncate font-editorial text-lg font-bold text-text sm:text-xl">{group.name}</h2>
                     <p className="mt-1 text-xs text-muted">
@@ -390,11 +409,13 @@ export default function DownloadsPage() {
 
                 {expanded && (
                   <div className="space-y-2 border-t border-border/50 p-3 sm:p-4">
-                    {group.records.map((record) => (
+                    {group.records.map((record) => {
+                      const songRecord = isSongRecord(record);
+                      return (
                       <article key={record.id} className="flex flex-col gap-3 rounded-xl border border-border/40 bg-background/40 p-3 sm:flex-row sm:items-center sm:gap-4">
                         <div className="min-w-0 flex-1">
                           <h3 className="truncate text-sm font-semibold text-text">{record.title}</h3>
-                          <p className="mt-1 truncate text-xs text-muted">{record.showTitle || group.name}</p>
+                          <p className="mt-1 truncate text-xs text-muted">{songRecord ? (record.showTitle || "Unknown Artist") : (record.showTitle || group.name)}</p>
                           {record.sourceProvider && (
                             <div className="mt-1 space-y-1 text-[11px] text-muted">
                               {record.sourceUrl && (
@@ -443,10 +464,10 @@ export default function DownloadsPage() {
                             onClick={() => void handleMp3Export(record)}
                             disabled={mp3ExportingId === record.id}
                             className="inline-flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2.5 text-xs font-semibold text-muted transition hover:bg-surface-elevated hover:text-text disabled:opacity-50"
-                            aria-label={"Download " + record.title + " as MP3"}
+                            aria-label={(songRecord ? "Download " : "Export ") + record.title + " as MP3"}
                           >
                             <Download className="h-3.5 w-3.5" />
-                            {mp3ExportingId === record.id ? "Converting…" : "MP3"}
+                            {mp3ExportingId === record.id ? "Preparing…" : "MP3"}
                           </button>
                           <button
                             type="button"
@@ -460,7 +481,8 @@ export default function DownloadsPage() {
                           </button>
                         </div>
                       </article>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </section>

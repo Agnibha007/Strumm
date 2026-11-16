@@ -12,7 +12,9 @@ const downloads = vi.hoisted(() => ({
   authFetch: vi.fn(),
   apiUrl: (path: string) => path,
   removePodcastDownload: vi.fn(),
+  removeSongDownload: vi.fn(),
   preparePodcastDownloadPlayback: vi.fn(),
+  prepareSongDownloadPlayback: vi.fn(),
   formatDownloadSize: (size: number) => (size < 1024 ? `${size} B` : `${(size / 1024).toFixed(1)} KB`),
 }));
 
@@ -30,7 +32,9 @@ vi.mock("web/lib/podcast-downloads", () => ({
   formatDownloadSize: downloads.formatDownloadSize,
   listAllDownloads: downloads.listAllDownloads,
   removePodcastDownload: downloads.removePodcastDownload,
+  removeSongDownload: downloads.removeSongDownload,
   preparePodcastDownloadPlayback: downloads.preparePodcastDownloadPlayback,
+  prepareSongDownloadPlayback: downloads.prepareSongDownloadPlayback,
 }));
 
 vi.mock("web/lib/auth-client", () => ({ authFetch: downloads.authFetch }));
@@ -109,16 +113,17 @@ describe("downloads page", () => {
     await waitFor(() => expect(downloads.listAllDownloads).toHaveBeenCalledTimes(2));
   });
 
-  it("hides legacy song downloads and plays saved podcast episodes", async () => {
+  it("shows saved songs and podcasts and plays saved podcast episodes", async () => {
     downloads.listAllDownloads.mockResolvedValue([songRecord, podcastRecord]);
     downloads.preparePodcastDownloadPlayback.mockReturnValue("blob:prepared-url");
+    downloads.prepareSongDownloadPlayback.mockReturnValue("blob:song-url");
     playHostAudioUrl.mockResolvedValue(undefined);
 
     render(<DownloadsPage />);
 
     expect(await screen.findByText("Saved Episode")).toBeTruthy();
-    expect(screen.queryByText("Saved Track")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(await screen.findByText("Saved Track")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Play" })[1]);
 
     await waitFor(() => expect(downloads.preparePodcastDownloadPlayback).toHaveBeenCalledWith("episode-123", podcastRecord.blob));
     await waitFor(() => expect(playHostAudioUrl).toHaveBeenCalledWith("blob:prepared-url"));
@@ -134,7 +139,7 @@ describe("downloads page", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
 
     render(<DownloadsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Download Saved Episode as MP3" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export Saved Episode as MP3" }));
 
     await waitFor(() => expect(downloads.authFetch).toHaveBeenCalledOnce());
     const [url, init] = downloads.authFetch.mock.calls[0];
@@ -154,7 +159,7 @@ describe("downloads page", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
 
     render(<DownloadsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Download Saved Episode as MP3" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export Saved Episode as MP3" }));
 
     await waitFor(() => expect(downloads.authFetch).not.toHaveBeenCalled());
   });

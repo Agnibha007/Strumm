@@ -3,7 +3,7 @@ import ReloadButton from "./ReloadButton";
 
 export const metadata: Metadata = {
   title: "Offline",
-  description: "You're offline. Saved podcast episodes remain available in Downloads.",
+  description: "You're offline. Saved songs and podcast episodes remain available in Downloads.",
   robots: { index: false, follow: false },
 };
 
@@ -20,7 +20,7 @@ export default function OfflinePage() {
         <span className="reform-chip mx-auto">No Connection</span>
         <h1 className="text-3xl sm:text-4xl font-editorial font-black text-text">You&apos;re Offline</h1>
         <p className="text-sm sm:text-base text-muted leading-relaxed font-medium">
-          Streaming music and episodes you haven&apos;t saved need an internet connection. Podcast episodes downloaded to this device can still be played offline.
+          Streaming music and episodes you haven&apos;t saved need an internet connection. Songs and podcast episodes downloaded to this device can still be played offline.
         </p>
         <a
           href="/downloads"
