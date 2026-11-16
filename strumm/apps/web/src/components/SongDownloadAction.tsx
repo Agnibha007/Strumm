@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Download, Loader2, Trash2, X } from "lucide-react";
+import { AlertCircle, Check, Download, Loader2, Trash2, X } from "lucide-react";
 import { authFetch } from "web/lib/auth-client";
 import { apiUrl } from "web/lib/api";
 import {
@@ -30,6 +30,51 @@ async function responseError(response: Response): Promise<string> {
   } catch {
     return body || "Unable to download this song.";
   }
+}
+
+async function readAudioBlobFromResponse(
+  response: Response,
+  expectedLength: number | null,
+  onProgress: (p: number) => void,
+): Promise<{ blob: Blob; mimeType: string }> {
+  const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (mimeType && !mimeType.startsWith("audio/")) {
+    throw new Error("The download service did not return a supported audio file.");
+  }
+
+  let blob: Blob;
+  if (response.body) {
+    const reader = response.body.getReader();
+    const chunks: ArrayBuffer[] = [];
+    let received = 0;
+    try {
+      while (true) {
+        const result = await reader.read();
+        if (result.done) break;
+        if (!result.value) continue;
+        received += result.value.byteLength;
+        if (received > MAX_DOWNLOAD_BYTES) {
+          await reader.cancel();
+          throw new Error("This song is larger than the 500 MiB download limit.");
+        }
+        const chunkCopy = new Uint8Array(result.value.byteLength);
+        chunkCopy.set(result.value);
+        chunks.push(chunkCopy.buffer);
+        if (expectedLength && expectedLength > 0) {
+          onProgress(Math.min(100, Math.round((received / expectedLength) * 100)));
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    blob = new Blob(chunks, { type: mimeType || "audio/mpeg" });
+  } else {
+    blob = await response.blob();
+  }
+
+  if (!blob.size) throw new Error("The source returned an empty audio file.");
+  if (blob.size > MAX_DOWNLOAD_BYTES) throw new Error("This song is larger than the 500 MiB download limit.");
+  return { blob, mimeType: mimeType || blob.type || "audio/mpeg" };
 }
 
 export default function SongDownloadAction({
@@ -62,6 +107,35 @@ export default function SongDownloadAction({
     };
   }, [song?.videoId]);
 
+  const tryFallbackBlobDownload = async (controller: AbortController): Promise<{ blob: Blob; mimeType: string; sourceUrl: string } | null> => {
+    try {
+      const playRes = await authFetch(apiUrl(`/play/${encodeURIComponent(song.videoId)}`), { signal: controller.signal });
+      if (!playRes.ok) return null;
+      const json = await playRes.json().catch(() => null);
+      const audioUrl: string | undefined = json?.success ? json?.data?.audioUrl : undefined;
+      if (!audioUrl) return null;
+
+      // Try direct fetch (works for proxied/same-origin/CORS-enabled URLs), then audio-proxy fallback.
+      const tryUrls = [audioUrl, apiUrl(`/audio-proxy?url=${encodeURIComponent(audioUrl)}`)];
+      for (const url of tryUrls) {
+        try {
+          const res = await fetch(url, { signal: controller.signal, credentials: url.startsWith("/") || url.includes("/proxy/") ? "include" : "omit" });
+          if (!res.ok) continue;
+          const rawLength = res.headers.get("content-length");
+          const expectedLength = rawLength ? Number(rawLength) : null;
+          const { blob, mimeType } = await readAudioBlobFromResponse(res, Number.isFinite(expectedLength) ? expectedLength : null, (p) => setProgress(p));
+          return { blob, mimeType, sourceUrl: audioUrl };
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") throw e;
+          continue;
+        }
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") throw e;
+    }
+    return null;
+  };
+
   const startDownload = async () => {
     if (downloading || !song?.videoId) return;
     const controller = new AbortController();
@@ -76,79 +150,71 @@ export default function SongDownloadAction({
           ? await navigator.storage.estimate().catch(() => null)
           : null;
 
-      const response = await authFetch(apiUrl("/downloads/song"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          videoId: song.videoId,
-          title: song.title || "Unknown Title",
-          artist: song.artist || "Unknown Artist",
-          duration: song.duration || 0,
-          rightsConfirmed: true,
-        }),
-      });
+      let blob: Blob | null = null;
+      let mimeType = "audio/mpeg";
+      let sourceProvider: SongDownloadRecord["sourceProvider"] = "yt-dlp";
+      let sourceUrl = `https://www.youtube.com/watch?v=${song.videoId}`;
+      let primaryError: string | null = null;
 
-      if (!response.ok) {
-        throw new Error(await responseError(response));
-      }
+      // 1) Primary: server-side download/conversion endpoint
+      try {
+        const response = await authFetch(apiUrl("/downloads/song"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            videoId: song.videoId,
+            title: song.title || "Unknown Title",
+            artist: song.artist || "Unknown Artist",
+            duration: song.duration || 0,
+            rightsConfirmed: true,
+          }),
+        });
 
-      const mimeType = (response.headers.get("content-type") || "")
-        .split(";")[0]
-        .trim()
-        .toLowerCase();
-      if (mimeType && !mimeType.startsWith("audio/")) {
-        throw new Error("The download service did not return a supported audio file.");
-      }
-
-      const rawLength = response.headers.get("content-length");
-      const expectedLength = rawLength ? Number(rawLength) : null;
-      if (expectedLength !== null && Number.isFinite(expectedLength) && expectedLength > MAX_DOWNLOAD_BYTES) {
-        throw new Error("This song is larger than the 500 MiB download limit.");
-      }
-      if (
-        expectedLength !== null &&
-        Number.isFinite(expectedLength) &&
-        storage?.quota !== undefined &&
-        storage.usage !== undefined &&
-        expectedLength > Math.max(0, storage.quota - storage.usage)
-      ) {
-        throw new Error("There is not enough browser storage for this song. Remove an old download and try again.");
-      }
-
-      let blob: Blob;
-      if (response.body) {
-        const reader = response.body.getReader();
-        const chunks: ArrayBuffer[] = [];
-        let received = 0;
-        try {
-          while (true) {
-            const result = await reader.read();
-            if (result.done) break;
-            if (!result.value) continue;
-            received += result.value.byteLength;
-            if (received > MAX_DOWNLOAD_BYTES) {
-              await reader.cancel();
-              throw new Error("This song is larger than the 500 MiB download limit.");
-            }
-            const chunkCopy = new Uint8Array(result.value.byteLength);
-            chunkCopy.set(result.value);
-            chunks.push(chunkCopy.buffer);
-            if (expectedLength && expectedLength > 0) {
-              setProgress(Math.min(100, Math.round((received / expectedLength) * 100)));
-            }
-          }
-        } finally {
-          reader.releaseLock();
+        if (!response.ok) {
+          throw new Error(await responseError(response));
         }
-        blob = new Blob(chunks, { type: mimeType || "audio/mpeg" });
-      } else {
-        blob = await response.blob();
+
+        const respMime = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+        const rawLength = response.headers.get("content-length");
+        const expectedLength = rawLength ? Number(rawLength) : null;
+        if (expectedLength !== null && Number.isFinite(expectedLength) && expectedLength > MAX_DOWNLOAD_BYTES) {
+          throw new Error("This song is larger than the 500 MiB download limit.");
+        }
+        if (
+          expectedLength !== null &&
+          Number.isFinite(expectedLength) &&
+          storage?.quota !== undefined &&
+          storage.usage !== undefined &&
+          expectedLength > Math.max(0, storage.quota - storage.usage)
+        ) {
+          throw new Error("There is not enough browser storage for this song. Remove an old download and try again.");
+        }
+
+        const out = await readAudioBlobFromResponse(response, Number.isFinite(expectedLength) ? expectedLength : null, (p) => setProgress(p));
+        blob = out.blob;
+        mimeType = out.mimeType || respMime || "audio/mpeg";
+        sourceProvider = (response.headers.get("x-download-provider") as "yt-dlp" | "direct" | "browser-wasm") || "yt-dlp";
+        sourceUrl = response.headers.get("x-download-source-url") || sourceUrl;
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") throw e;
+        primaryError = e instanceof Error ? e.message : "Primary download failed.";
       }
 
-      if (!blob.size) throw new Error("The source returned an empty audio file.");
-      if (blob.size > MAX_DOWNLOAD_BYTES) {
-        throw new Error("This song is larger than the 500 MiB download limit.");
+      // 2) Fallback: resolve/play URL and fetch blob (direct/proxied) when possible
+      if (!blob) {
+        setProgress(null);
+        const fallback = await tryFallbackBlobDownload(controller);
+        if (fallback) {
+          blob = fallback.blob;
+          mimeType = fallback.mimeType || "audio/mpeg";
+          sourceProvider = "direct";
+          sourceUrl = fallback.sourceUrl;
+        }
+      }
+
+      if (!blob) {
+        throw new Error(primaryError || "Unable to download this song. Try again later.");
       }
 
       const record = await saveSongDownload({
@@ -157,11 +223,11 @@ export default function SongDownloadAction({
         artist: song.artist || "Unknown Artist",
         thumbnail: song.thumbnail || "",
         duration: song.duration || 0,
-        audioUrl: response.headers.get("x-download-source-url") || `https://www.youtube.com/watch?v=${song.videoId}`,
+        audioUrl: sourceUrl,
         mimeType: mimeType || blob.type || "audio/mpeg",
         blob,
-        sourceProvider: (response.headers.get("x-download-provider") as "yt-dlp" | "direct" | "browser-wasm") || "yt-dlp",
-        sourceUrl: response.headers.get("x-download-source-url") || `https://www.youtube.com/watch?v=${song.videoId}`,
+        sourceProvider,
+        sourceUrl,
       });
       setSaved(record);
       setProgress(100);
@@ -217,6 +283,10 @@ export default function SongDownloadAction({
           <button type="button" onClick={removeDownload} className={`${iconButtonClass} text-primary border-primary/30 bg-primary/10`} aria-label="Remove downloaded song" title="Saved offline — tap to remove">
             <Check className="h-4 w-4" />
           </button>
+        ) : error ? (
+          <button type="button" onClick={startDownload} className={`${iconButtonClass} text-primary border-primary/30 bg-primary/5`} aria-label="Retry download" title={error}>
+            <AlertCircle className="h-4 w-4" />
+          </button>
         ) : (
           <button type="button" onClick={startDownload} className={iconButtonClass} aria-label="Download song for offline" title="Download for offline">
             <Download className="h-4 w-4" />
@@ -227,7 +297,6 @@ export default function SongDownloadAction({
             <div className="h-full rounded-full bg-primary" style={{ width: progress + "%" }} />
           </div>
         )}
-        {error && <span className="sr-only" role="alert">{error}</span>}
       </div>
     );
   }
@@ -257,9 +326,9 @@ export default function SongDownloadAction({
           </button>
         </div>
       ) : (
-        <button type="button" onClick={startDownload} className={buttonClass} title="Download for offline (confirm you have rights to save this track)">
-          <Download className="h-3.5 w-3.5" />
-          Download
+        <button type="button" onClick={startDownload} className={buttonClass} title={error || "Download for offline (confirm you have rights to save this track)"}>
+          {error ? <AlertCircle className="h-3.5 w-3.5 text-primary" /> : <Download className="h-3.5 w-3.5" />}
+          {error ? "Retry download" : "Download"}
         </button>
       )}
       {downloading && progress !== null && (
@@ -268,7 +337,7 @@ export default function SongDownloadAction({
         </div>
       )}
       {error && <p className="max-w-64 text-[11px] leading-relaxed text-primary" role="alert">{error}</p>}
-      {!saved && !downloading && !compact && (
+      {!saved && !downloading && !compact && !error && (
         <p className="max-w-64 text-[10px] leading-relaxed text-muted/70">
           Saves to this device. Only download tracks you own or have permission to save.
         </p>
