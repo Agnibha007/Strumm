@@ -441,7 +441,7 @@ export default function SearchPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search songs, artists, playlists, podcasts, curators..."
-          className="reform-input w-full pl-13 pr-28 py-4 sm:py-5 text-base sm:text-lg font-bold placeholder:text-muted/70 shadow-lg"
+          className="reform-input w-full pl-14 pr-28 py-4 sm:py-5 text-base sm:text-lg font-bold placeholder:text-muted/70 shadow-lg"
         />
         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
           {query && (

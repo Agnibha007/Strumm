@@ -76,7 +76,7 @@ export default function HomePage() {
               placeholder="Search songs, artists, podcasts, moods..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="reform-input w-full pl-13 pr-5 py-4 sm:py-5 text-base sm:text-lg font-semibold placeholder:text-muted/70 shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)]"
+              className="reform-input w-full pl-14 pr-5 py-4 sm:py-5 text-base sm:text-lg font-semibold placeholder:text-muted/70 shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)]"
             />
           </div>
 

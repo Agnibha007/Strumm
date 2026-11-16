@@ -547,18 +547,19 @@ export default function SettingsPage() {
         <nav className="lg:w-56 flex-shrink-0 space-y-1.5 reform-panel p-3 h-fit" aria-label="Settings sections">
           {sections.map((section) => {
             const Icon = section.icon;
+            const active = activeSection === section.id;
             return (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition cursor-pointer text-left ${
-                  activeSection === section.id
-                    ? "bg-primary/10 text-primary border border-primary/20"
-                    : "text-muted hover:text-text hover:bg-surface-elevated/40 border border-transparent"
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-extrabold uppercase tracking-wide transition cursor-pointer text-left border ${
+                  active
+                    ? "bg-primary text-background border-primary shadow-[0_8px_24px_-12px_var(--glow)]"
+                    : "text-muted hover:text-text hover:bg-surface-elevated/70 border-transparent hover:border-border/70"
                 }`}
-                aria-current={activeSection === section.id ? "true" : undefined}
+                aria-current={active ? "true" : undefined}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className={`w-4 h-4 ${active ? "text-background" : "text-muted"}`} aria-hidden="true" />
                 {section.label}
               </button>
             );
